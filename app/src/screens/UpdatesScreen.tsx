@@ -752,8 +752,10 @@ export default function UpdatesScreen({ navigation, route }: any) {
     }
 
     let itemTitle = data.title || t('updates.announcement');
-    // Ensure 3D calendar icon 📅 is shown for events without unwanted bracketed date text
-    itemTitle = itemTitle.replace(/🗓️\s*\[.*?\]\s*/g, '📅 ').replace(/🗓️\s*/g, '📅 ');
+    // Strip bracketed date prefix (e.g. [17-11-2026] or [17 Nov 2026]) so only the calendar icon is shown
+    itemTitle = itemTitle.replace(/\[\s*[^\]]*\d{4}[^\]]*\]\s*/g, '');
+    itemTitle = itemTitle.replace(/\[\s*\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\s*\]\s*/g, '');
+    itemTitle = itemTitle.replace(/🗓️\s*/g, '📅 ');
     if (resolvedType === 'event' && !itemTitle.includes('📅')) {
       itemTitle = `📅 ${itemTitle}`;
     }

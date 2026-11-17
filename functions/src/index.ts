@@ -954,11 +954,13 @@ async function handleBroadcastPushDispatch(data: any, churchIdParam?: string, me
     return;
   }
 
-  let title = (data.title || 'Church Update').trim();
-  // Clean up any bracketed date format if present, keeping 3D calendar icon 📅
-  title = title.replace(/🗓️\s*\[.*?\]\s*/g, '📅 ').replace(/🗓️\s*/g, '📅 ');
-  const body = data.content || '';
   const type = data.type || 'general';
+  const body = data.content || '';
+  let title = (data.title || 'Church Update').trim();
+  // Strip bracketed date prefix (e.g. [17-11-2026] or [17 Nov 2026]) so only the calendar icon is shown
+  title = title.replace(/\[\s*[^\]]*\d{4}[^\]]*\]\s*/g, '');
+  title = title.replace(/\[\s*\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\s*\]\s*/g, '');
+  title = title.replace(/🗓️\s*/g, '📅 ');
   if (type === 'event' && !title.includes('📅')) {
     title = `📅 ${title}`;
   }
