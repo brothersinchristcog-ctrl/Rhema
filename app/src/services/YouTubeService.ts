@@ -1,6 +1,9 @@
 // YouTubeService.ts
 // Automatically finds the recording of a past church event from YouTube or active live streams
 
+export const RHEMA_YOUTUBE_CHANNEL_URL = 'https://www.youtube.com/@RhemaGlobalMinistries';
+export const RHEMA_YOUTUBE_STREAMS_URL = 'https://www.youtube.com/@RhemaGlobalMinistries/streams';
+
 const YOUTUBE_API_KEY = 'AIzaSyBGkm7DNk_jpM-XKJI0JPk_vJlufS4Q7-Q';
 
 // Cache channelId per handle so we don't fetch it every time
@@ -425,6 +428,38 @@ export async function findActiveLiveStream(
         }
       } catch (scrapeLiveErr) {
         console.warn('⚠️ [YouTubeService] Direct live check notice:', scrapeLiveErr);
+      }
+
+      // Method 1b: Also inspect channel /streams tab for active LIVE badge when /live didn't resolve yet
+      try {
+        const streamsUrl = `https://www.youtube.com/${targetPath}/streams`;
+        const streamsRes = await fetch(streamsUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
+          },
+        });
+        if (streamsRes.ok) {
+          const streamsHtml = await streamsRes.text();
+          const liveItemMatch =
+            streamsHtml.match(/"videoRenderer":\{"videoId":"([a-zA-Z0-9_-]{11})"[\s\S]{0,1200}?"style":"LIVE"/) ||
+            streamsHtml.match(/"videoId":"([a-zA-Z0-9_-]{11})"[\s\S]{0,1200}?"style":"LIVE"/);
+          if (liveItemMatch && liveItemMatch[1]) {
+            const vStatus = await checkVideoLiveStatus(liveItemMatch[1]);
+            if (vStatus.isLiveNow) {
+              console.log(`🔴 [YouTubeService] Active live stream found on /streams: ${liveItemMatch[1]}`);
+              return {
+                videoId: liveItemMatch[1],
+                title: vStatus.title || 'Live Worship Service',
+                isLiveNow: true,
+                hasEnded: false,
+                status: 'live',
+              };
+            }
+          }
+        }
+      } catch (streamsErr) {
+        console.warn('⚠️ [YouTubeService] /streams check notice:', streamsErr);
       }
     }
 

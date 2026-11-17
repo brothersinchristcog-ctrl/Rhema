@@ -1208,11 +1208,11 @@ function formatLiveNotification(churchName?: string, rawTitle?: string): { pushT
   };
 }
 
-async function checkChurchYouTubeLive(churchDoc: any, churchId: string, db: any) {
+export async function checkChurchYouTubeLive(churchDoc: any, churchId: string, db: any) {
   if (!churchId || churchId === 'global') return;
 
   const cData = churchDoc.data() || {};
-  let rawYtUrl = cData.socialLinks?.youtube?.trim();
+  let rawYtUrl = cData.socialLinks?.youtube?.trim() || '';
 
   // Fix typos in raw URL
   rawYtUrl = rawYtUrl.replace(/https?:\/\/(www\w*)\.(?:yyoutube|youtube)\.com/i, 'https://www.youtube.com');
@@ -1220,7 +1220,7 @@ async function checkChurchYouTubeLive(churchDoc: any, churchId: string, db: any)
 
   // Single-church default fallback
   if (!rawYtUrl && churchId === 'rhema') {
-    rawYtUrl = 'https://www.youtube.com/@Brothersinchristfellowship/live';
+    rawYtUrl = 'https://www.youtube.com/@RhemaGlobalMinistries';
   }
 
   if (!rawYtUrl) return;
@@ -1250,59 +1250,75 @@ async function checkChurchYouTubeLive(churchDoc: any, churchId: string, db: any)
       }
     }
 
-    // ── Method 2: Scrape Fallback (if API quota or network fails) ──
+    // ── Method 2: Scrape Fallback (/live and /streams) if API quota or network fails ──
     if (!isLive) {
-      let liveCheckUrl = rawYtUrl;
-      if (liveCheckUrl.includes('@') && !liveCheckUrl.includes('/live') && !liveCheckUrl.includes('/streams')) {
-        liveCheckUrl = liveCheckUrl.endsWith('/') ? `${liveCheckUrl}live` : `${liveCheckUrl}/live`;
-      } else if (liveCheckUrl.includes('/channel/') && !liveCheckUrl.includes('/live')) {
-        liveCheckUrl = liveCheckUrl.endsWith('/') ? `${liveCheckUrl}live` : `${liveCheckUrl}/live`;
-      }
+      const baseHandleUrl = rawYtUrl.replace(/\/(live|streams)\/?$/i, '');
+      const candidateUrls = Array.from(
+        new Set([
+          baseHandleUrl.includes('@') || baseHandleUrl.includes('/channel/')
+            ? `${baseHandleUrl}/live`
+            : rawYtUrl,
+          baseHandleUrl.includes('@') || baseHandleUrl.includes('/channel/')
+            ? `${baseHandleUrl}/streams`
+            : rawYtUrl,
+        ])
+      );
 
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 6000);
-        const res = await fetch(liveCheckUrl, {
-          signal: controller.signal,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept-Language': 'en-US,en;q=0.9',
-          },
-        }).catch(() => null);
-        clearTimeout(timeout);
+      for (const liveCheckUrl of candidateUrls) {
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 6000);
+          const res = await fetch(liveCheckUrl, {
+            signal: controller.signal,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept-Language': 'en-US,en;q=0.9',
+            },
+          }).catch(() => null);
+          clearTimeout(timeout);
 
-        if (res && res.ok) {
-          const html = await res.text().catch(() => '');
-          if (
-            (html.includes('"isLive":true') ||
-              html.includes('"style":"LIVE"') ||
-              html.includes('LIVE_STREAM') ||
-              html.includes('"status":"LIVE"')) &&
-            !html.includes('"isUpcoming":true')
-          ) {
-            isLive = true;
-            const match =
-              (res.url && res.url.match(/watch\?v=([\w-]{11})/)) ||
-              html.match(/"videoId":"([\w-]{11})"/) ||
-              html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([\w-]{11})">/) ||
-              html.match(/"liveStreamability".*?"videoId":"([^"]+)"/) ||
-              html.match(/"videoRenderer".*?"videoId":"([^"]+)"/);
-            if (match && match[1]) videoId = match[1];
+          if (res && res.ok) {
+            const html = await res.text().catch(() => '');
+            const isStreamsPage = liveCheckUrl.endsWith('/streams');
+            const looksLive = isStreamsPage
+              ? html.includes('"style":"LIVE"') || html.includes('LIVE_NOW')
+              : (html.includes('"isLive":true') ||
+                  html.includes('"style":"LIVE"') ||
+                  html.includes('LIVE_STREAM') ||
+                  html.includes('"status":"LIVE"')) &&
+                !html.includes('"isUpcoming":true');
 
-            const titleMatch =
-              html.match(/<title>([^<]+)<\/title>/) ||
-              html.match(/"title":{"runs":\[{"text":"([^"]+)"}\]}/) ||
-              html.match(/<meta name="title" content="([^"]+)"/);
-            if (titleMatch && titleMatch[1]) {
-              streamTitle = titleMatch[1].replace(/ - YouTube$/i, '').trim();
+            if (looksLive) {
+              const match = isStreamsPage
+                ? html.match(/"videoRenderer":\{"videoId":"([\w-]{11})"[\s\S]{0,1200}?"style":"LIVE"/) ||
+                  html.match(/"videoId":"([\w-]{11})"[\s\S]{0,1200}?"style":"LIVE"/)
+                : (res.url && res.url.match(/watch\?v=([\w-]{11})/)) ||
+                  html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([\w-]{11})">/) ||
+                  html.match(/"liveStreamability".*?"videoId":"([^"]+)"/) ||
+                  html.match(/"videoId":"([\w-]{11})"/);
+
+              if (match && match[1]) {
+                videoId = match[1];
+                isLive = true;
+                const titleMatch =
+                  html.match(/<title>([^<]+)<\/title>/) ||
+                  html.match(/"title":{"runs":\[{"text":"([^"]+)"}\]}/) ||
+                  html.match(/<meta name="title" content="([^"]+)"/);
+                if (titleMatch && titleMatch[1]) {
+                  streamTitle = titleMatch[1].replace(/ - YouTube$/i, '').trim();
+                }
+                break;
+              }
             }
           }
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
     }
 
     const prevState = cData.youtubeLiveState || { isLive: false };
-    const liveWatchUrl = videoId ? `https://www.youtube.com/watch?v=${videoId}` : rawYtUrl;
+    const liveWatchUrl = videoId
+      ? `https://www.youtube.com/watch?v=${videoId}`
+      : rawYtUrl;
 
     if (isLive) {
       // Clean up streamTitle if it matched YouTube promo junk
@@ -1315,44 +1331,74 @@ async function checkChurchYouTubeLive(churchDoc: any, churchId: string, db: any)
         streamTitle = 'Join the live worship service now! 🎥🙏';
       }
 
-      // Check if we already notified for this stream:
-      // 1. Same videoId already notified
-      // 2. Or prevState was already marked as isLive (same ongoing live session)
-      // 3. Or last notification was sent less than 2 hours ago (strict cooldown)
-      const lastNotifiedMillis =
-        prevState?.lastNotifiedAt?.toMillis?.() ||
-        (prevState?.lastNotifiedAt?._seconds ? prevState.lastNotifiedAt._seconds * 1000 : 0);
-      const isWithinCooldown = lastNotifiedMillis > 0 && Date.now() - lastNotifiedMillis < 2 * 60 * 60 * 1000;
-
-      const alreadyNotified =
-        Boolean(prevState?.isLive) ||
-        isWithinCooldown ||
-        (Boolean(videoId) && prevState?.lastNotifiedVideoId === videoId);
-
       const resolvedVideoId = videoId || prevState?.videoId || '';
 
-      // Save live state directly as a field on the church document (NO extra documents)
-      await churchDoc.ref.set(
-        {
-          youtubeLiveState: {
-            isLive: true,
-            url: liveWatchUrl,
-            videoId: resolvedVideoId,
-            title: streamTitle || prevState?.title || '',
-            lastChecked: FieldValue.serverTimestamp(),
-          },
-        },
-        { merge: true }
-      ).catch(() => {});
+      // Atomic Firestore Transaction so concurrent schedulers (monitorMeetingLive + checkYouTubeLive)
+      // can NEVER send two push notifications for the same live session.
+      let shouldSendPush = false;
+      if (resolvedVideoId && resolvedVideoId.length === 11) {
+        try {
+          shouldSendPush = await db.runTransaction(async (tx: any) => {
+            const freshSnap: any = await tx.get(churchDoc.ref);
+            const freshData = freshSnap.exists ? freshSnap.data() || {} : {};
+            const curState = freshData.youtubeLiveState || { isLive: false };
 
-      // ONLY dispatch a push notification if NOT already notified AND we have a valid 11-char video ID
-      if (!alreadyNotified && resolvedVideoId && resolvedVideoId.length === 11) {
+            const lastNotifiedMillis =
+              curState?.lastNotifiedAt?.toMillis?.() ||
+              (curState?.lastNotifiedAt?._seconds ? curState.lastNotifiedAt._seconds * 1000 : 0);
+            const isWithinSameVideoCooldown = lastNotifiedMillis > 0 && Date.now() - lastNotifiedMillis < 4 * 60 * 60 * 1000;
+            const isWithinGlobalCooldown = lastNotifiedMillis > 0 && Date.now() - lastNotifiedMillis < 15 * 60 * 1000;
+
+            const alreadyNotified =
+              Boolean(curState?.isLive) ||
+              isWithinGlobalCooldown ||
+              (curState?.lastNotifiedVideoId === resolvedVideoId && isWithinSameVideoCooldown);
+
+            const nextState: Record<string, any> = {
+              isLive: true,
+              url: liveWatchUrl,
+              videoId: resolvedVideoId,
+              title: streamTitle || curState?.title || '',
+              lastChecked: FieldValue.serverTimestamp(),
+            };
+
+            if (!alreadyNotified) {
+              nextState.lastNotifiedVideoId = resolvedVideoId;
+              nextState.lastNotifiedAt = FieldValue.serverTimestamp();
+            }
+
+            tx.set(churchDoc.ref, { youtubeLiveState: nextState }, { merge: true });
+            return !alreadyNotified;
+          });
+        } catch (txErr) {
+          console.warn('[checkChurchYouTubeLive] Transaction check error:', txErr);
+          shouldSendPush = false;
+        }
+      } else {
+        await churchDoc.ref
+          .set(
+            {
+              youtubeLiveState: {
+                isLive: true,
+                url: liveWatchUrl,
+                videoId: resolvedVideoId,
+                title: streamTitle || prevState?.title || '',
+                lastChecked: FieldValue.serverTimestamp(),
+              },
+            },
+            { merge: true }
+          )
+          .catch(() => {});
+      }
+
+      if (shouldSendPush) {
         const churchName = cData.name || 'Rhema Global Ministries';
         const { pushTitle, pushBody } = formatLiveNotification(churchName, streamTitle);
 
-        console.log(`🚨 Auto YouTube Live detected for church ${churchId} (${churchName})! Sending push...`);
+        console.log(`🚨 Auto YouTube Live detected for church ${churchId} (${churchName})! Sending single push for ${resolvedVideoId}...`);
 
-        // 1. Send push to topic church_${churchId} with interactive "Join Live Now" action category
+        // 1. Send data-only push to Android (rendered cleanly via NotificationService.displayLiveNotification
+        // with "📺 Join Live Now" action button) and categorized alert to iOS APNs.
         const topicMessage = {
           data: {
             type: 'youtube_live',
@@ -1387,29 +1433,25 @@ async function checkChurchYouTubeLive(churchDoc: any, churchId: string, db: any)
           .send(topicMessage)
           .catch((e: any) => console.error('Error sending YouTube Live topic push:', e));
 
-        // 2. Add to existing broadcasts subcollection
+        // 2. Persist deterministically in broadcasts subcollection (youtube_live_{videoId}) so Updates screen has no duplicates
         const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-        await churchDoc.ref.collection('broadcasts').add({
-          title: pushTitle,
-          content: pushBody,
-          date: dateStr,
-          type: 'youtube_live',
-          url: liveWatchUrl,
-          videoId: resolvedVideoId,
-          silent: true,
-          createdAt: FieldValue.serverTimestamp(),
-        }).catch(() => {});
-
-        // 3. Mark lastNotifiedVideoId in youtubeLiveState
-        await churchDoc.ref.set(
-          {
-            youtubeLiveState: {
-              lastNotifiedVideoId: resolvedVideoId,
-              lastNotifiedAt: FieldValue.serverTimestamp(),
+        await churchDoc.ref
+          .collection('broadcasts')
+          .doc(`youtube_live_${resolvedVideoId}`)
+          .set(
+            {
+              title: pushTitle,
+              content: pushBody,
+              date: dateStr,
+              type: 'youtube_live',
+              url: liveWatchUrl,
+              videoId: resolvedVideoId,
+              silent: true,
+              createdAt: FieldValue.serverTimestamp(),
             },
-          },
-          { merge: true }
-        ).catch(() => {});
+            { merge: true }
+          )
+          .catch(() => {});
       }
     } else {
       // Offline: reset isLive on church document if previously live

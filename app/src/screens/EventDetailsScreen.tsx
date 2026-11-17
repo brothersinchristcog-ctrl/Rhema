@@ -478,7 +478,7 @@ export default function EventDetailsScreen({ route, navigation }: any) {
       event.livestreamUrl ||
       event.youtubeUrl ||
       churchYoutubeUrl ||
-      '@Brothersinchristfellowship';
+      'https://www.youtube.com/@RhemaGlobalMinistries';
 
     if (targetUrl) {
       setLiveStreamLoading(true);
@@ -519,7 +519,7 @@ export default function EventDetailsScreen({ route, navigation }: any) {
   }, [event.id, event.liveUrl, event.livestreamUrl, event.youtubeId, status, activeChurch?.id, churchYoutubeUrl]);
 
   const handleCheckLiveStreamAgain = useCallback(() => {
-    const targetUrl = event.liveUrl || event.livestreamUrl || event.youtubeUrl || churchYoutubeUrl || '@Brothersinchristfellowship';
+    const targetUrl = event.liveUrl || event.livestreamUrl || event.youtubeUrl || churchYoutubeUrl || 'https://www.youtube.com/@RhemaGlobalMinistries';
     if (!targetUrl) return;
     setLiveStreamLoading(true);
     findActiveLiveStream(targetUrl)
@@ -553,7 +553,7 @@ export default function EventDetailsScreen({ route, navigation }: any) {
       event.livestreamUrl ||
       (manualYoutubeId ? `https://www.youtube.com/watch?v=${manualYoutubeId}` : '') ||
       churchYoutubeUrl ||
-      '@Brothersinchristfellowship';
+      'https://www.youtube.com/@RhemaGlobalMinistries';
 
     if (rawTarget.includes('zoom.us')) {
       openZoomMeeting({

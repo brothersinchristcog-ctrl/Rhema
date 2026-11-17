@@ -99,6 +99,7 @@ export declare function checkAndPublishScheduledSermons(sermonsRef: any, churchI
  */
 export declare const publishScheduledSermons: import("firebase-functions/v2/scheduler").ScheduleFunction;
 export declare const monitorMeetingLive: import("firebase-functions/v2/scheduler").ScheduleFunction;
+export declare function checkChurchYouTubeLive(churchDoc: any, churchId: string, db: any): Promise<void>;
 /**
  * 🏛️ NOTIFY SUPER ADMINS OF NEW CHURCH REGISTRATION
  * Triggered automatically when a new church document is created in Firestore.

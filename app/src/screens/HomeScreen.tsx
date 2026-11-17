@@ -94,6 +94,7 @@ import { BibleService } from '../services/BibleService';
 import { SupportedLanguage } from '../locales';
 import { CustomAlert } from '../components/CustomAlert';
 import ServiceRosterService from '../services/ServiceRosterService';
+import { RHEMA_YOUTUBE_CHANNEL_URL, RHEMA_YOUTUBE_STREAMS_URL } from '../services/YouTubeService';
 import { MemberServiceDuty } from '../types/serviceRoster';
 import Svg, { Path, Circle, Ellipse, Rect, Polygon, Defs, LinearGradient as SvgLinearGradient, RadialGradient as SvgRadialGradient, Stop, Text as SvgText, Mask, G } from 'react-native-svg';
 
@@ -2734,17 +2735,11 @@ export default function HomeScreen() {
       title: t('home.quickYoutubeLive') || 'YouTube Live',
       icon: require('../../assets/3d_youtube.png'),
       onPress: () => {
-        const yUrl = activeChurch?.socialLinks?.youtube?.trim();
-        if (yUrl) {
-          navigation.navigate('YouTubeLive', { channelUrl: yUrl });
-        } else {
-          setAlertConfig({
-            visible: true,
-            title: 'Link Not Configured',
-            message: 'No YouTube Live link has been configured for this church. Please go to Church Settings and set the YouTube Live link.',
-            type: 'info'
-          });
-        }
+        const yUrl = activeChurch?.socialLinks?.youtube?.trim() || RHEMA_YOUTUBE_CHANNEL_URL;
+        navigation.navigate('YouTubeLive', {
+          channelUrl: yUrl,
+          streamsUrl: RHEMA_YOUTUBE_STREAMS_URL,
+        });
       },
     },
     {
@@ -4864,17 +4859,11 @@ export default function HomeScreen() {
                 style={styles.clayYoutubeBigTouch}
                 activeOpacity={0.88}
                 onPress={() => {
-                  const yUrl = activeChurch?.socialLinks?.youtube?.trim();
-                  if (yUrl) {
-                    navigation.navigate('YouTubeLive', { channelUrl: yUrl });
-                  } else {
-                    setAlertConfig({
-                      visible: true,
-                      title: 'Link Not Configured',
-                      message: 'No YouTube Live link has been configured for this church. Please go to Church Settings and set the YouTube Live link.',
-                      type: 'info'
-                    });
-                  }
+                  const yUrl = activeChurch?.socialLinks?.youtube?.trim() || RHEMA_YOUTUBE_CHANNEL_URL;
+                  navigation.navigate('YouTubeLive', {
+                    channelUrl: yUrl,
+                    streamsUrl: RHEMA_YOUTUBE_STREAMS_URL,
+                  });
                 }}
               >
                 <LinearGradient
@@ -4910,12 +4899,22 @@ export default function HomeScreen() {
                       style={[styles.claySermonsSub, { color: screenTheme.bentoYoutubeSub, marginTop: 2 }]}
                       numberOfLines={2}
                     >
-                      Watch live broadcasts & sermons
+                      @RhemaGlobalMinistries
                     </Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 }}>
+                    <TouchableOpacity
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 }}
+                      activeOpacity={0.8}
+                      onPress={() => {
+                        const yUrl = activeChurch?.socialLinks?.youtube?.trim() || RHEMA_YOUTUBE_CHANNEL_URL;
+                        navigation.navigate('YouTubeLive', {
+                          channelUrl: yUrl,
+                          streamsUrl: RHEMA_YOUTUBE_STREAMS_URL,
+                        });
+                      }}
+                    >
                       <Play size={11} color="#FFFFFF" fill="#FFFFFF" />
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF' }}>Watch live</Text>
-                    </View>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF' }}>Watch streams</Text>
+                    </TouchableOpacity>
                   </View>
                 </LinearGradient>
               </TouchableOpacity>
