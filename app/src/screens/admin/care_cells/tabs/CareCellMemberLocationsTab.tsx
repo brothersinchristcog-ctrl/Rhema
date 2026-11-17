@@ -15,6 +15,7 @@ import {
   FlatList,
 } from 'react-native';
 import MapView, { Marker, Circle, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import Svg, { Path } from 'react-native-svg';
 import {
   Search,
   MapPin,
@@ -681,14 +682,18 @@ export default function CareCellMemberLocationsTab({
                       )}
                     </View>
 
-                    {/* Lollipop Pointer Triangle */}
-                    <View
-                      collapsable={false}
-                      style={[
-                        styles.photoPinTriangle,
-                        { borderTopColor: isSelected ? '#F59E0B' : dominantColor },
-                      ]}
-                    />
+                    {/* Lollipop Needle Pointer SVG */}
+                    <Svg
+                      width={14}
+                      height={8}
+                      viewBox="0 0 14 8"
+                      style={{ marginTop: -1 }}
+                    >
+                      <Path
+                        d="M0 0 L7 8 L14 0 Z"
+                        fill={isSelected ? '#F59E0B' : dominantColor}
+                      />
+                    </Svg>
                   </View>
                 </Marker>
               );

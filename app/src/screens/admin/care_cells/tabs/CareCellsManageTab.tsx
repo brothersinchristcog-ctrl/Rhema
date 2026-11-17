@@ -41,6 +41,19 @@ import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminT
 import GrantAdminAccessModal from '../components/GrantAdminAccessModal';
 import { CareCell, CareCellStatus, formatCareCellCode, formatCareCellDisplayName } from '../../../../types/CareCellTypes';
 
+function formatTime12Hour(time24?: string): string {
+  if (!time24) return '';
+  const trimmed = time24.trim();
+  if (/am|pm/i.test(trimmed)) return trimmed;
+  const match = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return trimmed;
+  let hours = parseInt(match[1], 10);
+  const minutes = match[2];
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12 || 12;
+  return `${hours}:${minutes} ${ampm}`;
+}
+
 const { width } = Dimensions.get('window');
 
 interface CareCellsManageTabProps {
@@ -266,7 +279,10 @@ export default function CareCellsManageTab({
           </View>
           <View style={styles.metaItem}>
             <Clock size={13} color={secondaryText} style={{ marginRight: 4 }} />
-            <Text style={styles.metaTxt}>{item.meetingTime || '19:00'}{item.meetingEndTime ? ` – ${item.meetingEndTime}` : ''}</Text>
+            <Text style={styles.metaTxt}>
+              {formatTime12Hour(item.meetingTime) || '7:00 PM'}
+              {item.meetingEndTime ? ` – ${formatTime12Hour(item.meetingEndTime)}` : ''}
+            </Text>
           </View>
           {item.location ? (
             <View style={[styles.metaItem, { flex: 1 }]}>

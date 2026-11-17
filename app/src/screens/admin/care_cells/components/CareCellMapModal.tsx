@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,17 +7,19 @@ import {
   TouchableOpacity,
   Dimensions,
   Platform,
+  StatusBar,
   Linking,
   Alert,
   ScrollView,
   Image,
   FlatList,
-  StatusBar,
   ActivityIndicator,
   PixelRatio,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import MapView, { Marker, PROVIDER_GOOGLE, Polyline } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import Svg, { Path } from 'react-native-svg';
+import * as ExpoLocation from 'expo-location';
 import {
   ArrowLeft,
   Navigation,
@@ -36,65 +38,95 @@ import {
   X,
   Plus,
   Route,
-  Home,
+  Sparkles,
+  Check,
+  Car,
+  Footprints,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  Crosshair,
+  Clock,
   Save,
 } from 'lucide-react-native';
-import { CareCell, CareCellMembership, formatCareCellCode, formatCareCellDisplayName } from '../../../../types/CareCellTypes';
+import {
+  CareCell,
+  CareCellMembership,
+  formatCareCellCode,
+  formatCareCellDisplayName,
+  MemberVisitResponseStatus,
+  VisitRoutePoint,
+} from '../../../../types/CareCellTypes';
 import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
-import MemberLocationService from '../../../../services/MemberLocationService';
-import CareCellService, { calculateDistanceKm, KNOWN_REGION_COORDS } from '../../../../services/CareCellService';
+import MemberLocationService, {
+  TravelMode,
+  RoadRouteResult,
+  haversineDistanceKm,
+} from '../../../../services/MemberLocationService';
+import CareCellService, { KNOWN_REGION_COORDS } from '../../../../services/CareCellService';
 
 const { width, height } = Dimensions.get('window');
 
-// Android New Architecture fabric marker sizing
-const ANDROID_MARKER_BOX =
-  Platform.OS === 'android'
-    ? Math.min(38, Math.max(26, Math.floor(96 / Math.max(1, PixelRatio.get()))))
-    : 56;
-const PIN_HEAD_SIZE = Platform.OS === 'android' ? ANDROID_MARKER_BOX - 6 : 44;
-const PIN_BORDER_WIDTH = Platform.OS === 'android' ? 2 : 2.5;
+// Lollipop Marker Pin Dimensions
+const PIN_HEAD_SIZE = 42;
+const PIN_BORDER_WIDTH = 2.5;
 const PIN_IMAGE_SIZE = PIN_HEAD_SIZE - PIN_BORDER_WIDTH * 2;
+const PIN_POINTER_W = 14;
+const PIN_POINTER_H = 8;
+const CHURCH_MARKER_SIZE = 34;
 
-// Default Kurnool coordinates if cell doesn't have coordinates
+// Default fallback coordinates if no cell & no member coordinates exist
 const DEFAULT_KURNOOL_LAT = 15.8281;
 const DEFAULT_KURNOOL_LNG = 78.0373;
 
-interface EnrichedCareCellMembership extends CareCellMembership {
+export type EnrichedCareCellMembership = CareCellMembership & {
   distanceKm?: number;
   profilePhoto?: string;
   locationAccuracy?: string;
-}
+  isVerifiedPin?: boolean;
+  resolvedAddress?: string;
+};
 
 interface CareCellMapModalProps {
   visible: boolean;
   onClose: () => void;
+  churchId?: string;
   cell: CareCell;
   members: CareCellMembership[];
   inactiveMembers?: Array<{ memberId: string; missedCount: number; memberName?: string }>;
   onLogFollowup?: (member: CareCellMembership) => void;
-  // Visiting Route extensions
   initialPlannedRouteIds?: string[];
-  visitMemberMeta?: Record<string, { response?: any; preferredTime?: string }>;
-  visitDefaultTime?: string;
+  autoSelectRoute?: boolean;
+  headerSubtitleOverride?: string;
+  onConfirmRoute?: (stops: VisitRoutePoint[]) => void;
   onSaveVisitRoute?: (stops: any[]) => void;
+  visitMemberMeta?: Record<
+    string,
+    { response?: MemberVisitResponseStatus; preferredTime?: string }
+  >;
+  visitDefaultTime?: string;
   visitTitle?: string;
 }
 
 export default function CareCellMapModal({
   visible,
   onClose,
+  churchId,
   cell,
   members,
   inactiveMembers = [],
   onLogFollowup,
   initialPlannedRouteIds,
+  autoSelectRoute = false,
+  headerSubtitleOverride,
+  onConfirmRoute,
+  onSaveVisitRoute,
   visitMemberMeta,
   visitDefaultTime,
-  onSaveVisitRoute,
   visitTitle,
 }: CareCellMapModalProps) {
   const insets = useSafeAreaInsets();
-  const { isDark, primaryText, secondaryText, cardSurface, borderColor } = useAdminTheme();
+  const { isDark, primaryText, secondaryText, cardSurface, secondarySurface, borderColor } = useAdminTheme();
   const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
   const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
   const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
@@ -103,92 +135,153 @@ export default function CareCellMapModal({
 
   const mapRef = useRef<MapView | null>(null);
 
-  // Top Inset ensuring zero status bar overlap on any Android / iOS device
+  // Top Inset to guarantee zero overlap with status bar / notch
   const topHeaderInset =
     Platform.OS === 'android'
-      ? (StatusBar.currentHeight || 28) + 16
-      : insets.top + 12;
+      ? (StatusBar.currentHeight || 28) + 12
+      : insets.top + 10;
 
   // View mode: 'map' or 'list'
   const [viewMode, setViewMode] = useState<'map' | 'list'>('map');
   const [selectedLocality, setSelectedLocality] = useState<string>('ALL');
   const [filterNeedsVisitOnly, setFilterNeedsVisitOnly] = useState<boolean>(false);
-  const [visitResponseFilter, setVisitResponseFilter] = useState<'ALL' | 'ACCEPTED_ONLY' | 'NON_DECLINED'>('ALL');
-
-  // Marker tracking state so images snapshot properly
-  const [loadedMarkerPhotos, setLoadedMarkerPhotos] = useState<Record<string, boolean>>({});
-  const [refreshMarkersCount, setRefreshMarkersCount] = useState<number>(0);
-
-  // Loading & Enriched data state
-  const [loadingLocations, setLoadingLocations] = useState<boolean>(true);
-  const [enrichedMembers, setEnrichedMembers] = useState<EnrichedCareCellMembership[]>([]);
-
-  // Resolve Initial Cell Center immediately from known regions if coordinates missing
-  const getInitialCenter = () => {
-    if (cell.meetingLatitude && cell.meetingLongitude) {
-      return { latitude: cell.meetingLatitude, longitude: cell.meetingLongitude };
-    }
-    const locLower = (cell.location || cell.meetingLocation || '').toLowerCase().trim();
-    if (locLower && KNOWN_REGION_COORDS[locLower]) {
-      return { latitude: KNOWN_REGION_COORDS[locLower].lat, longitude: KNOWN_REGION_COORDS[locLower].lng };
-    }
-    if (locLower.includes('koila')) {
-      return { latitude: 15.2333, longitude: 78.3167 };
-    }
-    return { latitude: DEFAULT_KURNOOL_LAT, longitude: DEFAULT_KURNOOL_LNG };
-  };
-
-  const [resolvedCenter, setResolvedCenter] = useState<{ latitude: number; longitude: number }>(getInitialCenter);
+  const [visitResponseFilter, setVisitResponseFilter] = useState<'ACCEPTED_ONLY' | 'NON_DECLINED' | 'ALL'>('NON_DECLINED');
 
   // Selected member card on map
   const [selectedMember, setSelectedMember] = useState<EnrichedCareCellMembership | null>(null);
 
-  // Route Planning: list of member IDs in visit order
-  const [plannedRouteMemberIds, setPlannedRouteMemberIds] = useState<string[]>(
-    initialPlannedRouteIds || []
-  );
+  // Route Planning: list of member IDs in visit order + travel mode
+  const [plannedRouteMemberIds, setPlannedRouteMemberIds] = useState<string[]>([]);
+  const [travelMode, setTravelMode] = useState<TravelMode>('driving');
+  const [routeOptimizedFlag, setRouteOptimizedFlag] = useState<boolean>(false);
 
+  // Marker view refresh state so custom views snapshot crisply on Android Fabric
+  const [markersRefreshActive, setMarkersRefreshActive] = useState<boolean>(true);
+  const [loadedMarkerPhotos, setLoadedMarkerPhotos] = useState<Record<string, boolean>>({});
+
+  // Active In-App Turn-by-Turn Route Navigation state
+  const [navActive, setNavActive] = useState<boolean>(false);
+  const [navStops, setNavStops] = useState<VisitRoutePoint[]>([]);
+  const [navStopIndex, setNavStopIndex] = useState<number>(0);
+  const [navLoading, setNavLoading] = useState<boolean>(false);
+  const [roadRoute, setRoadRoute] = useState<RoadRouteResult | null>(null);
+  const [userNavCoords, setUserNavCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const navLocationSubRef = useRef<ExpoLocation.LocationSubscription | null>(null);
+
+  // Loading & Enriched data state
+  const [loadingLocations, setLoadingLocations] = useState<boolean>(true);
+  const [rawEnrichedMembers, setRawEnrichedMembers] = useState<EnrichedCareCellMembership[]>([]);
+  const [geocodedCellCoords, setGeocodedCellCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+
+  // Visit response counts when opened from a Care Cell Visit
+  const visitResponseStats = useMemo(() => {
+    if (!visitMemberMeta) return null;
+    let accepted = 0;
+    let pending = 0;
+    let declined = 0;
+    members.forEach((m) => {
+      const st = visitMemberMeta[m.memberId]?.response || 'Pending';
+      if (st === 'Accepted') accepted += 1;
+      else if (st === 'Declined') declined += 1;
+      else pending += 1;
+    });
+    return {
+      accepted,
+      pending,
+      declined,
+      nonDeclined: accepted + pending,
+      total: members.length,
+    };
+  }, [visitMemberMeta, members]);
+
+  // Sync planned route IDs & reset navigation cleanly whenever modal opens/closes
   useEffect(() => {
-    if (initialPlannedRouteIds && initialPlannedRouteIds.length > 0) {
-      setPlannedRouteMemberIds(initialPlannedRouteIds);
+    if (!visible) {
+      setNavActive(false);
+      setNavStops([]);
+      setNavStopIndex(0);
+      setRoadRoute(null);
+      if (navLocationSubRef.current) {
+        navLocationSubRef.current.remove();
+        navLocationSubRef.current = null;
+      }
+      return;
     }
-  }, [initialPlannedRouteIds]);
+    setSelectedMember(null);
+    setSelectedLocality('ALL');
+    setFilterNeedsVisitOnly(false);
+    setRouteOptimizedFlag(false);
+    setNavActive(false);
 
-  // Marker view refresh timers to snapshot lollipop pins cleanly
+    const hasAccepted = Boolean(
+      visitMemberMeta &&
+        members.some((m) => visitMemberMeta[m.memberId]?.response === 'Accepted')
+    );
+    const defaultRespFilter: 'ACCEPTED_ONLY' | 'NON_DECLINED' | 'ALL' = hasAccepted
+      ? 'ACCEPTED_ONLY'
+      : 'NON_DECLINED';
+    setVisitResponseFilter(defaultRespFilter);
+
+    const eligibleIds = visitMemberMeta
+      ? new Set(
+          members
+            .filter((m) => {
+              const st = visitMemberMeta[m.memberId]?.response || 'Pending';
+              if (defaultRespFilter === 'ACCEPTED_ONLY') return st === 'Accepted';
+              return st !== 'Declined';
+            })
+            .map((m) => m.memberId)
+        )
+      : null;
+
+    if (initialPlannedRouteIds && initialPlannedRouteIds.length > 0) {
+      const filteredInit = eligibleIds
+        ? initialPlannedRouteIds.filter((id) => eligibleIds.has(id))
+        : initialPlannedRouteIds;
+      setPlannedRouteMemberIds(
+        filteredInit.length > 0 ? filteredInit : [...initialPlannedRouteIds]
+      );
+    } else if (autoSelectRoute && members.length > 0) {
+      const autoIds = eligibleIds
+        ? members.filter((m) => eligibleIds.has(m.memberId)).map((m) => m.memberId)
+        : members.map((m) => m.memberId);
+      setPlannedRouteMemberIds(autoIds);
+    } else {
+      setPlannedRouteMemberIds([]);
+    }
+  }, [visible, initialPlannedRouteIds, autoSelectRoute, members, visitMemberMeta]);
+
+  // Keep Android custom Marker snapshots crisp
   useEffect(() => {
     if (!visible) return;
-    const t1 = setTimeout(() => setRefreshMarkersCount((c) => c + 1), 300);
-    const t2 = setTimeout(() => setRefreshMarkersCount((c) => c + 1), 800);
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-    };
-  }, [visible, loadingLocations]);
+    setMarkersRefreshActive(true);
+    const t = setTimeout(() => setMarkersRefreshActive(false), 600);
+    return () => clearTimeout(t);
+  }, [visible, viewMode, plannedRouteMemberIds, selectedMember, navActive, navStopIndex]);
 
-  // Inactive Member IDs set for fast lookup
-  const inactiveMemberIdSet = useMemo(() => {
-    return new Set(inactiveMembers.map((im) => im.memberId));
-  }, [inactiveMembers]);
-
-  // Resolve locations and coordinates from Firestore / Member profiles
+  // Load live member locations and cell coordinates
   useEffect(() => {
     let isMounted = true;
     async function loadLocations() {
       if (!visible) return;
       setLoadingLocations(true);
       try {
-        const churchId = await CareCellService.getChurchId();
-        const res = await MemberLocationService.resolveCareCellMemberLocations(churchId, cell, members);
+        const activeChurchId = churchId || (await CareCellService.getChurchId());
+        const res = await MemberLocationService.resolveCareCellMemberLocations(
+          activeChurchId,
+          cell,
+          members
+        );
         if (isMounted) {
           if (res.cellCenter && res.cellCenter.latitude && res.cellCenter.longitude) {
-            setResolvedCenter(res.cellCenter);
+            setGeocodedCellCoords(res.cellCenter);
           }
-          setEnrichedMembers(res.resolvedMembers);
+          setRawEnrichedMembers(res.resolvedMembers as EnrichedCareCellMembership[]);
         }
       } catch (err) {
         console.error('Failed to resolve member locations for map:', err);
         if (isMounted) {
-          setEnrichedMembers(members);
+          setRawEnrichedMembers(members as EnrichedCareCellMembership[]);
         }
       } finally {
         if (isMounted) setLoadingLocations(false);
@@ -199,40 +292,49 @@ export default function CareCellMapModal({
     return () => {
       isMounted = false;
     };
-  }, [visible, cell, members]);
+  }, [visible, churchId, cell, members]);
 
-  // Initial map region centered on resolved cell center
-  const initialRegion = useMemo(() => {
-    return {
-      latitude: resolvedCenter.latitude,
-      longitude: resolvedCenter.longitude,
-      latitudeDelta: 0.045,
-      longitudeDelta: 0.045,
-    };
-  }, [resolvedCenter]);
+  // Enriched members with micro-spread for members sharing identical village coordinates
+  const enrichedMembers = useMemo<EnrichedCareCellMembership[]>(() => {
+    const rawList = rawEnrichedMembers.map((m) => ({
+      ...m,
+      isVerifiedPin: m.locationAccuracy === 'verified_home',
+      resolvedAddress: m.address || m.locality || '',
+    }));
 
-  // Auto-fit map camera when coordinates are ready
-  useEffect(() => {
-    if (!loadingLocations && enrichedMembers.length > 0 && mapRef.current) {
-      const validCoords = enrichedMembers
-        .filter((m) => typeof m.latitude === 'number' && typeof m.longitude === 'number' && !isNaN(m.latitude))
-        .map((m) => ({ latitude: m.latitude!, longitude: m.longitude! }));
-
-      if (resolvedCenter.latitude && resolvedCenter.longitude) {
-        validCoords.push(resolvedCenter);
+    // Group items sharing identical rounded lat/lng so markers don't overlap
+    const coordGroups = new Map<string, number[]>();
+    rawList.forEach((item, idx) => {
+      if (typeof item.latitude === 'number' && typeof item.longitude === 'number') {
+        const key = `${item.latitude.toFixed(4)}_${item.longitude.toFixed(4)}`;
+        const arr = coordGroups.get(key) || [];
+        arr.push(idx);
+        coordGroups.set(key, arr);
       }
+    });
 
-      if (validCoords.length > 0) {
-        const timer = setTimeout(() => {
-          mapRef.current?.fitToCoordinates(validCoords, {
-            edgePadding: { top: 120, right: 60, bottom: 240, left: 60 },
-            animated: true,
-          });
-        }, 400);
-        return () => clearTimeout(timer);
-      }
-    }
-  }, [loadingLocations, enrichedMembers, resolvedCenter]);
+    coordGroups.forEach((indices) => {
+      if (indices.length <= 1) return;
+      indices.forEach((idx, pos) => {
+        const item = rawList[idx];
+        if (item.isVerifiedPin) return; // Never shift verified home pins
+        const angle = (2 * Math.PI * pos) / indices.length;
+        const radiusDeg = 0.00065; // ~70m visual offset
+        rawList[idx] = {
+          ...item,
+          latitude: item.latitude! + radiusDeg * Math.cos(angle),
+          longitude: item.longitude! + radiusDeg * Math.sin(angle),
+        };
+      });
+    });
+
+    return rawList;
+  }, [rawEnrichedMembers]);
+
+  // Inactive Member IDs set for fast lookup
+  const inactiveMemberIdSet = useMemo(() => {
+    return new Set(inactiveMembers.map((im) => im.memberId));
+  }, [inactiveMembers]);
 
   // Compute distinct localities from members
   const localities = useMemo(() => {
@@ -248,6 +350,13 @@ export default function CareCellMapModal({
   // Filtered members list
   const filteredMembers = useMemo(() => {
     let list = enrichedMembers;
+    if (visitMemberMeta) {
+      if (visitResponseFilter === 'ACCEPTED_ONLY') {
+        list = list.filter((m) => visitMemberMeta[m.memberId]?.response === 'Accepted');
+      } else if (visitResponseFilter === 'NON_DECLINED') {
+        list = list.filter((m) => visitMemberMeta[m.memberId]?.response !== 'Declined');
+      }
+    }
     if (filterNeedsVisitOnly) {
       list = list.filter((m) => inactiveMemberIdSet.has(m.memberId));
     }
@@ -255,86 +364,267 @@ export default function CareCellMapModal({
       list = list.filter((m) => (m.locality || '').trim().toLowerCase() === selectedLocality.toLowerCase());
     }
     return list;
-  }, [enrichedMembers, filterNeedsVisitOnly, selectedLocality, inactiveMemberIdSet]);
+  }, [enrichedMembers, visitMemberMeta, visitResponseFilter, filterNeedsVisitOnly, selectedLocality, inactiveMemberIdSet]);
 
-  // Members to render on the map with slight radial offset for identical village coordinates
-  const membersToRenderOnMap = useMemo(() => {
-    const coordSeenCount = new Map<string, number>();
-
-    return filteredMembers
-      .filter(
-        (m) =>
-          typeof m.latitude === 'number' &&
-          typeof m.longitude === 'number' &&
-          !isNaN(m.latitude) &&
-          !isNaN(m.longitude)
-      )
-      .map((m) => {
-        const key = `${m.latitude!.toFixed(4)}_${m.longitude!.toFixed(4)}`;
-        const seen = coordSeenCount.get(key) || 0;
-        coordSeenCount.set(key, seen + 1);
-
-        if (seen > 0) {
-          // Jitter by ~22 meters radially so lollipop pins never hide each other
-          const angle = (seen * 2 * Math.PI) / 3;
-          const offsetLat = 0.00022 * Math.cos(angle);
-          const offsetLng = 0.00022 * Math.sin(angle);
-          return {
-            ...m,
-            plotLat: m.latitude! + offsetLat,
-            plotLng: m.longitude! + offsetLng,
-          };
-        }
-
-        return {
-          ...m,
-          plotLat: m.latitude!,
-          plotLng: m.longitude!,
-        };
-      });
+  // Members with valid GPS coordinates for map plotting
+  const membersWithCoords = useMemo(() => {
+    return filteredMembers.filter(
+      (m) => typeof m.latitude === 'number' && typeof m.longitude === 'number' && !isNaN(m.latitude) && !isNaN(m.longitude)
+    );
   }, [filteredMembers]);
 
-  // Total sequential route distance in kilometers
-  const totalRouteDistanceKm = useMemo(() => {
-    if (plannedRouteMemberIds.length === 0) return 0;
-    const ordered = plannedRouteMemberIds
-      .map((id) => enrichedMembers.find((m) => m.memberId === id))
-      .filter((m): m is EnrichedCareCellMembership => !!m && typeof m.latitude === 'number' && typeof m.longitude === 'number');
+  // Center coordinate: Cell Meeting coordinate, resolved cell location, first member pin, or Kurnool fallback
+  const centerCoord = useMemo(() => {
+    const firstWithCoords = enrichedMembers.find(
+      (m) => typeof m.latitude === 'number' && typeof m.longitude === 'number'
+    );
+    const lat =
+      cell.meetingLatitude ||
+      geocodedCellCoords?.latitude ||
+      firstWithCoords?.latitude ||
+      DEFAULT_KURNOOL_LAT;
+    const lng =
+      cell.meetingLongitude ||
+      geocodedCellCoords?.longitude ||
+      firstWithCoords?.longitude ||
+      DEFAULT_KURNOOL_LNG;
+    return {
+      latitude: lat,
+      longitude: lng,
+      latitudeDelta: 0.035,
+      longitudeDelta: 0.035,
+    };
+  }, [cell.meetingLatitude, cell.meetingLongitude, geocodedCellCoords, enrichedMembers]);
 
-    if (ordered.length === 0) return 0;
-
-    let total = 0;
-    let prevLat = resolvedCenter.latitude;
-    let prevLng = resolvedCenter.longitude;
-
-    for (const stop of ordered) {
-      total += calculateDistanceKm(prevLat, prevLng, stop.latitude!, stop.longitude!);
-      prevLat = stop.latitude!;
-      prevLng = stop.longitude!;
+  // Auto-focus map camera onto cell members (NEVER injecting fallback Kurnool into points!)
+  useEffect(() => {
+    if (!visible || viewMode !== 'map' || !mapRef.current) return;
+    const points: Array<{ latitude: number; longitude: number }> = [];
+    const cellLat = cell.meetingLatitude || geocodedCellCoords?.latitude;
+    const cellLng = cell.meetingLongitude || geocodedCellCoords?.longitude;
+    if (typeof cellLat === 'number' && typeof cellLng === 'number') {
+      points.push({ latitude: cellLat, longitude: cellLng });
     }
-    return Math.round(total * 10) / 10;
-  }, [plannedRouteMemberIds, enrichedMembers, resolvedCenter]);
+    membersWithCoords.forEach((m) => {
+      if (typeof m.latitude === 'number' && typeof m.longitude === 'number') {
+        points.push({ latitude: m.latitude, longitude: m.longitude });
+      }
+    });
 
-  // Navigation: Open Google Maps directions to a single member
-  const handleNavigateToMember = (m: EnrichedCareCellMembership) => {
-    if (typeof m.latitude === 'number' && typeof m.longitude === 'number') {
-      const lat = m.latitude;
-      const lng = m.longitude;
-      const label = encodeURIComponent(`${m.memberName}'s House`);
-      const url = Platform.select({
-        ios: `maps:0,0?q=${lat},${lng}(${label})`,
-        android: `google.navigation:q=${lat},${lng}`,
-        default: `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`,
-      });
-
-      Linking.openURL(url!).catch(() => {
-        const webFallback = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
-        Linking.openURL(webFallback).catch(() => {
-          Alert.alert('Navigation Error', 'Could not open Google Maps.');
+    if (points.length === 0) return;
+    const timer = setTimeout(() => {
+      if (!mapRef.current) return;
+      if (points.length === 1) {
+        mapRef.current.animateToRegion(
+          {
+            latitude: points[0].latitude,
+            longitude: points[0].longitude,
+            latitudeDelta: 0.025,
+            longitudeDelta: 0.025,
+          },
+          450
+        );
+      } else {
+        mapRef.current.fitToCoordinates(points, {
+          edgePadding: { top: 90, right: 50, bottom: 90, left: 50 },
+          animated: true,
         });
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [visible, viewMode, cell.meetingLatitude, cell.meetingLongitude, geocodedCellCoords, membersWithCoords]);
+
+  // Helper: Resolve real GPS or cell-center fallback origin for in-app navigation
+  const resolveOriginCoords = async (): Promise<{ latitude: number; longitude: number } | null> => {
+    try {
+      let { status } = await ExpoLocation.getForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        const req = await ExpoLocation.requestForegroundPermissionsAsync();
+        status = req.status;
+      }
+      if (status === 'granted') {
+        const current = await ExpoLocation.getCurrentPositionAsync({
+          accuracy: ExpoLocation.Accuracy.Balanced,
+        });
+        if (current?.coords) {
+          const c = { latitude: current.coords.latitude, longitude: current.coords.longitude };
+          setUserNavCoords(c);
+          return c;
+        }
+      }
+    } catch (_) {}
+    const cellLat = cell.meetingLatitude || geocodedCellCoords?.latitude;
+    const cellLng = cell.meetingLongitude || geocodedCellCoords?.longitude;
+    if (typeof cellLat === 'number' && typeof cellLng === 'number') {
+      return { latitude: cellLat, longitude: cellLng };
+    }
+    return null;
+  };
+
+  // Turn-by-Turn road directions loader for active in-app trip leg
+  const loadRoadLegForNavigation = async (
+    stopsList: VisitRoutePoint[],
+    fromIdx: number,
+    originOverride?: { latitude: number; longitude: number } | null
+  ) => {
+    if (!stopsList || stopsList.length === 0 || fromIdx >= stopsList.length) return;
+    setNavLoading(true);
+    try {
+      const origin = originOverride || userNavCoords || (await resolveOriginCoords());
+      const activeStop = stopsList[fromIdx];
+      const waypoints: Array<{ latitude: number; longitude: number; label?: string }> = [];
+      if (origin) {
+        waypoints.push({ latitude: origin.latitude, longitude: origin.longitude, label: 'Your Location' });
+      }
+      stopsList.slice(fromIdx).forEach((s) => {
+        waypoints.push({ latitude: s.latitude, longitude: s.longitude, label: s.memberName });
       });
+
+      const res = await MemberLocationService.fetchRoadRouteDirections({
+        waypoints,
+        travelMode,
+      });
+      setRoadRoute(res);
+
+      if (mapRef.current) {
+        const legPts = origin
+          ? [origin, { latitude: activeStop.latitude, longitude: activeStop.longitude }]
+          : [{ latitude: activeStop.latitude, longitude: activeStop.longitude }];
+        setTimeout(() => {
+          if (!mapRef.current) return;
+          if (legPts.length >= 2) {
+            mapRef.current.fitToCoordinates(legPts, {
+              edgePadding: { top: 155, right: 55, bottom: 230, left: 55 },
+              animated: true,
+            });
+          } else {
+            mapRef.current.animateToRegion(
+              {
+                latitude: activeStop.latitude,
+                longitude: activeStop.longitude,
+                latitudeDelta: 0.012,
+                longitudeDelta: 0.012,
+              },
+              450
+            );
+          }
+        }, 120);
+      }
+    } finally {
+      setNavLoading(false);
+    }
+  };
+
+  // Launch In-App Turn-by-Turn Navigation (User stays inside Rhema!)
+  const startInAppNavigation = async (stopsToNavigate: VisitRoutePoint[]) => {
+    if (!stopsToNavigate || stopsToNavigate.length === 0) return;
+    setViewMode('map');
+    setSelectedMember(null);
+    setNavStops(stopsToNavigate);
+    setNavStopIndex(0);
+    setNavActive(true);
+
+    const origin = await resolveOriginCoords();
+    await loadRoadLegForNavigation(stopsToNavigate, 0, origin);
+
+    // Live GPS watcher
+    try {
+      if (navLocationSubRef.current) {
+        navLocationSubRef.current.remove();
+      }
+      const perm = await ExpoLocation.getForegroundPermissionsAsync();
+      if (perm.status === 'granted') {
+        navLocationSubRef.current = await ExpoLocation.watchPositionAsync(
+          {
+            accuracy: ExpoLocation.Accuracy.High,
+            timeInterval: 3500,
+            distanceInterval: 10,
+          },
+          (loc) => {
+            if (loc?.coords) {
+              setUserNavCoords({
+                latitude: loc.coords.latitude,
+                longitude: loc.coords.longitude,
+              });
+            }
+          }
+        );
+      }
+    } catch (_) {}
+  };
+
+  const stopInAppNavigation = () => {
+    setNavActive(false);
+    setNavStops([]);
+    setNavStopIndex(0);
+    setRoadRoute(null);
+    if (navLocationSubRef.current) {
+      navLocationSubRef.current.remove();
+      navLocationSubRef.current = null;
+    }
+  };
+
+  const handleAdvanceNavStop = async (delta: -1 | 1) => {
+    const nextIdx = navStopIndex + delta;
+    if (nextIdx >= navStops.length) {
+      stopInAppNavigation();
+      Alert.alert(
+        'Visit Route Completed',
+        `Completed all ${navStops.length} pastoral home visits in this route.`
+      );
+      return;
+    }
+    if (nextIdx < 0) return;
+    setNavStopIndex(nextIdx);
+    await loadRoadLegForNavigation(navStops, nextIdx);
+  };
+
+  const handleRecenterNavCamera = () => {
+    if (!mapRef.current) return;
+    const activeStop = navStops[navStopIndex];
+    if (!activeStop) return;
+    if (userNavCoords) {
+      mapRef.current.fitToCoordinates(
+        [userNavCoords, { latitude: activeStop.latitude, longitude: activeStop.longitude }],
+        {
+          edgePadding: { top: 155, right: 55, bottom: 230, left: 55 },
+          animated: true,
+        }
+      );
+    } else {
+      mapRef.current.animateToRegion(
+        {
+          latitude: activeStop.latitude,
+          longitude: activeStop.longitude,
+          latitudeDelta: 0.012,
+          longitudeDelta: 0.012,
+        },
+        400
+      );
+    }
+  };
+
+  // In-App Navigation to a single member
+  const handleNavigateToMember = (m: CareCellMembership) => {
+    if (typeof m.latitude === 'number' && typeof m.longitude === 'number') {
+      const singleStop: VisitRoutePoint = {
+        memberId: m.memberId,
+        memberName: m.memberName,
+        memberPhone: m.memberPhone,
+        address: (m as EnrichedCareCellMembership).resolvedAddress || m.address || m.locality || '',
+        locality: m.locality || m.city || cell?.location || '',
+        latitude: m.latitude,
+        longitude: m.longitude,
+        order: 1,
+        accuracy: (m as EnrichedCareCellMembership).isVerifiedPin ? 'verified_home' : 'village_approximate',
+        distanceFromPreviousKm: 0,
+        isApproximateDistance: !(m as EnrichedCareCellMembership).isVerifiedPin,
+        consent: Boolean((m as EnrichedCareCellMembership).isVerifiedPin),
+      };
+      startInAppNavigation([singleStop]);
     } else if (m.address || m.locality) {
-      const query = encodeURIComponent(`${m.address || ''}, ${m.locality || ''}, Andhra Pradesh`);
+      const fallbackCity = cell?.location || 'India';
+      const query = encodeURIComponent(`${m.address || ''}, ${m.locality || fallbackCity}`);
       const url = `https://www.google.com/maps/search/?api=1&query=${query}`;
       Linking.openURL(url).catch(() => {
         Alert.alert('Navigation Error', 'Could not open Google Maps.');
@@ -344,7 +634,7 @@ export default function CareCellMapModal({
     }
   };
 
-  // Phone call trigger
+  // Phone Call
   const handleCall = (phone?: string) => {
     if (!phone) {
       Alert.alert('No Phone', 'No contact number available.');
@@ -356,14 +646,14 @@ export default function CareCellMapModal({
     });
   };
 
-  // WhatsApp trigger
+  // WhatsApp
   const handleWhatsApp = (phone?: string, name?: string) => {
     if (!phone) {
       Alert.alert('No Phone', 'No phone number available for WhatsApp.');
       return;
     }
     const clean = phone.replace(/[^0-9]/g, '');
-    const text = encodeURIComponent(`Praise the Lord ${name || 'brother/sister'}! Grace and peace to you from Rhema Care Cell.`);
+    const text = encodeURIComponent(`Praise the Lord ${name || 'Brother/Sister'}! Grace and peace to you from our Rhema Care Cell.`);
     Linking.openURL(`whatsapp://send?phone=${clean}&text=${text}`).catch(() => {
       Alert.alert('WhatsApp Required', 'WhatsApp is not installed on this device.');
     });
@@ -371,6 +661,7 @@ export default function CareCellMapModal({
 
   // Toggle member into planned route
   const handleToggleRouteMember = (memberId: string) => {
+    setRouteOptimizedFlag(false);
     setPlannedRouteMemberIds((prev) => {
       if (prev.includes(memberId)) {
         return prev.filter((id) => id !== memberId);
@@ -380,97 +671,189 @@ export default function CareCellMapModal({
     });
   };
 
-  // Open multi-stop route in Google Maps
-  const handleOpenMultiStopRoute = () => {
-    if (plannedRouteMemberIds.length === 0) return;
+  // Ordered stops derived from plannedRouteMemberIds + enriched coordinates
+  const plannedStops = useMemo<VisitRoutePoint[]>(() => {
+    if (plannedRouteMemberIds.length === 0) return [];
+    const stops: VisitRoutePoint[] = [];
+    let prevLat: number | undefined;
+    let prevLng: number | undefined;
 
-    const routeMembers = plannedRouteMemberIds
-      .map((id) => enrichedMembers.find((m) => m.memberId === id))
-      .filter((m): m is EnrichedCareCellMembership => !!m && typeof m.latitude === 'number' && typeof m.longitude === 'number');
+    plannedRouteMemberIds.forEach((id) => {
+      const m = enrichedMembers.find((em) => em.memberId === id);
+      if (!m || typeof m.latitude !== 'number' || typeof m.longitude !== 'number') return;
 
-    if (routeMembers.length === 0) {
-      Alert.alert('Missing Coordinates', 'The selected members for the visit route do not have GPS coordinates.');
-      return;
-    }
+      let dist = 0;
+      if (typeof prevLat === 'number' && typeof prevLng === 'number') {
+        dist = haversineDistanceKm(
+          { latitude: prevLat, longitude: prevLng },
+          { latitude: m.latitude, longitude: m.longitude }
+        );
+      }
 
-    if (routeMembers.length === 1) {
-      handleNavigateToMember(routeMembers[0]);
-      return;
-    }
-
-    // Build Google Maps Multi-Stop URL
-    const destination = `${routeMembers[routeMembers.length - 1].latitude},${routeMembers[routeMembers.length - 1].longitude}`;
-    const midWaypoints = routeMembers
-      .slice(0, routeMembers.length - 1)
-      .map((m) => `${m.latitude},${m.longitude}`)
-      .join('|');
-
-    const routeUrl = `https://www.google.com/maps/dir/?api=1&destination=${destination}&waypoints=${midWaypoints}&travelmode=driving`;
-
-    Linking.openURL(routeUrl).catch(() => {
-      Alert.alert('Route Error', 'Unable to open Google Maps route navigation.');
+      const meta = visitMemberMeta?.[m.memberId];
+      stops.push({
+        memberId: m.memberId,
+        memberName: m.memberName,
+        memberPhone: m.memberPhone,
+        address: m.resolvedAddress || m.address || m.locality || '',
+        locality: m.locality || cell?.location || '',
+        latitude: m.latitude,
+        longitude: m.longitude,
+        order: stops.length + 1,
+        accuracy: m.isVerifiedPin ? 'verified_home' : 'village_approximate',
+        distanceFromPreviousKm: dist,
+        isApproximateDistance: !m.isVerifiedPin,
+        consent: Boolean(m.isVerifiedPin),
+        preferredTime: meta?.preferredTime,
+        responseStatus: meta?.response,
+      });
+      prevLat = m.latitude;
+      prevLng = m.longitude;
     });
+
+    return stops;
+  }, [plannedRouteMemberIds, enrichedMembers, cell?.location, visitMemberMeta]);
+
+  const plannedTotalKm = useMemo(
+    () => MemberLocationService.computeRouteDistanceKm(plannedStops),
+    [plannedStops]
+  );
+
+  // Route optimization helper: Nearest Neighbor TSP
+  const handleOptimizeRoute = () => {
+    const candidateIds =
+      plannedRouteMemberIds.length > 0
+        ? [...plannedRouteMemberIds]
+        : filteredMembers
+            .filter((m) => typeof m.latitude === 'number' && typeof m.longitude === 'number')
+            .map((m) => m.memberId);
+
+    if (candidateIds.length < 2) {
+      Alert.alert('Route Planning', 'Select at least 2 members with coordinates to optimize visit route.');
+      return;
+    }
+
+    const cellLat = cell.meetingLatitude || geocodedCellCoords?.latitude || DEFAULT_KURNOOL_LAT;
+    const cellLng = cell.meetingLongitude || geocodedCellCoords?.longitude || DEFAULT_KURNOOL_LNG;
+
+    const remaining = [...candidateIds];
+    const optimized: string[] = [];
+    let currentPos = { latitude: cellLat, longitude: cellLng };
+
+    while (remaining.length > 0) {
+      let nearestIdx = 0;
+      let nearestDist = Infinity;
+      for (let i = 0; i < remaining.length; i++) {
+        const mem = enrichedMembers.find((m) => m.memberId === remaining[i]);
+        if (mem && typeof mem.latitude === 'number' && typeof mem.longitude === 'number') {
+          const d = haversineDistanceKm(currentPos, { latitude: mem.latitude, longitude: mem.longitude });
+          if (d < nearestDist) {
+            nearestDist = d;
+            nearestIdx = i;
+          }
+        }
+      }
+      const chosenId = remaining.splice(nearestIdx, 1)[0];
+      optimized.push(chosenId);
+      const chosenMem = enrichedMembers.find((m) => m.memberId === chosenId);
+      if (chosenMem && typeof chosenMem.latitude === 'number' && typeof chosenMem.longitude === 'number') {
+        currentPos = { latitude: chosenMem.latitude, longitude: chosenMem.longitude };
+      }
+    }
+
+    setPlannedRouteMemberIds(optimized);
+    setRouteOptimizedFlag(true);
+  };
+
+  // Launch In-App Multi-Stop Navigation
+  const handleOpenMultiStopRoute = async () => {
+    if (plannedRouteMemberIds.length === 0) return;
+    if (plannedStops.length > 0) {
+      await startInAppNavigation(plannedStops);
+      return;
+    }
+    const firstFallback = plannedRouteMemberIds
+      .map((id) => enrichedMembers.find((m) => m.memberId === id))
+      .find(Boolean);
+    if (firstFallback) {
+      handleNavigateToMember(firstFallback);
+      return;
+    }
+    Alert.alert('Missing Coordinates', 'The selected members for the visit route do not have GPS coordinates.');
+  };
+
+  // Optional external Google Maps launch from inside In-App Navigation HUD
+  const handleLaunchExternalGoogleMaps = async () => {
+    const remainingStops = navStops.slice(navStopIndex);
+    if (remainingStops.length === 0) return;
+    try {
+      await MemberLocationService.openGoogleMapsMultiStopRoute({
+        stops: remainingStops,
+        originLat: userNavCoords?.latitude,
+        originLng: userNavCoords?.longitude,
+        travelMode,
+      });
+    } catch (_) {
+      Alert.alert('Maps Error', 'Unable to open Google Maps.');
+    }
+  };
+
+  const handleConfirmAndSaveRoute = () => {
+    const handler = onConfirmRoute || onSaveVisitRoute;
+    if (!handler) return;
+    if (plannedStops.length === 0) {
+      Alert.alert(
+        'No Route Stops',
+        'Select at least one member with a location or tap Optimize to generate a route.'
+      );
+      return;
+    }
+    handler(plannedStops);
+    Alert.alert('Route Saved', 'Pastoral visit route stops saved successfully.');
+    if (onConfirmRoute) onClose();
   };
 
   return (
-    <Modal visible={visible} animationType="slide" statusBarTranslucent={true} onRequestClose={onClose}>
-      <StatusBar
-        barStyle={isDark ? 'light-content' : 'dark-content'}
-        translucent
-        backgroundColor="transparent"
-      />
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={[styles.container, { backgroundColor: isDark ? '#000000' : '#FAF7F2' }]}>
-        {/* Top Header Bar with Safe Top Inset */}
-        <View
-          style={[
-            styles.header,
-            {
-              paddingTop: topHeaderInset,
-              backgroundColor: isDark ? '#000000' : '#FFFFFF',
-              borderBottomColor: isDark ? '#27272A' : '#E2E8F0',
-            },
-          ]}
-        >
-          <TouchableOpacity
-            style={[
-              styles.circularBackBtn,
-              {
-                backgroundColor: isDark ? '#18181B' : '#F8FAFC',
-                borderColor: isDark ? '#27272A' : '#E2E8F0',
-              },
-            ]}
-            onPress={onClose}
-            activeOpacity={0.8}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
+        {/* Top Header Bar */}
+        <View style={[styles.header, { paddingTop: topHeaderInset, backgroundColor: isDark ? '#121212' : '#FFFFFF', borderBottomColor: borderColor }]}>
+          <TouchableOpacity style={styles.circularBackBtn} onPress={onClose} activeOpacity={0.8}>
             <ArrowLeft size={20} color={primaryText} strokeWidth={2.2} />
           </TouchableOpacity>
-          <View style={{ flex: 1, paddingRight: 8 }}>
+          <View style={{ flex: 1 }}>
             <Text style={[styles.headerTitle, { color: primaryText }]} numberOfLines={1}>
-              {visitTitle || formatCareCellDisplayName(cell.name, cell.cellCode)}
+              {formatCareCellDisplayName(cell.name, cell.cellCode)}
             </Text>
             <Text style={[styles.headerSub, { color: secondaryText }]} numberOfLines={1}>
-              {formatCareCellCode(cell.cellCode)} · {cell.location || 'Local Area'} · {members.length} Members
+              {headerSubtitleOverride ||
+                `${formatCareCellCode(cell.cellCode)} · ${cell.location || 'Care Cell'} · ${members.length} Members`}
             </Text>
           </View>
-          <View style={[styles.viewModeToggleRow, { backgroundColor: isDark ? '#18181B' : '#F1F5F9' }]}>
+          <View style={styles.viewModeToggleRow}>
             <TouchableOpacity
-              style={[styles.modeToggleBtn, viewMode === 'map' && { backgroundColor: primaryBtnBg }]}
+              style={[
+                styles.modeToggleBtn,
+                viewMode === 'map' && { backgroundColor: isDark ? '#2563EB' : '#1E3A8A' },
+              ]}
               onPress={() => setViewMode('map')}
             >
-              <MapIcon size={14} color={viewMode === 'map' ? primaryBtnText : secondaryText} />
+              <MapIcon size={14} color={viewMode === 'map' ? '#FFFFFF' : secondaryText} />
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.modeToggleBtn, viewMode === 'list' && { backgroundColor: primaryBtnBg }]}
+              style={[
+                styles.modeToggleBtn,
+                viewMode === 'list' && { backgroundColor: isDark ? '#2563EB' : '#1E3A8A' },
+              ]}
               onPress={() => setViewMode('list')}
             >
-              <List size={14} color={viewMode === 'list' ? primaryBtnText : secondaryText} />
+              <List size={14} color={viewMode === 'list' ? '#FFFFFF' : secondaryText} />
             </TouchableOpacity>
           </View>
         </View>
 
         {/* Filter Pills Bar */}
-        <View style={[styles.filterBar, { backgroundColor: cardSurface, borderBottomColor: borderColor }]}>
+        <View style={[styles.filterBar, { backgroundColor: isDark ? '#121212' : '#FFFFFF', borderBottomColor: borderColor }]}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
             <TouchableOpacity
               style={[
@@ -495,59 +878,6 @@ export default function CareCellMapModal({
               </Text>
             </TouchableOpacity>
 
-            {visitMemberMeta ? (
-              <>
-                <TouchableOpacity
-                  style={[
-                    styles.filterPill,
-                    visitResponseFilter === 'ACCEPTED_ONLY' && {
-                      backgroundColor: '#059669',
-                      borderColor: '#059669',
-                    },
-                  ]}
-                  onPress={() =>
-                    setVisitResponseFilter((prev) => (prev === 'ACCEPTED_ONLY' ? 'ALL' : 'ACCEPTED_ONLY'))
-                  }
-                >
-                  <CheckCircle2
-                    size={12}
-                    color={visitResponseFilter === 'ACCEPTED_ONLY' ? '#FFFFFF' : '#059669'}
-                    style={{ marginRight: 4 }}
-                  />
-                  <Text
-                    style={[
-                      styles.filterPillTxt,
-                      visitResponseFilter === 'ACCEPTED_ONLY' && { color: '#FFFFFF', fontWeight: '700' },
-                    ]}
-                  >
-                    Accepted Only
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.filterPill,
-                    visitResponseFilter === 'NON_DECLINED' && {
-                      backgroundColor: isDark ? '#2563EB' : '#1E3A8A',
-                      borderColor: isDark ? '#3B82F6' : '#1E3A8A',
-                    },
-                  ]}
-                  onPress={() =>
-                    setVisitResponseFilter((prev) => (prev === 'NON_DECLINED' ? 'ALL' : 'NON_DECLINED'))
-                  }
-                >
-                  <Text
-                    style={[
-                      styles.filterPillTxt,
-                      visitResponseFilter === 'NON_DECLINED' && { color: '#FFFFFF', fontWeight: '700' },
-                    ]}
-                  >
-                    Non-Declined
-                  </Text>
-                </TouchableOpacity>
-              </>
-            ) : null}
-
             {inactiveMembers.length > 0 && (
               <TouchableOpacity
                 style={[
@@ -556,7 +886,11 @@ export default function CareCellMapModal({
                 ]}
                 onPress={() => setFilterNeedsVisitOnly(!filterNeedsVisitOnly)}
               >
-                <AlertTriangle size={12} color={filterNeedsVisitOnly ? '#FFFFFF' : '#DC2626'} style={{ marginRight: 4 }} />
+                <AlertTriangle
+                  size={12}
+                  color={filterNeedsVisitOnly ? '#FFFFFF' : '#DC2626'}
+                  style={{ marginRight: 4 }}
+                />
                 <Text
                   style={[
                     styles.filterPillTxt,
@@ -582,11 +916,13 @@ export default function CareCellMapModal({
                   ]}
                   onPress={() => {
                     setFilterNeedsVisitOnly(false);
-                    setSelectedLocality(loc);
+                    setSelectedLocality(isSelected ? 'ALL' : loc);
                   }}
                 >
                   <MapPin size={11} color={isSelected ? '#FFFFFF' : secondaryText} style={{ marginRight: 4 }} />
-                  <Text style={[styles.filterPillTxt, isSelected && { color: '#FFFFFF', fontWeight: '700' }]}>{loc}</Text>
+                  <Text style={[styles.filterPillTxt, isSelected && { color: '#FFFFFF', fontWeight: '700' }]}>
+                    {loc}
+                  </Text>
                 </TouchableOpacity>
               );
             })}
@@ -600,80 +936,63 @@ export default function CareCellMapModal({
               ref={mapRef}
               provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
               style={StyleSheet.absoluteFillObject}
-              initialRegion={initialRegion}
+              initialRegion={centerCoord}
               showsUserLocation={true}
               showsMyLocationButton={true}
               showsCompass={true}
             >
-              {/* Care Cell Meeting Marker: Amber Center Lollipop */}
-              {resolvedCenter.latitude && resolvedCenter.longitude ? (
+              {/* Care Cell Meeting Marker: Amber Church Bubble */}
+              {(cell.meetingLatitude && cell.meetingLongitude) || geocodedCellCoords ? (
                 <Marker
-                  coordinate={resolvedCenter}
-                  anchor={{ x: 0.5, y: 1.0 }}
+                  coordinate={{
+                    latitude: cell.meetingLatitude || geocodedCellCoords!.latitude,
+                    longitude: cell.meetingLongitude || geocodedCellCoords!.longitude,
+                  }}
                   title={formatCareCellDisplayName(cell.name, cell.cellCode)}
                   description={`Care Cell Center: ${cell.meetingLocation || cell.location || 'Local'}`}
                   pinColor="#D97706"
                 >
-                  <View collapsable={false} style={styles.photoPinWrapper}>
-                    <View
-                      collapsable={false}
-                      style={[
-                        styles.photoPinHead,
-                        {
-                          borderColor: '#D97706',
-                          borderWidth: 2.5,
-                          backgroundColor: '#D97706',
-                        },
-                      ]}
-                    >
-                      <Users size={18} color="#FFFFFF" />
-                    </View>
-                    <View
-                      collapsable={false}
-                      style={[
-                        styles.photoPinTriangle,
-                        { borderTopColor: '#D97706' },
-                      ]}
-                    />
+                  <View collapsable={false} style={styles.churchMarkerBubble}>
+                    <Users size={16} color="#FFFFFF" />
                   </View>
                 </Marker>
               ) : null}
 
-              {/* Member Residence Lollipop Markers with Profile Pictures */}
-              {membersToRenderOnMap.map((m) => {
+              {/* Member Residence Lollipop Profile Photo Markers */}
+              {membersWithCoords.map((m) => {
                 const isInactive = inactiveMemberIdSet.has(m.memberId);
                 const isSelected = selectedMember?.memberId === m.memberId;
                 const inRouteIndex = plannedRouteMemberIds.indexOf(m.memberId);
-
-                // Rhema Status Accent Color: Amber for Selected, Green for Route, Red for Inactive, Deep Blue for Regular
+                const markerKey = m.id || m.memberId;
+                const photoUri = typeof m.memberPhoto === 'string' ? m.memberPhoto.trim() : '';
+                const hasPhoto = photoUri.length > 0;
                 const accentColor = isSelected
-                  ? '#F59E0B'
+                  ? '#D97706'
                   : inRouteIndex >= 0
                     ? '#059669'
                     : isInactive
                       ? '#DC2626'
                       : '#1E3A8A';
 
-                const photoUri = typeof m.memberPhoto === 'string' ? m.memberPhoto.trim() : '';
-                const hasPhoto = photoUri.length > 0;
-
                 return (
                   <Marker
-                    key={m.id || m.memberId}
+                    key={markerKey}
                     coordinate={{
-                      latitude: m.plotLat,
-                      longitude: m.plotLng,
+                      latitude: m.latitude!,
+                      longitude: m.longitude!,
                     }}
                     anchor={{ x: 0.5, y: 1.0 }}
-                    onPress={() => setSelectedMember(m)}
                     tracksViewChanges={Boolean(
-                      (hasPhoto && !loadedMarkerPhotos[m.memberId]) ||
-                      isSelected ||
-                      refreshMarkersCount < 2
+                      (hasPhoto && !loadedMarkerPhotos[markerKey]) ||
+                        isSelected ||
+                        markersRefreshActive
                     )}
+                    onPress={() => setSelectedMember(m)}
                   >
-                    <View collapsable={false} style={[styles.photoPinWrapper, isSelected && styles.photoPinWrapperSelected]}>
-                      {/* Lollipop Head: Circular Avatar Container */}
+                    <View
+                      collapsable={false}
+                      style={[styles.photoPinWrapper, isSelected && styles.photoPinWrapperSelected]}
+                    >
                       <View
                         collapsable={false}
                         style={[
@@ -691,138 +1010,316 @@ export default function CareCellMapModal({
                             resizeMode="cover"
                             fadeDuration={0}
                             onLoad={() => {
-                              setLoadedMarkerPhotos((prev) => ({ ...prev, [m.memberId]: true }));
+                              setTimeout(() => {
+                                setLoadedMarkerPhotos((prev) =>
+                                  prev[markerKey] ? prev : { ...prev, [markerKey]: true }
+                                );
+                              }, 300);
+                            }}
+                            onError={() => {
+                              setLoadedMarkerPhotos((prev) =>
+                                prev[markerKey] ? prev : { ...prev, [markerKey]: true }
+                              );
                             }}
                           />
                         ) : (
-                          <View collapsable={false} style={[styles.photoPinFallback, { backgroundColor: accentColor }]}>
-                            <Text style={styles.markerInitialsTxt}>
-                              {(m.memberName || 'M').slice(0, 2).toUpperCase()}
-                            </Text>
-                          </View>
+                          <Text style={styles.markerInitialsTxt}>
+                            {(m.memberName || 'M').slice(0, 2).toUpperCase()}
+                          </Text>
                         )}
-
-                        {/* Route Order Badge or Alert Icon */}
-                        {inRouteIndex >= 0 ? (
-                          <View collapsable={false} style={styles.routeOrderCornerBadge}>
-                            <Text style={styles.routeOrderCornerTxt}>{inRouteIndex + 1}</Text>
-                          </View>
-                        ) : isInactive ? (
-                          <View collapsable={false} style={styles.routeOrderCornerBadgeAlert}>
-                            <AlertTriangle size={8} color="#FFFFFF" strokeWidth={3} />
-                          </View>
-                        ) : null}
                       </View>
 
-                      {/* Lollipop Pointer Triangle */}
-                      <View
-                        collapsable={false}
-                        style={[
-                          styles.photoPinTriangle,
-                          { borderTopColor: accentColor },
-                        ]}
-                      />
+                      {/* Route Order Badge */}
+                      {inRouteIndex >= 0 ? (
+                        <View style={styles.routeOrderCornerBadge}>
+                          <Text style={styles.routeOrderCornerTxt}>{inRouteIndex + 1}</Text>
+                        </View>
+                      ) : null}
+
+                      {/* Lollipop Needle Pointer SVG */}
+                      <Svg
+                        width={PIN_POINTER_W}
+                        height={PIN_POINTER_H}
+                        viewBox={`0 0 ${PIN_POINTER_W} ${PIN_POINTER_H}`}
+                        style={styles.photoPinPointerSvg}
+                      >
+                        <Path
+                          d={`M0 0 L${PIN_POINTER_W / 2} ${PIN_POINTER_H} L${PIN_POINTER_W} 0 Z`}
+                          fill={accentColor}
+                        />
+                      </Svg>
                     </View>
                   </Marker>
                 );
               })}
 
               {/* Planned Route Line connecting consecutive stops */}
-              {plannedRouteMemberIds.length >= 2 && (
+              {!navActive && plannedStops.length >= 2 && (
                 <Polyline
-                  coordinates={plannedRouteMemberIds
-                    .map((id) => membersToRenderOnMap.find((mem) => mem.memberId === id))
-                    .filter((m): m is any => !!m && typeof m.plotLat === 'number' && typeof m.plotLng === 'number')
-                    .map((m) => ({ latitude: m.plotLat, longitude: m.plotLng }))}
+                  coordinates={plannedStops.map((s) => ({
+                    latitude: s.latitude,
+                    longitude: s.longitude,
+                  }))}
                   strokeColor="#059669"
                   strokeWidth={3.5}
                   lineDashPattern={[8, 5]}
                 />
               )}
+
+              {/* Active In-App Road Navigation Route Polyline */}
+              {navActive && roadRoute && roadRoute.coordinates.length >= 2 && (
+                <>
+                  <Polyline
+                    coordinates={roadRoute.coordinates}
+                    strokeColor="#FFFFFF"
+                    strokeWidth={8}
+                  />
+                  <Polyline
+                    coordinates={roadRoute.coordinates}
+                    strokeColor="#2563EB"
+                    strokeWidth={5}
+                  />
+                </>
+              )}
             </MapView>
 
-            {/* Loading Indicator Overlay */}
-            {loadingLocations && (
-              <View style={styles.mapLoadingOverlay}>
-                <ActivityIndicator size="small" color="#2563EB" />
-                <Text style={styles.mapLoadingTxt}>Locating member residences in {cell.location || 'cell'}...</Text>
-              </View>
-            )}
+            {/* Active In-App Turn-by-Turn Navigation HUD (Top Banner + Bottom Trip Card) */}
+            {navActive && navStops[navStopIndex] ? (
+              <>
+                {(() => {
+                  const currentStop = navStops[navStopIndex];
+                  const activeLeg = roadRoute?.legs?.[0];
+                  const firstStep = activeLeg?.steps?.[0];
+                  const liveDistKm = userNavCoords
+                    ? haversineDistanceKm(userNavCoords, {
+                        latitude: currentStop.latitude,
+                        longitude: currentStop.longitude,
+                      })
+                    : undefined;
+                  const distMeters = activeLeg?.distanceMeters ?? Math.round((liveDistKm ?? 0) * 1000);
+                  const distLabel =
+                    distMeters >= 1000
+                      ? `${(distMeters / 1000).toFixed(1)} km`
+                      : `${Math.max(10, distMeters)} m`;
+                  const etaMins = activeLeg?.durationSeconds
+                    ? Math.max(1, Math.round(activeLeg.durationSeconds / 60))
+                    : Math.max(1, Math.round(((liveDistKm ?? 0.5) / (travelMode === 'walking' ? 4.8 : 28)) * 60));
 
-            {/* Floating Top Route Summary Bar */}
-            {plannedRouteMemberIds.length > 0 && (
+                  return (
+                    <>
+                      {/* Top Turn-by-Turn Maneuver HUD */}
+                      <View style={[styles.navTopHud, { top: 12 }]}>
+                        <View style={styles.navTopHudMain}>
+                          <View style={styles.navManeuverIconBox}>
+                            {navLoading ? (
+                              <ActivityIndicator size="small" color="#FFFFFF" />
+                            ) : (
+                              <Navigation size={18} color="#FFFFFF" />
+                            )}
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.navInstructionTxt} numberOfLines={2}>
+                              {firstStep?.instruction || `Navigate toward ${currentStop.memberName}`}
+                            </Text>
+                            <Text style={styles.navMetricsSub} numberOfLines={1}>
+                              {distLabel} · ~{etaMins} min ({travelMode === 'walking' ? 'Walking' : 'Driving'})
+                              {roadRoute?.isRoadRoute === false ? ' · Direct Route' : ''}
+                            </Text>
+                          </View>
+                          <TouchableOpacity
+                            style={styles.navHudCloseBtn}
+                            onPress={stopInAppNavigation}
+                            activeOpacity={0.8}
+                          >
+                            <X size={16} color="#FFFFFF" />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+
+                      {/* Bottom In-App Trip Stop Card */}
+                      <View style={[styles.navBottomCard, { backgroundColor: cardSurface, borderColor }]}>
+                        <View style={styles.navBottomHeader}>
+                          <View style={styles.navStopNumberPill}>
+                            <Text style={styles.navStopNumberTxt}>
+                              Stop {navStopIndex + 1} of {navStops.length}
+                            </Text>
+                          </View>
+                          <TouchableOpacity
+                            style={styles.navExternalGmapsBtn}
+                            onPress={handleLaunchExternalGoogleMaps}
+                            activeOpacity={0.8}
+                          >
+                            <ExternalLink size={12} color="#2563EB" style={{ marginRight: 4 }} />
+                            <Text style={styles.navExternalGmapsTxt}>Google Maps</Text>
+                          </TouchableOpacity>
+                        </View>
+
+                        <Text style={[styles.navStopMemberName, { color: primaryText }]} numberOfLines={1}>
+                          {currentStop.memberName}
+                        </Text>
+                        <Text style={[styles.navStopAddress, { color: secondaryText }]} numberOfLines={2}>
+                          {currentStop.address || currentStop.locality || 'Care Cell Member Residence'}
+                        </Text>
+
+                        <View style={styles.navControlsRow}>
+                          <TouchableOpacity
+                            style={[styles.navIconCircleBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
+                            onPress={handleRecenterNavCamera}
+                            activeOpacity={0.8}
+                          >
+                            <Crosshair size={16} color={primaryText} />
+                          </TouchableOpacity>
+
+                          {currentStop.memberPhone ? (
+                            <>
+                              <TouchableOpacity
+                                style={[styles.navIconCircleBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
+                                onPress={() => handleCall(currentStop.memberPhone)}
+                                activeOpacity={0.8}
+                              >
+                                <Phone size={15} color={primaryText} />
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[styles.navIconCircleBtn, { backgroundColor: '#25D366', borderColor: '#25D366' }]}
+                                onPress={() => handleWhatsApp(currentStop.memberPhone, currentStop.memberName)}
+                                activeOpacity={0.8}
+                              >
+                                <MessageCircle size={15} color="#FFFFFF" />
+                              </TouchableOpacity>
+                            </>
+                          ) : null}
+
+                          {navStopIndex > 0 && (
+                            <TouchableOpacity
+                              style={[styles.navPrevBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
+                              onPress={() => handleAdvanceNavStop(-1)}
+                              activeOpacity={0.8}
+                            >
+                              <ChevronLeft size={15} color={secondaryBtnText} />
+                              <Text style={[styles.navPrevBtnTxt, { color: secondaryBtnText }]}>Prev</Text>
+                            </TouchableOpacity>
+                          )}
+
+                          <TouchableOpacity
+                            style={[styles.navNextPrimaryBtn, { backgroundColor: isDark ? '#2563EB' : '#1E3A8A' }]}
+                            onPress={() => handleAdvanceNavStop(1)}
+                            activeOpacity={0.85}
+                          >
+                            <Text style={styles.navNextPrimaryTxt}>
+                              {navStopIndex + 1 < navStops.length ? 'Arrived · Next Stop' : 'Complete Route'}
+                            </Text>
+                            {navStopIndex + 1 < navStops.length ? (
+                              <ChevronRight size={15} color="#FFFFFF" style={{ marginLeft: 3 }} />
+                            ) : (
+                              <Check size={15} color="#FFFFFF" strokeWidth={2.5} style={{ marginLeft: 4 }} />
+                            )}
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </>
+                  );
+                })()}
+              </>
+            ) : plannedRouteMemberIds.length > 0 ? (
+              /* Floating Top Route Summary Bar */
               <View style={[styles.floatingRouteBar, { backgroundColor: isDark ? '#18181B' : '#1E3A8A' }]}>
-                <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={styles.floatingRouteTitle}>
-                    {plannedRouteMemberIds.length} House Visits Planned ({totalRouteDistanceKm} km)
-                  </Text>
-                  <Text style={styles.floatingRouteSub} numberOfLines={1}>
-                    Sequential pastoral route from {formatCareCellDisplayName(cell.name, cell.cellCode)}
-                  </Text>
+                <View style={styles.floatingRouteHeaderRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.floatingRouteTitle}>
+                      {plannedRouteMemberIds.length} House Visit{plannedRouteMemberIds.length === 1 ? '' : 's'} Planned
+                    </Text>
+                    <Text style={styles.floatingRouteSub} numberOfLines={1}>
+                      {plannedStops.length > 0
+                        ? `${plannedStops.length} mapped · ~${plannedTotalKm} km${routeOptimizedFlag ? ' · Optimized' : ''}`
+                        : 'Resolving coordinates...'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.travelModeChip}
+                    onPress={() => setTravelMode((m) => (m === 'driving' ? 'walking' : 'driving'))}
+                    activeOpacity={0.8}
+                  >
+                    {travelMode === 'driving' ? (
+                      <Car size={12} color="#E2E8F0" />
+                    ) : (
+                      <Footprints size={12} color="#E2E8F0" />
+                    )}
+                    <Text style={styles.travelModeChipTxt}>
+                      {travelMode === 'driving' ? 'Drive' : 'Walk'}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  {onSaveVisitRoute && (
+
+                <View style={styles.floatingRouteActionsRow}>
+                  {plannedStops.length >= 2 && (
                     <TouchableOpacity
-                      style={[styles.floatingNavigateRouteBtn, { backgroundColor: isDark ? '#2563EB' : '#1E3A8A', borderWidth: 1, borderColor: '#3B82F6' }]}
-                      onPress={() => {
-                        const stops = plannedRouteMemberIds
-                          .map((id, idx) => {
-                            const m = enrichedMembers.find((mem) => mem.memberId === id);
-                            if (!m) return null;
-                            return {
-                              memberId: m.memberId,
-                              memberName: m.memberName,
-                              locality: m.locality,
-                              address: m.address,
-                              latitude: m.latitude,
-                              longitude: m.longitude,
-                              order: idx + 1,
-                            };
-                          })
-                          .filter(Boolean);
-                        onSaveVisitRoute(stops);
-                        Alert.alert('Route Saved', 'Pastoral visit route stops saved successfully.');
-                      }}
+                      style={styles.floatingOptimizeBtn}
+                      onPress={handleOptimizeRoute}
                       activeOpacity={0.85}
                     >
-                      <Save size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
-                      <Text style={styles.floatingNavigateRouteBtnTxt}>Save</Text>
+                      <Sparkles size={13} color="#1E3A8A" style={{ marginRight: 5 }} />
+                      <Text style={styles.floatingOptimizeBtnTxt}>Optimize</Text>
                     </TouchableOpacity>
                   )}
+
                   <TouchableOpacity
                     style={styles.floatingNavigateRouteBtn}
                     onPress={handleOpenMultiStopRoute}
                     activeOpacity={0.85}
                   >
-                    <Navigation size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
+                    <Navigation size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
                     <Text style={styles.floatingNavigateRouteBtnTxt}>Start Route</Text>
                   </TouchableOpacity>
+
+                  {(onConfirmRoute || onSaveVisitRoute) && (
+                    <TouchableOpacity
+                      style={styles.floatingApplyRouteBtn}
+                      onPress={handleConfirmAndSaveRoute}
+                      activeOpacity={0.85}
+                    >
+                      <Check size={13} color="#065F46" strokeWidth={2.5} style={{ marginRight: 4 }} />
+                      <Text style={styles.floatingApplyRouteBtnTxt}>Save Route</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               </View>
-            )}
+            ) : filteredMembers.length > 0 ? (
+              <View style={styles.floatingQuickOptimizeWrap}>
+                <TouchableOpacity
+                  style={[styles.floatingQuickOptimizePill, { backgroundColor: isDark ? '#2563EB' : '#1E3A8A' }]}
+                  onPress={handleOptimizeRoute}
+                  activeOpacity={0.85}
+                >
+                  <Sparkles size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                  <Text style={styles.floatingQuickOptimizeTxt}>
+                    Plan & Optimize Visit Route ({filteredMembers.length})
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
 
             {/* Selected Member Detail Callout Card */}
-            {selectedMember ? (
-              <View style={styles.selectedMemberCard}>
+            {!navActive && selectedMember ? (
+              <View style={[styles.selectedMemberCard, { backgroundColor: cardSurface, borderColor }]}>
                 <View style={styles.selectedCardHeader}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10 }}>
                     {selectedMember.memberPhoto ? (
                       <Image source={{ uri: selectedMember.memberPhoto }} style={styles.selectedMemberAvatar} />
                     ) : (
-                      <View style={styles.selectedMemberAvatarFallback}>
-                        <Text style={styles.selectedMemberAvatarInitials}>
+                      <View style={[styles.selectedMemberAvatarFallback, { backgroundColor: isDark ? '#1E3A8A' : '#EFF6FF' }]}>
+                        <Text style={[styles.selectedMemberAvatarInitials, { color: isDark ? '#93C5FD' : '#1D4ED8' }]}>
                           {(selectedMember.memberName || 'M').slice(0, 2).toUpperCase()}
                         </Text>
                       </View>
                     )}
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.selectedMemberName} numberOfLines={1}>
+                      <Text style={[styles.selectedMemberName, { color: primaryText }]} numberOfLines={1}>
                         {selectedMember.memberName}
                       </Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 3 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 2 }}>
                         {selectedMember.locality ? (
                           <View style={styles.localityTag}>
-                            <MapPin size={10} color="#1A2D5A" />
+                            <MapPin size={10} color="#1E3A8A" />
                             <Text style={styles.localityTagTxt}>{selectedMember.locality}</Text>
                           </View>
                         ) : null}
@@ -843,41 +1340,44 @@ export default function CareCellMapModal({
                     </View>
                   </View>
                   <TouchableOpacity onPress={() => setSelectedMember(null)} style={{ padding: 4 }}>
-                    <X size={18} color="#64748B" />
+                    <X size={18} color={secondaryText} />
                   </TouchableOpacity>
                 </View>
 
                 {selectedMember.address ? (
-                  <Text style={styles.selectedMemberAddress} numberOfLines={2}>
+                  <Text style={[styles.selectedMemberAddress, { color: secondaryText }]} numberOfLines={2}>
+                    {selectedMember.isVerifiedPin ? '📍 Exact Home: ' : ''}
                     {selectedMember.address}
                   </Text>
-                ) : null}
+                ) : (
+                  <Text style={[styles.selectedMemberNoAddress, { color: secondaryText }]}>
+                    No residential address on file
+                  </Text>
+                )}
 
-                {/* Quick Action Buttons */}
-                <View style={styles.selectedActionsRow}>
+                {/* Card Action Buttons: Directions, Call, WhatsApp, + Route */}
+                <View style={styles.selectedCardActionsRow}>
                   <TouchableOpacity
-                    style={[styles.actionNavigateBtn, { backgroundColor: primaryBtnBg }]}
+                    style={[styles.actionDirectionsBtn, { backgroundColor: isDark ? '#2563EB' : '#1E3A8A' }]}
                     onPress={() => handleNavigateToMember(selectedMember)}
-                    activeOpacity={0.85}
                   >
-                    <Navigation size={14} color={primaryBtnText} style={{ marginRight: 6 }} />
-                    <Text style={[styles.actionNavigateBtnTxt, { color: primaryBtnText }]}>Directions</Text>
+                    <Navigation size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
+                    <Text style={styles.actionDirectionsBtnTxt}>Directions</Text>
                   </TouchableOpacity>
 
                   {selectedMember.memberPhone ? (
                     <>
                       <TouchableOpacity
-                        style={[styles.actionCircleBtn, { backgroundColor: secondaryBtnBg, borderWidth: 1, borderColor: secondaryBtnBorder }]}
+                        style={[styles.actionCallBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
                         onPress={() => handleCall(selectedMember.memberPhone)}
                       >
-                        <Phone size={15} color={secondaryBtnText} />
+                        <Phone size={13} color={primaryText} />
                       </TouchableOpacity>
-
                       <TouchableOpacity
-                        style={[styles.actionCircleBtn, { backgroundColor: '#25D366' }]}
+                        style={[styles.actionCallBtn, { backgroundColor: '#25D366', borderColor: '#25D366' }]}
                         onPress={() => handleWhatsApp(selectedMember.memberPhone, selectedMember.memberName)}
                       >
-                        <MessageCircle size={15} color="#FFFFFF" />
+                        <MessageCircle size={13} color="#FFFFFF" />
                       </TouchableOpacity>
                     </>
                   ) : null}
@@ -885,9 +1385,7 @@ export default function CareCellMapModal({
                   {onLogFollowup && (
                     <TouchableOpacity
                       style={[styles.actionLogVisitBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
-                      onPress={() => {
-                        onLogFollowup(selectedMember);
-                      }}
+                      onPress={() => onLogFollowup(selectedMember)}
                     >
                       <Heart size={13} color={secondaryBtnText} style={{ marginRight: 4 }} />
                       <Text style={[styles.actionLogVisitBtnTxt, { color: secondaryBtnText }]}>Log Visit</Text>
@@ -922,112 +1420,166 @@ export default function CareCellMapModal({
             ) : null}
           </View>
         ) : (
-          /* List View Mode */
-          <FlatList
-            data={filteredMembers}
-            keyExtractor={(item) => item.id || item.memberId}
-            contentContainerStyle={styles.listContent}
-            renderItem={({ item }) => {
-              const isInactive = inactiveMemberIdSet.has(item.memberId);
-              const inRoute = plannedRouteMemberIds.includes(item.memberId);
+          /* List View Mode with Complete Planning Toolbar */
+          <View style={{ flex: 1, backgroundColor: isDark ? '#000000' : '#FAF7F2' }}>
+            <View style={[styles.listRouteToolbar, { backgroundColor: cardSurface, borderColor }]}>
+              <TouchableOpacity
+                style={[styles.listOptimizeBtn, { backgroundColor: isDark ? '#2563EB' : '#1E3A8A' }]}
+                onPress={handleOptimizeRoute}
+                activeOpacity={0.85}
+              >
+                <Sparkles size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
+                <Text style={styles.listOptimizeBtnTxt}>
+                  {plannedRouteMemberIds.length > 0
+                    ? `Optimize (${plannedStops.length} stops · ~${plannedTotalKm} km)`
+                    : `Plan & Optimize Route (${filteredMembers.length})`}
+                </Text>
+              </TouchableOpacity>
 
-              return (
-                <View style={styles.memberListItem}>
-                  <View style={styles.listItemTopRow}>
-                    {item.memberPhoto ? (
-                      <Image source={{ uri: item.memberPhoto }} style={styles.listAvatarImg} />
-                    ) : (
-                      <View style={styles.itemAvatarFallback}>
-                        <Text style={styles.itemAvatarInitials}>
-                          {(item.memberName || 'M').slice(0, 2).toUpperCase()}
-                        </Text>
-                      </View>
-                    )}
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.itemMemberName}>{item.memberName}</Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 2 }}>
-                        {item.locality ? (
-                          <View style={styles.localityTag}>
-                            <MapPin size={10} color="#1A2D5A" />
-                            <Text style={styles.localityTagTxt}>{item.locality}</Text>
-                          </View>
-                        ) : null}
+              {plannedRouteMemberIds.length > 0 && (
+                <TouchableOpacity
+                  style={[styles.listStartRouteBtn, { backgroundColor: '#059669' }]}
+                  onPress={handleOpenMultiStopRoute}
+                  activeOpacity={0.85}
+                >
+                  <Navigation size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
+                  <Text style={styles.listStartRouteBtnTxt}>Start</Text>
+                </TouchableOpacity>
+              )}
 
-                        {item.distanceKm != null ? (
-                          <View style={styles.distanceTag}>
-                            <Compass size={10} color="#2563EB" />
-                            <Text style={styles.distanceTagTxt}>{item.distanceKm} km away</Text>
-                          </View>
-                        ) : null}
+              {(onConfirmRoute || onSaveVisitRoute) && plannedStops.length > 0 && (
+                <TouchableOpacity
+                  style={[styles.listSaveRouteBtn, { backgroundColor: '#D97706' }]}
+                  onPress={handleConfirmAndSaveRoute}
+                  activeOpacity={0.85}
+                >
+                  <Check size={13} color="#FFFFFF" strokeWidth={2.5} style={{ marginRight: 4 }} />
+                  <Text style={styles.listSaveRouteBtnTxt}>Save</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <FlatList
+              data={filteredMembers}
+              keyExtractor={(item) => item.id || item.memberId}
+              contentContainerStyle={styles.listContent}
+              renderItem={({ item }) => {
+                const isInactive = inactiveMemberIdSet.has(item.memberId);
+                const inRoute = plannedRouteMemberIds.includes(item.memberId);
+                const inRouteIndex = plannedRouteMemberIds.indexOf(item.memberId);
+
+                return (
+                  <View style={[styles.memberListItem, { backgroundColor: cardSurface, borderColor }]}>
+                    <View style={styles.listItemTopRow}>
+                      {item.memberPhoto ? (
+                        <Image source={{ uri: item.memberPhoto }} style={styles.itemAvatarImg} />
+                      ) : (
+                        <View style={[styles.itemAvatarFallback, { backgroundColor: isDark ? '#1E3A8A' : '#EFF6FF' }]}>
+                          <Text style={[styles.itemAvatarInitials, { color: isDark ? '#93C5FD' : '#1D4ED8' }]}>
+                            {item.memberName.slice(0, 2).toUpperCase()}
+                          </Text>
+                        </View>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.itemMemberName, { color: primaryText }]}>{item.memberName}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 2 }}>
+                          {item.locality ? (
+                            <View style={styles.localityTag}>
+                              <MapPin size={10} color="#1E3A8A" />
+                              <Text style={styles.localityTagTxt}>{item.locality}</Text>
+                            </View>
+                          ) : null}
+                          {item.distanceKm != null ? (
+                            <View style={styles.distanceTag}>
+                              <Compass size={10} color="#2563EB" />
+                              <Text style={styles.distanceTagTxt}>{item.distanceKm} km away</Text>
+                            </View>
+                          ) : null}
+                        </View>
                       </View>
+                      {isInactive && (
+                        <View style={styles.needsVisitTag}>
+                          <Text style={styles.needsVisitTagTxt}>Needs Visit</Text>
+                        </View>
+                      )}
                     </View>
-                    {isInactive && (
-                      <View style={styles.needsVisitTag}>
-                        <Text style={styles.needsVisitTagTxt}>Needs Visit</Text>
-                      </View>
-                    )}
-                  </View>
 
-                  {item.address ? (
-                    <Text style={styles.itemAddressTxt} numberOfLines={2}>
-                      {item.address}
-                    </Text>
-                  ) : (
-                    <Text style={styles.itemNoAddressTxt}>No residential address on file</Text>
-                  )}
-
-                  <View style={styles.listItemActionsRow}>
-                    <TouchableOpacity
-                      style={[styles.itemDirectionsBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
-                      onPress={() => handleNavigateToMember(item)}
-                    >
-                      <Navigation size={13} color={secondaryBtnText} style={{ marginRight: 4 }} />
-                      <Text style={[styles.itemDirectionsBtnTxt, { color: secondaryBtnText }]}>Directions</Text>
-                    </TouchableOpacity>
-
-                    {item.memberPhone ? (
-                      <>
-                        <TouchableOpacity
-                          style={[styles.itemCallBtn, { backgroundColor: secondaryBtnBg, borderWidth: 1, borderColor: secondaryBtnBorder }]}
-                          onPress={() => handleCall(item.memberPhone)}
-                        >
-                          <Phone size={13} color={secondaryBtnText} />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.itemCallBtn, { backgroundColor: '#25D366' }]}
-                          onPress={() => handleWhatsApp(item.memberPhone, item.memberName)}
-                        >
-                          <MessageCircle size={13} color="#FFFFFF" />
-                        </TouchableOpacity>
-                      </>
-                    ) : null}
-
-                    {onLogFollowup && (
-                      <TouchableOpacity
-                        style={[styles.itemLogBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
-                        onPress={() => onLogFollowup(item)}
-                      >
-                        <Text style={[styles.itemLogBtnTxt, { color: secondaryBtnText }]}>Log Visit</Text>
-                      </TouchableOpacity>
-                    )}
-
-                    <TouchableOpacity
-                      style={[
-                        styles.itemRouteBtn,
-                        { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder },
-                        inRoute && styles.itemRouteBtnActive,
-                      ]}
-                      onPress={() => handleToggleRouteMember(item.memberId)}
-                    >
-                      <Text style={[styles.itemRouteBtnTxt, { color: secondaryBtnText }, inRoute && styles.itemRouteBtnTxtActive]}>
-                        {inRoute ? 'In Route' : '+ Route'}
+                    {item.address ? (
+                      <Text style={[styles.itemAddressTxt, { color: secondaryText }]} numberOfLines={2}>
+                        {item.isVerifiedPin ? '📍 Exact Home: ' : ''}
+                        {item.address}
                       </Text>
-                    </TouchableOpacity>
+                    ) : (
+                      <Text style={[styles.itemNoAddressTxt, { color: secondaryText }]}>
+                        No residential address on file
+                      </Text>
+                    )}
+
+                    <View style={styles.listItemActionsRow}>
+                      <TouchableOpacity
+                        style={[styles.itemDirectionsBtn, { backgroundColor: isDark ? '#2563EB' : '#1E3A8A' }]}
+                        onPress={() => handleNavigateToMember(item)}
+                      >
+                        <Navigation size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
+                        <Text style={styles.itemDirectionsBtnTxt}>Directions</Text>
+                      </TouchableOpacity>
+
+                      {item.memberPhone ? (
+                        <>
+                          <TouchableOpacity
+                            style={[styles.itemCallBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
+                            onPress={() => handleCall(item.memberPhone)}
+                          >
+                            <Phone size={13} color={primaryText} />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.itemCallBtn, { backgroundColor: '#25D366', borderColor: '#25D366' }]}
+                            onPress={() => handleWhatsApp(item.memberPhone, item.memberName)}
+                          >
+                            <MessageCircle size={13} color="#FFFFFF" />
+                          </TouchableOpacity>
+                        </>
+                      ) : null}
+
+                      {onLogFollowup && (
+                        <TouchableOpacity
+                          style={[styles.itemLogBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
+                          onPress={() => onLogFollowup(item)}
+                        >
+                          <Text style={[styles.itemLogBtnTxt, { color: secondaryBtnText }]}>Log Visit</Text>
+                        </TouchableOpacity>
+                      )}
+
+                      <TouchableOpacity
+                        style={[
+                          styles.itemRouteBtn,
+                          { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder },
+                          inRoute && styles.itemRouteBtnActive,
+                        ]}
+                        onPress={() => handleToggleRouteMember(item.memberId)}
+                      >
+                        <Text
+                          style={[
+                            styles.itemRouteBtnTxt,
+                            { color: secondaryBtnText },
+                            inRoute && styles.itemRouteBtnTxtActive,
+                          ]}
+                        >
+                          {inRoute ? `#${inRouteIndex + 1} In Route` : '+ Route'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
+                );
+              }}
+              ListEmptyComponent={
+                <View style={styles.listEmptyWrap}>
+                  <Users size={36} color="#94A3B8" />
+                  <Text style={[styles.listEmptyTxt, { color: secondaryText }]}>No members match current filter.</Text>
                 </View>
-              );
-            }}
-          />
+              }
+            />
+          </View>
         )}
       </View>
     </Modal>
@@ -1037,105 +1589,96 @@ export default function CareCellMapModal({
 const styles = createAdminThemedStyles({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingBottom: 12,
-    backgroundColor: '#FFFFFF',
+    paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    gap: 12,
   },
   circularBackBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    justifyContent: 'center',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(148, 163, 184, 0.15)',
     alignItems: 'center',
-    marginRight: 12,
+    justifyContent: 'center',
   },
   headerTitle: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#0F172A',
   },
   headerSub: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 2,
+    fontSize: 11.5,
+    marginTop: 1,
   },
   viewModeToggleRow: {
     flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 10,
-    padding: 3,
+    alignItems: 'center',
+    backgroundColor: 'rgba(148, 163, 184, 0.15)',
+    borderRadius: 8,
+    padding: 2,
+    gap: 2,
   },
   modeToggleBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
   },
+
   filterBar: {
-    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    paddingVertical: 8,
+    paddingVertical: 7,
   },
   filterScroll: {
-    paddingHorizontal: 14,
-    gap: 8,
+    paddingHorizontal: 16,
+    gap: 6,
   },
   filterPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 11,
+    paddingVertical: 5.5,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#CBD5E1',
+    backgroundColor: 'transparent',
   },
   filterPillAlertActive: {
     backgroundColor: '#DC2626',
     borderColor: '#DC2626',
   },
   filterPillTxt: {
-    fontSize: 11.5,
+    fontSize: 11,
     fontWeight: '600',
     color: '#64748B',
   },
+
   mapContainer: {
     flex: 1,
-  },
-  mapLoadingOverlay: {
-    position: 'absolute',
-    top: 14,
-    alignSelf: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  mapLoadingTxt: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#1E293B',
+    position: 'relative',
   },
 
-  /* ── Lollipop Marker Styles (User Request: Profile pic with lollipop symbol) ── */
+  /* Church Center Marker */
+  churchMarkerBubble: {
+    width: CHURCH_MARKER_SIZE,
+    height: CHURCH_MARKER_SIZE,
+    borderRadius: CHURCH_MARKER_SIZE / 2,
+    backgroundColor: '#D97706',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+
+  /* Lollipop Marker Styles */
   photoPinWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -1151,7 +1694,7 @@ const styles = createAdminThemedStyles({
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 3.5,
@@ -1162,81 +1705,54 @@ const styles = createAdminThemedStyles({
     height: PIN_IMAGE_SIZE,
     borderRadius: PIN_IMAGE_SIZE / 2,
   },
-  photoPinFallback: {
-    width: PIN_IMAGE_SIZE,
-    height: PIN_IMAGE_SIZE,
-    borderRadius: PIN_IMAGE_SIZE / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   markerInitialsTxt: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '800',
     color: '#FFFFFF',
-  },
-  photoPinTriangle: {
-    width: 0,
-    height: 0,
-    backgroundColor: 'transparent',
-    borderStyle: 'solid',
-    borderLeftWidth: 5,
-    borderRightWidth: 5,
-    borderTopWidth: 7,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    marginTop: -1,
   },
   routeOrderCornerBadge: {
     position: 'absolute',
-    top: -3,
-    right: -3,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
+    top: -5,
+    right: -5,
     backgroundColor: '#059669',
+    width: 17,
+    height: 17,
+    borderRadius: 8.5,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1.5,
     borderColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 2,
-    elevation: 6,
-  },
-  routeOrderCornerBadgeAlert: {
-    position: 'absolute',
-    top: -3,
-    right: -3,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: '#DC2626',
-    borderWidth: 1.5,
-    borderColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 6,
   },
   routeOrderCornerTxt: {
     fontSize: 9,
-    fontWeight: '800',
+    fontWeight: '900',
     color: '#FFFFFF',
   },
+  photoPinPointerSvg: {
+    marginTop: -1,
+  },
 
-  /* Floating Route Summary Bar */
+  /* Top Route Planning Floating Bar */
   floatingRouteBar: {
     position: 'absolute',
-    top: 12,
+    top: 14,
     left: 14,
     right: 14,
-    backgroundColor: '#1A2D5A',
-    borderRadius: 12,
-    padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.22,
     shadowRadius: 6,
     elevation: 6,
+    zIndex: 20,
+  },
+  floatingRouteHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
   },
   floatingRouteTitle: {
     fontSize: 13.5,
@@ -1245,20 +1761,91 @@ const styles = createAdminThemedStyles({
   },
   floatingRouteSub: {
     fontSize: 11,
-    color: '#CBD5E1',
-    marginTop: 2,
+    color: '#93C5FD',
+    marginTop: 1,
+  },
+  travelModeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 4,
+  },
+  travelModeChipTxt: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  floatingRouteActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  floatingOptimizeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  floatingOptimizeBtnTxt: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#1E3A8A',
   },
   floatingNavigateRouteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#059669',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 6,
     borderRadius: 8,
   },
   floatingNavigateRouteBtnTxt: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  floatingApplyRouteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#D1FAE5',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  floatingApplyRouteBtnTxt: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#065F46',
+  },
+
+  floatingQuickOptimizeWrap: {
+    position: 'absolute',
+    top: 14,
+    left: 14,
+    right: 14,
+    alignItems: 'center',
+    zIndex: 15,
+  },
+  floatingQuickOptimizePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  floatingQuickOptimizeTxt: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#FFFFFF',
   },
 
@@ -1268,16 +1855,15 @@ const styles = createAdminThemedStyles({
     bottom: 20,
     left: 14,
     right: 14,
-    backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 14,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#000',
+    padding: 12,
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
-    shadowRadius: 10,
+    shadowRadius: 8,
     elevation: 8,
+    zIndex: 25,
   },
   selectedCardHeader: {
     flexDirection: 'row',
@@ -1285,29 +1871,24 @@ const styles = createAdminThemedStyles({
     justifyContent: 'space-between',
   },
   selectedMemberAvatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
   },
   selectedMemberAvatarFallback: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#EFF6FF',
-    justifyContent: 'center',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
+    justifyContent: 'center',
   },
   selectedMemberAvatarInitials: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#1D4ED8',
+    fontWeight: '800',
   },
   selectedMemberName: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800',
-    color: '#0F172A',
   },
   localityTag: {
     flexDirection: 'row',
@@ -1315,99 +1896,95 @@ const styles = createAdminThemedStyles({
     backgroundColor: '#EFF6FF',
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 5,
     gap: 3,
   },
   localityTagTxt: {
-    fontSize: 10.5,
+    fontSize: 10,
     fontWeight: '700',
-    color: '#1A2D5A',
+    color: '#1E3A8A',
   },
   distanceTag: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F0FDF4',
-    borderWidth: 1,
-    borderColor: '#DCFCE7',
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 5,
     gap: 3,
   },
   distanceTagTxt: {
-    fontSize: 10.5,
+    fontSize: 10,
     fontWeight: '700',
-    color: '#15803D',
+    color: '#059669',
   },
   needsVisitTag: {
     backgroundColor: '#FEE2E2',
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 5,
   },
   needsVisitTagTxt: {
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#DC2626',
   },
   selectedMemberAddress: {
-    fontSize: 12,
-    color: '#475569',
-    lineHeight: 17,
+    fontSize: 11.5,
+    marginTop: 6,
+    lineHeight: 16,
+  },
+  selectedMemberNoAddress: {
+    fontSize: 11,
+    fontStyle: 'italic',
     marginTop: 6,
   },
-  selectedActionsRow: {
+  selectedCardActionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginTop: 12,
+    gap: 6,
+    marginTop: 10,
   },
-  actionNavigateBtn: {
-    flex: 1,
+  actionDirectionsBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#1A2D5A',
-    paddingVertical: 9,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderRadius: 8,
   },
-  actionNavigateBtnTxt: {
-    fontSize: 12,
-    fontWeight: '700',
+  actionDirectionsBtnTxt: {
+    fontSize: 11.5,
+    fontWeight: '800',
     color: '#FFFFFF',
   },
-  actionCircleBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#EFF6FF',
-    justifyContent: 'center',
+  actionCallBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   actionLogVisitBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F1F5F9',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
     borderRadius: 8,
+    borderWidth: 1,
   },
   actionLogVisitBtnTxt: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#1A2D5A',
   },
   actionRouteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F1F5F9',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
     paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingVertical: 7,
     borderRadius: 8,
+    borderWidth: 1,
+    marginLeft: 'auto',
   },
   actionRouteBtnActive: {
     backgroundColor: '#059669',
@@ -1416,31 +1993,213 @@ const styles = createAdminThemedStyles({
   actionRouteBtnTxt: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#1A2D5A',
   },
   actionRouteBtnTxtActive: {
     color: '#FFFFFF',
+    fontWeight: '800',
   },
 
-  /* List View Mode */
+  /* In-App Turn-by-Turn Navigation Styles */
+  navTopHud: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    borderRadius: 14,
+    backgroundColor: '#0F172A',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.28,
+    shadowRadius: 6,
+    elevation: 8,
+    zIndex: 30,
+  },
+  navTopHudMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  navManeuverIconBox: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navInstructionTxt: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  navMetricsSub: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 1,
+  },
+  navHudCloseBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  navBottomCard: {
+    position: 'absolute',
+    bottom: 20,
+    left: 14,
+    right: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 30,
+  },
+  navBottomHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  navStopNumberPill: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  navStopNumberTxt: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#1E3A8A',
+  },
+  navExternalGmapsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  navExternalGmapsTxt: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
+  navStopMemberName: {
+    fontSize: 15,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  navStopAddress: {
+    fontSize: 11.5,
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  navControlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 10,
+  },
+  navIconCircleBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navPrevBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  navPrevBtnTxt: {
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  navNextPrimaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  navNextPrimaryTxt: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+
+  /* List View Styles */
+  listRouteToolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    gap: 8,
+  },
+  listOptimizeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 9,
+  },
+  listOptimizeBtnTxt: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  listStartRouteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 9,
+  },
+  listStartRouteBtnTxt: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  listSaveRouteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 9,
+  },
+  listSaveRouteBtnTxt: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
   listContent: {
     padding: 14,
-    paddingBottom: 30,
+    gap: 10,
   },
   memberListItem: {
-    backgroundColor: '#FFFFFF',
     borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    padding: 12,
   },
   listItemTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
-  listAvatarImg: {
+  itemAvatarImg: {
     width: 38,
     height: 38,
     borderRadius: 19,
@@ -1449,85 +2208,69 @@ const styles = createAdminThemedStyles({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: '#EFF6FF',
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   itemAvatarInitials: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#1D4ED8',
+    fontSize: 13,
+    fontWeight: '800',
   },
   itemMemberName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0F172A',
+    fontSize: 13.5,
+    fontWeight: '800',
   },
   itemAddressTxt: {
     fontSize: 11.5,
-    color: '#64748B',
     marginTop: 6,
     lineHeight: 16,
   },
   itemNoAddressTxt: {
     fontSize: 11,
-    color: '#94A3B8',
     fontStyle: 'italic',
-    marginTop: 4,
+    marginTop: 6,
   },
   listItemActionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
     marginTop: 10,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
   },
   itemDirectionsBtn: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    paddingVertical: 7,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
     borderRadius: 8,
   },
   itemDirectionsBtnTxt: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#1D4ED8',
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   itemCallBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#F1F5F9',
-    justifyContent: 'center',
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    borderWidth: 1,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   itemLogBtn: {
-    backgroundColor: '#F1F5F9',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
     paddingHorizontal: 8,
-    paddingVertical: 7,
+    paddingVertical: 6,
     borderRadius: 8,
+    borderWidth: 1,
   },
   itemLogBtnTxt: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '700',
-    color: '#1A2D5A',
   },
   itemRouteBtn: {
-    backgroundColor: '#F1F5F9',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    paddingHorizontal: 8,
-    paddingVertical: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 8,
+    borderWidth: 1,
+    marginLeft: 'auto',
   },
   itemRouteBtnActive: {
     backgroundColor: '#059669',
@@ -1536,9 +2279,19 @@ const styles = createAdminThemedStyles({
   itemRouteBtnTxt: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#1A2D5A',
   },
   itemRouteBtnTxtActive: {
     color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  listEmptyWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 50,
+    gap: 8,
+  },
+  listEmptyTxt: {
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

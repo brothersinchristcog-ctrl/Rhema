@@ -95,7 +95,7 @@ export default function CareCellVisitsTab({
   });
 
   const handleOpenVisitRouteMap = async (visit: CareCellVisit) => {
-    const targetCell = cells.find((c) => c.id === visit.careCellId) || cells[0];
+    const targetCell = cells.find((c) => c.id === (visit.cellId || (visit as any).careCellId)) || cells[0];
     if (!targetCell) {
       Alert.alert('Care Cell Not Found', 'No Care Cell linked to this visit.');
       return;
@@ -109,7 +109,7 @@ export default function CareCellVisitsTab({
       if (visit.responses) {
         Object.entries(visit.responses).forEach(([mId, resp]) => {
           meta[mId] = {
-            response: resp.status,
+            response: resp.response || (resp as any).status,
             preferredTime: resp.preferredTime,
           };
         });
@@ -120,10 +120,10 @@ export default function CareCellVisitsTab({
         routeIds = visit.routeStops.map((s) => s.memberId);
       } else if (visit.responses) {
         const accepted = Object.entries(visit.responses)
-          .filter(([_, r]) => r.status === 'Accepted')
+          .filter(([_, r]) => (r.response || (r as any).status) === 'Accepted')
           .map(([id]) => id);
         const others = Object.keys(visit.responses).filter(
-          (id) => !accepted.includes(id) && visit.responses[id].status !== 'Declined'
+          (id) => !accepted.includes(id) && (visit.responses![id]?.response || (visit.responses![id] as any)?.status) !== 'Declined'
         );
         routeIds = [...accepted, ...others];
       }

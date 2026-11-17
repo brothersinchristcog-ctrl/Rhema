@@ -1,7 +1,53 @@
 import firestore from '@react-native-firebase/firestore';
 import { Linking, Platform } from 'react-native';
+import * as ExpoLocation from 'expo-location';
 import { KNOWN_REGION_COORDS, calculateDistanceKm } from './CareCellService';
 import { CareCell, CareCellMembership } from '../types/CareCellTypes';
+
+export type TravelMode = 'driving' | 'walking';
+
+export interface RoadRouteStep {
+  instruction: string;
+  distanceMeters: number;
+  durationSeconds: number;
+  roadName?: string;
+  location: { latitude: number; longitude: number };
+}
+
+export interface RoadRouteLeg {
+  distanceMeters: number;
+  durationSeconds: number;
+  steps: RoadRouteStep[];
+}
+
+export interface RoadRouteResult {
+  coordinates: Array<{ latitude: number; longitude: number }>;
+  totalDistanceMeters: number;
+  totalDurationSeconds: number;
+  legs: RoadRouteLeg[];
+  isRoadRoute: boolean;
+}
+
+export function haversineDistanceKm(
+  a: { latitude: number; longitude: number },
+  b: { latitude: number; longitude: number }
+): number {
+  const R = 6371;
+  const dLat = ((b.latitude - a.latitude) * Math.PI) / 180;
+  const dLng = ((b.longitude - a.longitude) * Math.PI) / 180;
+  const sinDLat2 = Math.sin(dLat / 2);
+  const sinDLng2 = Math.sin(dLng / 2);
+  const aa =
+    sinDLat2 * sinDLat2 +
+    Math.cos((a.latitude * Math.PI) / 180) *
+      Math.cos((b.latitude * Math.PI) / 180) *
+      sinDLng2 *
+      sinDLng2;
+  const c = 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
+  return Number((R * c).toFixed(2));
+}
+
+const ROUTE_GEOCODE_CACHE = new Map<string, { latitude: number; longitude: number } | null>();
 
 export type LocationAccuracyType =
   | 'verified_home' // Exact pin confirmed by member with consent
@@ -913,6 +959,228 @@ class MemberLocationService {
 
     return { cellCenter, resolvedMembers };
   }
+
+  async fetchRoadRouteDirections(params: {
+    waypoints: Array<{ latitude: number; longitude: number; label?: string }>;
+    travelMode?: TravelMode;
+  }): Promise<RoadRouteResult> {
+    return MemberLocationService.fetchRoadRouteDirections(params);
+  }
+
+  computeRouteDistanceKm(stops: Array<{ latitude: number; longitude: number }>): number {
+    return MemberLocationService.computeRouteDistanceKm(stops);
+  }
+
+  async openGoogleMapsMultiStopRoute(params: {
+    stops: Array<{ latitude: number; longitude: number }>;
+    originLat?: number;
+    originLng?: number;
+    travelMode?: TravelMode;
+  }): Promise<void> {
+    return MemberLocationService.openGoogleMapsMultiStopRoute(params);
+  }
+
+  static async geocodePlaceCached(
+    query: string
+  ): Promise<{ latitude: number; longitude: number } | null> {
+    const clean = query.trim();
+    if (!clean) return null;
+    const key = clean.toLowerCase();
+    if (ROUTE_GEOCODE_CACHE.has(key)) {
+      return ROUTE_GEOCODE_CACHE.get(key) || null;
+    }
+    try {
+      const results = await ExpoLocation.geocodeAsync(clean);
+      if (
+        results &&
+        results.length > 0 &&
+        Number.isFinite(results[0].latitude) &&
+        Number.isFinite(results[0].longitude)
+      ) {
+        const coords = {
+          latitude: results[0].latitude,
+          longitude: results[0].longitude,
+        };
+        ROUTE_GEOCODE_CACHE.set(key, coords);
+        return coords;
+      }
+    } catch (_) {}
+    ROUTE_GEOCODE_CACHE.set(key, null);
+    return null;
+  }
+
+  static computeRouteDistanceKm(stops: Array<{ latitude: number; longitude: number }>): number {
+    if (!stops || stops.length < 2) return 0;
+    let total = 0;
+    for (let i = 1; i < stops.length; i++) {
+      total += haversineDistanceKm(stops[i - 1], stops[i]);
+    }
+    return Number(total.toFixed(1));
+  }
+
+  static distanceBetweenKm(
+    a: { latitude: number; longitude: number },
+    b: { latitude: number; longitude: number }
+  ): number {
+    return haversineDistanceKm(a, b);
+  }
+
+  static async fetchRoadRouteDirections(params: {
+    waypoints: Array<{ latitude: number; longitude: number; label?: string }>;
+    travelMode?: TravelMode;
+  }): Promise<RoadRouteResult> {
+    const pts = (params.waypoints || []).filter(
+      (p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude)
+    );
+    const mode = params.travelMode || 'driving';
+
+    const buildFallback = (): RoadRouteResult => {
+      const legs: RoadRouteLeg[] = [];
+      let totalDistM = 0;
+      let totalDurS = 0;
+      const speedKmh = mode === 'walking' ? 4.8 : 28;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const km = haversineDistanceKm(pts[i], pts[i + 1]);
+        const distM = Math.round(km * 1000);
+        const durS = Math.max(30, Math.round((km / speedKmh) * 3600));
+        totalDistM += distM;
+        totalDurS += durS;
+        legs.push({
+          distanceMeters: distM,
+          durationSeconds: durS,
+          steps: [
+            {
+              instruction: pts[i + 1].label
+                ? `Proceed toward ${pts[i + 1].label}`
+                : `Proceed toward Stop ${i + 1}`,
+              distanceMeters: distM,
+              durationSeconds: durS,
+              location: { latitude: pts[i].latitude, longitude: pts[i].longitude },
+            },
+          ],
+        });
+      }
+      return {
+        coordinates: pts.map((p) => ({ latitude: p.latitude, longitude: p.longitude })),
+        totalDistanceMeters: totalDistM,
+        totalDurationSeconds: totalDurS,
+        legs,
+        isRoadRoute: false,
+      };
+    };
+
+    if (pts.length < 2) {
+      return {
+        coordinates: pts.map((p) => ({ latitude: p.latitude, longitude: p.longitude })),
+        totalDistanceMeters: 0,
+        totalDurationSeconds: 0,
+        legs: [],
+        isRoadRoute: false,
+      };
+    }
+
+    const profile = mode === 'walking' ? 'foot' : 'driving';
+    const coordStr = pts
+      .slice(0, 12)
+      .map((p) => `${p.longitude.toFixed(6)},${p.latitude.toFixed(6)}`)
+      .join(';');
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+
+    try {
+      const url = `https://router.project-osrm.org/route/v1/${profile}/${coordStr}?overview=full&geometries=geojson&steps=true`;
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timer);
+      if (!res.ok) return buildFallback();
+
+      const json: any = await res.json();
+      const route = json?.routes?.[0];
+      const rawCoords: Array<[number, number]> = route?.geometry?.coordinates || [];
+      if (!route || rawCoords.length < 2) return buildFallback();
+
+      const coordinates = rawCoords.map(([lng, lat]) => ({
+        latitude: lat,
+        longitude: lng,
+      }));
+
+      const legs: RoadRouteLeg[] = (route.legs || []).map((leg: any, idx: number) => {
+        const nextTarget = pts[idx + 1]?.label;
+        const steps: RoadRouteStep[] = (leg.steps || []).map((step: any) => {
+          const mType: string = step?.maneuver?.type || 'continue';
+          const mod: string = step?.maneuver?.modifier || '';
+          const road: string = typeof step?.name === 'string' && step.name.trim() ? step.name.trim() : '';
+          const roadSuffix = road ? ` onto ${road}` : '';
+
+          let instruction = 'Continue on road';
+          if (mType === 'depart') instruction = road ? `Head on ${road}` : 'Start trip';
+          else if (mType === 'arrive') instruction = nextTarget ? `Arrive at ${nextTarget}` : 'Arrive at destination';
+          else if (mod.includes('left')) instruction = `Turn ${mod}${roadSuffix}`;
+          else if (mod.includes('right')) instruction = `Turn ${mod}${roadSuffix}`;
+          else if (road) instruction = `Continue on ${road}`;
+
+          const loc = step?.maneuver?.location || [0, 0];
+          return {
+            instruction,
+            distanceMeters: Math.round(step.distance || 0),
+            durationSeconds: Math.round(step.duration || 0),
+            roadName: road || undefined,
+            location: { latitude: loc[1] || 0, longitude: loc[0] || 0 },
+          };
+        });
+
+        return {
+          distanceMeters: Math.round(leg.distance || 0),
+          durationSeconds: Math.round(leg.duration || 0),
+          steps: steps.length > 0 ? steps : [
+            {
+              instruction: nextTarget ? `Proceed to ${nextTarget}` : `Proceed to Stop ${idx + 1}`,
+              distanceMeters: Math.round(leg.distance || 0),
+              durationSeconds: Math.round(leg.duration || 0),
+              location: pts[idx],
+            },
+          ],
+        };
+      });
+
+      return {
+        coordinates,
+        totalDistanceMeters: Math.round(route.distance || 0),
+        totalDurationSeconds: Math.round(route.duration || 0),
+        legs,
+        isRoadRoute: true,
+      };
+    } catch (_) {
+      clearTimeout(timer);
+      return buildFallback();
+    }
+  }
+
+  static async openGoogleMapsMultiStopRoute(params: {
+    stops: Array<{ latitude: number; longitude: number }>;
+    originLat?: number;
+    originLng?: number;
+    travelMode?: TravelMode;
+  }): Promise<void> {
+    if (!params.stops || params.stops.length === 0) return;
+    const mode = params.travelMode || 'driving';
+    const limited = params.stops.slice(0, 10);
+    const destination = limited[limited.length - 1];
+    const waypoints = limited
+      .slice(0, -1)
+      .map((s) => `${s.latitude},${s.longitude}`)
+      .join('|');
+
+    let url = `https://www.google.com/maps/dir/?api=1&destination=${destination.latitude},${destination.longitude}&waypoints=${encodeURIComponent(waypoints)}&travelmode=${mode}`;
+    if (
+      typeof params.originLat === 'number' &&
+      typeof params.originLng === 'number'
+    ) {
+      url += `&origin=${params.originLat},${params.originLng}`;
+    }
+    await Linking.openURL(url);
+  }
 }
 
+export { MemberLocationService };
 export default new MemberLocationService();
