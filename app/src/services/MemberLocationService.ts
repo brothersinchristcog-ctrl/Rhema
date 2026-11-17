@@ -63,7 +63,7 @@ export interface MemberLocationRecord {
 
 const GOOGLE_MAPS_API_KEY =
   process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY ||
-  'AIzaSyAa7M7Xr7W_hNOpy3BeSHMBD6oEYjD78HA';
+  'AIzaSyBHqVKR6H6ro85c6VQ8vvTZGSgxjEJJeJ4';
 
 class MemberLocationService {
   getGoogleMapsApiKey(): string {
