@@ -417,7 +417,7 @@ service cloud.firestore {
         allow read: if isAuthenticated();
         allow create: if isAuthenticated() && (
           isChurchAdmin() || 
-          request.resource.data.type in ['prayer_request_admin', 'baptism_request_admin', 'volunteer_application_admin']
+          request.resource.data.type in ['prayer_request_admin', 'baptism_request_admin', 'volunteer_application_admin', 'job_application_admin']
         );
         allow update, delete: if isChurchAdmin();
       }
@@ -671,7 +671,6 @@ service cloud.firestore {
         allow delete: if isAuthenticated() && (
           isChurchAdmin() || resource.data.memberId == request.auth.uid
         );
-      }
       }
 
       // Any other church subcollection: authenticated members can read, admins can write

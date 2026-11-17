@@ -172,10 +172,12 @@ export default function App() {
       const password = rawData.password || (body.match(/Passcode:\s*([A-Za-z0-9]+)/i)?.[1]) || '';
       
       const isLive = rawData.type === 'youtube_live';
-      setNotification({ title, body, password, remoteMessage, isLive });
       if (isLive) {
         NotificationService.displayLiveNotification(rawData, title, body).catch(e => console.warn(e));
+        return;
       }
+
+      setNotification({ title, body, password, remoteMessage, isLive: false });
       
       Animated.sequence([
         Animated.timing(slideAnim, {

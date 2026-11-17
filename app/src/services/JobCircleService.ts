@@ -298,6 +298,43 @@ class JobCircleService {
       .collection('job_circle_opportunities')
       .doc(id)
       .update(updates);
+
+    if (status === 'approved') {
+      try {
+        const oppDoc = await this.getRootRef(churchId).collection('job_circle_opportunities').doc(id).get();
+        if (oppDoc.exists) {
+          const oppData = oppDoc.data();
+          const categoryText = oppData?.categoryName ? ` in ${oppData.categoryName}` : '';
+          const title = '💼 New Ministry Opportunity Open!';
+          const body = `Rhema Church is looking for a "${oppData?.title || 'Volunteer'}"${categoryText}. Tap to view details and submit your calling!`;
+
+          await firestore()
+            .collection('Rhema Church')
+            .doc(churchId || 'rhema')
+            .collection('notifications')
+            .doc(`job_opp_${id}`)
+            .set(
+              {
+                type: 'job_opportunity_new',
+                churchId: churchId || 'rhema',
+                title,
+                body,
+                content: body,
+                opportunityId: id,
+                opportunityTitle: oppData?.title || '',
+                categoryName: oppData?.categoryName || '',
+                referenceId: id,
+                referenceType: 'job_circle_opportunity',
+                createdAt: firestore.FieldValue.serverTimestamp(),
+                read: false,
+              },
+              { merge: true }
+            );
+        }
+      } catch (err) {
+        console.warn('[JobCircleService] Failed to write new opportunity broadcast notification:', err);
+      }
+    }
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -390,6 +427,39 @@ class JobCircleService {
       })
       .catch(() => {});
 
+    // Write deterministic in-app notification for Admin (matches Cloud Function docId to prevent duplicates)
+    try {
+      await firestore()
+        .collection('Rhema Church')
+        .doc(churchId || 'rhema')
+        .collection('notifications')
+        .doc(`job_admin_${appDoc.id}`)
+        .set(
+          {
+            type: 'job_application_admin',
+            churchId: churchId || 'rhema',
+            targetRole: 'admin',
+            recipientRole: 'admin',
+            title: '💼 New Ministry Application!',
+            body: `${member.name} has applied for "${opportunity.title}". Please review their calling and attached CV.`,
+            content: `${member.name} has applied for "${opportunity.title}". Please review their calling and attached CV.`,
+            memberName: member.name,
+            applicantName: member.name,
+            memberPhone: member.phone,
+            opportunityId: opportunity.id,
+            opportunityTitle: opportunity.title,
+            applicationId: appDoc.id,
+            referenceId: appDoc.id,
+            referenceType: 'job_circle_application',
+            read: false,
+            createdAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+    } catch (notifErr) {
+      console.warn('[JobCircleService] Failed to write admin application notification:', notifErr);
+    }
+
     return appDoc.id;
   }
 
@@ -477,6 +547,74 @@ class JobCircleService {
       .collection('job_circle_applications')
       .doc(applicationId)
       .update(updates);
+
+    // Write in-app notification for Member about status update
+    try {
+      const appSnap = await this.getRootRef(churchId)
+        .collection('job_circle_applications')
+        .doc(applicationId)
+        .get();
+      if (appSnap.exists) {
+        const appData = appSnap.data();
+        const roleTitle = appData?.opportunityTitle || 'Ministry Position';
+        const applicantId = appData?.memberId;
+        const applicantPhone = appData?.memberPhone;
+
+        let title = '💼 Ministry Application Update';
+        let body = `Your application for "${roleTitle}" has been updated to ${status.replace(/_/g, ' ').toUpperCase()}.`;
+
+        if (status === 'under_review') {
+          title = '🔍 Application Under Review';
+          body = `Your application for "${roleTitle}" is now prayerfully under review by ministry leaders.`;
+        } else if (status === 'meeting_scheduled') {
+          title = '📅 Ministry Interview / Meeting Scheduled!';
+          const dateStr = adminDetails?.meetingDate ? ` on ${adminDetails.meetingDate}` : '';
+          const timeStr = adminDetails?.meetingTime ? ` at ${adminDetails.meetingTime}` : '';
+          const locStr = adminDetails?.meetingLocation ? ` at ${adminDetails.meetingLocation}` : '';
+          body = `An interview has been scheduled for your application for "${roleTitle}"${dateStr}${timeStr}${locStr}. Please check Job Circle in the app for details.`;
+        } else if (status === 'selected') {
+          title = '🎉 Congratulations! You have been Selected!';
+          body = `Congratulations! You have been selected/appointed to serve in "${roleTitle}". Welcome to the ministry team!`;
+        } else if (status === 'shortlisted') {
+          title = '⭐ Application Shortlisted!';
+          body = `Your application for "${roleTitle}" has been shortlisted by church ministry leaders.`;
+        } else if (status === 'rejected') {
+          title = '📋 Ministry Application Update';
+          const reasonStr = adminDetails?.adminNotes ? ` Note: ${adminDetails.adminNotes}` : '';
+          body = `Thank you for your heart to serve. Your application for "${roleTitle}" has not been selected at this time.${reasonStr}`;
+        }
+
+        await firestore()
+          .collection('Rhema Church')
+          .doc(churchId || 'rhema')
+          .collection('notifications')
+          .doc(`job_status_${applicationId}_${status}`)
+          .set(
+            {
+              type: 'job_application_member',
+              churchId: churchId || 'rhema',
+              targetMemberId: applicantId,
+              recipientId: applicantId,
+              recipientRole: 'member',
+              targetPhone: applicantPhone || '',
+              title,
+              body,
+              content: body,
+              status,
+              opportunityId: appData?.opportunityId || '',
+              opportunityTitle: roleTitle,
+              applicationId,
+              referenceId: applicationId,
+              referenceType: 'job_circle_application',
+              read: false,
+              createdAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
+      }
+    } catch (notifErr) {
+      console.warn('[JobCircleService] Failed to write member application notification:', notifErr);
+    }
   }
 
   async withdrawApplication(churchId: string, applicationId: string, memberId: string): Promise<void> {

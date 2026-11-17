@@ -34,7 +34,13 @@ import firestore from '@react-native-firebase/firestore';
 import { useChurch } from '../context/ChurchContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useAdminTheme, createAdminThemedStyles } from '../utils/adminThemeHelper';
-import { findActiveLiveStream, getChannelId, checkVideoLiveStatus } from '../services/YouTubeService';
+import {
+  findActiveLiveStream,
+  getChannelId,
+  checkVideoLiveStatus,
+  resolveRhemaYoutubeUrl,
+  RHEMA_YOUTUBE_CHANNEL_URL,
+} from '../services/YouTubeService';
 
 const { width } = Dimensions.get('window');
 const VIDEO_HEIGHT = Math.round(width * 0.5625); // Standard 16:9 ratio
@@ -65,12 +71,6 @@ function extractYoutubeVideoId(urlOrId?: string): string {
   const embedMatch = clean.match(/\/embed\/([\w-]{11})/);
   if (embedMatch) return embedMatch[1];
 
-  // Channel handle / streams URL fallback for testing ministry
-  const lower = clean.toLowerCase();
-  if (lower.includes('brother') || lower.includes('uc3j_2zp2biucweia_asvghw')) {
-    return 'vgzXs5QCjIA';
-  }
-
   return '';
 }
 
@@ -85,7 +85,7 @@ function formatCleanStreamTitle(rawTitle?: string, isLive?: boolean): string {
   s = s.replace(/^[|\s/-]+|[|\s/-]+$/g, '');
   // Clean repeated pipes into bullet separator
   s = s.replace(/\|{1,2}/g, ' • ');
-  // Strip hashtags like #brotherinchristfellowship
+  // Strip inline #hashtags
   s = s.replace(/#[\w-]+/g, '');
   // Strip standalone Live keyword from title string as status badge indicates it
   s = s.replace(/\bLive\b/gi, '').trim();
@@ -113,9 +113,12 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
   } = useAdminTheme();
 
   const churchId = route?.params?.churchId || activeChurch?.id || 'rhema';
-  const churchName = activeChurch?.name || 'Rhema Fellowship';
+  const churchName = activeChurch?.name || 'Rhema Global Ministries';
   const churchAvatar = (activeChurch as any)?.logoUrl || (activeChurch as any)?.photoUrl;
-  const configuredChannelUrl = activeChurch?.socialLinks?.youtube?.trim() || '';
+  const configuredChannelUrl = resolveRhemaYoutubeUrl(activeChurch?.socialLinks?.youtube);
+  const channelHomeUrl = route?.params?.channelUrl
+    ? resolveRhemaYoutubeUrl(route.params.channelUrl)
+    : configuredChannelUrl;
 
   // Input params
   const paramVideoId = extractYoutubeVideoId(route?.params?.videoId || route?.params?.url);
@@ -280,13 +283,14 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
         }
 
         // Step 3: Check channel handle or URL using YouTubeService
-        const targetUrl =
+        const targetUrl = resolveRhemaYoutubeUrl(
           paramUrl ||
-          configuredChannelUrl ||
-          churchData?.youtubeLiveUrl ||
-          churchData?.youtubeChannelUrl ||
-          churchData?.socialLinks?.youtube ||
-          '@Brothersinchristfellowship';
+            configuredChannelUrl ||
+            churchData?.youtubeLiveUrl ||
+            churchData?.youtubeChannelUrl ||
+            churchData?.socialLinks?.youtube ||
+            RHEMA_YOUTUBE_CHANNEL_URL
+        );
 
         if (targetUrl) {
           const liveResult = await findActiveLiveStream(targetUrl);
@@ -343,7 +347,7 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
     try {
       const shareUrl = activeVideoId
         ? `https://youtu.be/${activeVideoId}`
-        : configuredChannelUrl || 'https://www.youtube.com';
+        : channelHomeUrl || RHEMA_YOUTUBE_CHANNEL_URL;
       await Share.share({
         title: streamTitle || `${churchName} Live`,
         message: `🔴 ${churchName} is streaming live on YouTube! Tap to watch worship with us: ${shareUrl}`,
@@ -807,6 +811,7 @@ const styles = createAdminThemedStyles({
   },
   statusActionRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,

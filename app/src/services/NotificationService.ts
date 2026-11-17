@@ -1,8 +1,17 @@
 import { Platform, PermissionsAndroid, Linking, Alert } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { messaging, firestore, auth } from './firebaseConfig';
 
+const LAST_LIVE_NOTIF_STORAGE_KEY = '@last_yt_live_notif';
+const LIVE_NOTIF_SAME_VIDEO_COOLDOWN_MS = 4 * 60 * 60 * 1000;
+const LIVE_NOTIF_FALLBACK_COOLDOWN_MS = 15 * 60 * 1000;
+
 class NotificationService {
+  private notificationHandlerConfigured = false;
+  private lastLiveNotifKey = '';
+  private lastLiveNotifAt = 0;
+
   messaging() {
     return messaging();
   }
@@ -73,6 +82,19 @@ class NotificationService {
 
   async setupCategoriesAndChannels() {
     try {
+      if (!this.notificationHandlerConfigured) {
+        Notifications.setNotificationHandler({
+          handleNotification: async () => ({
+            shouldShowAlert: true,
+            shouldPlaySound: true,
+            shouldSetBadge: false,
+            shouldShowBanner: true,
+            shouldShowList: true,
+          }),
+        });
+        this.notificationHandlerConfigured = true;
+      }
+
       if (Platform.OS === 'android') {
         await Notifications.setNotificationChannelAsync('church_alerts', {
           name: 'Church Live & Updates',
@@ -111,7 +133,7 @@ class NotificationService {
     }
   }
 
-  async displayLiveNotification(data: any, title?: string, body?: string) {
+  async displayLiveNotification(data: any, title?: string, body?: string): Promise<boolean> {
     try {
       await this.setupCategoriesAndChannels();
       const pushTitle = title || data?.pushTitle || data?.title || '🔴 We Are LIVE Now!';
@@ -121,7 +143,41 @@ class NotificationService {
       const videoId = (data && data.videoId) || '';
       const churchId = (data && data.churchId) || 'rhema';
 
+      const dedupKey = videoId || liveUrl || 'active';
+      const cooldownMs = videoId ? LIVE_NOTIF_SAME_VIDEO_COOLDOWN_MS : LIVE_NOTIF_FALLBACK_COOLDOWN_MS;
+      const now = Date.now();
+
+      if (this.lastLiveNotifKey === dedupKey && now - this.lastLiveNotifAt < cooldownMs) {
+        console.log('ℹ️ [NotificationService] Suppressed duplicate YouTube Live notification (in-memory):', dedupKey);
+        return false;
+      }
+
+      try {
+        const storedRaw = await AsyncStorage.getItem(LAST_LIVE_NOTIF_STORAGE_KEY);
+        if (storedRaw) {
+          const parsed = JSON.parse(storedRaw);
+          if (parsed?.key === dedupKey && now - Number(parsed?.timestamp || 0) < cooldownMs) {
+            this.lastLiveNotifKey = dedupKey;
+            this.lastLiveNotifAt = Number(parsed.timestamp);
+            console.log('ℹ️ [NotificationService] Suppressed duplicate YouTube Live notification (storage):', dedupKey);
+            return false;
+          }
+        }
+      } catch {
+        // Non-fatal storage read error
+      }
+
+      this.lastLiveNotifKey = dedupKey;
+      this.lastLiveNotifAt = now;
+      AsyncStorage.setItem(
+        LAST_LIVE_NOTIF_STORAGE_KEY,
+        JSON.stringify({ key: dedupKey, timestamp: now })
+      ).catch(() => {});
+
+      const identifier = videoId ? `youtube_live_${videoId}` : 'youtube_live_active';
+
       await Notifications.scheduleNotificationAsync({
+        identifier,
         content: {
           title: pushTitle,
           body: pushBody,
@@ -135,12 +191,15 @@ class NotificationService {
           categoryIdentifier: 'youtube_live',
           sound: 'default',
           color: '#E02424',
+          autoDismiss: true,
         },
         trigger: Platform.OS === 'android' ? { channelId: 'church_alerts' } : null,
       });
       console.log('✅ [NotificationService] Posted YouTube Live notification with "Join Live Now" button to device notification panel');
+      return true;
     } catch (err) {
       console.error('❌ [NotificationService] Failed to post live notification to panel:', err);
+      return false;
     }
   }
 
@@ -428,13 +487,21 @@ class NotificationService {
         case 'job_application_member': {
           const appId = rawData.applicationId || rawData.referenceId || id;
           const oppId = rawData.opportunityId;
-          console.log('💼 [NotificationService] Routing Member to Job Circle Applications:', { appId, oppId });
-          nav.navigate('JobCircle', {
-            initialTab: 'applications',
-            applicationId: appId,
-            opportunityId: oppId,
-            timestamp: Date.now(),
-          });
+          console.log('💼 [NotificationService] Routing Member to Application Details:', { appId, oppId });
+          if (oppId) {
+            nav.navigate('OpportunityDetailScreen', {
+              opportunityId: oppId,
+              applicationId: appId,
+              timestamp: Date.now(),
+            });
+          } else {
+            nav.navigate('JobCircle', {
+              skipSplash: true,
+              initialTab: 'applications',
+              applicationId: appId,
+              timestamp: Date.now(),
+            });
+          }
           break;
         }
         default:

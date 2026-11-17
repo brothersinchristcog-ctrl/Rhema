@@ -1,3 +1,4 @@
+import './globalConfig.js';
 /**
  * ⏰ AUTOMATED DAILY PROMISE SCHEDULER
  * Scheduled to run every day at 05:00 AM IST (01:30 AM UTC)
@@ -7,7 +8,7 @@ export declare const automatedDailyPromise: import("firebase-functions/v2/schedu
  * 📣 ON BROADCAST CREATED TRIGGER (Rhema Church collection)
  * Catches all broadcasts created in 'Rhema Church/{churchId}/broadcasts/{messageId}'
  */
-export declare const sendRhemaBroadcastPush: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+export declare const sendRhemaBroadcastPush: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
     churchId: string;
     messageId: string;
 }>>;
@@ -17,23 +18,15 @@ export declare const sendRhemaBroadcastPush: import("firebase-functions/core").C
 export declare const triggerDailyPromisePushHttp: import("firebase-functions/v2/https").HttpsFunction;
 /**
  * ⏰ YOUTUBE LIVE CHECK SCHEDULER
- * Runs every 5 minutes to check if YouTube channel is live
+ * Delegates to the shared transactional `checkChurchYouTubeLive` helper so concurrent
+ * schedulers NEVER dispatch duplicate notifications for the same live session.
  */
 export declare const checkYouTubeLive: import("firebase-functions/v2/scheduler").ScheduleFunction;
 export declare const triggerTestYouTubeLive: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
     success: boolean;
-    message: string;
-    sent?: never;
-    failed?: never;
-    broadcastId?: never;
-} | {
-    success: boolean;
-    sent: any;
-    failed: any;
-    broadcastId: any;
-    message?: never;
+    broadcastId: string;
 }>, unknown>;
-export { publishScheduledSermons, triggerPublishScheduledSermonsHttp, triggerDailyVersePushHttp, sendDailyVersePushScheduled, monitorMeetingLive, pushMeetingLive, onBaptismRequestCreatedAdmin, onBaptismRequestCreatedAdminLegacy, onPrayerRequestCreatedAdmin, onPrayerRequestCreatedAdminLegacy, onPrayerRequestProcessedMember, onPrayerRequestProcessedMemberLegacy, pushPrayerRequestApproved, pushCareCellAnnouncement, pushCareCellMeeting, pushCareCellPrayerRequest, pushCareCellVisit, onTestimonyCreatedAdmin, onTestimonyCreatedAdminLegacy, onTestimonyUpdatedWorkflow, onTestimonyUpdatedWorkflowLegacy, onVolunteerApplicationCreated, onVolunteerApplicationCreatedLegacy, onVolunteerApplicationUpdated, onVolunteerApplicationUpdatedLegacy, onEventUpdatedForVolunteers, onEventUpdatedForVolunteersLegacy, scheduledVolunteerReminders, triggerVolunteerPushTestHttp, onJobApplicationCreated, onJobApplicationUpdated, onJobOpportunityCreated, } from './notifications.js';
+export { publishScheduledSermons, triggerPublishScheduledSermonsHttp, triggerDailyVersePushHttp, sendDailyVersePushScheduled, monitorMeetingLive, pushMeetingLive, onBaptismRequestCreatedAdmin, onBaptismRequestCreatedAdminLegacy, onPrayerRequestCreatedAdmin, onPrayerRequestCreatedAdminLegacy, onPrayerRequestProcessedMember, onPrayerRequestProcessedMemberLegacy, pushPrayerRequestApproved, pushCareCellAnnouncement, pushCareCellMeeting, pushCareCellPrayerRequest, pushCareCellVisit, onTestimonyCreatedAdmin, onTestimonyCreatedAdminLegacy, onTestimonyUpdatedWorkflow, onTestimonyUpdatedWorkflowLegacy, onVolunteerApplicationCreated, onVolunteerApplicationCreatedLegacy, onVolunteerApplicationUpdated, onVolunteerApplicationUpdatedLegacy, onEventUpdatedForVolunteers, onEventUpdatedForVolunteersLegacy, scheduledVolunteerReminders, triggerVolunteerPushTestHttp, onJobApplicationCreated, onJobApplicationUpdated, onJobOpportunityCreated, onJobOpportunityUpdated, } from './notifications.js';
 export { onServiceAssignmentQueueDispatched, onServiceAssignmentResponded, checkServiceAssignmentTimeoutsCron, sendServiceRosterRemindersCron, triggerCheckRosterTimeoutsHttp, dispatchServiceAssignmentNotificationHttp, onServiceRehearsalCreated, onServicePlanPublished, bookResponsibilitySlotHttp, declineResponsibilitySlotHttp, } from './rosterNotifications.js';
 export { guestInviteLanding } from './guestInvite.js';
 //# sourceMappingURL=index.d.ts.map

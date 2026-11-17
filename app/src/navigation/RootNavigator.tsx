@@ -774,7 +774,11 @@ function Navigation() {
       const { navigationRef } = require('../../App');
       let retries = 0;
       const tryNav = () => {
-        if (navigationRef && navigationRef.isReady()) {
+        if (
+          navigationRef &&
+          navigationRef.isReady() &&
+          navigationRef.getRootState()?.routeNames?.includes('Tabs')
+        ) {
           const type = data.type || (data.screen === 'BibleQuizDetail' ? 'quiz' : undefined);
           const quizTargetId = data.quizId || data.relatedId || data.id;
 
@@ -907,6 +911,8 @@ function Navigation() {
         } else if (retries < 25) {
           retries++;
           setTimeout(tryNav, 200);
+        } else {
+          setPendingNotification({ data });
         }
       };
       tryNav();
@@ -928,7 +934,11 @@ function Navigation() {
     const unsubscribeOnOpen = NotificationService.messaging().onNotificationOpenedApp(remoteMessage => {
       if (!remoteMessage) return;
       const { navigationRef } = require('../../App');
-      if (navigationRef && navigationRef.isReady()) {
+      if (
+        navigationRef &&
+        navigationRef.isReady() &&
+        navigationRef.getRootState()?.routeNames?.includes('Tabs')
+      ) {
         const type = remoteMessage?.data?.type;
         const isAdminNotification = 
           type === 'invoice' || 
@@ -956,7 +966,11 @@ function Navigation() {
     NotificationService.messaging().getInitialNotification().then(remoteMessage => {
       if (remoteMessage) {
         const { navigationRef } = require('../../App');
-        if (navigationRef && navigationRef.isReady()) {
+        if (
+          navigationRef &&
+          navigationRef.isReady() &&
+          navigationRef.getRootState()?.routeNames?.includes('Tabs')
+        ) {
           const type = remoteMessage?.data?.type;
           const isAdminNotification = 
             type === 'invoice' || 
@@ -1127,11 +1141,15 @@ function Navigation() {
   }, [user?.uid, user?.isAnonymous, member?.phone, activeChurch?.id]);
 
   useEffect(() => {
-    if (user && !loading && pendingNotification) {
+    if (user && !loading && !showSplash && pendingNotification) {
       let retryCount = 0;
       const tryNavigate = () => {
         const { navigationRef } = require('../../App');
-        if (navigationRef && navigationRef.isReady()) {
+        if (
+          navigationRef &&
+          navigationRef.isReady() &&
+          navigationRef.getRootState()?.routeNames?.includes('Tabs')
+        ) {
           const type = pendingNotification?.data?.type;
           
           const isAdminNotification = 
@@ -1166,7 +1184,7 @@ function Navigation() {
       
       tryNavigate();
     }
-  }, [user, loading, pendingNotification, viewMode]);
+  }, [user, loading, showSplash, pendingNotification, viewMode]);
 
   useEffect(() => {
     if (user && !loading) {
