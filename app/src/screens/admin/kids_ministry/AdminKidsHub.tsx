@@ -43,6 +43,7 @@ import {
   KidsBibleStory,
   KidsQuiz,
   KidsWorshipSong,
+  KidsCurriculumLesson,
 } from '../../../types/KidsMinistryTypes';
 import EnrollChildModal from '../../kids_ministry/components/EnrollChildModal';
 import EditClassModal from './components/EditClassModal';
@@ -50,6 +51,7 @@ import ClassRosterModal from './components/ClassRosterModal';
 import PromotionManagerModal from './components/PromotionManagerModal';
 import AdminTeachersModal from './components/AdminTeachersModal';
 import AdminContentManagerModal from './components/AdminContentManagerModal';
+import AdminCurriculumModal from './components/AdminCurriculumModal';
 
 const { width } = Dimensions.get('window');
 
@@ -72,13 +74,15 @@ export default function AdminKidsHub({ navigation }: any) {
   const [showPromotionModal, setShowPromotionModal] = useState(false);
   const [showTeachersModal, setShowTeachersModal] = useState(false);
   const [showContentManagerModal, setShowContentManagerModal] = useState(false);
+  const [showCurriculumModal, setShowCurriculumModal] = useState(false);
 
-  // Phase 5: Learning content state
+  // Phase 5 & 6: Learning content & 52-week curriculum state
   const [stories, setStories] = useState<KidsBibleStory[]>([]);
   const [quizzes, setQuizzes] = useState<KidsQuiz[]>([]);
   const [songs, setSongs] = useState<KidsWorshipSong[]>([]);
+  const [curriculum, setCurriculum] = useState<KidsCurriculumLesson[]>([]);
 
-  // Load children, classes, teachers, and learning content (Realtime)
+  // Load children, classes, teachers, and curriculum (Realtime)
   useEffect(() => {
     // 1. Realtime listener for Sunday School Classes
     const unsubClasses = KidsMinistryService.subscribeToClasses(churchId, classList => {
@@ -116,6 +120,11 @@ export default function AdminKidsHub({ navigation }: any) {
       setSongs(list);
     });
 
+    // 8. Realtime listener for 52-Week Curriculum
+    const unsubCurriculum = KidsMinistryService.subscribeToCurriculum(churchId, list => {
+      setCurriculum(list);
+    });
+
     return () => {
       unsubClasses();
       unsubKids();
@@ -124,6 +133,7 @@ export default function AdminKidsHub({ navigation }: any) {
       unsubStories();
       unsubQuizzes();
       unsubSongs();
+      unsubCurriculum();
     };
   }, [churchId]);
 
@@ -624,9 +634,31 @@ export default function AdminKidsHub({ navigation }: any) {
                 <Sparkles size={20} color="#FBBF24" />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.curriculumHeroTitle}>52-Week Bilingual Curriculum</Text>
-                  <Text style={styles.curriculumHeroSub}>Telugu & English Scripture Lessons for 2026-2027</Text>
+                  <Text style={styles.curriculumHeroSub}>
+                    {curriculum.length || 52} Weeks · Telugu & English Syllabus for 2026-2027
+                  </Text>
                 </View>
               </View>
+
+              {/* 52-Week Full Syllabus Launcher */}
+              <TouchableOpacity
+                style={[styles.portalCard, { borderColor: '#10B981', borderWidth: 1 }]}
+                onPress={() => setShowCurriculumModal(true)}
+                activeOpacity={0.88}
+              >
+                <View style={[styles.portalIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]}>
+                  <Calendar size={22} color="#10B981" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.portalTitle, { color: '#10B981' }]}>
+                    Open 52-Week Curriculum Syllabus
+                  </Text>
+                  <Text style={styles.portalSub}>
+                    Browse Q1-Q4 schedules, set live Sunday active week & export to WhatsApp
+                  </Text>
+                </View>
+                <ChevronRight size={18} color="#10B981" />
+              </TouchableOpacity>
 
               {/* Learning Content CMS Quick Launcher */}
               <TouchableOpacity
@@ -648,17 +680,34 @@ export default function AdminKidsHub({ navigation }: any) {
                 <ChevronRight size={18} color="#FBBF24" />
               </TouchableOpacity>
 
-              <View style={styles.lessonCard}>
-                <View style={styles.lessonHeader}>
-                  <Text style={styles.lessonWeek}>WEEK 42 · CURRENT LESSON</Text>
-                  <Text style={styles.approvedBadge}>✓ Approved by Director</Text>
-                </View>
-                <Text style={styles.lessonTitle}>David and Goliath (దైర్యము / Courage)</Text>
-                <Text style={styles.lessonRef}>1 Samuel 17 · 1 సమూయేలు 17</Text>
-                <Text style={styles.lessonVerse}>
-                  "యుద్ధము యెహోవాదే; ఆయన మిమ్మును మా చేతికి అప్పగించును." — 1 Sam 17:47
-                </Text>
-              </View>
+              {/* Active Lesson Card (Dynamic from Firestore) */}
+              {(() => {
+                const activeLesson = curriculum.find(l => l.isCurrentWeek) || curriculum[0];
+                if (!activeLesson) return null;
+                return (
+                  <View style={[styles.lessonCard, { borderColor: '#10B981' }]}>
+                    <View style={styles.lessonHeader}>
+                      <Text style={[styles.lessonWeek, { color: '#10B981' }]}>
+                        WEEK {activeLesson.weekNumber} · CURRENT ACTIVE SUNDAY
+                      </Text>
+                      <Text style={styles.approvedBadge}>✓ Live Across App</Text>
+                    </View>
+                    <Text style={styles.lessonTitle}>{activeLesson.title}</Text>
+                    <Text style={[styles.lessonRef, { color: '#FBBF24' }]}>
+                      {activeLesson.titleTelugu}
+                    </Text>
+                    <Text style={styles.lessonRef}>
+                      {activeLesson.scriptureRef} · {activeLesson.scriptureRefTelugu}
+                    </Text>
+                    <Text style={styles.lessonVerse}>
+                      "{activeLesson.memoryVerse.verseEnglish}"
+                    </Text>
+                    <Text style={[styles.lessonVerse, { color: '#9CA3AF', fontStyle: 'normal' }]}>
+                      "{activeLesson.memoryVerse.verseTelugu}" — {activeLesson.memoryVerse.reference}
+                    </Text>
+                  </View>
+                );
+              })()}
 
               <View style={styles.lessonCard}>
                 <View style={styles.lessonHeader}>
@@ -742,6 +791,16 @@ export default function AdminKidsHub({ navigation }: any) {
           songs={songs}
           churchId={churchId}
           onClose={() => setShowContentManagerModal(false)}
+        />
+      )}
+
+      {/* ── 52-WEEK CURRICULUM SYLLABUS MODAL ── */}
+      {showCurriculumModal && (
+        <AdminCurriculumModal
+          visible={showCurriculumModal}
+          curriculum={curriculum}
+          churchId={churchId}
+          onClose={() => setShowCurriculumModal(false)}
         />
       )}
     </View>

@@ -317,3 +317,71 @@ export interface KidsMemoryVerse {
   audioPronunciationUrl?: string;
   scrambleWords: string[];
 }
+
+// ─── PHASE 6: 52-WEEK BILINGUAL CURRICULUM TYPES ───────────────
+
+export type CurriculumQuarter = 'Q1' | 'Q2' | 'Q3' | 'Q4';
+
+export interface KidsCurriculumTierGuide {
+  tier: KidsClassTier;
+  tierName: string;
+  focusAge: string;
+  objective: string;
+  objectiveTelugu: string;
+  activityName: string;
+  activityInstructions: string;
+  activityInstructionsTelugu: string;
+  discussionQuestions: string[];
+}
+
+export interface KidsCurriculumLesson {
+  id: string; // Document ID e.g. "week_42"
+  weekNumber: number; // 1 to 52
+  quarter: CurriculumQuarter;
+  quarterTheme: string; // e.g. "Q3: Courage & Great Kings"
+  title: string; // e.g. "David and Goliath: Giant-Slaying Faith"
+  titleTelugu: string; // e.g. "దావీదు మరియు గొల్యాతు: విశ్వాసంతో జయించుట"
+  scriptureRef: string; // "1 Samuel 17:1-50"
+  scriptureRefTelugu: string; // "1 సమూయేలు 17:1-50"
+  bigIdea: string; // "The battle belongs to the Lord!"
+  bigIdeaTelugu: string; // "యుద్ధము యెహోవాదే; ఆయన మనకు విజయాన్ని అనుగ్రహించును!"
+  
+  // Weekly Memory Verse
+  memoryVerse: {
+    reference: string;
+    referenceTelugu: string;
+    verseEnglish: string;
+    verseTelugu: string;
+  };
+
+  // Connected learning materials
+  storyId?: string;
+  quizId?: string;
+  songId?: string;
+
+  // Teacher preparation schedule
+  teacherPrep: {
+    prayerFocus: string;
+    prayerFocusTelugu: string;
+    suppliesNeeded: string[];
+    schedule: Array<{
+      timeMinutes: number;
+      segment: string;
+      description: string;
+    }>;
+  };
+
+  // Tier-differentiated lesson plans
+  tierGuides: {
+    nursery: KidsCurriculumTierGuide;
+    beginners: KidsCurriculumTierGuide;
+    primary: KidsCurriculumTierGuide;
+    junior: KidsCurriculumTierGuide;
+    teens: KidsCurriculumTierGuide;
+  };
+
+  isCurrentWeek?: boolean;
+  academicYear: string; // e.g. "2026-2027"
+  createdAt?: any;
+  updatedAt?: any;
+}

@@ -41,6 +41,7 @@ import {
   KidsBibleStory,
   KidsQuiz,
   KidsWorshipSong,
+  KidsCurriculumLesson,
   generateDynamicPickupCode,
 } from '../../types/KidsMinistryTypes';
 import KidsSplashScreen from './components/KidsSplashScreen';
@@ -48,6 +49,7 @@ import EnrollChildModal from './components/EnrollChildModal';
 import KidsStoryReaderModal from './components/KidsStoryReaderModal';
 import KidsQuizPlayerModal from './components/KidsQuizPlayerModal';
 import KidsSongPlayerModal from './components/KidsSongPlayerModal';
+import KidsLessonDetailModal from './components/KidsLessonDetailModal';
 
 const { width } = Dimensions.get('window');
 
@@ -65,6 +67,7 @@ export default function KidsMinistryScreen({ navigation }: any) {
   const [stories, setStories] = useState<KidsBibleStory[]>([]);
   const [quizzes, setQuizzes] = useState<KidsQuiz[]>([]);
   const [songs, setSongs] = useState<KidsWorshipSong[]>([]);
+  const [curriculum, setCurriculum] = useState<KidsCurriculumLesson[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedChildIndex, setSelectedChildIndex] = useState(0);
   const [existingHousehold, setExistingHousehold] = useState<any[]>([]);
@@ -74,6 +77,7 @@ export default function KidsMinistryScreen({ navigation }: any) {
   const [selectedStoryForReader, setSelectedStoryForReader] = useState<KidsBibleStory | null>(null);
   const [selectedQuizForPlayer, setSelectedQuizForPlayer] = useState<KidsQuiz | null>(null);
   const [selectedSongForPlayer, setSelectedSongForPlayer] = useState<KidsWorshipSong | null>(null);
+  const [selectedLessonForModal, setSelectedLessonForModal] = useState<KidsCurriculumLesson | null>(null);
 
   // Navigation Tabs: 'home' | 'classroom' | 'lms' | 'pass'
   const [activeTab, setActiveTab] = useState<'home' | 'classroom' | 'lms' | 'pass'>('home');
@@ -117,6 +121,11 @@ export default function KidsMinistryScreen({ navigation }: any) {
       setSongs(songList);
     });
 
+    // Realtime subscription to 52-Week Curriculum
+    const unsubCurriculum = KidsMinistryService.subscribeToCurriculum(churchId, curList => {
+      setCurriculum(curList);
+    });
+
     // Realtime subscription to children
     const unsubscribe = KidsMinistryService.subscribeToFamilyChildren(
       churchId,
@@ -132,6 +141,7 @@ export default function KidsMinistryScreen({ navigation }: any) {
       unsubStories();
       unsubQuizzes();
       unsubSongs();
+      unsubCurriculum();
       unsubscribe();
     };
   }, [member?.id, member?.accountId, churchId]);
@@ -346,33 +356,59 @@ export default function KidsMinistryScreen({ navigation }: any) {
                 </View>
               </View>
 
-              {/* Bilingual Daily Memory Verse Card */}
-              <View style={styles.card}>
-                <View style={styles.cardHeaderSmall}>
-                  <Text style={styles.cardHeaderTag}>📖 WEEKLY MEMORY VERSE</Text>
-                  <Text style={styles.verseRef}>1 సమూయేలు (1 Sam) 17:47</Text>
-                </View>
+              {/* Dynamic Sunday Bible Lesson & Memory Verse Card */}
+              {(() => {
+                const activeLesson = curriculum.find(l => l.isCurrentWeek) || curriculum[0];
+                const verseEn = activeLesson?.memoryVerse?.verseEnglish || "For the battle is the LORD's, and he will give you into our hands.";
+                const verseTe = activeLesson?.memoryVerse?.verseTelugu || "యుద్ధము యెహోవాదే; ఆయన మిమ్మును మా చేతికి అప్పగించును.";
+                const verseRef = activeLesson?.memoryVerse?.reference || "1 Samuel 17:47";
+                const lessonTitle = activeLesson?.title || "David and Goliath";
+                const weekNum = activeLesson?.weekNumber || 42;
 
-                <Text style={styles.verseTelugu}>
-                  "యుద్ధము యెహోవాదే; ఆయన మిమ్మును మా చేతికి అప్పగించును."
-                </Text>
-                <Text style={styles.verseEnglish}>
-                  "For the battle is the LORD's, and he will give you into our hands."
-                </Text>
-
-                <View style={styles.verseFooter}>
+                return (
                   <TouchableOpacity
-                    style={styles.audioListenBtn}
-                    onPress={() => Alert.alert('Voice Audio', 'Playing Telugu audio verse pronunciation...')}
+                    style={[styles.card, { borderColor: '#FBBF24', borderWidth: 1 }]}
+                    onPress={() => activeLesson && setSelectedLessonForModal(activeLesson)}
+                    activeOpacity={0.88}
                   >
-                    <Volume2 size={14} color="#FBBF24" />
-                    <Text style={styles.audioListenText}>Listen Audio (తెలుగు)</Text>
+                    <View style={styles.cardHeaderSmall}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={[styles.cardHeaderTag, { color: '#FBBF24' }]}>
+                          ⭐ WEEK {weekNum} SUNDAY LESSON
+                        </Text>
+                        <View style={{ backgroundColor: 'rgba(251, 191, 36, 0.2)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                          <Text style={{ fontSize: 9, fontWeight: '800', color: '#FBBF24' }}>TAP DETAILS &rsaquo;</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.verseRef}>{verseRef}</Text>
+                    </View>
+
+                    <Text style={{ fontSize: 15, fontWeight: 'bold', color: '#FFFFFF', marginTop: 2, marginBottom: 4 }}>
+                      {lessonTitle}
+                    </Text>
+
+                    <Text style={styles.verseTelugu}>
+                      "{verseTe}"
+                    </Text>
+                    <Text style={styles.verseEnglish}>
+                      "{verseEn}"
+                    </Text>
+
+                    <View style={styles.verseFooter}>
+                      <TouchableOpacity
+                        style={styles.audioListenBtn}
+                        onPress={() => Alert.alert('Scripture Recitation', `"${verseEn}"\n\n"${verseTe}"\n\n— ${verseRef}`)}
+                      >
+                        <Volume2 size={14} color="#FBBF24" />
+                        <Text style={styles.audioListenText}>Listen Audio (తెలుగు)</Text>
+                      </TouchableOpacity>
+                      <View style={styles.starBadge}>
+                        <Text style={styles.starBadgeText}>★ 20 Points Award</Text>
+                      </View>
+                    </View>
                   </TouchableOpacity>
-                  <View style={styles.starBadge}>
-                    <Text style={styles.starBadgeText}>★ 5 Stars Award</Text>
-                  </View>
-                </View>
-              </View>
+                );
+              })()}
 
               {/* Quick Modules 2x2 Grid */}
               <View>
@@ -821,6 +857,16 @@ export default function KidsMinistryScreen({ navigation }: any) {
           allSongs={songs}
           onClose={() => setSelectedSongForPlayer(null)}
           onSelectSong={s => setSelectedSongForPlayer(s)}
+        />
+      )}
+
+      {/* ── SUNDAY BIBLE LESSON & MEMORY DETAIL MODAL ── */}
+      {selectedLessonForModal && (
+        <KidsLessonDetailModal
+          visible={!!selectedLessonForModal}
+          lesson={selectedLessonForModal}
+          child={activeChild}
+          onClose={() => setSelectedLessonForModal(null)}
         />
       )}
     </View>
