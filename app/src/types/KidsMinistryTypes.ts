@@ -172,11 +172,20 @@ export interface KidsSessionRecord {
 }
 
 /**
- * Calculates accurate age in years from "YYYY-MM-DD" date string.
+ * Calculates accurate age in years from "YYYY-MM-DD" or "DD-MM-YYYY" date string.
  */
 export function calculateChildAge(dob: string): number {
   if (!dob) return 0;
-  const birthDate = new Date(dob);
+  let birthDate: Date;
+  if (/^\d{2}-\d{2}-\d{4}$/.test(dob)) {
+    const parts = dob.split('-').map(Number);
+    birthDate = new Date(parts[2], parts[1] - 1, parts[0]);
+  } else if (/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
+    const parts = dob.split('-').map(Number);
+    birthDate = new Date(parts[0], parts[1] - 1, parts[2]);
+  } else {
+    birthDate = new Date(dob);
+  }
   if (isNaN(birthDate.getTime())) return 0;
   
   const today = new Date();

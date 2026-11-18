@@ -38,6 +38,7 @@ import {
   ShieldAlert,
 } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
+import * as Speech from 'expo-speech';
 import { useAuth } from '../../context/AuthContext';
 import KidsMinistryService from '../../services/KidsMinistryService';
 import {
@@ -101,6 +102,48 @@ export default function KidsMinistryScreen({ navigation }: any) {
 
   // Daily dynamic pickup code per session (can be manually regenerated)
   const [dailyPickupCode, setDailyPickupCode] = useState(() => generateDynamicPickupCode());
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      Speech.stop();
+    };
+  }, []);
+
+  const handleToggleSpeech = async (textTe: string, textEn: string) => {
+    try {
+      if (isSpeaking) {
+        await Speech.stop();
+        setIsSpeaking(false);
+        return;
+      }
+
+      setIsSpeaking(true);
+      const textToSpeak = textTe || textEn;
+      Speech.speak(textToSpeak, {
+        language: textTe ? 'te-IN' : 'en-US',
+        rate: 0.8,
+        pitch: 1.0,
+        onDone: () => setIsSpeaking(false),
+        onStopped: () => setIsSpeaking(false),
+        onError: () => {
+          if (textEn) {
+            Speech.speak(textEn, {
+              language: 'en-US',
+              rate: 0.85,
+              onDone: () => setIsSpeaking(false),
+              onError: () => setIsSpeaking(false),
+            });
+          } else {
+            setIsSpeaking(false);
+          }
+        },
+      });
+    } catch (e) {
+      console.warn('Speech error:', e);
+      setIsSpeaking(false);
+    }
+  };
 
   // Load registered children for the family in realtime
   useEffect(() => {
@@ -317,43 +360,49 @@ export default function KidsMinistryScreen({ navigation }: any) {
         </View>
       )}
 
-      {/* ── TABS NAVIGATION (RHEMA PILLS) ── */}
-      <View style={styles.tabsRow}>
-        <TouchableOpacity
-          style={[styles.tabPill, activeTab === 'home' && styles.tabPillActive]}
-          onPress={() => setActiveTab('home')}
+      {/* ── TABS NAVIGATION (RHEMA PILLS - HORIZONTAL SCROLL FOR FULL VISIBILITY) ── */}
+      <View style={styles.tabsContainer}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabsRow}
         >
-          <Text style={[styles.tabText, activeTab === 'home' && styles.tabTextActive]}>
-            Home
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabPill, activeTab === 'home' && styles.tabPillActive]}
+            onPress={() => setActiveTab('home')}
+          >
+            <Text style={[styles.tabText, activeTab === 'home' && styles.tabTextActive]}>
+              Home
+            </Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.tabPill, activeTab === 'classroom' && styles.tabPillActive]}
-          onPress={() => setActiveTab('classroom')}
-        >
-          <Text style={[styles.tabText, activeTab === 'classroom' && styles.tabTextActive]}>
-            Sunday School
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabPill, activeTab === 'classroom' && styles.tabPillActive]}
+            onPress={() => setActiveTab('classroom')}
+          >
+            <Text style={[styles.tabText, activeTab === 'classroom' && styles.tabTextActive]}>
+              Sunday School
+            </Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.tabPill, activeTab === 'lms' && styles.tabPillActive]}
-          onPress={() => setActiveTab('lms')}
-        >
-          <Text style={[styles.tabText, activeTab === 'lms' && styles.tabTextActive]}>
-            Bible LMS
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabPill, activeTab === 'lms' && styles.tabPillActive]}
+            onPress={() => setActiveTab('lms')}
+          >
+            <Text style={[styles.tabText, activeTab === 'lms' && styles.tabTextActive]}>
+              Bible LMS
+            </Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.tabPill, activeTab === 'pass' && styles.tabPillActive]}
-          onPress={() => setActiveTab('pass')}
-        >
-          <Text style={[styles.tabText, activeTab === 'pass' && styles.tabTextActive]}>
-            Custody Pass
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabPill, activeTab === 'pass' && styles.tabPillActive]}
+            onPress={() => setActiveTab('pass')}
+          >
+            <Text style={[styles.tabText, activeTab === 'pass' && styles.tabTextActive]}>
+              Custody Pass 🛡️
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
       </View>
 
       {/* ── MAIN BODY CONTENT ── */}
@@ -437,11 +486,11 @@ export default function KidsMinistryScreen({ navigation }: any) {
               {/* Dynamic Sunday Bible Lesson & Memory Verse Card */}
               {(() => {
                 const activeLesson = curriculum.find(l => l.isCurrentWeek) || curriculum[0];
-                const verseEn = activeLesson?.memoryVerse?.verseEnglish || "For the battle is the LORD's, and he will give you into our hands.";
-                const verseTe = activeLesson?.memoryVerse?.verseTelugu || "యుద్ధము యెహోవాదే; ఆయన మిమ్మును మా చేతికి అప్పగించును.";
-                const verseRef = activeLesson?.memoryVerse?.reference || "1 Samuel 17:47";
-                const lessonTitle = activeLesson?.title || "David and Goliath";
-                const weekNum = activeLesson?.weekNumber || 42;
+                const verseEn = activeLesson?.memoryVerse?.verseEnglish || "In the beginning God created the heavens and the earth.";
+                const verseTe = activeLesson?.memoryVerse?.verseTelugu || "ఆదియందు దేవుడు భూమ్యాకాశములను సృజించెను.";
+                const verseRef = activeLesson?.memoryVerse?.reference || "Genesis 1:1";
+                const lessonTitle = activeLesson?.title || "In the Beginning: God Created All Things";
+                const weekNum = activeLesson?.weekNumber || 1;
 
                 return (
                   <TouchableOpacity
@@ -474,11 +523,17 @@ export default function KidsMinistryScreen({ navigation }: any) {
 
                     <View style={styles.verseFooter}>
                       <TouchableOpacity
-                        style={styles.audioListenBtn}
-                        onPress={() => Alert.alert('Scripture Recitation', `"${verseEn}"\n\n"${verseTe}"\n\n— ${verseRef}`)}
+                        style={[
+                          styles.audioListenBtn,
+                          isSpeaking && { backgroundColor: '#DC2626', borderColor: '#EF4444' },
+                        ]}
+                        onPress={() => handleToggleSpeech(verseTe, verseEn)}
+                        activeOpacity={0.8}
                       >
-                        <Volume2 size={14} color="#FBBF24" />
-                        <Text style={styles.audioListenText}>Listen Audio (తెలుగు)</Text>
+                        <Volume2 size={14} color={isSpeaking ? '#FFFFFF' : '#FBBF24'} />
+                        <Text style={[styles.audioListenText, isSpeaking && { color: '#FFFFFF' }]}>
+                          {isSpeaking ? 'Stop Audio ⏹️' : 'Listen Audio (తెలుగు) 🔊'}
+                        </Text>
                       </TouchableOpacity>
                       <View style={styles.starBadge}>
                         <Text style={styles.starBadgeText}>★ 20 Points Award</Text>
@@ -524,12 +579,13 @@ export default function KidsMinistryScreen({ navigation }: any) {
 
                   <TouchableOpacity
                     style={styles.gridItem}
-                    onPress={() =>
-                      Alert.alert(
-                        'Worship Action Songs',
-                        'Opening Christian kids action songs and choir playlist with Telugu lyrics!'
-                      )
-                    }
+                    onPress={() => {
+                      if (songs.length > 0) {
+                        setSelectedSongForPlayer(songs[0]);
+                      } else {
+                        setActiveTab('lms');
+                      }
+                    }}
                     activeOpacity={0.8}
                   >
                     <Text style={styles.gridEmoji}>🎵</Text>
@@ -537,60 +593,6 @@ export default function KidsMinistryScreen({ navigation }: any) {
                     <Text style={styles.gridSub}>Worship with Lyrics</Text>
                   </TouchableOpacity>
                 </View>
-              </View>
-
-              {/* Kingdom Rewards & Graduation Certificate Banner */}
-              <View style={styles.rewardsCard}>
-                <View style={styles.rewardsTopRow}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Award size={18} color="#FBBF24" />
-                    <Text style={styles.rewardsHeading}>KINGDOM REWARDS & BADGES</Text>
-                  </View>
-                  <View style={styles.pointsBadge}>
-                    <Text style={styles.pointsBadgeText}>270 PTS</Text>
-                  </View>
-                </View>
-
-                {/* Badges preview row */}
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.badgesScrollRow}>
-                  {kingdomBadges.map(badge => (
-                    <View key={badge.id} style={styles.badgeChip}>
-                      <Text style={styles.badgeEmoji}>{badge.emoji}</Text>
-                      <View>
-                        <Text style={styles.badgeTitle}>{badge.title}</Text>
-                        <Text style={styles.badgeTitleTe}>{badge.titleTelugu}</Text>
-                      </View>
-                    </View>
-                  ))}
-                </ScrollView>
-
-                {/* Certificate Launcher */}
-                <TouchableOpacity
-                  style={styles.certLaunchBtn}
-                  onPress={() => {
-                    if (!activeChild) return;
-                    setSelectedCertData({
-                      childName: activeChild.fullName,
-                      childId: activeChild.childId,
-                      eventName: 'Annual Sunday School Completion',
-                      eventNameTelugu: 'వార్షిక ఆదివార పాఠశాల దీవెన పత్రము',
-                      tierOrHouse: `${activeChild.assignedClassName || 'Primary Stars'} Tier`,
-                      dateIssued: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-                      academicYear: '2026-2027',
-                      directorName: 'Mrs. Sarah Jenkins',
-                      pastorName: 'Rev. Dr. P. Johnson',
-                      churchName: (member as any)?.churchName || 'Rhema Global Ministries',
-                      verse: 'Train up a child in the way he should go; even when he is old he will not depart from it.',
-                      verseTelugu: 'బాలుడు నడవవలసిన త్రోవను వానికి నేర్పుము; వాడు పెద్దవాడైనప్పుడు దానినుండి తొలగిపోడు. — సామెతలు 22:6',
-                    });
-                  }}
-                  activeOpacity={0.88}
-                >
-                  <Award size={16} color="#000000" />
-                  <Text style={styles.certLaunchBtnText}>
-                    View & Share {activeChild?.firstName}'s Official Certificate 🎓
-                  </Text>
-                </TouchableOpacity>
               </View>
 
               {/* Entrance & Dismissal Stations */}
@@ -1313,13 +1315,16 @@ const styles = StyleSheet.create({
     color: '#FBBF24',
     fontWeight: '700',
   },
-  tabsRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    gap: 8,
+  tabsContainer: {
     borderBottomWidth: 1,
     borderBottomColor: '#121215',
+  },
+  tabsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 8,
+    alignItems: 'center',
   },
   tabPill: {
     paddingHorizontal: 14,

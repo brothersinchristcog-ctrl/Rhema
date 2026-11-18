@@ -2606,7 +2606,7 @@ class KidsMinistryService {
     ];
 
     return themes.map(t => {
-      const isCurrent = t.week === 42; // default week 42 active
+      const isCurrent = t.week === 1; // default week 1 active (Genesis / Creation)
       return {
         id: `week_${t.week}`,
         weekNumber: t.week,

@@ -70,6 +70,23 @@ function buildDefaultGuardians(member: any, existingFamilyMembers: any[] = []): 
   return list;
 }
 
+function formatDisplayDate(dateStr: string): string {
+  if (!dateStr) return 'Select Date of Birth (DD-MM-YYYY)';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const [year, month, day] = dateStr.split('-');
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthName = months[parseInt(month, 10) - 1] || month;
+    return `${day}-${month}-${year}  (${day} ${monthName} ${year})`;
+  }
+  if (/^\d{2}-\d{2}-\d{4}$/.test(dateStr)) {
+    const [day, month, year] = dateStr.split('-');
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthName = months[parseInt(month, 10) - 1] || month;
+    return `${day}-${month}-${year}  (${day} ${monthName} ${year})`;
+  }
+  return dateStr;
+}
+
 export default function EnrollChildModal({
   visible,
   onClose,
@@ -163,8 +180,8 @@ export default function EnrollChildModal({
       Alert.alert('Missing Field', 'Please enter child first name');
       return;
     }
-    if (!dob.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      Alert.alert('Invalid Date', 'Please enter DOB in YYYY-MM-DD format (e.g. 2018-05-15)');
+    if (!dob || (!dob.match(/^\d{4}-\d{2}-\d{2}$/) && !dob.match(/^\d{2}-\d{2}-\d{4}$/))) {
+      Alert.alert('Invalid Date', 'Please select child date of birth');
       return;
     }
 
@@ -332,14 +349,14 @@ export default function EnrollChildModal({
             {/* DOB & Gender */}
             <View style={styles.rowTwo}>
               <View style={styles.halfInput}>
-                <Text style={styles.inputLabel}>Date of Birth (Tap to select)</Text>
+                <Text style={styles.inputLabel}>Date of Birth (DD-MM-YYYY)</Text>
                 <TouchableOpacity
                   style={styles.datePickerBtn}
                   onPress={() => setShowDatePicker(true)}
                   activeOpacity={0.8}
                 >
                   <Calendar size={16} color="#FBBF24" style={{ marginRight: 8 }} />
-                  <Text style={styles.datePickerText}>{dob || 'Select Date'}</Text>
+                  <Text style={styles.datePickerText}>{formatDisplayDate(dob)}</Text>
                 </TouchableOpacity>
               </View>
               <View style={styles.halfInput}>
