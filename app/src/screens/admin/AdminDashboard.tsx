@@ -41,7 +41,8 @@ import {
   Sliders,
   Headset,
   Shield,
-  HelpCircle
+  HelpCircle,
+  Crown,
 } from 'lucide-react-native';
 import { useChurch } from '../../context/ChurchContext';
 import { AdminTabContext } from '../../context/AdminTabContext';
@@ -56,6 +57,7 @@ const TAB_ICONS: Record<string, { icon: any; color: string }> = {
   'Sermons': { icon: Mic, color: '#4F46E5' },
   'Songs': { icon: Music, color: '#E11D48' },
   'Bible Quiz': { icon: Award, color: '#CA8A04' },
+  'Kids Ministry': { icon: Crown, color: '#F59E0B' },
 
   // People & Fellowship
   'Members': { icon: Users, color: '#0284C7' },
@@ -96,7 +98,7 @@ const SECTIONS = [
   {
     id: 'ministry',
     title: 'Ministry & Word',
-    tabNames: ['Promises', 'Daily Verses', 'Sermons', 'Songs', 'Bible Quiz'],
+    tabNames: ['Promises', 'Daily Verses', 'Sermons', 'Songs', 'Bible Quiz', 'Kids Ministry'],
   },
   {
     id: 'people',

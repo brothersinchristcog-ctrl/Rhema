@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useContext } from 'react';
 import {
   StyleSheet,
   View,
@@ -36,6 +36,7 @@ import {
   TrendingUp,
 } from 'lucide-react-native';
 import { useAuth } from '../../../context/AuthContext';
+import { AdminTabContext } from '../../../context/AdminTabContext';
 import KidsMinistryService from '../../../services/KidsMinistryService';
 import {
   ChildRecord,
@@ -66,6 +67,19 @@ export default function AdminKidsHub({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const { member } = useAuth();
   const churchId = member?.churchId || 'rhema';
+  const adminTabCtx = useContext(AdminTabContext);
+
+  const handleBack = () => {
+    if (adminTabCtx?.goBack) {
+      adminTabCtx.goBack();
+    } else if (adminTabCtx?.setTabByName) {
+      adminTabCtx.setTabByName('Dashboard');
+    } else if (adminTabCtx?.setActiveTab) {
+      adminTabCtx.setActiveTab(0);
+    } else if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    }
+  };
 
   // Tabs: 'overview' | 'children' | 'classes' | 'curriculum'
   const [activeTab, setActiveTab] = useState<'overview' | 'children' | 'classes' | 'curriculum'>('overview');
@@ -203,7 +217,7 @@ export default function AdminKidsHub({ navigation }: any) {
       <View style={styles.headerRow}>
         <TouchableOpacity
           style={styles.backBtn}
-          onPress={() => navigation.goBack()}
+          onPress={handleBack}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />
