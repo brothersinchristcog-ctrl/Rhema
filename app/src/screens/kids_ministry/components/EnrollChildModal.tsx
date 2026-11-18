@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -34,6 +34,41 @@ interface Props {
 const COMMON_ALLERGIES = ['Peanuts', 'Dust / Asthma', 'Dairy', 'Eggs', 'Gluten', 'Penicillin'];
 const EMPTY_FAMILY_ARRAY: any[] = [];
 
+function buildDefaultGuardians(member: any, existingFamilyMembers: any[] = []): AuthorizedGuardian[] {
+  if (!member) return [];
+  const parentName = member.name || `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Parent';
+  const list: AuthorizedGuardian[] = [
+    {
+      id: member.id || 'p1',
+      name: parentName,
+      relationship: 'Father',
+      phone: member.phone || '',
+      isPrimaryContact: true,
+      canPickup: true,
+    },
+  ];
+  const familyList = existingFamilyMembers || EMPTY_FAMILY_ARRAY;
+  const spouse = familyList.find(
+    (c: any) =>
+      c.relation === 'Wife' ||
+      c.relation === 'Mother' ||
+      c.Relation === 'Wife' ||
+      c.Relation === 'Mother'
+  );
+  if (spouse) {
+    const spouseName = `${spouse.FirstName || spouse.firstName || ''} ${spouse.LastName || spouse.lastName || ''}`.trim() || spouse.Name;
+    list.push({
+      id: spouse.id || spouse.Id || 'p2',
+      name: spouseName || 'Mother',
+      relationship: 'Mother',
+      phone: spouse.Phone || spouse.phone || '',
+      isPrimaryContact: false,
+      canPickup: true,
+    });
+  }
+  return list;
+}
+
 export default function EnrollChildModal({
   visible,
   onClose,
@@ -55,91 +90,15 @@ export default function EnrollChildModal({
   const [medicalNotes, setMedicalNotes] = useState('');
   const [bloodGroup, setBloodGroup] = useState('');
 
-  // Guardians State - initialized directly from member prop with zero useEffect loops
-  const [guardians, setGuardians] = useState<AuthorizedGuardian[]>(() => {
-    if (!member) return [];
-    const parentName = member.name || `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Parent';
-    const list: AuthorizedGuardian[] = [
-      {
-        id: member.id || 'p1',
-        name: parentName,
-        relationship: 'Father',
-        phone: member.phone || '',
-        isPrimaryContact: true,
-        canPickup: true,
-      },
-    ];
-    const familyList = existingFamilyMembers || EMPTY_FAMILY_ARRAY;
-    const spouse = familyList.find(
-      (c: any) =>
-        c.relation === 'Wife' ||
-        c.relation === 'Mother' ||
-        c.Relation === 'Wife' ||
-        c.Relation === 'Mother'
-    );
-    if (spouse) {
-      const spouseName = `${spouse.FirstName || spouse.firstName || ''} ${spouse.LastName || spouse.lastName || ''}`.trim() || spouse.Name;
-      list.push({
-        id: spouse.id || spouse.Id || 'p2',
-        name: spouseName || 'Mother',
-        relationship: 'Mother',
-        phone: spouse.Phone || spouse.phone || '',
-        isPrimaryContact: false,
-        canPickup: true,
-      });
-    }
-    return list;
-  });
+  // Guardians State - pure state initialization, ZERO useEffect calls
+  const [guardians, setGuardians] = useState<AuthorizedGuardian[]>(() =>
+    buildDefaultGuardians(member, existingFamilyMembers)
+  );
 
   const [newGuardianName, setNewGuardianName] = useState('');
   const [newGuardianRelation, setNewGuardianRelation] = useState('Mother');
   const [newGuardianPhone, setNewGuardianPhone] = useState('');
   const [showAddGuardian, setShowAddGuardian] = useState(false);
-
-  // Fallback pre-fill only if member was empty during initial mount
-  const hasInitializedRef = React.useRef(guardians.length > 0);
-  useEffect(() => {
-    if (!visible || !member || hasInitializedRef.current) return;
-    if (guardians.length > 0) {
-      hasInitializedRef.current = true;
-      return;
-    }
-
-    hasInitializedRef.current = true;
-    const parentName = member.name || `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Parent';
-    const initialGuardians: AuthorizedGuardian[] = [
-      {
-        id: member.id || 'p1',
-        name: parentName,
-        relationship: 'Father',
-        phone: member.phone || '',
-        isPrimaryContact: true,
-        canPickup: true,
-      },
-    ];
-
-    const familyList = existingFamilyMembers || EMPTY_FAMILY_ARRAY;
-    const spouse = familyList.find(
-      (c: any) =>
-        c.relation === 'Wife' ||
-        c.relation === 'Mother' ||
-        c.Relation === 'Wife' ||
-        c.Relation === 'Mother'
-    );
-    if (spouse) {
-      const spouseName = `${spouse.FirstName || spouse.firstName || ''} ${spouse.LastName || spouse.lastName || ''}`.trim() || spouse.Name;
-      initialGuardians.push({
-        id: spouse.id || spouse.Id || 'p2',
-        name: spouseName || 'Mother',
-        relationship: 'Mother',
-        phone: spouse.Phone || spouse.phone || '',
-        isPrimaryContact: false,
-        canPickup: true,
-      });
-    }
-
-    setGuardians(initialGuardians);
-  }, [visible, member?.id]);
 
   // Derived age & class recommendation
   const calculatedAge = calculateChildAge(dob);
@@ -191,7 +150,7 @@ export default function EnrollChildModal({
       isPrimaryContact: false,
       canPickup: true,
     };
-    setGuardians([...guardians, g]);
+    setGuardians(prev => [...prev, g]);
     setNewGuardianName('');
     setNewGuardianPhone('');
     setShowAddGuardian(false);
