@@ -32,13 +32,14 @@ interface Props {
 }
 
 const COMMON_ALLERGIES = ['Peanuts', 'Dust / Asthma', 'Dairy', 'Eggs', 'Gluten', 'Penicillin'];
+const EMPTY_FAMILY_ARRAY: any[] = [];
 
 export default function EnrollChildModal({
   visible,
   onClose,
   churchId,
   member,
-  existingFamilyMembers = [],
+  existingFamilyMembers = EMPTY_FAMILY_ARRAY,
   onChildEnrolled,
 }: Props) {
   const [submitting, setSubmitting] = useState(false);
@@ -61,44 +62,46 @@ export default function EnrollChildModal({
   const [newGuardianPhone, setNewGuardianPhone] = useState('');
   const [showAddGuardian, setShowAddGuardian] = useState(false);
 
-  // Pre-fill guardians based on current user & existing contacts
+  // Pre-fill guardians based on current user & existing contacts (runs only once when modal is opened)
   useEffect(() => {
-    if (member) {
-      const parentName = member.name || `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Parent';
-      const initialGuardians: AuthorizedGuardian[] = [
-        {
-          id: member.id || 'p1',
-          name: parentName,
-          relationship: 'Father',
-          phone: member.phone || '',
-          isPrimaryContact: true,
-          canPickup: true,
-        },
-      ];
+    if (!visible || !member) return;
+    if (guardians.length > 0) return; // Prevent overwriting or re-render looping
 
-      // If existing family contacts have mother/spouse, add as well
-      const spouse = existingFamilyMembers.find(
-        (c: any) =>
-          c.relation === 'Wife' ||
-          c.relation === 'Mother' ||
-          c.Relation === 'Wife' ||
-          c.Relation === 'Mother'
-      );
-      if (spouse) {
-        const spouseName = `${spouse.FirstName || spouse.firstName || ''} ${spouse.LastName || spouse.lastName || ''}`.trim() || spouse.Name;
-        initialGuardians.push({
-          id: spouse.id || spouse.Id || 'p2',
-          name: spouseName || 'Mother',
-          relationship: 'Mother',
-          phone: spouse.Phone || spouse.phone || '',
-          isPrimaryContact: false,
-          canPickup: true,
-        });
-      }
+    const parentName = member.name || `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Parent';
+    const initialGuardians: AuthorizedGuardian[] = [
+      {
+        id: member.id || 'p1',
+        name: parentName,
+        relationship: 'Father',
+        phone: member.phone || '',
+        isPrimaryContact: true,
+        canPickup: true,
+      },
+    ];
 
-      setGuardians(initialGuardians);
+    // If existing family contacts have mother/spouse, add as well
+    const familyList = existingFamilyMembers || EMPTY_FAMILY_ARRAY;
+    const spouse = familyList.find(
+      (c: any) =>
+        c.relation === 'Wife' ||
+        c.relation === 'Mother' ||
+        c.Relation === 'Wife' ||
+        c.Relation === 'Mother'
+    );
+    if (spouse) {
+      const spouseName = `${spouse.FirstName || spouse.firstName || ''} ${spouse.LastName || spouse.lastName || ''}`.trim() || spouse.Name;
+      initialGuardians.push({
+        id: spouse.id || spouse.Id || 'p2',
+        name: spouseName || 'Mother',
+        relationship: 'Mother',
+        phone: spouse.Phone || spouse.phone || '',
+        isPrimaryContact: false,
+        canPickup: true,
+      });
     }
-  }, [member, existingFamilyMembers]);
+
+    setGuardians(initialGuardians);
+  }, [visible, member?.id]);
 
   // Derived age & class recommendation
   const calculatedAge = calculateChildAge(dob);

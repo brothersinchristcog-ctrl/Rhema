@@ -441,15 +441,17 @@ export default function AdminKidsHub({ navigation }: any) {
       )}
 
       {/* ── ENROLL CHILD MODAL ── */}
-      <EnrollChildModal
-        visible={showEnrollModal}
-        onClose={() => setShowEnrollModal(false)}
-        churchId={churchId}
-        member={member}
-        onChildEnrolled={() => {
-          // Realtime updates
-        }}
-      />
+      {showEnrollModal && (
+        <EnrollChildModal
+          visible={showEnrollModal}
+          onClose={() => setShowEnrollModal(false)}
+          churchId={churchId}
+          member={member}
+          onChildEnrolled={() => {
+            // Realtime updates
+          }}
+        />
+      )}
     </View>
   );
 }

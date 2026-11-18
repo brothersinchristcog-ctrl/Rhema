@@ -82,7 +82,7 @@ export default function KidsMinistryScreen({ navigation }: any) {
     );
 
     return () => unsubscribe();
-  }, [member, churchId]);
+  }, [member?.id, member?.accountId, churchId]);
 
   const activeChild = children[selectedChildIndex] || null;
 
@@ -555,16 +555,18 @@ export default function KidsMinistryScreen({ navigation }: any) {
       )}
 
       {/* ── ENROLL CHILD MODAL ── */}
-      <EnrollChildModal
-        visible={showEnrollModal}
-        onClose={() => setShowEnrollModal(false)}
-        churchId={churchId}
-        member={member}
-        existingFamilyMembers={existingHousehold}
-        onChildEnrolled={() => {
-          // Handled via realtime subscription
-        }}
-      />
+      {showEnrollModal && (
+        <EnrollChildModal
+          visible={showEnrollModal}
+          onClose={() => setShowEnrollModal(false)}
+          churchId={churchId}
+          member={member}
+          existingFamilyMembers={existingHousehold}
+          onChildEnrolled={() => {
+            // Handled via realtime subscription
+          }}
+        />
+      )}
     </View>
   );
 }
