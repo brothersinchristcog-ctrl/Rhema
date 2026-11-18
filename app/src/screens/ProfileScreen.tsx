@@ -869,6 +869,14 @@ export default function ProfileScreen({ navigation }: any) {
             subColor={colors.textSecondary} 
           />
           <MenuItem 
+            icon={<Sparkles size={22} color={colors.text} strokeWidth={1.8} />} 
+            title="Rhema Kids" 
+            sub="Sunday School, child custody & Bible LMS" 
+            onPress={() => navigation.navigate('KidsMinistry')} 
+            textColor={colors.text} 
+            subColor={colors.textSecondary} 
+          />
+          <MenuItem 
             icon={<Info size={22} color={colors.text} strokeWidth={1.8} />} 
             title={t('home.aboutUs') || t('profile.aboutChurch') || 'About Us'} 
             sub={t('home.aboutUsSub') || 'Our mission'} 

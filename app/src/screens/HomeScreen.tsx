@@ -2893,6 +2893,12 @@ export default function HomeScreen() {
     },
     // Row 3: Community & Multimedia
     {
+      id: 'kids_ministry',
+      title: 'Rhema Kids',
+      icon: require('../../assets/gallery_3d_family.png'),
+      onPress: () => navigation.navigate('KidsMinistry'),
+    },
+    {
       id: 'members',
       title: t('home.quickMembers') || 'Members',
       icon: require('../../assets/3d_members_family.png'),

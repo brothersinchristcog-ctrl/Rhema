@@ -1,0 +1,1208 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  StyleSheet,
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  StatusBar,
+  Dimensions,
+  Platform,
+  Alert,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  ArrowLeft,
+  ChevronDown,
+  Shield,
+  BookOpen,
+  Award,
+  Calendar,
+  Clock,
+  User,
+  Plus,
+  Volume2,
+  CheckCircle2,
+  Sparkles,
+} from 'lucide-react-native';
+import QRCode from 'react-native-qrcode-svg';
+import { useAuth } from '../../context/AuthContext';
+import KidsMinistryService from '../../services/KidsMinistryService';
+import { ChildRecord, generateDynamicPickupCode } from '../../types/KidsMinistryTypes';
+import KidsSplashScreen from './components/KidsSplashScreen';
+import EnrollChildModal from './components/EnrollChildModal';
+
+const { width } = Dimensions.get('window');
+
+export default function KidsMinistryScreen({ navigation }: any) {
+  const insets = useSafeAreaInsets();
+  const { member } = useAuth();
+  const churchId = member?.churchId || 'rhema';
+
+  // Splash Screen State
+  const [showSplash, setShowSplash] = useState(true);
+
+  // Data State
+  const [children, setChildren] = useState<ChildRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedChildIndex, setSelectedChildIndex] = useState(0);
+  const [existingHousehold, setExistingHousehold] = useState<any[]>([]);
+
+  // Navigation Tabs: 'home' | 'classroom' | 'lms' | 'pass'
+  const [activeTab, setActiveTab] = useState<'home' | 'classroom' | 'lms' | 'pass'>('home');
+  const [showEnrollModal, setShowEnrollModal] = useState(false);
+  const [showChildPicker, setShowChildPicker] = useState(false);
+
+  // Daily dynamic pickup code per session
+  const [dailyPickupCode] = useState(() => generateDynamicPickupCode());
+
+  // Load registered children for the family in realtime
+  useEffect(() => {
+    if (!member) {
+      setLoading(false);
+      return;
+    }
+
+    const familyId = member.accountId || member.id;
+
+    // Load existing household members for seamless pre-fill (without touching existing screens)
+    KidsMinistryService.getExistingFamilyMembers(churchId, familyId).then(contacts => {
+      setExistingHousehold(contacts);
+    });
+
+    // Realtime subscription to children
+    const unsubscribe = KidsMinistryService.subscribeToFamilyChildren(
+      churchId,
+      familyId,
+      kidList => {
+        setChildren(kidList);
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [member, churchId]);
+
+  const activeChild = children[selectedChildIndex] || null;
+
+  // If splash is showing, render cinematic splash screen
+  if (showSplash) {
+    return (
+      <KidsSplashScreen
+        onEnter={() => setShowSplash(false)}
+        churchName={(member as any)?.churchName || 'RHEMA GLOBAL MINISTRIES'}
+      />
+    );
+  }
+
+  return (
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <StatusBar barStyle="light-content" backgroundColor="#000000" />
+
+      {/* ── TOP APP HEADER ── */}
+      <View style={styles.headerRow}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />
+        </TouchableOpacity>
+
+        {/* Center: Title & Child Switcher */}
+        <View style={styles.headerCenter}>
+          <View style={styles.titleWithCrown}>
+            <Text style={styles.crownEmoji}>👑</Text>
+            <Text style={styles.appTitleSerif}>Rhema Kids</Text>
+          </View>
+
+          {children.length > 0 && activeChild ? (
+            <TouchableOpacity
+              style={styles.childSwitcher}
+              onPress={() => setShowChildPicker(!showChildPicker)}
+            >
+              <Text style={styles.childSwitcherText} numberOfLines={1}>
+                {activeChild.fullName} (Age {activeChild.age})
+              </Text>
+              <ChevronDown size={12} color="#FBBF24" />
+            </TouchableOpacity>
+          ) : (
+            <Text style={styles.childSwitcherSub}>Sunday School Ministry</Text>
+          )}
+        </View>
+
+        {/* Right Action: Enroll Kid or Pass */}
+        <TouchableOpacity
+          style={styles.topActionBtn}
+          onPress={() => setShowEnrollModal(true)}
+          activeOpacity={0.8}
+        >
+          <Plus size={14} color="#000000" strokeWidth={2.8} />
+          <Text style={styles.topActionBtnText}>Add Kid</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Child Dropdown Menu (If family has multiple kids) */}
+      {showChildPicker && children.length > 1 && (
+        <View style={styles.dropdownPicker}>
+          <Text style={styles.dropdownHeader}>SWITCH CHILD:</Text>
+          {children.map((k, idx) => (
+            <TouchableOpacity
+              key={k.id}
+              style={[
+                styles.dropdownItem,
+                idx === selectedChildIndex && styles.dropdownItemActive,
+              ]}
+              onPress={() => {
+                setSelectedChildIndex(idx);
+                setShowChildPicker(false);
+              }}
+            >
+              <Text
+                style={[
+                  styles.dropdownItemText,
+                  idx === selectedChildIndex && styles.dropdownItemTextActive,
+                ]}
+              >
+                🧒 {k.fullName} · Age {k.age} ({k.assignedClassName || 'Class'})
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
+      {/* ── TABS NAVIGATION (RHEMA PILLS) ── */}
+      <View style={styles.tabsRow}>
+        <TouchableOpacity
+          style={[styles.tabPill, activeTab === 'home' && styles.tabPillActive]}
+          onPress={() => setActiveTab('home')}
+        >
+          <Text style={[styles.tabText, activeTab === 'home' && styles.tabTextActive]}>
+            Home
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.tabPill, activeTab === 'classroom' && styles.tabPillActive]}
+          onPress={() => setActiveTab('classroom')}
+        >
+          <Text style={[styles.tabText, activeTab === 'classroom' && styles.tabTextActive]}>
+            Sunday School
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.tabPill, activeTab === 'lms' && styles.tabPillActive]}
+          onPress={() => setActiveTab('lms')}
+        >
+          <Text style={[styles.tabText, activeTab === 'lms' && styles.tabTextActive]}>
+            Bible LMS
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.tabPill, activeTab === 'pass' && styles.tabPillActive]}
+          onPress={() => setActiveTab('pass')}
+        >
+          <Text style={[styles.tabText, activeTab === 'pass' && styles.tabTextActive]}>
+            Custody Pass
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ── MAIN BODY CONTENT ── */}
+      {loading ? (
+        <View style={styles.centerLoading}>
+          <ActivityIndicator size="large" color="#FBBF24" />
+          <Text style={styles.loadingText}>Loading Rhema Kids...</Text>
+        </View>
+      ) : children.length === 0 ? (
+        /* Empty State: No child enrolled yet */
+        <View style={styles.emptyContainer}>
+          <View style={styles.emptyIconBox}>
+            <Text style={{ fontSize: 36 }}>👶</Text>
+          </View>
+          <Text style={styles.emptyTitle}>Welcome to Rhema Kids!</Text>
+          <Text style={styles.emptySub}>
+            Register your children to access secure Sunday School attendance, live entrance face scan, and bilingual Bible learning.
+          </Text>
+
+          <TouchableOpacity
+            style={styles.enrollNowBtn}
+            onPress={() => setShowEnrollModal(true)}
+            activeOpacity={0.88}
+          >
+            <Plus size={18} color="#000000" strokeWidth={2.8} />
+            <Text style={styles.enrollNowBtnText}>Enroll Child in Sunday School</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+          {/* ==================================================== */}
+          {/* TAB 1: HOME DASHBOARD                                */}
+          {/* ==================================================== */}
+          {activeTab === 'home' && (
+            <>
+              {/* Today's Sunday School Status Card */}
+              <View style={styles.heroStatusCard}>
+                <View style={styles.statusRow}>
+                  <View style={styles.liveBadge}>
+                    <View style={styles.livePulseDot} />
+                    <Text style={styles.liveBadgeText}>SUNDAY SCHOOL TODAY</Text>
+                  </View>
+                  <Text style={styles.codeLabel}>{activeChild?.childId}</Text>
+                </View>
+
+                <View style={styles.statusDetailsRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.classTierSub}>
+                      {activeChild?.assignedClassName || 'Sunday School'}
+                    </Text>
+                    <Text style={styles.classRoomTitle}>Room 204 · 2nd Floor</Text>
+                    <Text style={styles.scheduleMeta}>Sundays 09:30 AM – 11:30 AM</Text>
+                  </View>
+
+                  {/* One-Time Pickup Code Badge */}
+                  <View style={styles.pickupCodeBadge}>
+                    <Text style={styles.codeTag}>PICKUP CODE</Text>
+                    <Text style={styles.codeDigits}>{dailyPickupCode}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.cardFooter}>
+                  <Text style={styles.allergySummary}>
+                    {activeChild?.medical?.hasAllergies ? (
+                      <Text style={{ color: '#F87171' }}>
+                        ⚠️ {activeChild.medical.allergiesList.join(', ')}
+                      </Text>
+                    ) : (
+                      <Text style={{ color: '#34D399' }}>✓ No Allergies Reported</Text>
+                    )}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => setActiveTab('pass')}
+                    style={styles.viewPassLink}
+                  >
+                    <Text style={styles.viewPassLinkText}>View Pass &rsaquo;</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Bilingual Daily Memory Verse Card */}
+              <View style={styles.card}>
+                <View style={styles.cardHeaderSmall}>
+                  <Text style={styles.cardHeaderTag}>📖 WEEKLY MEMORY VERSE</Text>
+                  <Text style={styles.verseRef}>1 సమూయేలు (1 Sam) 17:47</Text>
+                </View>
+
+                <Text style={styles.verseTelugu}>
+                  "యుద్ధము యెహోవాదే; ఆయన మిమ్మును మా చేతికి అప్పగించును."
+                </Text>
+                <Text style={styles.verseEnglish}>
+                  "For the battle is the LORD's, and he will give you into our hands."
+                </Text>
+
+                <View style={styles.verseFooter}>
+                  <TouchableOpacity
+                    style={styles.audioListenBtn}
+                    onPress={() => Alert.alert('Voice Audio', 'Playing Telugu audio verse pronunciation...')}
+                  >
+                    <Volume2 size={14} color="#FBBF24" />
+                    <Text style={styles.audioListenText}>Listen Audio (తెలుగు)</Text>
+                  </TouchableOpacity>
+                  <View style={styles.starBadge}>
+                    <Text style={styles.starBadgeText}>★ 5 Stars Award</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Quick Modules 2x2 Grid */}
+              <View>
+                <Text style={styles.sectionHeader}>EXPLORE RHEMA KIDS</Text>
+                <View style={styles.grid2x2}>
+                  <TouchableOpacity
+                    style={styles.gridItem}
+                    onPress={() => setActiveTab('lms')}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.gridEmoji}>🎨</Text>
+                    <Text style={styles.gridTitle}>Bible Stories</Text>
+                    <Text style={styles.gridSub}>Illustrated & Telugu Audio</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.gridItem}
+                    onPress={() => setActiveTab('lms')}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.gridEmoji}>🏆</Text>
+                    <Text style={styles.gridTitle}>Kids Quizzes</Text>
+                    <Text style={styles.gridSub}>Earn Bible Star Badges</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.gridItem}
+                    onPress={() => setActiveTab('classroom')}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.gridEmoji}>📚</Text>
+                    <Text style={styles.gridTitle}>52-Wk Lessons</Text>
+                    <Text style={styles.gridSub}>Telugu & English Guides</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.gridItem}
+                    onPress={() =>
+                      Alert.alert(
+                        'Worship Action Songs',
+                        'Opening Christian kids action songs and choir playlist with Telugu lyrics!'
+                      )
+                    }
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.gridEmoji}>🎵</Text>
+                    <Text style={styles.gridTitle}>Action Songs</Text>
+                    <Text style={styles.gridSub}>Worship with Lyrics</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </>
+          )}
+
+          {/* ==================================================== */}
+          {/* TAB 2: SUNDAY SCHOOL CLASSROOM                       */}
+          {/* ==================================================== */}
+          {activeTab === 'classroom' && (
+            <>
+              <View style={styles.card}>
+                <Text style={styles.cardHeaderTag}>ASSIGNED CLASSROOM</Text>
+                <Text style={styles.classTitleBig}>{activeChild?.assignedClassName || 'Sunday School'}</Text>
+                <Text style={styles.classAgeRange}>
+                  Ages: {activeChild?.age} years · Academic Year {activeChild?.academicYear}
+                </Text>
+
+                <View style={styles.divider} />
+
+                <View style={styles.metaRow}>
+                  <Text style={styles.metaKey}>Room Location:</Text>
+                  <Text style={styles.metaVal}>Room 204 (2nd Floor)</Text>
+                </View>
+                <View style={styles.metaRow}>
+                  <Text style={styles.metaKey}>Weekly Schedule:</Text>
+                  <Text style={styles.metaVal}>Sundays 09:30 AM – 11:30 AM</Text>
+                </View>
+                <View style={styles.metaRow}>
+                  <Text style={styles.metaKey}>Lead Teacher:</Text>
+                  <Text style={styles.metaVal}>Bro. Rajesh Yeddula</Text>
+                </View>
+                <View style={styles.metaRow}>
+                  <Text style={styles.metaKey}>Assistant:</Text>
+                  <Text style={styles.metaVal}>Sis. Jayanthi</Text>
+                </View>
+              </View>
+
+              {/* Weekly Homework Card */}
+              <View style={styles.card}>
+                <Text style={styles.cardTitleMedium}>This Week's Homework</Text>
+                <Text style={styles.homeworkDesc}>
+                  Read 1 Samuel 17 with family and practice memorizing Verse 47 for this Sunday's recitation!
+                </Text>
+                <TouchableOpacity
+                  style={styles.homeworkBtn}
+                  onPress={() => Alert.alert('Complete!', 'Homework marked completed for this week!')}
+                >
+                  <CheckCircle2 size={16} color="#000000" />
+                  <Text style={styles.homeworkBtnText}>Mark Homework Completed</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+
+          {/* ==================================================== */}
+          {/* TAB 3: BIBLE LMS (QUIZZES & STORIES)                 */}
+          {/* ==================================================== */}
+          {activeTab === 'lms' && (
+            <>
+              {/* Quiz of the Week */}
+              <View style={styles.quizCard}>
+                <View style={styles.quizHeader}>
+                  <View>
+                    <Text style={styles.quizHeaderTag}>BIBLE QUIZ OF THE WEEK</Text>
+                    <Text style={styles.quizTitle}>David & Goliath (దైర్యము)</Text>
+                  </View>
+                  <Text style={{ fontSize: 28 }}>🏆</Text>
+                </View>
+
+                <Text style={styles.quizQuestion}>
+                  Q1. How many smooth stones did David take from the brook?
+                </Text>
+
+                <View style={styles.quizOptionsGrid}>
+                  <TouchableOpacity
+                    style={[styles.quizOptionBtn, styles.quizOptionCorrect]}
+                    onPress={() => Alert.alert('Correct Answer! 🎉', 'David picked up 5 smooth stones from the brook! ★ +10 Points')}
+                  >
+                    <Text style={styles.quizOptionTextCorrect}>✓ 5 Smooth Stones</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.quizOptionBtn}
+                    onPress={() => Alert.alert('Try Again', 'Read 1 Samuel 17:40!')}
+                  >
+                    <Text style={styles.quizOptionText}>3 Stones</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.quizOptionBtn}
+                    onPress={() => Alert.alert('Try Again', 'Read 1 Samuel 17:40!')}
+                  >
+                    <Text style={styles.quizOptionText}>7 Stones</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.quizOptionBtn}
+                    onPress={() => Alert.alert('Try Again', 'Read 1 Samuel 17:40!')}
+                  >
+                    <Text style={styles.quizOptionText}>1 Heavy Boulder</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Illustrated Stories List */}
+              <View>
+                <Text style={styles.sectionHeader}>ILLUSTRATED BIBLE STORIES</Text>
+                
+                <TouchableOpacity
+                  style={styles.storyCard}
+                  onPress={() => Alert.alert('Story Reader', 'Opening "Daniel in the Lions\' Den" with Telugu narration.')}
+                >
+                  <Text style={{ fontSize: 24 }}>🦁</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.storyTitle}>Daniel in the Lions' Den</Text>
+                    <Text style={styles.storySub}>Telugu & English Narration · 8 min</Text>
+                  </View>
+                  <Text style={styles.storyLink}>Play &rsaquo;</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.storyCard}
+                  onPress={() => Alert.alert('Story Reader', 'Opening "Noah and the Great Ark" with illustrated pages.')}
+                >
+                  <Text style={{ fontSize: 24 }}>🌈</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.storyTitle}>Noah and the Great Ark</Text>
+                    <Text style={styles.storySub}>Illustrated Picture Book · 6 min</Text>
+                  </View>
+                  <Text style={styles.storyLink}>Read &rsaquo;</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+
+          {/* ==================================================== */}
+          {/* TAB 4: CUSTODY PASS                                  */}
+          {/* ==================================================== */}
+          {activeTab === 'pass' && (
+            <View style={styles.passCard}>
+              <View style={styles.passAvatar}>
+                <Text style={styles.passAvatarText}>
+                  {activeChild?.firstName?.charAt(0) || 'K'}
+                </Text>
+              </View>
+
+              <Text style={styles.passChildName}>{activeChild?.fullName}</Text>
+              <Text style={styles.passClassRoom}>
+                {activeChild?.assignedClassName} · Room 204
+              </Text>
+              <Text style={styles.passChildId}>Child ID: {activeChild?.childId}</Text>
+
+              {/* Dynamic Security Claim Code */}
+              <View style={styles.passCodeBox}>
+                <Text style={styles.passCodeLabel}>SECURE PICKUP RELEASE CODE</Text>
+                <Text style={styles.passCodeDigits}>{dailyPickupCode}</Text>
+                <Text style={styles.passCodeSub}>Show this code or QR to teacher at exit</Text>
+              </View>
+
+              {/* QR Code */}
+              <View style={styles.qrContainer}>
+                <QRCode
+                  value={`RHEMA_KIDS:${activeChild?.id}:${dailyPickupCode}`}
+                  size={140}
+                  color="#000000"
+                  backgroundColor="#FFFFFF"
+                />
+              </View>
+
+              {/* Authorized Guardians List */}
+              <View style={styles.guardiansList}>
+                <Text style={styles.guardiansHeader}>AUTHORIZED FOR CUSTODY RELEASE:</Text>
+                {activeChild?.guardians && activeChild.guardians.length > 0 ? (
+                  activeChild.guardians.map((g, idx) => (
+                    <Text key={idx} style={styles.guardianItem}>
+                      ✓ {g.name} ({g.relationship}) · {g.phone}
+                    </Text>
+                  ))
+                ) : (
+                  <Text style={styles.guardianItem}>
+                    ✓ {activeChild?.parentName} (Parent)
+                  </Text>
+                )}
+              </View>
+            </View>
+          )}
+        </ScrollView>
+      )}
+
+      {/* ── ENROLL CHILD MODAL ── */}
+      <EnrollChildModal
+        visible={showEnrollModal}
+        onClose={() => setShowEnrollModal(false)}
+        churchId={churchId}
+        member={member}
+        existingFamilyMembers={existingHousehold}
+        onChildEnrolled={() => {
+          // Handled via realtime subscription
+        }}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#18181B',
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#18181B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerCenter: {
+    alignItems: 'center',
+  },
+  titleWithCrown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  crownEmoji: {
+    fontSize: 16,
+  },
+  appTitleSerif: {
+    fontSize: 18,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.4,
+  },
+  childSwitcher: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  childSwitcherText: {
+    fontSize: 11,
+    color: '#FBBF24',
+    fontWeight: '700',
+    maxWidth: 160,
+  },
+  childSwitcherSub: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    marginTop: 2,
+  },
+  topActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+  },
+  topActionBtnText: {
+    color: '#000000',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  dropdownPicker: {
+    backgroundColor: '#18181B',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    borderRadius: 16,
+    marginHorizontal: 20,
+    marginTop: 6,
+    padding: 10,
+    gap: 4,
+    zIndex: 50,
+  },
+  dropdownHeader: {
+    fontSize: 10,
+    color: '#9CA3AF',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  dropdownItem: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+  },
+  dropdownItemActive: {
+    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+  },
+  dropdownItemText: {
+    color: '#D4D4D8',
+    fontSize: 12,
+  },
+  dropdownItemTextActive: {
+    color: '#FBBF24',
+    fontWeight: '700',
+  },
+  tabsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#121215',
+  },
+  tabPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: '#18181B',
+    borderWidth: 1,
+    borderColor: '#27272A',
+  },
+  tabPillActive: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#FFFFFF',
+  },
+  tabText: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontWeight: '600',
+  },
+  tabTextActive: {
+    color: '#000000',
+    fontWeight: '800',
+  },
+  centerLoading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    color: '#9CA3AF',
+    fontSize: 13,
+  },
+  emptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    gap: 12,
+  },
+  emptyIconBox: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#18181B',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
+  emptySub: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    lineHeight: 19,
+  },
+  enrollNowBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 999,
+    marginTop: 10,
+  },
+  enrollNowBtnText: {
+    color: '#000000',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  scroll: {
+    padding: 20,
+    paddingBottom: 40,
+    gap: 16,
+  },
+  heroStatusCard: {
+    backgroundColor: '#18181B',
+    borderRadius: 24,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#27272A',
+    gap: 12,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  livePulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+  },
+  liveBadgeText: {
+    color: '#34D399',
+    fontSize: 10,
+    fontWeight: '800',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  codeLabel: {
+    color: '#9CA3AF',
+    fontSize: 11,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  statusDetailsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  classTierSub: {
+    fontSize: 11,
+    color: '#FBBF24',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  classRoomTitle: {
+    fontSize: 18,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginTop: 2,
+  },
+  scheduleMeta: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginTop: 2,
+  },
+  pickupCodeBadge: {
+    backgroundColor: '#000000',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#FBBF24',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  codeTag: {
+    fontSize: 8,
+    color: '#9CA3AF',
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  codeDigits: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#FBBF24',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    marginTop: 1,
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderTopWidth: 1,
+    borderTopColor: '#27272A',
+    paddingTop: 10,
+  },
+  allergySummary: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  viewPassLink: {
+    paddingVertical: 2,
+  },
+  viewPassLinkText: {
+    color: '#FBBF24',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  card: {
+    backgroundColor: '#18181B',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#27272A',
+    gap: 8,
+  },
+  cardHeaderSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  cardHeaderTag: {
+    fontSize: 10,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontWeight: '700',
+    color: '#FBBF24',
+  },
+  verseRef: {
+    fontSize: 11,
+    color: '#9CA3AF',
+  },
+  verseTelugu: {
+    fontSize: 13,
+    color: '#FFFFFF',
+    fontWeight: '600',
+    lineHeight: 20,
+  },
+  verseEnglish: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontStyle: 'italic',
+    lineHeight: 18,
+  },
+  verseFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderTopWidth: 1,
+    borderTopColor: '#27272A',
+    paddingTop: 10,
+    marginTop: 4,
+  },
+  audioListenBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  audioListenText: {
+    color: '#FBBF24',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  starBadge: {
+    backgroundColor: '#27272A',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  starBadgeText: {
+    color: '#FEF3C7',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  sectionHeader: {
+    fontSize: 11,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontWeight: '700',
+    color: '#9CA3AF',
+    letterSpacing: 1.5,
+    marginBottom: 10,
+  },
+  grid2x2: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  gridItem: {
+    width: (width - 50) / 2,
+    backgroundColor: '#18181B',
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#27272A',
+    gap: 4,
+  },
+  gridEmoji: {
+    fontSize: 24,
+    marginBottom: 2,
+  },
+  gridTitle: {
+    fontSize: 13,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  gridSub: {
+    fontSize: 10,
+    color: '#9CA3AF',
+  },
+  classTitleBig: {
+    fontSize: 20,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  classAgeRange: {
+    fontSize: 12,
+    color: '#9CA3AF',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#27272A',
+    marginVertical: 4,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  metaKey: {
+    fontSize: 12,
+    color: '#9CA3AF',
+  },
+  metaVal: {
+    fontSize: 12,
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  cardTitleMedium: {
+    fontSize: 15,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  homeworkDesc: {
+    fontSize: 12,
+    color: '#D1D5DB',
+    lineHeight: 18,
+  },
+  homeworkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginTop: 6,
+  },
+  homeworkBtnText: {
+    color: '#000000',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  quizCard: {
+    backgroundColor: 'rgba(251, 191, 36, 0.08)',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.3)',
+    gap: 12,
+  },
+  quizHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  quizHeaderTag: {
+    fontSize: 9,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontWeight: '700',
+    color: '#FBBF24',
+    letterSpacing: 1.2,
+  },
+  quizTitle: {
+    fontSize: 15,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginTop: 2,
+  },
+  quizQuestion: {
+    fontSize: 13,
+    color: '#E4E4E7',
+    fontWeight: '600',
+  },
+  quizOptionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  quizOptionBtn: {
+    width: (width - 66) / 2,
+    backgroundColor: '#09090B',
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#27272A',
+  },
+  quizOptionCorrect: {
+    borderColor: '#10B981',
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+  },
+  quizOptionText: {
+    color: '#D4D4D8',
+    fontSize: 11,
+  },
+  quizOptionTextCorrect: {
+    color: '#34D399',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  storyCard: {
+    backgroundColor: '#18181B',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#27272A',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 8,
+  },
+  storyTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  storySub: {
+    fontSize: 10,
+    color: '#9CA3AF',
+    marginTop: 2,
+  },
+  storyLink: {
+    color: '#FBBF24',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  passCard: {
+    backgroundColor: '#18181B',
+    borderRadius: 28,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#27272A',
+    alignItems: 'center',
+    gap: 10,
+  },
+  passAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#F59E0B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FDE68A',
+  },
+  passAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: '800',
+  },
+  passChildName: {
+    fontSize: 20,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  passClassRoom: {
+    fontSize: 12,
+    color: '#9CA3AF',
+  },
+  passChildId: {
+    fontSize: 11,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    color: '#FBBF24',
+  },
+  passCodeBox: {
+    width: '100%',
+    backgroundColor: '#000000',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#3F3F46',
+    padding: 12,
+    alignItems: 'center',
+    marginVertical: 4,
+  },
+  passCodeLabel: {
+    fontSize: 9,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    color: '#9CA3AF',
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  passCodeDigits: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    letterSpacing: 4,
+    marginVertical: 4,
+  },
+  passCodeSub: {
+    fontSize: 10,
+    color: '#10B981',
+  },
+  qrContainer: {
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 6,
+  },
+  guardiansList: {
+    width: '100%',
+    borderTopWidth: 1,
+    borderTopColor: '#27272A',
+    paddingTop: 12,
+    gap: 4,
+  },
+  guardiansHeader: {
+    fontSize: 10,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontWeight: '700',
+    color: '#9CA3AF',
+    marginBottom: 2,
+  },
+  guardianItem: {
+    fontSize: 11,
+    color: '#D4D4D8',
+  },
+});
