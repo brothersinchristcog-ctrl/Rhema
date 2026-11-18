@@ -8,12 +8,22 @@ import {
   ScrollView,
   Platform,
   Dimensions,
+  Linking,
 } from 'react-native';
 import { X, Music, Play, ExternalLink, Heart } from 'lucide-react-native';
-import RhemaYouTubePlayer, { cleanVideoId } from '../../../components/RhemaYouTubePlayer';
+import YoutubePlayer from 'react-native-youtube-iframe';
 import { KidsWorshipSong } from '../../../types/KidsMinistryTypes';
 
 const { width } = Dimensions.get('window');
+
+function extractYoutubeId(urlOrId?: string): string {
+  if (!urlOrId || typeof urlOrId !== 'string') return '';
+  const clean = urlOrId.trim();
+  const match = clean.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/|live\/))([\w-]{11})/);
+  if (match) return match[1];
+  if (/^[a-zA-Z0-9_-]{11}$/.test(clean)) return clean;
+  return clean;
+}
 
 interface KidsSongPlayerModalProps {
   visible: boolean;
@@ -33,7 +43,8 @@ export default function KidsSongPlayerModal({
   if (!song) return null;
 
   const [lyricsTab, setLyricsTab] = useState<'both' | 'telugu' | 'english'>('both');
-  const videoId = cleanVideoId(song.youtubeVideoId) || '8cT6qGj7DkE';
+  const [playing, setPlaying] = useState(false);
+  const videoId = extractYoutubeId(song.youtubeVideoId) || '8cT6qGj7DkE';
 
   return (
     <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
@@ -56,12 +67,33 @@ export default function KidsSongPlayerModal({
 
         {/* Video Player */}
         <View style={styles.playerContainer}>
-          <RhemaYouTubePlayer
-            videoId={videoId}
+          <YoutubePlayer
             height={220}
             width={width}
-            autoPlay
+            videoId={videoId}
+            play={playing}
+            onChangeState={(state) => {
+              if (state === 'ended') setPlaying(false);
+            }}
           />
+          <TouchableOpacity
+            style={styles.openYoutubeBtn}
+            onPress={() => {
+              const appUrl = `vnd.youtube://${videoId}`;
+              const webUrl = `https://www.youtube.com/watch?v=${videoId}`;
+              Linking.canOpenURL(appUrl).then(supported => {
+                if (supported) {
+                  Linking.openURL(appUrl);
+                } else {
+                  Linking.openURL(webUrl);
+                }
+              }).catch(() => Linking.openURL(webUrl));
+            }}
+            activeOpacity={0.8}
+          >
+            <ExternalLink size={13} color="#FBBF24" />
+            <Text style={styles.openYoutubeText}>Watch on YouTube App (Full Screen)</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Lyrics Language Switcher */}
@@ -195,8 +227,22 @@ const styles = StyleSheet.create({
   },
   playerContainer: {
     width: '100%',
-    height: 220,
     backgroundColor: '#09090B',
+  },
+  openYoutubeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    backgroundColor: '#18181B',
+    borderTopWidth: 1,
+    borderTopColor: '#27272A',
+  },
+  openYoutubeText: {
+    color: '#FBBF24',
+    fontSize: 12,
+    fontWeight: '700',
   },
   lyricsTabRow: {
     flexDirection: 'row',

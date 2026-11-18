@@ -8,6 +8,7 @@ import {
   ScrollView,
   Share,
   Alert,
+  Platform,
 } from 'react-native';
 import {
   X,
@@ -22,11 +23,15 @@ import {
   Layers,
   Heart,
   ExternalLink,
+  RotateCcw,
 } from 'lucide-react-native';
+import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import {
   KidsCurriculumLesson,
   CurriculumQuarter,
   KidsClassTier,
+  KidsCurriculumConfig,
+  calculateCurriculumWeek,
 } from '../../../../types/KidsMinistryTypes';
 import KidsMinistryService from '../../../../services/KidsMinistryService';
 
@@ -52,9 +57,71 @@ export default function AdminCurriculumModal({
   onClose,
 }: Props) {
   const [selectedQuarter, setSelectedQuarter] = useState<'ALL' | CurriculumQuarter>('ALL');
-  const [expandedWeek, setExpandedWeek] = useState<number | null>(42);
+  const [expandedWeek, setExpandedWeek] = useState<number | null>(1);
   const [selectedTierTab, setSelectedTierTab] = useState<KidsClassTier>('primary');
   const [updatingWeek, setUpdatingWeek] = useState<number | null>(null);
+  const [curriculumConfig, setCurriculumConfig] = useState<KidsCurriculumConfig | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
+  React.useEffect(() => {
+    if (!visible) return;
+    const unsub = KidsMinistryService.subscribeToCurriculumConfig(churchId, cfg => {
+      setCurriculumConfig(cfg);
+    });
+    return () => unsub();
+  }, [visible, churchId]);
+
+  const currentActiveWeek = calculateCurriculumWeek(curriculumConfig);
+
+  const handleConfirmLaunchDate = async (date: Date) => {
+    setShowDatePicker(false);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const dateStr = `${year}-${month}-${day}`;
+
+    try {
+      await KidsMinistryService.setCurriculumLaunchDate(churchId, dateStr);
+      Alert.alert(
+        'Launch Date Activated! 🚀',
+        `Sunday School official launch date is set to ${day}-${month}-${year}.\n\nWeek 1 begins on that date, and the app will automatically progress to Week 2, 3, 4 every following Sunday!`
+      );
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Could not set launch date');
+    }
+  };
+
+  const handleResetLaunchDate = () => {
+    Alert.alert(
+      'Reset Launch Date?',
+      'This will put Sunday School back into Pending Launch status (Week 1 standby).',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset to Standby',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await KidsMinistryService.resetCurriculumLaunchDate(churchId);
+            } catch (e: any) {
+              Alert.alert('Error', e.message);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const formatDisplayDate = (dateStr?: string | null) => {
+    if (!dateStr) return 'Not Scheduled Yet';
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      const [year, month, day] = parts;
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return `${day}-${month}-${year} (${day} ${months[parseInt(month, 10) - 1] || ''} ${year})`;
+    }
+    return dateStr;
+  };
 
   const filteredLessons = curriculum.filter(lesson => {
     if (selectedQuarter === 'ALL') return true;
@@ -145,6 +212,50 @@ export default function AdminCurriculumModal({
 
         {/* Lesson List */}
         <ScrollView contentContainerStyle={styles.scrollList} showsVerticalScrollIndicator={false}>
+          {/* Official Launch Date & Automation Card */}
+          <View style={styles.launchCard}>
+            <View style={styles.launchCardTop}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Calendar size={16} color="#FBBF24" />
+                <Text style={styles.launchHeading}>OFFICIAL LAUNCH & SUNDAY SCHEDULE</Text>
+              </View>
+              <View style={[styles.launchStatusBadge, curriculumConfig?.isLaunched ? styles.launchActiveBadge : styles.launchPendingBadge]}>
+                <Text style={[styles.launchStatusText, curriculumConfig?.isLaunched ? { color: '#10B981' } : { color: '#FBBF24' }]}>
+                  {curriculumConfig?.isLaunched ? '🚀 ACTIVE' : '⏳ PENDING LAUNCH'}
+                </Text>
+              </View>
+            </View>
+
+            <Text style={styles.launchDescription}>
+              {curriculumConfig?.isLaunched
+                ? `Sunday School officially launched on ${formatDisplayDate(curriculumConfig.officialLaunchDate)}. Current auto-progressed active lesson is Week ${currentActiveWeek}.`
+                : 'Rhema has not launched Sunday School yet. The system is in Week 1 Standby mode. When you set the launch date, Week 1 will begin on that Sunday and automatically progress to Week 2, 3, 4 every following week!'}
+            </Text>
+
+            <View style={styles.launchActionRow}>
+              <TouchableOpacity
+                style={styles.setLaunchDateBtn}
+                onPress={() => setShowDatePicker(true)}
+                activeOpacity={0.85}
+              >
+                <Calendar size={14} color="#000000" />
+                <Text style={styles.setLaunchDateBtnText}>
+                  {curriculumConfig?.isLaunched ? 'Change Launch Sunday 📅' : 'Set Official Launch Sunday 📅'}
+                </Text>
+              </TouchableOpacity>
+
+              {curriculumConfig?.isLaunched && (
+                <TouchableOpacity
+                  style={styles.resetLaunchBtn}
+                  onPress={handleResetLaunchDate}
+                  activeOpacity={0.8}
+                >
+                  <RotateCcw size={12} color="#D4D4D8" />
+                  <Text style={styles.resetLaunchBtnText}>Reset to Standby</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
           {filteredLessons.map(lesson => {
             const isExpanded = expandedWeek === lesson.weekNumber;
             const isCurrent = lesson.isCurrentWeek;
@@ -350,6 +461,14 @@ export default function AdminCurriculumModal({
             );
           })}
         </ScrollView>
+
+        <DateTimePickerModal
+          isVisible={showDatePicker}
+          mode="date"
+          date={curriculumConfig?.officialLaunchDate ? new Date(curriculumConfig.officialLaunchDate) : new Date()}
+          onConfirm={handleConfirmLaunchDate}
+          onCancel={() => setShowDatePicker(false)}
+        />
       </View>
     </Modal>
   );
@@ -359,6 +478,85 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000000',
+  },
+  launchCard: {
+    backgroundColor: '#18181B',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.3)',
+    marginBottom: 16,
+    gap: 10,
+  },
+  launchCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  launchHeading: {
+    fontSize: 11,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontWeight: '800',
+    color: '#FBBF24',
+    letterSpacing: 1,
+  },
+  launchStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  launchActiveBadge: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderColor: '#10B981',
+  },
+  launchPendingBadge: {
+    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+    borderColor: '#FBBF24',
+  },
+  launchStatusText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  launchDescription: {
+    fontSize: 12,
+    color: '#D4D4D8',
+    lineHeight: 18,
+  },
+  launchActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 2,
+  },
+  setLaunchDateBtn: {
+    flex: 1,
+    backgroundColor: '#FBBF24',
+    paddingVertical: 10,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  setLaunchDateBtnText: {
+    color: '#000000',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  resetLaunchBtn: {
+    backgroundColor: '#27272A',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  resetLaunchBtnText: {
+    color: '#D4D4D8',
+    fontSize: 11,
+    fontWeight: '600',
   },
   headerRow: {
     flexDirection: 'row',

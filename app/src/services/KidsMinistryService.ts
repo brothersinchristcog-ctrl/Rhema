@@ -21,6 +21,8 @@ import {
   getRecommendedClassTier,
   formatChildId,
   generateDynamicPickupCode,
+  KidsCurriculumConfig,
+  calculateCurriculumWeek,
 } from '../types/KidsMinistryTypes';
 
 /**
@@ -1712,6 +1714,65 @@ class KidsMinistryService {
         callback(list.sort((a, b) => a.weekNumber - b.weekNumber));
       },
       () => callback([])
+    );
+  }
+
+  private getCurriculumConfigDoc(churchId?: string) {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getDb()
+      .collection(RHEMA_ROOT_COLLECTION)
+      .doc(cId)
+      .collection('kids_settings')
+      .doc('curriculum_config');
+  }
+
+  subscribeToCurriculumConfig(
+    churchId: string,
+    callback: (config: KidsCurriculumConfig) => void
+  ): () => void {
+    const docRef = this.getCurriculumConfigDoc(churchId);
+    return docRef.onSnapshot(snap => {
+      if (snap && snap.exists) {
+        callback(snap.data() as KidsCurriculumConfig);
+      } else {
+        callback({
+          isLaunched: false,
+          officialLaunchDate: null,
+          manualOverrideWeek: null,
+        });
+      }
+    }, () => {
+      callback({
+        isLaunched: false,
+        officialLaunchDate: null,
+        manualOverrideWeek: null,
+      });
+    });
+  }
+
+  async setCurriculumLaunchDate(churchId: string, launchDate: string): Promise<void> {
+    const docRef = this.getCurriculumConfigDoc(churchId);
+    await docRef.set(
+      sanitizeForFirestore({
+        officialLaunchDate: launchDate,
+        isLaunched: true,
+        manualOverrideWeek: null,
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+      }),
+      { merge: true }
+    );
+  }
+
+  async resetCurriculumLaunchDate(churchId: string): Promise<void> {
+    const docRef = this.getCurriculumConfigDoc(churchId);
+    await docRef.set(
+      sanitizeForFirestore({
+        officialLaunchDate: null,
+        isLaunched: false,
+        manualOverrideWeek: 1,
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+      }),
+      { merge: true }
     );
   }
 
