@@ -256,7 +256,7 @@ export default function CareCellMapModal({
   useEffect(() => {
     if (!visible) return;
     setMarkersRefreshActive(true);
-    const t = setTimeout(() => setMarkersRefreshActive(false), 600);
+    const t = setTimeout(() => setMarkersRefreshActive(false), 2000);
     return () => clearTimeout(t);
   }, [visible, viewMode, plannedRouteMemberIds, selectedMember, navActive, navStopIndex]);
 
@@ -1693,8 +1693,10 @@ const styles = createAdminThemedStyles({
 
   /* Lollipop Marker Styles */
   photoPinWrapper: {
+    width: PIN_HEAD_SIZE + 10,
+    height: PIN_HEAD_SIZE + PIN_POINTER_H + 6,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
   },
   photoPinWrapperSelected: {
     transform: [{ scale: 1.15 }],
@@ -1707,6 +1709,7 @@ const styles = createAdminThemedStyles({
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
@@ -1714,9 +1717,10 @@ const styles = createAdminThemedStyles({
     elevation: 5,
   },
   photoPinImage: {
-    width: PIN_IMAGE_SIZE,
-    height: PIN_IMAGE_SIZE,
-    borderRadius: PIN_IMAGE_SIZE / 2,
+    width: '100%',
+    height: '100%',
+    borderRadius: PIN_HEAD_SIZE / 2,
+    resizeMode: 'cover',
   },
   markerInitialsTxt: {
     fontSize: 13,

@@ -35,6 +35,36 @@ export function formatCareCellDisplayName(name?: string, cellCode?: string): str
   }
   return clean.replace(/_/g, ' ');
 }
+
+/**
+ * Converts 24-hour military time string (e.g. "17:00" or "09:30") into 12-hour AM/PM format (e.g. "5:00 PM", "9:30 AM").
+ */
+export function formatTime12h(timeStr?: string): string {
+  if (!timeStr) return '';
+  const clean = timeStr.trim();
+  if (/am|pm/i.test(clean)) return clean;
+  const match = clean.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return clean;
+  let hours = parseInt(match[1], 10);
+  const minutes = match[2];
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12 || 12;
+  return `${hours}:${minutes} ${ampm}`;
+}
+
+/**
+ * Formats a single time or time range (e.g. "19:00 - 20:30" -> "7:00 PM – 8:30 PM").
+ */
+export function formatTimeRange12h(timeStr?: string): string {
+  if (!timeStr) return '';
+  if (timeStr.includes('-')) {
+    return timeStr
+      .split('-')
+      .map((t) => formatTime12h(t.trim()))
+      .join(' – ');
+  }
+  return formatTime12h(timeStr);
+}
 export type MeetingType = 
   | 'Bible Study' 
   | 'Prayer Meeting' 

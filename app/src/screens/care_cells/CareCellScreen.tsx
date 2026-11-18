@@ -61,6 +61,8 @@ import {
   CareCellVisit,
   CareCellVisitMemberResponse,
   MemberVisitResponseStatus,
+  formatTime12h,
+  formatTimeRange12h,
 } from '../../types/CareCellTypes';
 import CareCellPrayerModal from '../admin/care_cells/components/CareCellPrayerModal';
 import CareCellFollowupModal from '../admin/care_cells/components/CareCellFollowupModal';
@@ -460,7 +462,7 @@ export default function CareCellScreen({ navigation, route }: any) {
               </View>
               <View style={styles.heroMetaItem}>
                 <Clock size={14} color="#CBD5E1" style={{ marginRight: 5 }} />
-                <Text style={styles.heroMetaTxt}>{careCell.meetingTime || '19:00'}{careCell.meetingEndTime ? ` – ${careCell.meetingEndTime}` : ''}</Text>
+                <Text style={styles.heroMetaTxt}>{careCell.meetingTime ? formatTime12h(careCell.meetingTime) : '7:00 PM'}{careCell.meetingEndTime ? ` – ${formatTime12h(careCell.meetingEndTime)}` : ''}</Text>
               </View>
               {careCell.location ? (
                 <View style={[styles.heroMetaItem, { flex: 1 }]}>
@@ -666,7 +668,7 @@ export default function CareCellScreen({ navigation, route }: any) {
                         </View>
                         <View style={styles.meetingMetaItem}>
                           <Clock size={13} color="#64748B" style={{ marginRight: 4 }} />
-                          <Text style={styles.meetingMetaTxt}>{m.startTime}</Text>
+                          <Text style={styles.meetingMetaTxt}>{formatTime12h(m.startTime)}</Text>
                         </View>
                       </View>
 
@@ -777,9 +779,9 @@ export default function CareCellScreen({ navigation, route }: any) {
                       </View>
 
                       <View style={styles.memberVisitMetaRow}>
-                        <Calendar size={13} color="#64748B" style={{ marginRight: 5 }} />
-                        <Text style={styles.memberVisitMetaTxt}>
-                          {formatDateDisplay(v.visitDate)} at {v.visitTime}
+                        <Calendar size={13} color={isDark ? '#94A3B8' : '#64748B'} style={{ marginRight: 5 }} />
+                        <Text style={[styles.memberVisitMetaTxt, isDark && { color: '#CBD5E1' }]}>
+                          {formatDateDisplay(v.visitDate)} at {formatTime12h(v.visitTime)}
                         </Text>
                       </View>
 
@@ -832,21 +834,21 @@ export default function CareCellScreen({ navigation, route }: any) {
                         )}
 
                         {isAccepted && (
-                          <View style={styles.responseConfirmedBoxAccepted}>
+                          <View style={[styles.responseConfirmedBoxAccepted, isDark && { backgroundColor: 'rgba(5, 150, 105, 0.15)', borderColor: 'rgba(16, 185, 129, 0.4)' }]}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                              <CheckCircle2 size={16} color="#059669" style={{ marginRight: 6 }} />
-                              <Text style={styles.responseConfirmedTitleAccepted}>
+                              <CheckCircle2 size={16} color="#10B981" style={{ marginRight: 6 }} />
+                              <Text style={[styles.responseConfirmedTitleAccepted, isDark && { color: '#34D399' }]}>
                                 You accepted this visit (Available)
                               </Text>
                             </View>
                             {v.myResponse?.preferredTime ? (
-                              <View style={styles.myPreferredTimeBadge}>
-                                <Clock size={12} color="#1A2D5A" style={{ marginRight: 5 }} />
-                                <Text style={styles.myPreferredTimeLabel}>Preferred Visit Time:</Text>
-                                <Text style={styles.myPreferredTimeVal}>{v.myResponse.preferredTime}</Text>
+                              <View style={[styles.myPreferredTimeBadge, isDark && { backgroundColor: '#27272A', borderColor: '#3F3F46' }]}>
+                                <Clock size={12} color={isDark ? '#E4E4E7' : '#1A2D5A'} style={{ marginRight: 5 }} />
+                                <Text style={[styles.myPreferredTimeLabel, isDark && { color: '#A1A1AA' }]}>Preferred Visit Time:</Text>
+                                <Text style={[styles.myPreferredTimeVal, isDark && { color: '#FFFFFF' }]}>{formatTime12h(v.myResponse.preferredTime)}</Text>
                               </View>
                             ) : null}
-                            <Text style={styles.responseConfirmedSub}>
+                            <Text style={[styles.responseConfirmedSub, isDark && { color: '#A1A1AA' }]}>
                               Your Pastor and Cell Leader have been notified that you will be available.
                             </Text>
                             <View style={{ flexDirection: 'row', gap: 14, marginTop: 6, flexWrap: 'wrap' }}>
@@ -854,13 +856,13 @@ export default function CareCellScreen({ navigation, route }: any) {
                                 onPress={() => openVisitResponseModal(v, 'Accepted')}
                                 style={styles.changeResponseBtn}
                               >
-                                <Text style={styles.changeResponseBtnTxtPreferred}>Change Preferred Time</Text>
+                                <Text style={[styles.changeResponseBtnTxtPreferred, isDark && { color: '#93C5FD' }]}>Change Preferred Time</Text>
                               </TouchableOpacity>
                               <TouchableOpacity
                                 onPress={() => openVisitResponseModal(v, 'Declined')}
                                 style={styles.changeResponseBtn}
                               >
-                                <Text style={styles.changeResponseBtnTxt}>Mark Unavailable (Decline)</Text>
+                                <Text style={[styles.changeResponseBtnTxt, isDark && { color: '#F87171' }]}>Mark Unavailable (Decline)</Text>
                               </TouchableOpacity>
                             </View>
                           </View>
@@ -1222,42 +1224,42 @@ export default function CareCellScreen({ navigation, route }: any) {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.timeModalBackdrop}
         >
-          <View style={styles.timeModalSheet}>
+          <View style={[styles.timeModalSheet, isDark && { backgroundColor: '#18181B' }]}>
             {/* Header */}
-            <View style={styles.timeModalHeader}>
+            <View style={[styles.timeModalHeader, isDark && { borderBottomColor: '#27272A' }]}>
               <View>
-                <Text style={styles.timeModalTitle}>House Visit Response</Text>
-                <Text style={styles.timeModalSubtitle}>Set your preferred visit window</Text>
+                <Text style={[styles.timeModalTitle, isDark && { color: '#FFFFFF' }]}>House Visit Response</Text>
+                <Text style={[styles.timeModalSubtitle, isDark && { color: '#A1A1AA' }]}>Set your preferred visit window</Text>
               </View>
               <TouchableOpacity
                 onPress={() => setVisitModalVisible(false)}
                 style={styles.timeModalCloseBtn}
               >
-                <XCircle size={22} color="#64748B" />
+                <XCircle size={22} color={isDark ? '#A1A1AA' : '#64748B'} />
               </TouchableOpacity>
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: Dimensions.get('window').height * 0.75 }}>
               {/* Visit Details Card */}
               {selectedVisitForResponse && (
-                <View style={styles.timeModalVisitCard}>
-                  <Text style={styles.timeModalVisitTitle}>{selectedVisitForResponse.title}</Text>
+                <View style={[styles.timeModalVisitCard, isDark && { backgroundColor: '#27272A', borderColor: '#3F3F46', borderWidth: 1 }]}>
+                  <Text style={[styles.timeModalVisitTitle, isDark && { color: '#FFFFFF' }]}>{selectedVisitForResponse.title}</Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, flexWrap: 'wrap', gap: 10 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      <Calendar size={13} color="#1A2D5A" style={{ marginRight: 4 }} />
-                      <Text style={styles.timeModalVisitMeta}>
+                      <Calendar size={13} color={isDark ? '#94A3B8' : '#1A2D5A'} style={{ marginRight: 4 }} />
+                      <Text style={[styles.timeModalVisitMeta, isDark && { color: '#CBD5E1' }]}>
                         {formatDateDisplay(selectedVisitForResponse.visitDate)}
                       </Text>
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      <Clock size={13} color="#C9A84C" style={{ marginRight: 4 }} />
-                      <Text style={styles.timeModalVisitMeta}>
-                        Default: {selectedVisitForResponse.visitTime}
+                      <Clock size={13} color={isDark ? '#F59E0B' : '#C9A84C'} style={{ marginRight: 4 }} />
+                      <Text style={[styles.timeModalVisitMeta, isDark && { color: '#CBD5E1' }]}>
+                        Default: {formatTime12h(selectedVisitForResponse.visitTime)}
                       </Text>
                     </View>
                   </View>
                   {selectedVisitForResponse.visitors ? (
-                    <Text style={styles.timeModalVisitorsTxt}>
+                    <Text style={[styles.timeModalVisitorsTxt, isDark && { color: '#A1A1AA' }]}>
                       Visitors: {selectedVisitForResponse.visitors}
                     </Text>
                   ) : null}
@@ -1265,11 +1267,12 @@ export default function CareCellScreen({ navigation, route }: any) {
               )}
 
               {/* Status Toggle */}
-              <Text style={styles.timeModalSectionLabel}>YOUR AVAILABILITY</Text>
+              <Text style={[styles.timeModalSectionLabel, isDark && { color: '#A1A1AA' }]}>YOUR AVAILABILITY</Text>
               <View style={styles.availToggleRow}>
                 <TouchableOpacity
                   style={[
                     styles.availToggleBtn,
+                    isDark && { backgroundColor: '#27272A', borderColor: '#3F3F46' },
                     visitResponseStatus === 'Accepted' && styles.availToggleBtnActiveAccepted,
                   ]}
                   onPress={() => setVisitResponseStatus('Accepted')}
@@ -1283,6 +1286,7 @@ export default function CareCellScreen({ navigation, route }: any) {
                   <Text
                     style={[
                       styles.availToggleBtnTxt,
+                      isDark && { color: '#CBD5E1' },
                       visitResponseStatus === 'Accepted' && styles.availToggleBtnTxtActive,
                     ]}
                   >
@@ -1293,6 +1297,7 @@ export default function CareCellScreen({ navigation, route }: any) {
                 <TouchableOpacity
                   style={[
                     styles.availToggleBtn,
+                    isDark && { backgroundColor: '#27272A', borderColor: '#3F3F46' },
                     visitResponseStatus === 'Declined' && styles.availToggleBtnActiveDeclined,
                   ]}
                   onPress={() => setVisitResponseStatus('Declined')}
@@ -1306,6 +1311,7 @@ export default function CareCellScreen({ navigation, route }: any) {
                   <Text
                     style={[
                       styles.availToggleBtnTxt,
+                      isDark && { color: '#CBD5E1' },
                       visitResponseStatus === 'Declined' && styles.availToggleBtnTxtActive,
                     ]}
                   >
@@ -1318,8 +1324,8 @@ export default function CareCellScreen({ navigation, route }: any) {
               {visitResponseStatus === 'Accepted' && selectedVisitForResponse && (
                 <>
                   <View style={styles.preferredTimeHeaderWrap}>
-                    <Text style={styles.timeModalSectionLabel}>PREFERRED VISIT TIME</Text>
-                    <Text style={styles.timeModalSectionSub}>
+                    <Text style={[styles.timeModalSectionLabel, isDark && { color: '#A1A1AA' }]}>PREFERRED VISIT TIME</Text>
+                    <Text style={[styles.timeModalSectionSub, isDark && { color: '#71717A' }]}>
                       Select the time slot that is most convenient for your family:
                     </Text>
                   </View>
@@ -1328,7 +1334,7 @@ export default function CareCellScreen({ navigation, route }: any) {
                     {[
                       {
                         key: 'scheduled',
-                        label: `Scheduled Time (${selectedVisitForResponse.visitTime})`,
+                        label: `Scheduled Time (${formatTime12h(selectedVisitForResponse.visitTime)})`,
                         sub: 'As planned by Cell Leader',
                       },
                       {
@@ -1363,29 +1369,31 @@ export default function CareCellScreen({ navigation, route }: any) {
                           key={slot.key}
                           style={[
                             styles.timeSlotPill,
-                            isSelected && styles.timeSlotPillSelected,
+                            isDark && { backgroundColor: '#18181B', borderColor: '#27272A' },
+                            isSelected && (isDark ? { backgroundColor: '#27272A', borderColor: '#FFFFFF' } : styles.timeSlotPillSelected),
                           ]}
                           onPress={() => setSelectedTimeSlot(slot.key)}
                           activeOpacity={0.8}
                         >
                           <Clock
                             size={14}
-                            color={isSelected ? '#4338CA' : '#64748B'}
+                            color={isSelected ? (isDark ? '#FFFFFF' : '#4338CA') : (isDark ? '#71717A' : '#64748B')}
                             style={{ marginRight: 8 }}
                           />
                           <View style={{ flex: 1 }}>
                             <Text
                               style={[
                                 styles.timeSlotPillTxt,
-                                isSelected && styles.timeSlotPillTxtSelected,
+                                isDark && { color: '#E4E4E7' },
+                                isSelected && (isDark ? { color: '#FFFFFF', fontWeight: '800' } : styles.timeSlotPillTxtSelected),
                               ]}
                             >
                               {slot.label}
                             </Text>
-                            <Text style={styles.timeSlotPillSub}>{slot.sub}</Text>
+                            <Text style={[styles.timeSlotPillSub, isDark && { color: '#A1A1AA' }]}>{slot.sub}</Text>
                           </View>
                           {isSelected && (
-                            <CheckCircle2 size={16} color="#4338CA" style={{ marginLeft: 6 }} />
+                            <CheckCircle2 size={16} color={isDark ? '#FFFFFF' : '#4338CA'} style={{ marginLeft: 6 }} />
                           )}
                         </TouchableOpacity>
                       );
@@ -1394,12 +1402,12 @@ export default function CareCellScreen({ navigation, route }: any) {
 
                   {/* Custom Time Slot Input */}
                   {selectedTimeSlot === 'custom' && (
-                    <View style={styles.customTimeInputWrap}>
-                      <Clock size={16} color="#4338CA" style={{ marginRight: 8 }} />
+                    <View style={[styles.customTimeInputWrap, isDark && { backgroundColor: '#27272A', borderColor: '#3F3F46' }]}>
+                      <Clock size={16} color={isDark ? '#FFFFFF' : '#4338CA'} style={{ marginRight: 8 }} />
                       <TextInput
-                        style={styles.customTimeInput}
+                        style={[styles.customTimeInput, isDark && { color: '#FFFFFF' }]}
                         placeholder="e.g. 6:30 PM to 7:30 PM, or Saturday 11 AM"
-                        placeholderTextColor="#94A3B8"
+                        placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                         value={customTimeSlotText}
                         onChangeText={setCustomTimeSlotText}
                         autoFocus
@@ -1408,11 +1416,11 @@ export default function CareCellScreen({ navigation, route }: any) {
                   )}
 
                   {/* Optional Note / Prayer Request for the visit */}
-                  <Text style={styles.timeModalSectionLabel}>SPECIAL NOTES OR PRAYER REQUEST (OPTIONAL)</Text>
+                  <Text style={[styles.timeModalSectionLabel, isDark && { color: '#A1A1AA' }]}>SPECIAL NOTES OR PRAYER REQUEST (OPTIONAL)</Text>
                   <TextInput
-                    style={styles.visitNotesInput}
+                    style={[styles.visitNotesInput, isDark && { backgroundColor: '#27272A', borderColor: '#3F3F46', color: '#FFFFFF' }]}
                     placeholder="e.g. Please pray for healing / Please visit after children finish study..."
-                    placeholderTextColor="#94A3B8"
+                    placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                     value={visitNotesText}
                     onChangeText={setVisitNotesText}
                     multiline

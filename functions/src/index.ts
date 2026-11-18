@@ -1834,6 +1834,7 @@ export {
   pushCareCellMeeting,
   pushCareCellPrayerRequest,
   pushCareCellVisit,
+  onCareCellVisitResponseUpdated,
   onTestimonyCreatedAdmin,
   onTestimonyCreatedAdminLegacy,
   onTestimonyUpdatedWorkflow,

@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { Search, X, Check, CheckCircle2, UserCheck, AlertCircle, Phone, ArrowRight, MapPin } from 'lucide-react-native';
 import FirestoreService from '../../../../services/FirestoreService';
-import CareCellService, { isMemberInLocation } from '../../../../services/CareCellService';
+import CareCellService, { isMemberInLocation, normalizeLocalityToken } from '../../../../services/CareCellService';
 import { CareCellMembership } from '../../../../types/CareCellTypes';
 import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 
@@ -156,8 +156,9 @@ export default function MemberLookupModal({
   const uniqueLocalities = useMemo(() => {
     const set = new Set<string>();
     members.forEach((m) => {
-      if (m.locality && m.locality.trim()) {
-        set.add(m.locality.trim());
+      const loc = (m.locality || m.village || m.city || '').trim();
+      if (loc) {
+        set.add(loc);
       }
     });
     return Array.from(set).sort();
@@ -167,14 +168,19 @@ export default function MemberLookupModal({
   const filteredMembers = useMemo(() => {
     let result = members;
 
-    // Strict location-based filtering when targetLocation is provided
-    if (filterByLocation && targetLocation && targetLocation.trim()) {
+    // 1. If user specifically tapped a locality pill (e.g. "Koilakuntla", "Sivavaram"), strictly filter by it
+    if (selectedLocality !== 'ALL') {
+      const normSelected = normalizeLocalityToken(selectedLocality);
+      result = result.filter((m) => {
+        const memberLocs = [m.locality, m.village, m.city, m.address]
+          .filter((s) => typeof s === 'string' && s.trim().length > 0)
+          .map((s) => normalizeLocalityToken((s as string).toLowerCase()));
+        return memberLocs.some((l) => l.includes(normSelected) || normSelected.includes(l));
+      });
+    } else if (filterByLocation && targetLocation && targetLocation.trim()) {
+      // 2. Otherwise apply cell location filtering
       result = result.filter((m) =>
         isMemberInLocation(m, targetLocation, cellLatitude, cellLongitude)
-      );
-    } else if (selectedLocality !== 'ALL') {
-      result = result.filter(
-        (m) => (m.locality || '').trim().toLowerCase() === selectedLocality.toLowerCase()
       );
     }
 
@@ -314,11 +320,6 @@ export default function MemberLookupModal({
                 <Text style={[styles.memberCodeBadgeTxt, { color: isDark ? '#E4E4E7' : '#334155' }]}>{item.memberCode}</Text>
               </View>
             ) : null}
-            {item.userType && item.userType.toUpperCase().includes('ADMIN') && (
-              <View style={styles.adminBadge}>
-                <Text style={styles.adminBadgeTxt}>Admin</Text>
-              </View>
-            )}
           </View>
 
           {item.phone ? (
@@ -741,12 +742,6 @@ const styles = createAdminThemedStyles({
   textDisabled: {
     color: '#64748B',
   },
-  adminBadge: {
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
   memberCodeBadge: {
     paddingHorizontal: 6,
     paddingVertical: 1.5,
@@ -757,11 +752,6 @@ const styles = createAdminThemedStyles({
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 0.3,
-  },
-  adminBadgeTxt: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#B45309',
   },
   phoneRow: {
     flexDirection: 'row',

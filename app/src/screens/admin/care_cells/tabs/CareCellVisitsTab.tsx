@@ -33,7 +33,7 @@ import CareCellService from '../../../../services/CareCellService';
 import { formatDateDisplay } from '../../../../utils/DateUtils';
 import { useAuth } from '../../../../context/AuthContext';
 import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
-import { CareCell, CareCellVisit, CareCellMembership, VisitStatus } from '../../../../types/CareCellTypes';
+import { CareCell, CareCellVisit, CareCellMembership, VisitStatus, formatTime12h } from '../../../../types/CareCellTypes';
 import CareCellVisitModal from '../components/CareCellVisitModal';
 import CareCellVisitResponsesModal from '../components/CareCellVisitResponsesModal';
 import CareCellMapModal from '../components/CareCellMapModal';
@@ -446,15 +446,21 @@ export default function CareCellVisitsTab({
                   <View
                     style={[
                       styles.statusPill,
-                      isCompleted && styles.statusPillCompleted,
-                      isCancelled && styles.statusPillCancelled,
+                      isCompleted
+                        ? (isDark ? { backgroundColor: 'rgba(5, 150, 105, 0.2)' } : styles.statusPillCompleted)
+                        : isCancelled
+                          ? (isDark ? { backgroundColor: 'rgba(220, 38, 38, 0.2)' } : styles.statusPillCancelled)
+                          : (isDark ? { backgroundColor: 'rgba(59, 130, 246, 0.2)' } : styles.statusPill),
                     ]}
                   >
                     <Text
                       style={[
                         styles.statusPillTxt,
-                        isCompleted && styles.statusPillTxtCompleted,
-                        isCancelled && styles.statusPillTxtCancelled,
+                        isCompleted
+                          ? { color: '#10B981' }
+                          : isCancelled
+                            ? { color: '#EF4444' }
+                            : { color: isDark ? '#93C5FD' : '#1D4ED8' },
                       ]}
                     >
                       {item.status || 'Scheduled'}
@@ -465,142 +471,136 @@ export default function CareCellVisitsTab({
                 {/* Date & Time and Visitors */}
                 <View style={styles.detailsRow}>
                   <View style={styles.detailItem}>
-                    <Calendar size={13} color="#64748B" style={{ marginRight: 5 }} />
-                    <Text style={styles.detailTxt}>{formatDateDisplay(item.visitDate)}</Text>
+                    <Calendar size={13} color={isDark ? '#94A3B8' : '#64748B'} style={{ marginRight: 5 }} />
+                    <Text style={[styles.detailTxt, isDark && { color: '#CBD5E1' }]}>{formatDateDisplay(item.visitDate)}</Text>
                   </View>
                   <View style={styles.detailItem}>
-                    <Clock size={13} color="#64748B" style={{ marginRight: 5 }} />
-                    <Text style={styles.detailTxt}>{item.visitTime}</Text>
+                    <Clock size={13} color={isDark ? '#94A3B8' : '#64748B'} style={{ marginRight: 5 }} />
+                    <Text style={[styles.detailTxt, isDark && { color: '#CBD5E1' }]}>{formatTime12h(item.visitTime)}</Text>
                   </View>
                 </View>
 
                 {item.visitors ? (
-                  <View style={styles.visitorsRow}>
-                    <Users size={13} color="#1A2D5A" style={{ marginRight: 6 }} />
-                    <Text style={styles.visitorsTxt}>Visiting: {item.visitors}</Text>
+                  <View style={[styles.visitorsRow, isDark && { backgroundColor: '#27272A' }]}>
+                    <Users size={13} color={isDark ? '#E4E4E7' : '#1A2D5A'} style={{ marginRight: 6 }} />
+                    <Text style={[styles.visitorsTxt, isDark && { color: '#FFFFFF' }]}>Visiting: {item.visitors}</Text>
                   </View>
                 ) : null}
 
                 {item.purpose ? (
-                  <Text style={styles.purposeTxt} numberOfLines={2}>
+                  <Text style={[styles.purposeTxt, isDark && { color: '#94A3B8' }]} numberOfLines={2}>
                     "{item.purpose}"
                   </Text>
                 ) : null}
 
                 {/* Live Member Responses Summary Bar */}
-                <View style={styles.responseSummaryBox}>
+                <View style={[styles.responseSummaryBox, isDark && { backgroundColor: '#18181B', borderColor: '#27272A' }]}>
                   <View style={styles.responseCountsRow}>
                     <View style={styles.responseCountItem}>
                       <Text style={styles.responseValAccepted}>{accepted}</Text>
-                      <Text style={styles.responseLbl}>Accepted</Text>
+                      <Text style={[styles.responseLbl, isDark && { color: '#A1A1AA' }]}>Accepted</Text>
                     </View>
                     <View style={styles.responseCountItem}>
                       <Text style={styles.responseValDeclined}>{declined}</Text>
-                      <Text style={styles.responseLbl}>Declined</Text>
+                      <Text style={[styles.responseLbl, isDark && { color: '#A1A1AA' }]}>Declined</Text>
                     </View>
                     <View style={styles.responseCountItem}>
                       <Text style={styles.responseValPending}>{pending}</Text>
-                      <Text style={styles.responseLbl}>Pending</Text>
+                      <Text style={[styles.responseLbl, isDark && { color: '#A1A1AA' }]}>Pending</Text>
                     </View>
                     <View style={styles.responseCountItem}>
-                      <Text style={styles.responseValTotal}>{total}</Text>
-                      <Text style={styles.responseLbl}>Total</Text>
+                      <Text style={[styles.responseValTotal, isDark && { color: '#FFFFFF' }]}>{total}</Text>
+                      <Text style={[styles.responseLbl, isDark && { color: '#A1A1AA' }]}>Total</Text>
                     </View>
                   </View>
 
                   {/* Progress bar */}
-                  <View style={styles.progressBarBg}>
+                  <View style={[styles.progressBarBg, isDark && { backgroundColor: '#27272A' }]}>
                     <View style={[styles.progressBarAccepted, { width: `${acceptRate}%` }]} />
                   </View>
                 </View>
 
-                {/* Bottom Card Actions */}
-                <View style={styles.cardActionsRow}>
-                  <TouchableOpacity
-                    style={[styles.viewResponsesBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
-                    onPress={() => setSelectedVisitForResponses(item)}
-                    activeOpacity={0.8}
-                  >
-                    <Users size={14} color={secondaryBtnText} style={{ marginRight: 6 }} />
-                    <Text style={[styles.viewResponsesBtnTxt, { color: secondaryBtnText }]}>
-                      Responses ({total})
-                    </Text>
-                    <ChevronRight size={14} color={secondaryBtnText} />
-                  </TouchableOpacity>
-
-                  {/* Route Map & Directions Buttons */}
-                  <TouchableOpacity
-                    style={[
-                      styles.routeMapActionBtn,
-                      {
-                        backgroundColor: secondaryBtnBg,
-                        borderColor: secondaryBtnBorder,
-                        borderWidth: 1.2,
-                      },
-                    ]}
-                    onPress={() => handleOpenVisitRouteMap(item)}
-                    activeOpacity={0.8}
-                  >
-                    <MapPin size={13} color={secondaryBtnText} style={{ marginRight: 4 }} />
-                    <Text
-                      style={[
-                        styles.routeMapActionBtnTxt,
-                        { color: secondaryBtnText, fontWeight: '700' },
-                      ]}
+                {/* Bottom Card Actions: 2 Clean Rows to avoid cramming */}
+                <View style={[styles.cardActionsContainer, isDark && { borderTopColor: '#27272A' }]}>
+                  {/* Row 1: Responses Button + Quick Status Operations */}
+                  <View style={styles.cardActionsTopRow}>
+                    <TouchableOpacity
+                      style={[styles.viewResponsesBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
+                      onPress={() => setSelectedVisitForResponses(item)}
+                      activeOpacity={0.8}
                     >
-                      Route Map
-                    </Text>
-                  </TouchableOpacity>
+                      <Users size={14} color={secondaryBtnText} style={{ marginRight: 6 }} />
+                      <Text style={[styles.viewResponsesBtnTxt, { color: secondaryBtnText }]}>
+                        Responses ({total})
+                      </Text>
+                      <ChevronRight size={14} color={secondaryBtnText} />
+                    </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={[
-                      styles.routeMapActionBtn,
-                      {
-                        backgroundColor: secondaryBtnBg,
-                        borderColor: secondaryBtnBorder,
-                      },
-                    ]}
-                    onPress={() => handleDirectionsForVisit(item)}
-                    activeOpacity={0.8}
-                  >
-                    <Navigation size={13} color={primaryText} style={{ marginRight: 4 }} />
-                    <Text
-                      style={[
-                        styles.routeMapActionBtnTxt,
-                        { color: primaryText },
-                      ]}
-                    >
-                      Directions
-                    </Text>
-                  </TouchableOpacity>
+                    <View style={styles.quickOpsRow}>
+                      {isScheduled && (
+                        <TouchableOpacity
+                          onPress={() => handleStatusChange(item, 'Completed')}
+                          style={[styles.quickOpIconBtn, { backgroundColor: isDark ? 'rgba(5, 150, 105, 0.2)' : '#ECFDF5', borderColor: isDark ? '#059669' : '#A7F3D0' }]}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Check size={14} color="#10B981" />
+                        </TouchableOpacity>
+                      )}
 
-                  <View style={styles.quickOpsRow}>
-                    {isScheduled && (
+                      {isScheduled && (
+                        <TouchableOpacity
+                          onPress={() => handleStatusChange(item, 'Cancelled')}
+                          style={[styles.quickOpIconBtn, { backgroundColor: isDark ? 'rgba(217, 119, 6, 0.2)' : '#FFFBEB', borderColor: isDark ? '#D97706' : '#FDE68A' }]}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Ban size={13} color="#F59E0B" />
+                        </TouchableOpacity>
+                      )}
+
                       <TouchableOpacity
-                        onPress={() => handleStatusChange(item, 'Completed')}
-                        style={[styles.quickOpIconBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
+                        onPress={() => handleDelete(item)}
+                        style={[styles.quickOpIconBtn, { backgroundColor: dangerBtnBg, borderColor: dangerBtnBorder }]}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
-                        <Check size={15} color="#059669" />
+                        <Trash2 size={13} color={dangerBtnText} />
                       </TouchableOpacity>
-                    )}
+                    </View>
+                  </View>
 
-                    {isScheduled && (
-                      <TouchableOpacity
-                        onPress={() => handleStatusChange(item, 'Cancelled')}
-                        style={[styles.quickOpIconBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      >
-                        <Ban size={14} color="#D97706" />
-                      </TouchableOpacity>
-                    )}
+                  {/* Row 2: In-App Route Map & Turn-by-Turn Directions */}
+                  <View style={styles.cardActionsBottomRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.routeMapActionBtn,
+                        {
+                          backgroundColor: secondaryBtnBg,
+                          borderColor: secondaryBtnBorder,
+                        },
+                      ]}
+                      onPress={() => handleOpenVisitRouteMap(item)}
+                      activeOpacity={0.8}
+                    >
+                      <MapPin size={13} color={secondaryBtnText} style={{ marginRight: 5 }} />
+                      <Text style={[styles.routeMapActionBtnTxt, { color: secondaryBtnText }]}>
+                        Route Map
+                      </Text>
+                    </TouchableOpacity>
 
                     <TouchableOpacity
-                      onPress={() => handleDelete(item)}
-                      style={[styles.quickOpIconBtn, { backgroundColor: dangerBtnBg, borderColor: dangerBtnBorder }]}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      style={[
+                        styles.routeMapActionBtn,
+                        {
+                          backgroundColor: secondaryBtnBg,
+                          borderColor: secondaryBtnBorder,
+                        },
+                      ]}
+                      onPress={() => handleDirectionsForVisit(item)}
+                      activeOpacity={0.8}
                     >
-                      <Trash2 size={14} color={dangerBtnText} />
+                      <Navigation size={13} color={secondaryBtnText} style={{ marginRight: 5 }} />
+                      <Text style={[styles.routeMapActionBtnTxt, { color: secondaryBtnText }]}>
+                        Directions
+                      </Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -939,53 +939,62 @@ const styles = createAdminThemedStyles({
     backgroundColor: '#059669',
     borderRadius: 3,
   },
-  cardActionsRow: {
+  cardActionsContainer: {
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    gap: 8,
+  },
+  cardActionsTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
+    gap: 10,
   },
-  viewResponsesBtn: {
+  cardActionsBottomRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    gap: 10,
+  },
+  viewResponsesBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1.2,
-    borderColor: '#CBD5E1',
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 9,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
   },
   viewResponsesBtnTxt: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#334155',
     marginRight: 4,
   },
   routeMapActionBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    paddingHorizontal: 9,
-    paddingVertical: 7,
-    borderRadius: 9,
+    justifyContent: 'center',
+    borderWidth: 1.2,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
   },
   routeMapActionBtnTxt: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   quickOpsRow: {
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
+    gap: 6,
   },
   quickOpIconBtn: {
     width: 34,
     height: 34,
-    borderRadius: 10,
-    backgroundColor: '#F8FAFC',
+    borderRadius: 9,
     borderWidth: 1.2,
-    borderColor: '#CBD5E1',
     justifyContent: 'center',
     alignItems: 'center',
   },

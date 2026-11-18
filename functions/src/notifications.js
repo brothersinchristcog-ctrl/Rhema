@@ -2445,44 +2445,122 @@ export const pushCareCellAnnouncement = onDocumentCreated({ document: 'Rhema Chu
     const messaging = getMessaging();
     const notifTitle = scope === 'All_Cells' ? `📢 Church Notice: ${title}` : `📢 ${cellName}: ${title}`;
     const notifBody = message.length > 120 ? `${message.substring(0, 117)}...` : message;
-    const payload = {
-        notification: {
-            title: notifTitle,
-            body: notifBody,
-        },
-        data: {
-            type: 'care_cell_announcement',
-            title: notifTitle,
-            body: notifBody,
-            announcementId: String(announcementId),
-            churchId: String(churchId),
-            cellId: String(data.cellId || ''),
-            scope: String(scope),
-            click_action: 'FLUTTER_NOTIFICATION_CLICK',
-        },
-        android: {
-            priority: 'high',
+    if (scope === 'All_Cells') {
+        const payload = {
             notification: {
-                sound: 'default',
-                channelId: 'church_alerts',
+                title: notifTitle,
+                body: notifBody,
             },
-        },
-        apns: {
-            payload: {
-                aps: {
+            data: {
+                type: 'care_cell_announcement',
+                title: notifTitle,
+                body: notifBody,
+                announcementId: String(announcementId),
+                churchId: String(churchId),
+                cellId: String(data.cellId || ''),
+                scope: 'All_Cells',
+                click_action: 'FLUTTER_NOTIFICATION_CLICK',
+            },
+            android: {
+                priority: 'high',
+                notification: {
                     sound: 'default',
-                    badge: 1,
+                    channelId: 'church_alerts',
                 },
             },
-        },
-        topic: `church_${churchId}`,
-    };
-    try {
-        await messaging.send(payload);
-        console.log(`Successfully sent care cell announcement push for ${announcementId}`);
+            apns: {
+                payload: {
+                    aps: {
+                        sound: 'default',
+                        badge: 1,
+                    },
+                },
+            },
+            topic: `church_${churchId}`,
+        };
+        try {
+            await messaging.send(payload);
+            console.log(`Successfully sent church-wide care cell announcement push for ${announcementId}`);
+        }
+        catch (err) {
+            console.error('Error sending church-wide care cell announcement notification:', err);
+        }
     }
-    catch (err) {
-        console.error('Error sending care cell announcement notification:', err);
+    else {
+        // Cell-scoped announcement: send push strictly to active members of this specific Care Cell
+        if (!data.cellId)
+            return;
+        try {
+            const membershipsSnap = await db
+                .collection('Rhema Church')
+                .doc(churchId)
+                .collection('careCellMemberships')
+                .where('cellId', '==', data.cellId)
+                .where('membershipStatus', '==', 'Active')
+                .get();
+            const memberIds = membershipsSnap.docs.map((d) => d.data().memberId).filter(Boolean);
+            if (memberIds.length === 0) {
+                console.log(`No active members found in care cell ${data.cellId} for announcement push.`);
+                return;
+            }
+            const tokens = [];
+            for (const mId of memberIds) {
+                try {
+                    const memDoc = await db
+                        .collection('Rhema Church')
+                        .doc(churchId)
+                        .collection('members')
+                        .doc(mId)
+                        .get();
+                    if (memDoc.exists) {
+                        const token = memDoc.data()?.fcmToken;
+                        if (token && typeof token === 'string' && !tokens.includes(token)) {
+                            tokens.push(token);
+                        }
+                    }
+                }
+                catch (_) { }
+            }
+            if (tokens.length > 0) {
+                const messagePayload = {
+                    notification: {
+                        title: notifTitle,
+                        body: notifBody,
+                    },
+                    data: {
+                        type: 'care_cell_announcement',
+                        title: notifTitle,
+                        body: notifBody,
+                        announcementId: String(announcementId),
+                        churchId: String(churchId),
+                        cellId: String(data.cellId || ''),
+                        scope: 'Cell',
+                        click_action: 'FLUTTER_NOTIFICATION_CLICK',
+                    },
+                    android: {
+                        priority: 'high',
+                        notification: {
+                            sound: 'default',
+                            channelId: 'church_alerts',
+                        },
+                    },
+                    apns: {
+                        payload: {
+                            aps: {
+                                sound: 'default',
+                                badge: 1,
+                            },
+                        },
+                    },
+                    tokens,
+                };
+                const response = await messaging.sendEachForMulticast(messagePayload);
+                console.log(`Successfully sent Care Cell announcement push to ${response.successCount}/${tokens.length} members for ${announcementId}`);
+            }
+        }
+        catch (err) {
+            console.error('Error sending care cell announcement notification:', err);
+        }
     }
 });
 /**
@@ -2747,7 +2825,10 @@ export const pushCareCellVisit = onDocumentCreated({ document: 'Rhema Church/{ch
             .where('cellId', '==', cellId)
             .where('membershipStatus', '==', 'Active')
             .get();
-        const memberIds = membershipsSnap.docs.map((d) => d.data().memberId).filter(Boolean);
+        let memberIds = membershipsSnap.docs.map((d) => d.data().memberId).filter(Boolean);
+        if (Array.isArray(data.targetMemberIds) && data.targetMemberIds.length > 0) {
+            memberIds = memberIds.filter((id) => data.targetMemberIds.includes(id));
+        }
         if (memberIds.length === 0) {
             console.log(`No active members found in care cell ${cellId} for visit push.`);
             return;
@@ -2816,6 +2897,136 @@ export const pushCareCellVisit = onDocumentCreated({ document: 'Rhema Church/{ch
     }
     catch (err) {
         console.error('Error dispatching Care Cell visit push notification:', err);
+    }
+});
+/**
+ * 🏡 CARE CELL VISIT RESPONSE UPDATED PUSH
+ * Sends push notification strictly to the respective Care Cell Leader / Admin when a member
+ * responds with acceptance/decline or submits their preferred visiting time.
+ */
+export const onCareCellVisitResponseUpdated = onDocumentUpdated({ document: 'Rhema Church/{churchId}/careCellVisits/{visitId}', region: 'asia-south1' }, async (event) => {
+    const beforeSnap = event.data?.before;
+    const afterSnap = event.data?.after;
+    if (!beforeSnap || !afterSnap)
+        return;
+    const churchId = event.params.churchId;
+    const visitId = event.params.visitId;
+    const beforeData = beforeSnap.data();
+    const afterData = afterSnap.data();
+    const beforeResponses = beforeData?.responses || {};
+    const afterResponses = afterData?.responses || {};
+    // Identify which member's response or preferredTime changed
+    const changedMemberIds = [];
+    for (const [mId, afterResp] of Object.entries(afterResponses)) {
+        const beforeResp = beforeResponses[mId];
+        const statusChanged = afterResp.response !== beforeResp?.response &&
+            (afterResp.response === 'Accepted' || afterResp.response === 'Declined');
+        const timeChanged = afterResp.preferredTime &&
+            afterResp.preferredTime !== beforeResp?.preferredTime;
+        if (statusChanged || timeChanged) {
+            changedMemberIds.push(mId);
+        }
+    }
+    if (changedMemberIds.length === 0)
+        return;
+    const db = getFirestore();
+    const messaging = getMessaging();
+    try {
+        // 1. Fetch Care Cell record to get leader information
+        const cellId = afterData.cellId;
+        if (!cellId)
+            return;
+        const cellDoc = await db
+            .collection('Rhema Church')
+            .doc(churchId)
+            .collection('careCells')
+            .doc(cellId)
+            .get();
+        const cellData = cellDoc.exists ? cellDoc.data() : null;
+        const targetLeaderIds = new Set();
+        if (cellData?.leaderId)
+            targetLeaderIds.add(cellData.leaderId);
+        if (cellData?.assistantLeaderId)
+            targetLeaderIds.add(cellData.assistantLeaderId);
+        if (afterData.assignedLeaderId)
+            targetLeaderIds.add(afterData.assignedLeaderId);
+        if (targetLeaderIds.size === 0 && afterData.createdBy) {
+            targetLeaderIds.add(afterData.createdBy);
+        }
+        // 2. Collect FCM tokens strictly for this specific Care Cell's leader(s)
+        const leaderTokens = [];
+        for (const leaderId of targetLeaderIds) {
+            try {
+                const leaderDoc = await db
+                    .collection('Rhema Church')
+                    .doc(churchId)
+                    .collection('members')
+                    .doc(leaderId)
+                    .get();
+                if (leaderDoc.exists) {
+                    const token = leaderDoc.data()?.fcmToken;
+                    if (token && typeof token === 'string' && !leaderTokens.includes(token)) {
+                        leaderTokens.push(token);
+                    }
+                }
+            }
+            catch (_) { }
+        }
+        if (leaderTokens.length === 0) {
+            console.log(`No valid FCM tokens found for Care Cell leader(s) of cell ${cellId}`);
+            return;
+        }
+        // 3. Dispatch targeted push notification to the leader(s)
+        for (const memberId of changedMemberIds) {
+            // Exclude leader if the leader responded for themselves
+            if (targetLeaderIds.has(memberId) && leaderTokens.length === 1)
+                continue;
+            const resp = afterResponses[memberId];
+            const memberName = resp.memberName || 'Cell Member';
+            const actionWord = resp.response === 'Accepted' ? 'accepted' : 'declined';
+            const timeNote = resp.preferredTime ? ` (Preferred: ${resp.preferredTime})` : '';
+            const notifTitle = `🏡 Care Cell Visit: ${memberName}`;
+            const notifBody = `${memberName} ${actionWord} the visit on ${afterData.visitDate}${timeNote}.`;
+            const messagePayload = {
+                notification: {
+                    title: notifTitle,
+                    body: notifBody,
+                },
+                data: {
+                    type: 'care_cell_visit_response',
+                    title: notifTitle,
+                    body: notifBody,
+                    visitId: String(visitId),
+                    cellId: String(cellId),
+                    churchId: String(churchId),
+                    memberId: String(memberId),
+                    response: String(resp.response || ''),
+                    preferredTime: String(resp.preferredTime || ''),
+                    click_action: 'FLUTTER_NOTIFICATION_CLICK',
+                },
+                android: {
+                    priority: 'high',
+                    notification: {
+                        sound: 'default',
+                        channelId: 'church_alerts',
+                    },
+                },
+                apns: {
+                    payload: {
+                        aps: {
+                            sound: 'default',
+                            badge: 1,
+                        },
+                    },
+                },
+                tokens: leaderTokens,
+            };
+            const res = await messaging.sendEachForMulticast(messagePayload);
+            console.log(`Successfully sent visit response push for ${memberId} to ${res.successCount} leader device(s)`);
+        }
+    }
+    catch (err) {
+        console.error('Error dispatching Care Cell visit response notification to leader:', err);
     }
 });
 /**

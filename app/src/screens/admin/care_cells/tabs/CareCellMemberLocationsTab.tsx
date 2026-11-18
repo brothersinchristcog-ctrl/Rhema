@@ -127,8 +127,8 @@ export default function CareCellMemberLocationsTab({
   const [refreshMarkersCount, setRefreshMarkersCount] = useState<number>(0);
 
   useEffect(() => {
-    const t1 = setTimeout(() => setRefreshMarkersCount((c) => c + 1), 300);
-    const t2 = setTimeout(() => setRefreshMarkersCount((c) => c + 1), 800);
+    const t1 = setTimeout(() => setRefreshMarkersCount((c) => c + 1), 500);
+    const t2 = setTimeout(() => setRefreshMarkersCount((c) => c + 1), 2000);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
@@ -681,22 +681,22 @@ export default function CareCellMemberLocationsTab({
                           </Text>
                         </View>
                       )}
-
-                      {/* Multi-member cluster count pill */}
-                      {isMulti && (
-                        <View collapsable={false} style={[styles.tabLollipopCountBadge, { backgroundColor: dominantColor }]}>
-                          <Users size={9} color="#FFFFFF" style={{ marginRight: 2 }} />
-                          <Text style={styles.tabLollipopCountTxt}>{group.length}</Text>
-                        </View>
-                      )}
-
-                      {/* Verified home pin badge */}
-                      {hasVerified && !isMulti && (
-                        <View collapsable={false} style={styles.tabLollipopVerifiedBadge}>
-                          <Home size={8} color="#FFFFFF" />
-                        </View>
-                      )}
                     </View>
+
+                    {/* Multi-member cluster count pill */}
+                    {isMulti && (
+                      <View collapsable={false} style={[styles.tabLollipopCountBadge, { backgroundColor: dominantColor }]}>
+                        <Users size={9} color="#FFFFFF" style={{ marginRight: 2 }} />
+                        <Text style={styles.tabLollipopCountTxt}>{group.length}</Text>
+                      </View>
+                    )}
+
+                    {/* Verified home pin badge */}
+                    {hasVerified && !isMulti && (
+                      <View collapsable={false} style={styles.tabLollipopVerifiedBadge}>
+                        <Home size={8} color="#FFFFFF" />
+                      </View>
+                    )}
 
                     {/* Lollipop Needle Pointer SVG */}
                     <Svg
@@ -1256,8 +1256,10 @@ const styles = createAdminThemedStyles(
 
     // Markers
     tabLollipopWrap: {
+      width: 48,
+      height: 54,
       alignItems: 'center',
-      justifyContent: 'center',
+      justifyContent: 'flex-start',
     },
     tabLollipopHead: {
       width: 44,
@@ -1266,6 +1268,7 @@ const styles = createAdminThemedStyles(
       backgroundColor: '#FFFFFF',
       alignItems: 'center',
       justifyContent: 'center',
+      overflow: 'hidden',
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 3 },
       shadowOpacity: 0.3,
@@ -1273,14 +1276,15 @@ const styles = createAdminThemedStyles(
       elevation: 6,
     },
     tabLollipopAvatarImg: {
-      width: 38,
-      height: 38,
-      borderRadius: 19,
+      width: '100%',
+      height: '100%',
+      borderRadius: 22,
+      resizeMode: 'cover',
     },
     tabLollipopAvatarFallback: {
-      width: 38,
-      height: 38,
-      borderRadius: 19,
+      width: '100%',
+      height: '100%',
+      borderRadius: 22,
       alignItems: 'center',
       justifyContent: 'center',
     },
