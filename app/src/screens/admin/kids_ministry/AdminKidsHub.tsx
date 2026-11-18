@@ -33,6 +33,7 @@ import {
   ShieldCheck,
   Clock,
   BookOpen,
+  TrendingUp,
 } from 'lucide-react-native';
 import { useAuth } from '../../../context/AuthContext';
 import KidsMinistryService from '../../../services/KidsMinistryService';
@@ -57,6 +58,7 @@ import AdminCurriculumModal from './components/AdminCurriculumModal';
 import AdminAICopilotModal from './components/AdminAICopilotModal';
 import AdminVBSManagerModal from './components/AdminVBSManagerModal';
 import KidsCertificateModal from '../../kids_ministry/components/KidsCertificateModal';
+import AdminKidsReportsModal from './components/AdminKidsReportsModal';
 
 const { width } = Dimensions.get('window');
 
@@ -82,6 +84,7 @@ export default function AdminKidsHub({ navigation }: any) {
   const [showCurriculumModal, setShowCurriculumModal] = useState(false);
   const [showAICopilotModal, setShowAICopilotModal] = useState(false);
   const [showVBSModal, setShowVBSModal] = useState(false);
+  const [showReportsModal, setShowReportsModal] = useState(false);
   const [selectedCertData, setSelectedCertData] = useState<KidsCertificateData | null>(null);
 
   // Phase 5, 6 & 9: Learning content, 52-week curriculum & VBS state
@@ -470,6 +473,25 @@ export default function AdminKidsHub({ navigation }: any) {
                     </Text>
                   </View>
                   <ChevronRight size={18} color="#EF4444" />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.portalCard, { borderColor: '#10B981', borderWidth: 1 }]}
+                  onPress={() => setShowReportsModal(true)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.portalIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]}>
+                    <TrendingUp size={20} color="#10B981" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.portalTitle, { color: '#10B981' }]}>
+                      Ministry Health & Board Analytics
+                    </Text>
+                    <Text style={styles.portalSub}>
+                      Safeguarding ratios, attendance trends, medical audits & WhatsApp export
+                    </Text>
+                  </View>
+                  <ChevronRight size={18} color="#10B981" />
                 </TouchableOpacity>
               </View>
             </>
@@ -919,6 +941,19 @@ export default function AdminKidsHub({ navigation }: any) {
           visible={!!selectedCertData}
           data={selectedCertData}
           onClose={() => setSelectedCertData(null)}
+        />
+      )}
+
+      {/* ── EXECUTIVE HEALTH & ANALYTICS REPORT MODAL ── */}
+      {showReportsModal && (
+        <AdminKidsReportsModal
+          visible={showReportsModal}
+          children={children}
+          classes={classes}
+          teachers={teachers}
+          teacherAttendance={todayTeacherAttendance}
+          churchName={(member as any)?.churchName || 'Rhema Global Ministries'}
+          onClose={() => setShowReportsModal(false)}
         />
       )}
     </View>

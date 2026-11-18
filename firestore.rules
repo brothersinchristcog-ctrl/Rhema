@@ -712,6 +712,74 @@ service cloud.firestore {
         allow delete: if isChurchAdmin();
       }
 
+      // --- KIDS MINISTRY & SUNDAY SCHOOL MANAGEMENT SYSTEM ---
+      // Children Profile & Safeguarding
+      match /kids_children/{childId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated();
+        allow update: if isAuthenticated();
+        allow delete: if isChurchAdmin();
+      }
+
+      // Sunday School Classrooms & Capacities
+      match /kids_classes/{classId} {
+        allow read: if isAuthenticated();
+        allow write: if isChurchAdmin();
+      }
+
+      // Check-In Sessions & Custody Passes
+      match /kids_sessions/{sessionId} {
+        allow read, create, update: if isAuthenticated();
+        allow delete: if isChurchAdmin();
+      }
+
+      // Teachers & Volunteers Faculty
+      match /kids_teachers/{teacherId} {
+        allow read: if isAuthenticated();
+        allow write: if isChurchAdmin();
+      }
+
+      // Teacher Face/PIN Clock-in Attendance
+      match /kids_teacher_attendance/{attendanceId} {
+        allow read, write: if isAuthenticated();
+      }
+
+      // Bible Learning Center: Stories, Quizzes, Songs
+      match /kids_stories/{storyId} {
+        allow read: if true;
+        allow write: if isChurchAdmin();
+      }
+      match /kids_quizzes/{quizId} {
+        allow read: if true;
+        allow write: if isChurchAdmin();
+      }
+      match /kids_songs/{songId} {
+        allow read: if true;
+        allow write: if isChurchAdmin();
+      }
+      match /kids_verses/{verseId} {
+        allow read: if true;
+        allow write: if isChurchAdmin();
+      }
+
+      // 52-Week Curriculum Syllabus
+      match /kids_curriculum/{weekId} {
+        allow read: if true;
+        allow write: if isChurchAdmin();
+      }
+
+      // Kids Events & Vacation Bible School (VBS)
+      match /kids_events/{eventId} {
+        allow read: if true;
+        allow write: if isChurchAdmin();
+        allow update: if isAuthenticated();
+      }
+
+      // Safeguarding Audit Trail
+      match /kids_audit_logs/{logId} {
+        allow read, write: if isAuthenticated();
+      }
+
       // Any other church subcollection: authenticated members can read, admins can write
       match /{subcollection}/{docId} {
         allow read: if isAuthenticated();
