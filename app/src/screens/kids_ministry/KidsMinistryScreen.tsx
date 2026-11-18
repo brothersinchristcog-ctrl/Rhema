@@ -10,6 +10,7 @@ import {
   Dimensions,
   Platform,
   Alert,
+  Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -27,11 +28,14 @@ import {
   Sparkles,
   Camera,
   UserCheck,
+  Phone,
+  MessageCircle,
+  Check,
 } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { useAuth } from '../../context/AuthContext';
 import KidsMinistryService from '../../services/KidsMinistryService';
-import { ChildRecord, generateDynamicPickupCode } from '../../types/KidsMinistryTypes';
+import { ChildRecord, KidsClassRecord, generateDynamicPickupCode } from '../../types/KidsMinistryTypes';
 import KidsSplashScreen from './components/KidsSplashScreen';
 import EnrollChildModal from './components/EnrollChildModal';
 
@@ -47,9 +51,11 @@ export default function KidsMinistryScreen({ navigation }: any) {
 
   // Data State
   const [children, setChildren] = useState<ChildRecord[]>([]);
+  const [classes, setClasses] = useState<KidsClassRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedChildIndex, setSelectedChildIndex] = useState(0);
   const [existingHousehold, setExistingHousehold] = useState<any[]>([]);
+  const [homeworkDone, setHomeworkDone] = useState(false);
 
   // Navigation Tabs: 'home' | 'classroom' | 'lms' | 'pass'
   const [activeTab, setActiveTab] = useState<'home' | 'classroom' | 'lms' | 'pass'>('home');
@@ -73,6 +79,11 @@ export default function KidsMinistryScreen({ navigation }: any) {
       setExistingHousehold(contacts);
     });
 
+    // Realtime subscription to Sunday School classes
+    const unsubClasses = KidsMinistryService.subscribeToClasses(churchId, classList => {
+      setClasses(classList);
+    });
+
     // Realtime subscription to children
     const unsubscribe = KidsMinistryService.subscribeToFamilyChildren(
       churchId,
@@ -83,10 +94,18 @@ export default function KidsMinistryScreen({ navigation }: any) {
       }
     );
 
-    return () => unsubscribe();
+    return () => {
+      unsubClasses();
+      unsubscribe();
+    };
   }, [member?.id, member?.accountId, churchId]);
 
   const activeChild = children[selectedChildIndex] || null;
+
+  const assignedClass = useMemo(() => {
+    if (!activeChild) return null;
+    return classes.find(c => c.tier === activeChild.assignedTier) || null;
+  }, [classes, activeChild]);
 
   // If splash is showing, render cinematic splash screen
   if (showSplash) {
@@ -408,44 +427,154 @@ export default function KidsMinistryScreen({ navigation }: any) {
           {activeTab === 'classroom' && (
             <>
               <View style={styles.card}>
-                <Text style={styles.cardHeaderTag}>ASSIGNED CLASSROOM</Text>
-                <Text style={styles.classTitleBig}>{activeChild?.assignedClassName || 'Sunday School'}</Text>
+                <View style={styles.classHeaderRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cardHeaderTag}>ASSIGNED SUNDAY SCHOOL CLASS</Text>
+                    <Text style={styles.classTitleBig}>
+                      {assignedClass?.name || activeChild?.assignedClassName || 'Sunday School'}
+                    </Text>
+                  </View>
+                  <View style={styles.tierPill}>
+                    <Text style={styles.tierPillText}>
+                      {assignedClass ? `Ages ${assignedClass.ageRange.min}–${assignedClass.ageRange.max}` : `Age ${activeChild?.age}`}
+                    </Text>
+                  </View>
+                </View>
+
                 <Text style={styles.classAgeRange}>
-                  Ages: {activeChild?.age} years · Academic Year {activeChild?.academicYear}
+                  Student: {activeChild?.fullName} (Age {activeChild?.age}) · Academic Year {assignedClass?.academicYear || activeChild?.academicYear}
                 </Text>
 
                 <View style={styles.divider} />
 
                 <View style={styles.metaRow}>
                   <Text style={styles.metaKey}>Room Location:</Text>
-                  <Text style={styles.metaVal}>Room 204 (2nd Floor)</Text>
+                  <Text style={styles.metaVal}>{assignedClass?.roomNumber || 'Room 201 (2nd Floor)'}</Text>
                 </View>
+
                 <View style={styles.metaRow}>
                   <Text style={styles.metaKey}>Weekly Schedule:</Text>
-                  <Text style={styles.metaVal}>Sundays 09:30 AM – 11:30 AM</Text>
+                  <Text style={styles.metaVal}>
+                    Sundays {assignedClass?.schedule?.startTime || '09:30'} AM – {assignedClass?.schedule?.endTime || '11:30'} AM
+                  </Text>
                 </View>
+
                 <View style={styles.metaRow}>
                   <Text style={styles.metaKey}>Lead Teacher:</Text>
-                  <Text style={styles.metaVal}>Bro. Rajesh Yeddula</Text>
+                  <Text style={styles.metaVal}>
+                    {assignedClass?.leadTeacherName || 'Bro. Sunil Babu'}
+                  </Text>
                 </View>
-                <View style={styles.metaRow}>
-                  <Text style={styles.metaKey}>Assistant:</Text>
-                  <Text style={styles.metaVal}>Sis. Jayanthi</Text>
+
+                {/* Teacher Contact Bar */}
+                <View style={styles.teacherContactBox}>
+                  <Text style={styles.teacherContactLabel}>Need to notify teacher about attendance?</Text>
+                  <View style={styles.teacherButtonsRow}>
+                    <TouchableOpacity
+                      style={styles.teacherBtn}
+                      onPress={() => {
+                        const phone = assignedClass?.leadTeacherPhone || '+919876543210';
+                        Linking.openURL(`tel:${phone}`).catch(() => {
+                          Alert.alert('Phone', `Contact: ${assignedClass?.leadTeacherName} (${phone})`);
+                        });
+                      }}
+                    >
+                      <Phone size={13} color="#34D399" />
+                      <Text style={styles.teacherBtnText}>Call Teacher</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.teacherBtn, { backgroundColor: '#064E3B' }]}
+                      onPress={() => {
+                        const phone = (assignedClass?.leadTeacherPhone || '+919876543210').replace(/\D/g, '');
+                        const msg = encodeURIComponent(`Hi ${assignedClass?.leadTeacherName || 'Teacher'}, regarding ${activeChild?.fullName} in ${assignedClass?.name}...`);
+                        Linking.openURL(`whatsapp://send?phone=${phone}&text=${msg}`).catch(() => {
+                          Alert.alert('WhatsApp', 'WhatsApp is not installed on this device.');
+                        });
+                      }}
+                    >
+                      <MessageCircle size={13} color="#34D399" />
+                      <Text style={[styles.teacherBtnText, { color: '#34D399' }]}>WhatsApp</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
 
-              {/* Weekly Homework Card */}
+              {/* Weekly Homework & Goal Checklist */}
               <View style={styles.card}>
-                <Text style={styles.cardTitleMedium}>This Week's Homework</Text>
+                <View style={styles.homeworkHeader}>
+                  <Text style={styles.cardTitleMedium}>This Week's Homework & Goals</Text>
+                  {homeworkDone && (
+                    <View style={styles.donePill}>
+                      <Text style={styles.donePillText}>★ Completed</Text>
+                    </View>
+                  )}
+                </View>
                 <Text style={styles.homeworkDesc}>
-                  Read 1 Samuel 17 with family and practice memorizing Verse 47 for this Sunday's recitation!
+                  Practice these 3 discipleship goals at home before this Sunday:
                 </Text>
+
                 <TouchableOpacity
-                  style={styles.homeworkBtn}
-                  onPress={() => Alert.alert('Complete!', 'Homework marked completed for this week!')}
+                  style={styles.checkGoalItem}
+                  onPress={() => setHomeworkDone(!homeworkDone)}
+                  activeOpacity={0.88}
                 >
-                  <CheckCircle2 size={16} color="#000000" />
-                  <Text style={styles.homeworkBtnText}>Mark Homework Completed</Text>
+                  <View style={[styles.checkCircle, homeworkDone && styles.checkCircleActive]}>
+                    {homeworkDone && <Check size={12} color="#000000" strokeWidth={3} />}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.goalText, homeworkDone && styles.goalTextDone]}>
+                      1. Read 1 Samuel 17 (David & Goliath) with family
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.checkGoalItem}
+                  onPress={() => setHomeworkDone(!homeworkDone)}
+                  activeOpacity={0.88}
+                >
+                  <View style={[styles.checkCircle, homeworkDone && styles.checkCircleActive]}>
+                    {homeworkDone && <Check size={12} color="#000000" strokeWidth={3} />}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.goalText, homeworkDone && styles.goalTextDone]}>
+                      2. Recite memory verse (1 Sam 17:47) in Telugu or English
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.checkGoalItem}
+                  onPress={() => setHomeworkDone(!homeworkDone)}
+                  activeOpacity={0.88}
+                >
+                  <View style={[styles.checkCircle, homeworkDone && styles.checkCircleActive]}>
+                    {homeworkDone && <Check size={12} color="#000000" strokeWidth={3} />}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.goalText, homeworkDone && styles.goalTextDone]}>
+                      3. Bring your physical Bible & activity booklet to class
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.homeworkBtn, homeworkDone && { backgroundColor: '#064E3B' }]}
+                  onPress={() => {
+                    setHomeworkDone(!homeworkDone);
+                    if (!homeworkDone) {
+                      Alert.alert(
+                        'Great Job! 🎉',
+                        `Homework marked complete for ${activeChild?.firstName}! +25 Bible Star Points earned!`
+                      );
+                    }
+                  }}
+                >
+                  <CheckCircle2 size={16} color={homeworkDone ? '#34D399' : '#000000'} />
+                  <Text style={[styles.homeworkBtnText, homeworkDone && { color: '#34D399' }]}>
+                    {homeworkDone ? 'Homework Completed ✓' : 'Mark Homework Completed'}
+                  </Text>
                 </TouchableOpacity>
               </View>
             </>
@@ -1035,6 +1164,102 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#9CA3AF',
     marginTop: 2,
+  },
+  classHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  tierPill: {
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  tierPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#93C5FD',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  teacherContactBox: {
+    backgroundColor: '#09090B',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#27272A',
+    marginTop: 8,
+    gap: 8,
+  },
+  teacherContactLabel: {
+    fontSize: 11,
+    color: '#9CA3AF',
+  },
+  teacherButtonsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  teacherBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#18181B',
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#27272A',
+    gap: 6,
+  },
+  teacherBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  homeworkHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  donePill: {
+    backgroundColor: 'rgba(52, 211, 153, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  donePillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#34D399',
+  },
+  checkGoalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 6,
+  },
+  checkCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#52525B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkCircleActive: {
+    backgroundColor: '#34D399',
+    borderColor: '#34D399',
+  },
+  goalText: {
+    fontSize: 12,
+    color: '#E4E4E7',
+    lineHeight: 16,
+  },
+  goalTextDone: {
+    textDecorationLine: 'line-through',
+    color: '#6B7280',
   },
   classTitleBig: {
     fontSize: 20,

@@ -418,6 +418,182 @@ class KidsMinistryService {
   }
 
   /**
+   * Realtime subscription for Sunday School classes.
+   */
+  subscribeToClasses(
+    churchId: string,
+    callback: (classes: KidsClassRecord[]) => void
+  ): () => void {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getClassesCollection(cId).onSnapshot(
+      async snap => {
+        if (!snap || snap.empty) {
+          const seeded = await this.getOrInitKidsClasses(cId);
+          callback(seeded);
+          return;
+        }
+        const list = snap.docs.map(doc => ({
+          id: doc.id,
+          ...(doc.data() as any),
+        }));
+        const tierOrder: Record<KidsClassTier, number> = {
+          nursery: 1,
+          beginners: 2,
+          primary: 3,
+          junior: 4,
+          teens: 5,
+        };
+        list.sort((a, b) => (tierOrder[a.tier] || 99) - (tierOrder[b.tier] || 99));
+        callback(list);
+      },
+      err => {
+        console.warn('subscribeToClasses error:', err);
+        callback([]);
+      }
+    );
+  }
+
+  /**
+   * Updates an existing Sunday School class room, capacity, teacher, or schedule.
+   */
+  async updateClass(
+    churchId: string,
+    classDocId: string,
+    updates: Partial<KidsClassRecord>
+  ): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const cleanUpdates = sanitizeForFirestore({
+      ...updates,
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    });
+    await this.getClassesCollection(cId).doc(classDocId).update(cleanUpdates);
+  }
+
+  /**
+   * Promotes or transfers a child to a target class tier.
+   */
+  async promoteChild(params: {
+    churchId?: string;
+    childDocId: string;
+    childName: string;
+    previousTier?: KidsClassTier;
+    targetTier: KidsClassTier;
+    targetClassName: string;
+    promotedByAdminId?: string;
+    notes?: string;
+  }): Promise<void> {
+    const cId = params.churchId || RHEMA_CHURCH_ID;
+    const now = firestore.FieldValue.serverTimestamp();
+
+    await this.getKidsCollection(cId).doc(params.childDocId).update({
+      assignedTier: params.targetTier,
+      assignedClassName: params.targetClassName,
+      lastPromotedAt: now,
+      updatedAt: now,
+    });
+
+    await this.getAuditLogsCollection(cId).add({
+      action: 'CLASS_PROMOTION',
+      childDocId: params.childDocId,
+      childName: params.childName,
+      previousTier: params.previousTier || 'unassigned',
+      targetTier: params.targetTier,
+      targetClassName: params.targetClassName,
+      promotedByAdminId: params.promotedByAdminId || 'admin',
+      notes: params.notes || 'Age-based Sunday School promotion',
+      timestamp: now,
+    });
+  }
+
+  /**
+   * Analyzes registered children and finds those eligible for promotion based on their age.
+   */
+  checkPromotionEligibility(children: ChildRecord[]): Array<{
+    child: ChildRecord;
+    currentTier: KidsClassTier;
+    currentClassName: string;
+    recommendedTier: KidsClassTier;
+    recommendedClassName: string;
+    currentAge: number;
+  }> {
+    const candidates: Array<{
+      child: ChildRecord;
+      currentTier: KidsClassTier;
+      currentClassName: string;
+      recommendedTier: KidsClassTier;
+      recommendedClassName: string;
+      currentAge: number;
+    }> = [];
+
+    for (const c of children) {
+      const currentAge = calculateChildAge(c.dob);
+      const recommended = getRecommendedClassTier(currentAge);
+
+      if (c.assignedTier && c.assignedTier !== recommended.tier) {
+        candidates.push({
+          child: c,
+          currentTier: c.assignedTier,
+          currentClassName: c.assignedClassName || c.assignedTier,
+          recommendedTier: recommended.tier,
+          recommendedClassName: recommended.displayName,
+          currentAge,
+        });
+      }
+    }
+
+    return candidates;
+  }
+
+  /**
+   * Bulk promotes all eligible children in a batch.
+   */
+  async bulkPromoteChildren(
+    churchId: string,
+    candidates: Array<{
+      child: ChildRecord;
+      recommendedTier: KidsClassTier;
+      recommendedClassName: string;
+    }>,
+    adminId?: string
+  ): Promise<{ promotedCount: number }> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const batch = this.getDb().batch();
+    const now = firestore.FieldValue.serverTimestamp();
+
+    let count = 0;
+    for (const item of candidates) {
+      const childRef = this.getKidsCollection(cId).doc(item.child.id);
+      batch.update(childRef, {
+        assignedTier: item.recommendedTier,
+        assignedClassName: item.recommendedClassName,
+        lastPromotedAt: now,
+        updatedAt: now,
+      });
+
+      const auditRef = this.getAuditLogsCollection(cId).doc();
+      batch.set(auditRef, {
+        action: 'CLASS_PROMOTION',
+        childDocId: item.child.id,
+        childName: item.child.fullName,
+        previousTier: item.child.assignedTier || 'unassigned',
+        targetTier: item.recommendedTier,
+        targetClassName: item.recommendedClassName,
+        promotedByAdminId: adminId || 'admin',
+        notes: 'Bulk age-based promotion',
+        timestamp: now,
+      });
+
+      count++;
+    }
+
+    if (count > 0) {
+      await batch.commit();
+    }
+
+    return { promotedCount: count };
+  }
+
+  /**
    * Performs check-in for a child with duplicate check-in prevention.
    */
   async checkInChild(params: {

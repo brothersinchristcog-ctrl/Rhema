@@ -28,11 +28,16 @@ import {
   AlertTriangle,
   UserCheck,
   CheckCircle,
+  GraduationCap,
+  Edit3,
 } from 'lucide-react-native';
 import { useAuth } from '../../../context/AuthContext';
 import KidsMinistryService from '../../../services/KidsMinistryService';
 import { ChildRecord, KidsClassRecord } from '../../../types/KidsMinistryTypes';
 import EnrollChildModal from '../../kids_ministry/components/EnrollChildModal';
+import EditClassModal from './components/EditClassModal';
+import ClassRosterModal from './components/ClassRosterModal';
+import PromotionManagerModal from './components/PromotionManagerModal';
 
 const { width } = Dimensions.get('window');
 
@@ -48,22 +53,33 @@ export default function AdminKidsHub({ navigation }: any) {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [showEnrollModal, setShowEnrollModal] = useState(false);
+  const [selectedClassForEdit, setSelectedClassForEdit] = useState<KidsClassRecord | null>(null);
+  const [selectedClassForRoster, setSelectedClassForRoster] = useState<KidsClassRecord | null>(null);
+  const [showPromotionModal, setShowPromotionModal] = useState(false);
 
-  // Load children and classes
+  // Load children and classes (Realtime)
   useEffect(() => {
-    // 1. Fetch / Init default 5 Sunday School Classes
-    KidsMinistryService.getOrInitKidsClasses(churchId).then(classList => {
+    // 1. Realtime listener for Sunday School Classes
+    const unsubClasses = KidsMinistryService.subscribeToClasses(churchId, classList => {
       setClasses(classList);
     });
 
     // 2. Realtime listener for all enrolled children
-    const unsubscribe = KidsMinistryService.subscribeToAllChildren(churchId, list => {
+    const unsubKids = KidsMinistryService.subscribeToAllChildren(churchId, list => {
       setChildren(list);
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubClasses();
+      unsubKids();
+    };
   }, [churchId]);
+
+  // Children eligible for next tier promotion
+  const promotionCandidates = useMemo(() => {
+    return KidsMinistryService.checkPromotionEligibility(children);
+  }, [children]);
 
   // Search filter for children roster
   const filteredChildren = useMemo(() => {
@@ -154,7 +170,7 @@ export default function AdminKidsHub({ navigation }: any) {
           onPress={() => setActiveTab('classes')}
         >
           <Text style={[styles.tabPillText, activeTab === 'classes' && styles.tabPillTextActive]}>
-            Classes ({classes.length})
+            Classes ({classes.length}){promotionCandidates.length > 0 ? ` · 🎓 ${promotionCandidates.length}` : ''}
           </Text>
         </TouchableOpacity>
 
@@ -391,13 +407,48 @@ export default function AdminKidsHub({ navigation }: any) {
           {/* TAB 3: CLASSES (5 TIERS)                             */}
           {/* ==================================================== */}
           {activeTab === 'classes' && (
-            <View style={{ gap: 12 }}>
+            <View style={{ gap: 14 }}>
+              {/* Annual Age Promotion Center Banner */}
+              <View style={styles.promotionBannerCard}>
+                <View style={styles.promotionBannerHeader}>
+                  <View style={styles.gradIconBox}>
+                    <GraduationCap size={22} color="#FBBF24" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.promotionBannerTitle}>Annual Age Promotion Center</Text>
+                    <Text style={styles.promotionBannerSub}>
+                      {promotionCandidates.length > 0
+                        ? `${promotionCandidates.length} children ready to graduate to next Sunday School tier`
+                        : 'All children currently in their age-appropriate classes'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.promotionActionBtn}
+                    onPress={() => setShowPromotionModal(true)}
+                    activeOpacity={0.88}
+                  >
+                    <Text style={styles.promotionActionText}>
+                      {promotionCandidates.length > 0 ? `Review (${promotionCandidates.length})` : 'Manage'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
               {classes.map(cls => {
                 const enrolledInClass = children.filter(c => c.assignedTier === cls.tier).length;
+                const capacity = cls.maxCapacity || 25;
+                const percent = Math.min(100, Math.round((enrolledInClass / capacity) * 100));
+                const barColor =
+                  enrolledInClass >= capacity
+                    ? '#EF4444'
+                    : percent > 75
+                    ? '#FBBF24'
+                    : '#10B981';
+
                 return (
                   <View key={cls.id} style={styles.classCard}>
                     <View style={styles.classCardHeader}>
-                      <View>
+                      <View style={{ flex: 1 }}>
                         <View style={styles.tierTag}>
                           <Text style={styles.tierTagText}>
                             Age {cls.ageRange.min}–{cls.ageRange.max} yrs
@@ -405,30 +456,56 @@ export default function AdminKidsHub({ navigation }: any) {
                         </View>
                         <Text style={styles.classTitle}>{cls.name}</Text>
                         <Text style={styles.classSchedule}>
-                          {cls.roomNumber} · {cls.schedule.dayOfWeek}s {cls.schedule.startTime}
+                          {cls.roomNumber} · {cls.schedule.dayOfWeek}s {cls.schedule.startTime}–{cls.schedule.endTime}
                         </Text>
                       </View>
 
                       <View style={styles.capacityBadge}>
-                        <Text style={styles.capacityText}>
-                          {enrolledInClass} / {cls.maxCapacity}
+                        <Text style={[styles.capacityText, { color: barColor }]}>
+                          {enrolledInClass} / {capacity}
                         </Text>
-                        <Text style={styles.capacitySub}>Enrolled</Text>
+                        <Text style={styles.capacitySub}>{percent}% Capacity</Text>
                       </View>
+                    </View>
+
+                    {/* Visual Capacity Bar */}
+                    <View style={styles.capacityBarTrack}>
+                      <View
+                        style={[
+                          styles.capacityBarFill,
+                          {
+                            width: `${percent}%`,
+                            backgroundColor: barColor,
+                          },
+                        ]}
+                      />
                     </View>
 
                     <View style={styles.childCardDivider} />
 
                     <View style={styles.classFooter}>
-                      <Text style={styles.teacherName}>Lead: {cls.leadTeacherName}</Text>
-                      <TouchableOpacity
-                        onPress={() => {
-                          setSearchQuery(cls.name);
-                          setActiveTab('children');
-                        }}
-                      >
-                        <Text style={styles.viewRosterLink}>View Roster ({enrolledInClass}) &rsaquo;</Text>
-                      </TouchableOpacity>
+                      <Text style={styles.teacherName} numberOfLines={1}>
+                        Lead: {cls.leadTeacherName || 'Bro. Sunil Babu'}
+                      </Text>
+
+                      <View style={styles.classActionsRow}>
+                        <TouchableOpacity
+                          style={styles.editClassBtn}
+                          onPress={() => setSelectedClassForEdit(cls)}
+                        >
+                          <Edit3 size={12} color="#9CA3AF" />
+                          <Text style={styles.editClassBtnText}>Edit</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.viewRosterBtn}
+                          onPress={() => setSelectedClassForRoster(cls)}
+                        >
+                          <Text style={styles.viewRosterText}>
+                            Roster ({enrolledInClass}) &rsaquo;
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   </View>
                 );
@@ -487,6 +564,39 @@ export default function AdminKidsHub({ navigation }: any) {
           onChildEnrolled={() => {
             // Realtime updates
           }}
+        />
+      )}
+
+      {/* ── EDIT CLASS MODAL ── */}
+      {selectedClassForEdit && (
+        <EditClassModal
+          visible={!!selectedClassForEdit}
+          classData={selectedClassForEdit}
+          churchId={churchId}
+          onClose={() => setSelectedClassForEdit(null)}
+        />
+      )}
+
+      {/* ── CLASS ROSTER MODAL ── */}
+      {selectedClassForRoster && (
+        <ClassRosterModal
+          visible={!!selectedClassForRoster}
+          classData={selectedClassForRoster}
+          childrenInClass={children.filter(c => c.assignedTier === selectedClassForRoster.tier)}
+          allClasses={classes}
+          churchId={churchId}
+          onClose={() => setSelectedClassForRoster(null)}
+        />
+      )}
+
+      {/* ── PROMOTION MANAGER MODAL ── */}
+      {showPromotionModal && (
+        <PromotionManagerModal
+          visible={showPromotionModal}
+          children={children}
+          classes={classes}
+          churchId={churchId}
+          onClose={() => setShowPromotionModal(false)}
         />
       )}
     </View>
@@ -850,6 +960,90 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#27272A',
     gap: 10,
+  },
+  promotionBannerCard: {
+    backgroundColor: '#18181B',
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#27272A',
+  },
+  promotionBannerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  gradIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(251, 191, 36, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  promotionBannerTitle: {
+    fontSize: 14,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  promotionBannerSub: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  promotionActionBtn: {
+    backgroundColor: '#FBBF24',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  promotionActionText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  capacityBarTrack: {
+    height: 6,
+    backgroundColor: '#27272A',
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginTop: 4,
+  },
+  capacityBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  classActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  editClassBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#27272A',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  editClassBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#9CA3AF',
+  },
+  viewRosterBtn: {
+    backgroundColor: 'rgba(251, 191, 36, 0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  viewRosterText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FBBF24',
   },
   classCardHeader: {
     flexDirection: 'row',
