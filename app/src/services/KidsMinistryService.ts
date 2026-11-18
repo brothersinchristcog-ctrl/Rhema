@@ -658,6 +658,69 @@ class KidsMinistryService {
   }
 
   /**
+   * Adds an authorized pickup guardian to a child's safeguarding profile.
+   */
+  async addAuthorizedGuardian(
+    churchId: string,
+    childDocId: string,
+    guardian: any
+  ): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const childRef = this.getKidsCollection(cId).doc(childDocId);
+    await childRef.update({
+      guardians: firestore.FieldValue.arrayUnion(sanitizeForFirestore(guardian)),
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    });
+  }
+
+  /**
+   * Removes an authorized pickup guardian from a child's profile.
+   */
+  async removeAuthorizedGuardian(
+    churchId: string,
+    childDocId: string,
+    guardianId: string
+  ): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const childRef = this.getKidsCollection(cId).doc(childDocId);
+    const snap = await childRef.get();
+    if (!snap.exists) return;
+    const data = snap.data() as ChildRecord;
+    const updated = (data.guardians || []).filter(g => g.id !== guardianId);
+    await childRef.update({
+      guardians: updated,
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    });
+  }
+
+  /**
+   * Toggles emergency hold on child dismissal (prevents unauthorized release).
+   */
+  async toggleEmergencyHold(
+    churchId: string,
+    childDocId: string,
+    isHold: boolean,
+    reason?: string
+  ): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const childRef = this.getKidsCollection(cId).doc(childDocId);
+    const now = firestore.FieldValue.serverTimestamp();
+    await childRef.update({
+      custodyStatus: isHold ? 'emergency_hold' : 'checked_in',
+      emergencyHoldReason: isHold ? (reason || 'Parent requested custody hold') : null,
+      updatedAt: now,
+    });
+
+    const auditRef = this.getAuditLogsCollection(cId).doc();
+    await auditRef.set({
+      action: isHold ? 'EMERGENCY_HOLD_ACTIVATED' : 'EMERGENCY_HOLD_RELEASED',
+      childDocId,
+      reason: reason || 'Parent toggle',
+      timestamp: now,
+    });
+  }
+
+  /**
    * Performs check-in for a child with duplicate check-in prevention.
    */
   async checkInChild(params: {

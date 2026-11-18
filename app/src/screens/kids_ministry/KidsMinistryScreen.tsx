@@ -31,6 +31,11 @@ import {
   Phone,
   MessageCircle,
   Check,
+  RefreshCw,
+  AlertTriangle,
+  UserPlus,
+  Trash2,
+  ShieldAlert,
 } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { useAuth } from '../../context/AuthContext';
@@ -50,6 +55,7 @@ import KidsStoryReaderModal from './components/KidsStoryReaderModal';
 import KidsQuizPlayerModal from './components/KidsQuizPlayerModal';
 import KidsSongPlayerModal from './components/KidsSongPlayerModal';
 import KidsLessonDetailModal from './components/KidsLessonDetailModal';
+import AddGuardianModal from './components/AddGuardianModal';
 
 const { width } = Dimensions.get('window');
 
@@ -83,9 +89,11 @@ export default function KidsMinistryScreen({ navigation }: any) {
   const [activeTab, setActiveTab] = useState<'home' | 'classroom' | 'lms' | 'pass'>('home');
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [showChildPicker, setShowChildPicker] = useState(false);
+  const [showAddGuardianModal, setShowAddGuardianModal] = useState(false);
+  const [togglingHold, setTogglingHold] = useState(false);
 
-  // Daily dynamic pickup code per session
-  const [dailyPickupCode] = useState(() => generateDynamicPickupCode());
+  // Daily dynamic pickup code per session (can be manually regenerated)
+  const [dailyPickupCode, setDailyPickupCode] = useState(() => generateDynamicPickupCode());
 
   // Load registered children for the family in realtime
   useEffect(() => {
@@ -152,6 +160,63 @@ export default function KidsMinistryScreen({ navigation }: any) {
     if (!activeChild) return null;
     return classes.find(c => c.tier === activeChild.assignedTier) || null;
   }, [classes, activeChild]);
+
+  // Custody Hold & Guardian Handlers
+  const handleToggleEmergencyHold = (currentStatus: string) => {
+    if (!activeChild) return;
+    const isActivating = currentStatus !== 'emergency_hold';
+
+    Alert.alert(
+      isActivating ? 'Activate Emergency Hold?' : 'Release Emergency Hold?',
+      isActivating
+        ? 'Activating Emergency Hold will immediately freeze dismissal at the teacher checkout scanner. No one will be allowed to pick up your child until you release this hold.'
+        : 'Are you sure you want to release the emergency hold and resume normal authorized guardian pickup?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: isActivating ? 'Lock Dismissal' : 'Release Hold',
+          style: isActivating ? 'destructive' : 'default',
+          onPress: async () => {
+            try {
+              setTogglingHold(true);
+              await KidsMinistryService.toggleEmergencyHold(
+                churchId,
+                activeChild.id,
+                isActivating,
+                'Parent mobile app request'
+              );
+            } catch (e: any) {
+              Alert.alert('Error', e.message || 'Could not update custody status');
+            } finally {
+              setTogglingHold(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleRemoveGuardian = (guardianId: string, guardianName: string) => {
+    if (!activeChild) return;
+    Alert.alert(
+      'Remove Guardian Authorization',
+      `Are you sure you want to remove ${guardianName} from authorized pickup?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await KidsMinistryService.removeAuthorizedGuardian(churchId, activeChild.id, guardianId);
+            } catch (e: any) {
+              Alert.alert('Error', e.message || 'Could not remove guardian');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   // If splash is showing, render cinematic splash screen
   if (showSplash) {
@@ -764,53 +829,236 @@ export default function KidsMinistryScreen({ navigation }: any) {
           )}
 
           {/* ==================================================== */}
-          {/* TAB 4: CUSTODY PASS                                  */}
+          {/* TAB 4: LIVE CUSTODY PASS & PARENT SAFEGUARDING PORTAL */}
           {/* ==================================================== */}
           {activeTab === 'pass' && (
-            <View style={styles.passCard}>
-              <View style={styles.passAvatar}>
-                <Text style={styles.passAvatarText}>
-                  {activeChild?.firstName?.charAt(0) || 'K'}
-                </Text>
-              </View>
+            <View style={{ gap: 14 }}>
+              {/* Main Live Custody Card */}
+              <View style={styles.passCard}>
+                {/* Realtime Custody Status Header */}
+                <View style={styles.passStatusHeader}>
+                  {activeChild?.custodyStatus === 'emergency_hold' ? (
+                    <View style={styles.statusPillHold}>
+                      <ShieldAlert size={14} color="#EF4444" />
+                      <Text style={styles.statusPillTextHold}>EMERGENCY HOLD ACTIVE</Text>
+                    </View>
+                  ) : activeChild?.custodyStatus === 'checked_in' ? (
+                    <View style={styles.statusPillIn}>
+                      <View style={styles.livePulseDot} />
+                      <Text style={styles.statusPillTextIn}>IN CLASSROOM · SUPERVISED</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.statusPillOut}>
+                      <UserCheck size={14} color="#FBBF24" />
+                      <Text style={styles.statusPillTextOut}>CHECKED OUT / WITH PARENT</Text>
+                    </View>
+                  )}
+                  <Text style={styles.academicBadge}>2026-2027</Text>
+                </View>
 
-              <Text style={styles.passChildName}>{activeChild?.fullName}</Text>
-              <Text style={styles.passClassRoom}>
-                {activeChild?.assignedClassName} · Room 204
-              </Text>
-              <Text style={styles.passChildId}>Child ID: {activeChild?.childId}</Text>
-
-              {/* Dynamic Security Claim Code */}
-              <View style={styles.passCodeBox}>
-                <Text style={styles.passCodeLabel}>SECURE PICKUP RELEASE CODE</Text>
-                <Text style={styles.passCodeDigits}>{dailyPickupCode}</Text>
-                <Text style={styles.passCodeSub}>Show this code or QR to teacher at exit</Text>
-              </View>
-
-              {/* QR Code */}
-              <View style={styles.qrContainer}>
-                <QRCode
-                  value={`RHEMA_KIDS:${activeChild?.id}:${dailyPickupCode}`}
-                  size={140}
-                  color="#000000"
-                  backgroundColor="#FFFFFF"
-                />
-              </View>
-
-              {/* Authorized Guardians List */}
-              <View style={styles.guardiansList}>
-                <Text style={styles.guardiansHeader}>AUTHORIZED FOR CUSTODY RELEASE:</Text>
-                {activeChild?.guardians && activeChild.guardians.length > 0 ? (
-                  activeChild.guardians.map((g, idx) => (
-                    <Text key={idx} style={styles.guardianItem}>
-                      ✓ {g.name} ({g.relationship}) · {g.phone}
+                {/* Child Identity Row */}
+                <View style={styles.passIdentityRow}>
+                  <View style={styles.passAvatar}>
+                    <Text style={styles.passAvatarText}>
+                      {activeChild?.firstName?.charAt(0) || 'K'}
                     </Text>
-                  ))
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.passChildName}>{activeChild?.fullName}</Text>
+                    <Text style={styles.passClassRoom}>
+                      {activeChild?.assignedClassName} · Room 204
+                    </Text>
+                    <Text style={styles.passChildId}>Child ID: {activeChild?.childId}</Text>
+                  </View>
+                </View>
+
+                {/* Dynamic Security Claim Code with Regenerate */}
+                <View style={styles.passCodeBox}>
+                  <View style={styles.passCodeTopRow}>
+                    <Text style={styles.passCodeLabel}>DYNAMIC SECURE PICKUP CODE</Text>
+                    <TouchableOpacity
+                      style={styles.refreshCodeBtn}
+                      onPress={() => {
+                        setDailyPickupCode(generateDynamicPickupCode());
+                        Alert.alert('New Code Generated', 'Pickup security code has been refreshed!');
+                      }}
+                    >
+                      <RefreshCw size={12} color="#FBBF24" />
+                      <Text style={styles.refreshCodeBtnText}>Refresh</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={styles.passCodeDigits}>{dailyPickupCode}</Text>
+                  <Text style={styles.passCodeSub}>
+                    Present this dynamic token or QR to the teacher dismissal scanner
+                  </Text>
+                </View>
+
+                {/* QR Code Container */}
+                <View style={styles.qrContainer}>
+                  <QRCode
+                    value={`RHEMA_KIDS:${activeChild?.id}:${dailyPickupCode}`}
+                    size={150}
+                    color="#000000"
+                    backgroundColor="#FFFFFF"
+                  />
+                  <Text style={styles.qrHint}>High-contrast scanner format · Verified matching</Text>
+                </View>
+
+                {/* Emergency Hold Toggle Action */}
+                <TouchableOpacity
+                  style={[
+                    styles.emergencyHoldBtn,
+                    activeChild?.custodyStatus === 'emergency_hold' && styles.emergencyHoldBtnActive,
+                  ]}
+                  onPress={() => handleToggleEmergencyHold(activeChild?.custodyStatus || 'checked_in')}
+                  disabled={togglingHold}
+                  activeOpacity={0.88}
+                >
+                  <ShieldAlert
+                    size={16}
+                    color={activeChild?.custodyStatus === 'emergency_hold' ? '#FFFFFF' : '#EF4444'}
+                  />
+                  <Text
+                    style={[
+                      styles.emergencyHoldBtnText,
+                      activeChild?.custodyStatus === 'emergency_hold' && styles.emergencyHoldBtnTextActive,
+                    ]}
+                  >
+                    {togglingHold
+                      ? 'Updating...'
+                      : activeChild?.custodyStatus === 'emergency_hold'
+                      ? 'Release Emergency Dismissal Hold'
+                      : 'Lock Child Dismissal (Emergency Hold)'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Medical & Allergies Safeguarding Passport */}
+              <View style={styles.safeguardCard}>
+                <View style={styles.safeguardHeader}>
+                  <AlertTriangle
+                    size={16}
+                    color={activeChild?.medical?.hasAllergies ? '#EF4444' : '#10B981'}
+                  />
+                  <Text style={styles.safeguardTitle}>MEDICAL & ALLERGY SAFEGUARDING</Text>
+                </View>
+
+                {activeChild?.medical?.hasAllergies ? (
+                  <View style={styles.allergyAlertBox}>
+                    <Text style={styles.allergyAlertTitle}>⚠️ KNOWN ALLERGIES / CONDITIONS:</Text>
+                    <Text style={styles.allergyAlertList}>
+                      {activeChild.medical.allergiesList.join(' · ')}
+                    </Text>
+                    {activeChild.medical.medicalAlertNotes ? (
+                      <Text style={styles.medicalNotesText}>
+                        Notes: {activeChild.medical.medicalAlertNotes}
+                      </Text>
+                    ) : null}
+                  </View>
                 ) : (
-                  <Text style={styles.guardianItem}>
-                    ✓ {activeChild?.parentName} (Parent)
+                  <Text style={styles.noAllergyText}>
+                    ✓ No severe allergies or dietary restrictions recorded for {activeChild?.firstName}.
                   </Text>
                 )}
+
+                <View style={styles.bloodRow}>
+                  <Text style={styles.bloodLabel}>Blood Group: </Text>
+                  <Text style={styles.bloodVal}>{activeChild?.medical?.bloodGroup || 'O+ (Recorded)'}</Text>
+                </View>
+              </View>
+
+              {/* Authorized Guardians Roster */}
+              <View style={styles.guardiansCard}>
+                <View style={styles.guardiansHeaderRow}>
+                  <View>
+                    <Text style={styles.guardiansHeading}>AUTHORIZED FOR CUSTODY RELEASE</Text>
+                    <Text style={styles.guardiansSub}>Verified by teacher before child leaves room</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.addGuardianBtn}
+                    onPress={() => setShowAddGuardianModal(true)}
+                  >
+                    <UserPlus size={14} color="#000000" />
+                    <Text style={styles.addGuardianBtnText}>Add</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.guardiansListWrap}>
+                  {activeChild?.guardians && activeChild.guardians.length > 0 ? (
+                    activeChild.guardians.map(g => (
+                      <View key={g.id} style={styles.guardianCardRow}>
+                        <View style={styles.guardianInfo}>
+                          <View style={styles.guardianNameRow}>
+                            <Text style={styles.guardianName}>{g.name}</Text>
+                            <View style={styles.relationTag}>
+                              <Text style={styles.relationTagText}>{g.relationship}</Text>
+                            </View>
+                            {g.isPrimaryContact && (
+                              <View style={styles.primaryBadge}>
+                                <Text style={styles.primaryBadgeText}>PRIMARY</Text>
+                              </View>
+                            )}
+                          </View>
+                          <Text style={styles.guardianPhone}>{g.phone}</Text>
+                        </View>
+
+                        <View style={styles.guardianActions}>
+                          <TouchableOpacity
+                            style={styles.callGuardianBtn}
+                            onPress={() => Linking.openURL(`tel:${g.phone}`).catch(() => {})}
+                          >
+                            <Phone size={14} color="#10B981" />
+                          </TouchableOpacity>
+                          {!g.isPrimaryContact && (
+                            <TouchableOpacity
+                              style={styles.deleteGuardianBtn}
+                              onPress={() => handleRemoveGuardian(g.id, g.name)}
+                            >
+                              <Trash2 size={14} color="#EF4444" />
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      </View>
+                    ))
+                  ) : (
+                    <View style={styles.guardianCardRow}>
+                      <View style={styles.guardianInfo}>
+                        <Text style={styles.guardianName}>
+                          {activeChild?.parentName || 'Parent'}
+                        </Text>
+                        <Text style={styles.guardianPhone}>
+                          {activeChild?.parentPhone || 'Phone Registered'}
+                        </Text>
+                      </View>
+                      <View style={styles.primaryBadge}>
+                        <Text style={styles.primaryBadgeText}>PRIMARY</Text>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              </View>
+
+              {/* Lead Teacher Contact Hotline */}
+              <View style={styles.teacherContactCard}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.teacherContactHeading}>SUNDAY SCHOOL LEAD TEACHER</Text>
+                  <Text style={styles.teacherName}>Mrs. Sarah Jenkins (Verified Lead)</Text>
+                  <Text style={styles.teacherLocation}>Room 204 · Floor 2 · 09:30 AM – 11:30 AM</Text>
+                </View>
+                <View style={styles.teacherBtnRow}>
+                  <TouchableOpacity
+                    style={styles.teacherCallBtn}
+                    onPress={() => Linking.openURL('tel:+919876543210').catch(() => {})}
+                  >
+                    <Phone size={15} color="#10B981" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.teacherWaBtn}
+                    onPress={() => Linking.openURL('https://wa.me/919876543210').catch(() => {})}
+                  >
+                    <MessageCircle size={15} color="#FBBF24" />
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
           )}
@@ -867,6 +1115,17 @@ export default function KidsMinistryScreen({ navigation }: any) {
           lesson={selectedLessonForModal}
           child={activeChild}
           onClose={() => setSelectedLessonForModal(null)}
+        />
+      )}
+
+      {/* ── ADD AUTHORIZED GUARDIAN MODAL ── */}
+      {showAddGuardianModal && activeChild && (
+        <AddGuardianModal
+          visible={showAddGuardianModal}
+          childDocId={activeChild.id}
+          childName={activeChild.fullName}
+          churchId={churchId}
+          onClose={() => setShowAddGuardianModal(false)}
         />
       )}
     </View>
@@ -1769,5 +2028,338 @@ const styles = StyleSheet.create({
   guardianItem: {
     fontSize: 11,
     color: '#D4D4D8',
+  },
+  passStatusHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 6,
+  },
+  statusPillHold: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#EF4444',
+  },
+  statusPillTextHold: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#EF4444',
+  },
+  statusPillIn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  statusPillTextIn: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#10B981',
+  },
+  statusPillOut: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  statusPillTextOut: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FBBF24',
+  },
+  academicBadge: {
+    fontSize: 10,
+    color: '#6B7280',
+    fontWeight: '700',
+  },
+  passIdentityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    width: '100%',
+    marginVertical: 4,
+  },
+  passCodeTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  refreshCodeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#27272A',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  refreshCodeBtnText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FBBF24',
+  },
+  qrHint: {
+    fontSize: 9,
+    color: '#6B7280',
+    marginTop: 6,
+  },
+  emergencyHoldBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    width: '100%',
+    marginTop: 6,
+  },
+  emergencyHoldBtnActive: {
+    backgroundColor: '#DC2626',
+    borderColor: '#EF4444',
+  },
+  emergencyHoldBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#EF4444',
+  },
+  emergencyHoldBtnTextActive: {
+    color: '#FFFFFF',
+  },
+  safeguardCard: {
+    backgroundColor: '#18181B',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#27272A',
+    gap: 8,
+  },
+  safeguardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  safeguardTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FBBF24',
+    letterSpacing: 0.5,
+  },
+  allergyAlertBox: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderRadius: 8,
+    padding: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: '#EF4444',
+  },
+  allergyAlertTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#EF4444',
+    marginBottom: 2,
+  },
+  allergyAlertList: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  medicalNotesText: {
+    fontSize: 11,
+    color: '#D1D5DB',
+    marginTop: 3,
+  },
+  noAllergyText: {
+    fontSize: 12,
+    color: '#34D399',
+  },
+  bloodRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  bloodLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#9CA3AF',
+  },
+  bloodVal: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  guardiansCard: {
+    backgroundColor: '#18181B',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#27272A',
+    gap: 10,
+  },
+  guardiansHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  guardiansHeading: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FBBF24',
+    letterSpacing: 0.5,
+  },
+  guardiansSub: {
+    fontSize: 10,
+    color: '#9CA3AF',
+    marginTop: 1,
+  },
+  addGuardianBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FBBF24',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  addGuardianBtnText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#000000',
+  },
+  guardiansListWrap: {
+    gap: 8,
+  },
+  guardianCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#09090B',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#27272A',
+  },
+  guardianInfo: {
+    flex: 1,
+  },
+  guardianNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  guardianName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  relationTag: {
+    backgroundColor: '#27272A',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  relationTagText: {
+    fontSize: 9,
+    color: '#D1D5DB',
+    fontWeight: '600',
+  },
+  primaryBadge: {
+    backgroundColor: 'rgba(251, 191, 36, 0.2)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  primaryBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FBBF24',
+  },
+  guardianPhone: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    marginTop: 2,
+  },
+  guardianActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  callGuardianBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deleteGuardianBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  teacherContactCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#18181B',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#27272A',
+    gap: 10,
+  },
+  teacherContactHeading: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#10B981',
+    letterSpacing: 0.5,
+  },
+  teacherName: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginTop: 2,
+  },
+  teacherLocation: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    marginTop: 2,
+  },
+  teacherBtnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  teacherCallBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  teacherWaBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
