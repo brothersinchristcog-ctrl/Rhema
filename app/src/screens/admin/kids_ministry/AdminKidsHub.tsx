@@ -52,6 +52,7 @@ import PromotionManagerModal from './components/PromotionManagerModal';
 import AdminTeachersModal from './components/AdminTeachersModal';
 import AdminContentManagerModal from './components/AdminContentManagerModal';
 import AdminCurriculumModal from './components/AdminCurriculumModal';
+import AdminAICopilotModal from './components/AdminAICopilotModal';
 
 const { width } = Dimensions.get('window');
 
@@ -75,6 +76,7 @@ export default function AdminKidsHub({ navigation }: any) {
   const [showTeachersModal, setShowTeachersModal] = useState(false);
   const [showContentManagerModal, setShowContentManagerModal] = useState(false);
   const [showCurriculumModal, setShowCurriculumModal] = useState(false);
+  const [showAICopilotModal, setShowAICopilotModal] = useState(false);
 
   // Phase 5 & 6: Learning content & 52-week curriculum state
   const [stories, setStories] = useState<KidsBibleStory[]>([]);
@@ -418,6 +420,25 @@ export default function AdminKidsHub({ navigation }: any) {
                   </View>
                   <ChevronRight size={18} color="#6B7280" />
                 </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.portalCard, { borderColor: '#8B5CF6', borderWidth: 1 }]}
+                  onPress={() => setShowAICopilotModal(true)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.portalIconBox, { backgroundColor: 'rgba(139, 92, 246, 0.2)' }]}>
+                    <Sparkles size={20} color="#C084FC" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.portalTitle, { color: '#C084FC' }]}>
+                      AI Kids Ministry Studio (Claude 3.5 Sonnet)
+                    </Text>
+                    <Text style={styles.portalSub}>
+                      Generate bilingual lesson plans, interactive quizzes, stories & verse actions on-demand
+                    </Text>
+                  </View>
+                  <ChevronRight size={18} color="#C084FC" />
+                </TouchableOpacity>
               </View>
             </>
           )}
@@ -680,6 +701,26 @@ export default function AdminKidsHub({ navigation }: any) {
                 <ChevronRight size={18} color="#FBBF24" />
               </TouchableOpacity>
 
+              {/* Claude 3.5 Sonnet AI Studio Launcher */}
+              <TouchableOpacity
+                style={[styles.portalCard, { borderColor: '#8B5CF6', borderWidth: 1 }]}
+                onPress={() => setShowAICopilotModal(true)}
+                activeOpacity={0.88}
+              >
+                <View style={[styles.portalIconBox, { backgroundColor: 'rgba(139, 92, 246, 0.2)' }]}>
+                  <Sparkles size={22} color="#C084FC" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.portalTitle, { color: '#C084FC' }]}>
+                    Launch Claude 3.5 Sonnet AI Studio
+                  </Text>
+                  <Text style={styles.portalSub}>
+                    Generate bilingual lesson plans, 4-choice quizzes, storybooks & craft ideas
+                  </Text>
+                </View>
+                <ChevronRight size={18} color="#C084FC" />
+              </TouchableOpacity>
+
               {/* Active Lesson Card (Dynamic from Firestore) */}
               {(() => {
                 const activeLesson = curriculum.find(l => l.isCurrentWeek) || curriculum[0];
@@ -801,6 +842,15 @@ export default function AdminKidsHub({ navigation }: any) {
           curriculum={curriculum}
           churchId={churchId}
           onClose={() => setShowCurriculumModal(false)}
+        />
+      )}
+
+      {/* ── CLAUDE 3.5 SONNET AI STUDIO MODAL ── */}
+      {showAICopilotModal && (
+        <AdminAICopilotModal
+          visible={showAICopilotModal}
+          churchId={churchId}
+          onClose={() => setShowAICopilotModal(false)}
         />
       )}
     </View>
