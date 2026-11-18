@@ -55,18 +55,57 @@ export default function EnrollChildModal({
   const [medicalNotes, setMedicalNotes] = useState('');
   const [bloodGroup, setBloodGroup] = useState('');
 
-  // Guardians State
-  const [guardians, setGuardians] = useState<AuthorizedGuardian[]>([]);
+  // Guardians State - initialized directly from member prop with zero useEffect loops
+  const [guardians, setGuardians] = useState<AuthorizedGuardian[]>(() => {
+    if (!member) return [];
+    const parentName = member.name || `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Parent';
+    const list: AuthorizedGuardian[] = [
+      {
+        id: member.id || 'p1',
+        name: parentName,
+        relationship: 'Father',
+        phone: member.phone || '',
+        isPrimaryContact: true,
+        canPickup: true,
+      },
+    ];
+    const familyList = existingFamilyMembers || EMPTY_FAMILY_ARRAY;
+    const spouse = familyList.find(
+      (c: any) =>
+        c.relation === 'Wife' ||
+        c.relation === 'Mother' ||
+        c.Relation === 'Wife' ||
+        c.Relation === 'Mother'
+    );
+    if (spouse) {
+      const spouseName = `${spouse.FirstName || spouse.firstName || ''} ${spouse.LastName || spouse.lastName || ''}`.trim() || spouse.Name;
+      list.push({
+        id: spouse.id || spouse.Id || 'p2',
+        name: spouseName || 'Mother',
+        relationship: 'Mother',
+        phone: spouse.Phone || spouse.phone || '',
+        isPrimaryContact: false,
+        canPickup: true,
+      });
+    }
+    return list;
+  });
+
   const [newGuardianName, setNewGuardianName] = useState('');
   const [newGuardianRelation, setNewGuardianRelation] = useState('Mother');
   const [newGuardianPhone, setNewGuardianPhone] = useState('');
   const [showAddGuardian, setShowAddGuardian] = useState(false);
 
-  // Pre-fill guardians based on current user & existing contacts (runs only once when modal is opened)
+  // Fallback pre-fill only if member was empty during initial mount
+  const hasInitializedRef = React.useRef(guardians.length > 0);
   useEffect(() => {
-    if (!visible || !member) return;
-    if (guardians.length > 0) return; // Prevent overwriting or re-render looping
+    if (!visible || !member || hasInitializedRef.current) return;
+    if (guardians.length > 0) {
+      hasInitializedRef.current = true;
+      return;
+    }
 
+    hasInitializedRef.current = true;
     const parentName = member.name || `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Parent';
     const initialGuardians: AuthorizedGuardian[] = [
       {
@@ -79,7 +118,6 @@ export default function EnrollChildModal({
       },
     ];
 
-    // If existing family contacts have mother/spouse, add as well
     const familyList = existingFamilyMembers || EMPTY_FAMILY_ARRAY;
     const spouse = familyList.find(
       (c: any) =>

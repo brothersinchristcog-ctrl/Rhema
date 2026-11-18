@@ -7,6 +7,10 @@ import {
   KidsClassTier,
   KidsTeacherRecord,
   KidsTeacherAttendanceRecord,
+  KidsBibleStory,
+  KidsQuiz,
+  KidsWorshipSong,
+  KidsMemoryVerse,
   calculateChildAge,
   getRecommendedClassTier,
   formatChildId,
@@ -103,6 +107,38 @@ class KidsMinistryService {
       .collection(RHEMA_ROOT_COLLECTION)
       .doc(cId)
       .collection('kids_teacher_attendance');
+  }
+
+  private getStoriesCollection(churchId?: string) {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getDb()
+      .collection(RHEMA_ROOT_COLLECTION)
+      .doc(cId)
+      .collection('kids_stories');
+  }
+
+  private getQuizzesCollection(churchId?: string) {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getDb()
+      .collection(RHEMA_ROOT_COLLECTION)
+      .doc(cId)
+      .collection('kids_quizzes');
+  }
+
+  private getSongsCollection(churchId?: string) {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getDb()
+      .collection(RHEMA_ROOT_COLLECTION)
+      .doc(cId)
+      .collection('kids_songs');
+  }
+
+  private getVersesCollection(churchId?: string) {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getDb()
+      .collection(RHEMA_ROOT_COLLECTION)
+      .doc(cId)
+      .collection('kids_verses');
   }
 
   /**
@@ -1155,6 +1191,431 @@ class KidsMinistryService {
         },
         () => callback([])
       );
+  }
+
+  // ==========================================
+  // PHASE 5: BIBLE STORIES MANAGEMENT & SEEDING
+  // ==========================================
+
+  async getOrInitStories(churchId?: string): Promise<KidsBibleStory[]> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const storiesRef = this.getStoriesCollection(cId);
+    const snap = await storiesRef.get();
+
+    if (!snap.empty) {
+      return snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+    }
+
+    const now = firestore.FieldValue.serverTimestamp();
+    const defaults: Omit<KidsBibleStory, 'id'>[] = [
+      {
+        storyId: 'STORY-001',
+        churchId: cId,
+        title: 'David and Goliath',
+        titleTelugu: 'దావీదు మరియు గొల్యాతు',
+        scriptureRef: '1 Samuel 17',
+        theme: 'Courage & Faith / దైర్యము & విశ్వాసము',
+        coverEmoji: '⚔️',
+        readTime: '6 min',
+        summary: 'How a young shepherd boy defeated a giant champion through steadfast trust in God.',
+        summaryTelugu: 'ఒక యువ గొర్రెల కాపరి దేవునియందు నమ్మకముతో ఫిలిష్తీయుల వీరుడైన గొల్యాతును ఎలా ఓడించాడో ఈ కథ తెలుపుతుంది.',
+        pages: [
+          {
+            pageNumber: 1,
+            heading: 'The Giant Challenger / గొల్యాతు సవాలు',
+            illustrationEmoji: '🛡️',
+            textEnglish: 'Every morning and evening for forty days, a giant named Goliath came out and defied the army of Israel. The soldiers were terrified!',
+            textTelugu: 'నలభై దినములు ప్రతి ఉదయము మరియు సాయంత్రము గొల్యాతు అను దైత్యుడు వచ్చి ఇశ్రాయేలు సైన్యమును సవాలు చేసెను. సైనికులందరు భయపడిరి!',
+          },
+          {
+            pageNumber: 2,
+            heading: 'David Arrives at the Camp / దావీదు శిబిరమునకు వచ్చుట',
+            illustrationEmoji: '🐑',
+            textEnglish: 'Young David, who was tending sheep, came to bring food to his brothers. When he heard Goliath insulting the living God, he stepped forward courageously.',
+            textTelugu: 'గొర్రెలను కాస్తున్న యువకుడైన దావీదు తన అన్నలకు ఆహారము తీసుకొని వచ్చెను. గొల్యాతు జీవముగల దేవుని సైన్యమును దూషించుట విని, దావీదు ముందుకు వచ్చెను.',
+          },
+          {
+            pageNumber: 3,
+            heading: 'Five Smooth Stones / ఐదు నునుపైన రాళ్ళు',
+            illustrationEmoji: '🪨',
+            textEnglish: 'David refused King Saul’s heavy armor. Instead, he took his staff, chose five smooth stones from the stream, and put them in his shepherd’s pouch with his sling in hand.',
+            textTelugu: 'సౌలు రాజు ఇచ్చిన బరువైన యుద్ధకవచమును దావీదు వద్దనుకొనెను. తన చేతికర్రను తీసుకొని, వాగులోనుండి ఐదు నునుపైన రాళ్ళను ఏరుకొని ఒడిసెలతో బయలుదేరెను.',
+          },
+          {
+            pageNumber: 4,
+            heading: 'The Victory of the Lord / యెహోవా విజయము',
+            illustrationEmoji: '🏆',
+            textEnglish: 'David said: "You come against me with sword and spear, but I come against you in the name of the LORD Almighty!" With one stone, the giant fell to the ground!',
+            textTelugu: 'దావీదు: "నీవు కత్తియు ఈటెయు ధరించి వచ్చుచున్నావు, అయితే సైన్యములకధిపతియగు యెహోవా పేరట నేను నీ మీదికి వచ్చుచున్నాను!" అని చెప్పి, ఒక్క రాతితోనే గొల్యాతును నేలకూల్చెను!',
+          },
+        ],
+        reflectionQuestions: [
+          {
+            questionEnglish: 'Why was David not afraid of the giant Goliath?',
+            questionTelugu: 'దావీదు గొల్యాతును చూచి ఎందుకు భయపడలేదు?',
+          },
+          {
+            questionEnglish: 'What "giants" or challenges can God help you face today?',
+            questionTelugu: 'ఈ రోజు నీ జీవితంలో ఎదురయ్యే ఏ కష్టాలలో దేవుడు సహాయం చేయగలడు?',
+          },
+        ],
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        storyId: 'STORY-002',
+        churchId: cId,
+        title: "Daniel in the Lions' Den",
+        titleTelugu: 'సింహాల బోనులో దానియేలు',
+        scriptureRef: 'Daniel 6',
+        theme: 'Prayer & Faithfulness / ప్రార్థన & నిబద్ధత',
+        coverEmoji: '🦁',
+        readTime: '5 min',
+        summary: 'Daniel remained faithful in daily prayer, and God sent an angel to shut the lions’ mouths.',
+        summaryTelugu: 'దానియేలు దినమునకు మూడు మార్లు మోకాళ్ళూని ప్రార్థించెను; దేవుడు తన దూతను పంపి సింహాల నోళ్ళు మూయించెను.',
+        pages: [
+          {
+            pageNumber: 1,
+            heading: 'Three Times a Day / దినమునకు మూడుసార్లు ప్రార్థన',
+            illustrationEmoji: '🙏',
+            textEnglish: 'Even when the king signed a law forbidding prayer to anyone except himself, Daniel went to his room, opened his window toward Jerusalem, and knelt down to pray three times a day.',
+            textTelugu: 'రాజు నుండి శాసనము వచ్చినను, దానియేలు యెరూషలేము తట్టు కిటికీలను తెరిచి ఉంచి, ప్రతిదినము మూడుసార్లు దేవునికి మోకరించి ప్రార్థించి స్తుతించుచుండెను.',
+          },
+          {
+            pageNumber: 2,
+            heading: 'Into the Den of Lions / సింహముల గుహలో',
+            illustrationEmoji: '🐾',
+            textEnglish: 'Daniel was arrested and cast into the den of hungry lions. The king had a stone laid across the mouth of the den and spent the night fasting.',
+            textTelugu: 'శత్రువులు దానియేలును పట్టుకొని ఆకలితో ఉన్న సింహముల గుహలో పడవేసిరి. రాజు ఉపవాసముండి రాత్రి అంతయు నిద్రపోకుండా గడిపెను.',
+          },
+          {
+            pageNumber: 3,
+            heading: 'The Angel of Protection / కాపాడిన దేవదూత',
+            illustrationEmoji: '✨',
+            textEnglish: 'At dawn, the king ran to the den and called out in anguish. Daniel answered: "O king, live forever! My God sent His angel, and He shut the lions’ mouths so they have not hurt me!"',
+            textTelugu: 'వేకువజామునే రాజు గుహ దగ్గరకు పరుగెత్తి పిలువగా, దానియేలు: "రాజా, నా దేవుడు తన దూతను పంపి సింహముల నోళ్ళు మూయించెను, అవి నాకు ఏ హానియు చేయలేదు!" అని పలికెను.',
+          },
+        ],
+        reflectionQuestions: [
+          {
+            questionEnglish: 'How often did Daniel pray to God each day?',
+            questionTelugu: 'దానియేలు ప్రతిరోజూ ఎన్నిసార్లు ప్రార్థన చేసాడు?',
+          },
+        ],
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        storyId: 'STORY-003',
+        churchId: cId,
+        title: 'Noah and the Great Ark',
+        titleTelugu: 'నోవహు మరియు పెద్ద ఓడ',
+        scriptureRef: 'Genesis 6–9',
+        theme: 'Obedience & God’s Promise / విధేయత & దేవుని నిబంధన',
+        coverEmoji: '🌈',
+        readTime: '6 min',
+        summary: 'Noah obeyed God by building an immense ark and saving animals two by two, sealed with the rainbow covenant.',
+        summaryTelugu: 'నోవహు దేవుని మాటకు లోబడి ఓడను నిర్మించెను; జంతువులను జోళ్ళుగా కాపాడి, ఇంద్రధనుస్సు ద్వారా దేవుని వాగ్దానమును పొందెను.',
+        pages: [
+          {
+            pageNumber: 1,
+            heading: 'Building by Faith / విశ్వాసముతో ఓడ నిర్మించుట',
+            illustrationEmoji: '🔨',
+            textEnglish: 'God told Noah to build an ark of gopher wood. Though it had never rained before, Noah listened to God and built every single measurement with obedience.',
+            textTelugu: 'దేవుడు నోవహుతో గోఫెరు కర్రతో ఒక పెద్ద ఓడను చేయుమని ఆజ్ఞాపించెను. వర్షము పడకపోయినను నోవహు దేవుని మాటకు లోబడి ఓడను పూర్తి చేసెను.',
+          },
+          {
+            pageNumber: 2,
+            heading: 'Two by Two / జోడు జోడుగా జంతువులు',
+            illustrationEmoji: '🦒',
+            textEnglish: 'Animals came into the ark two by two—birds, cattle, and creeping things. Then the LORD Himself shut the door of the ark securely.',
+            textTelugu: 'ఆకాశ పక్షులు, పశువులు, ప్రాకు జంతువులు అన్నీ జోడు జోడుగా ఓడలోనికి ప్రవేశించెను. ఆ తరువాత యెహోవా తానే ఓడ తలుపును మూసెను.',
+          },
+          {
+            pageNumber: 3,
+            heading: 'The Rainbow Covenant / ఇంద్రధనుస్సు నిబంధన',
+            illustrationEmoji: '🕊️',
+            textEnglish: 'After the flood subsided, a dove brought back a fresh olive leaf. God set a beautiful rainbow in the clouds as a promise that the earth would never again be flooded.',
+            textTelugu: 'ప్రళయ జలములు తగ్గిన తరువాత పావురము ఒలీవ ఆకును తెచ్చెను. ఇకపై జలప్రళయము రాదని దేవుడు ఆకాశములో ఇంద్రధనుస్సును నిబంధన గుర్తుగా ఉంచెను.',
+          },
+        ],
+        reflectionQuestions: [
+          {
+            questionEnglish: 'What does the rainbow remind us of when we see it in the sky?',
+            questionTelugu: 'ఆకాశంలో ఇంద్రధనుస్సును చూసినప్పుడు మనకు ఏ వాగ్దానం గుర్తుకు వస్తుంది?',
+          },
+        ],
+        createdAt: now,
+        updatedAt: now,
+      },
+    ];
+
+    const results: KidsBibleStory[] = [];
+    for (const item of defaults) {
+      const docRef = await storiesRef.add(sanitizeForFirestore(item));
+      results.push({ id: docRef.id, ...item });
+    }
+    return results;
+  }
+
+  subscribeToStories(
+    churchId: string,
+    callback: (stories: KidsBibleStory[]) => void
+  ): () => void {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getStoriesCollection(cId).onSnapshot(
+      async snap => {
+        if (!snap || snap.empty) {
+          const seeded = await this.getOrInitStories(cId);
+          callback(seeded);
+          return;
+        }
+        const list = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+        callback(list);
+      },
+      () => callback([])
+    );
+  }
+
+  // ==========================================
+  // PHASE 5: BIBLE QUIZZES MANAGEMENT & SEEDING
+  // ==========================================
+
+  async getOrInitQuizzes(churchId?: string): Promise<KidsQuiz[]> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const quizzesRef = this.getQuizzesCollection(cId);
+    const snap = await quizzesRef.get();
+
+    if (!snap.empty) {
+      return snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+    }
+
+    const now = firestore.FieldValue.serverTimestamp();
+    const defaults: Omit<KidsQuiz, 'id'>[] = [
+      {
+        quizId: 'QUIZ-001',
+        churchId: cId,
+        title: 'David and Goliath Quiz',
+        titleTelugu: 'దావీదు మరియు గొల్యాతు క్విజ్',
+        scriptureRef: '1 Samuel 17',
+        pointsReward: 50,
+        badgeReward: '🏆 Giant Slayer Badge',
+        coverEmoji: '⚔️',
+        questions: [
+          {
+            id: 'q1',
+            questionEnglish: 'How many smooth stones did David take from the stream?',
+            questionTelugu: 'దావీదు వాగులోనుండి ఎన్ని నునుపైన రాళ్ళను ఏరుకొనెను?',
+            options: ['3 Stones', '5 Smooth Stones', '7 Stones', '1 Giant Boulder'],
+            optionsTelugu: ['3 రాళ్ళు', '5 నునుపైన రాళ్ళు', '7 రాళ్ళు', '1 పెద్ద బండరాయి'],
+            correctIndex: 1,
+            explanation: 'David selected 5 smooth stones from the brook and put them in his shepherd bag (1 Sam 17:40).',
+          },
+          {
+            id: 'q2',
+            questionEnglish: 'In whose name did David face the giant Goliath?',
+            questionTelugu: 'దావీదు ఎవరి పేరట గొల్యాతు మీదికి వెళ్ళెను?',
+            options: ['In King Saul’s Name', 'In his own strength', 'In the Name of the LORD Almighty', 'In his brothers’ name'],
+            optionsTelugu: ['సౌలు రాజు పేరట', 'తన స్వంత బలముతో', 'సైన్యములకధిపతియగు యెహోవా పేరట', 'తన అన్నల పేరట'],
+            correctIndex: 2,
+            explanation: '"I come against you in the name of the LORD Almighty, the God of the armies of Israel" (1 Sam 17:45).',
+          },
+          {
+            id: 'q3',
+            questionEnglish: 'What was David’s job before he became a hero of Israel?',
+            questionTelugu: 'దావీదు ఇశ్రాయేలు వీరుడు కాకముందు ఏమి చేస్తుండెను?',
+            options: ['Carpenter', 'Shepherd boy', 'Soldier in the army', 'Fisherman'],
+            optionsTelugu: ['వడ్రంగి', 'గొర్రెల కాపరి', 'సైన్యంలో సైనికుడు', 'జాలరి'],
+            correctIndex: 1,
+            explanation: 'David faithfully looked after his father’s sheep in Bethlehem (1 Sam 17:15).',
+          },
+          {
+            id: 'q4',
+            questionEnglish: 'Which weapon did David use to defeat Goliath?',
+            questionTelugu: 'గొల్యాతును ఓడించడానికి దావీదు ఏ ఆయుధమును ఉపయోగించెను?',
+            options: ['A heavy sword', 'A long spear', 'A sling and a stone', 'A golden bow'],
+            optionsTelugu: ['భారీ కత్తి', 'పొడవైన ఈటె', 'ఒడిసెల మరియు ఒక రాయి', 'బంగారు విల్లు'],
+            correctIndex: 2,
+            explanation: 'David reached into his bag, took out a stone, slung it, and struck the giant on the forehead (1 Sam 17:49).',
+          },
+        ],
+        createdAt: now,
+      },
+      {
+        quizId: 'QUIZ-002',
+        churchId: cId,
+        title: "Daniel's Faith Challenge",
+        titleTelugu: 'దానియేలు విశ్వాస క్విజ్',
+        scriptureRef: 'Daniel 6',
+        pointsReward: 50,
+        badgeReward: '🦁 Lion Tamer Badge',
+        coverEmoji: '🦁',
+        questions: [
+          {
+            id: 'q1',
+            questionEnglish: 'How many times a day did Daniel kneel and pray to God?',
+            questionTelugu: 'దానియేలు ప్రతిదినము ఎన్నిసార్లు మోకరించి ప్రార్థించెను?',
+            options: ['1 time at night', '2 times', '3 times a day', 'Only on Sabbath'],
+            optionsTelugu: ['రాత్రి 1 సారి', '2 సార్లు', 'దినమునకు 3 సార్లు', 'విశ్రాంతి దినమున మాత్రమే'],
+            correctIndex: 2,
+            explanation: 'Daniel knelt down on his knees three times a day, and prayed and gave thanks before his God (Dan 6:10).',
+          },
+          {
+            id: 'q2',
+            questionEnglish: 'What did God send to protect Daniel in the lions’ den?',
+            questionTelugu: 'సింహాల గుహలో దానియేలును కాపాడటానికి దేవుడు ఎవరిని పంపెను?',
+            options: ['A burning fire', 'His Holy Angel', 'A deep sleep potion', 'A shield of gold'],
+            optionsTelugu: ['మండుచున్న అగ్ని', 'తన దేవదూతను', 'నిద్ర మత్తు', 'బంగారు డాలు'],
+            correctIndex: 1,
+            explanation: '"My God sent His angel, and shut the lions’ mouths, so that they have not hurt me" (Dan 6:22).',
+          },
+        ],
+        createdAt: now,
+      },
+    ];
+
+    const results: KidsQuiz[] = [];
+    for (const item of defaults) {
+      const docRef = await quizzesRef.add(sanitizeForFirestore(item));
+      results.push({ id: docRef.id, ...item });
+    }
+    return results;
+  }
+
+  subscribeToQuizzes(
+    churchId: string,
+    callback: (quizzes: KidsQuiz[]) => void
+  ): () => void {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getQuizzesCollection(cId).onSnapshot(
+      async snap => {
+        if (!snap || snap.empty) {
+          const seeded = await this.getOrInitQuizzes(cId);
+          callback(seeded);
+          return;
+        }
+        const list = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+        callback(list);
+      },
+      () => callback([])
+    );
+  }
+
+  // ==========================================
+  // PHASE 5: KIDS ACTION WORSHIP SONGS
+  // ==========================================
+
+  async getOrInitSongs(churchId?: string): Promise<KidsWorshipSong[]> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const songsRef = this.getSongsCollection(cId);
+    const snap = await songsRef.get();
+
+    if (!snap.empty) {
+      return snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+    }
+
+    const now = firestore.FieldValue.serverTimestamp();
+    const defaults: Omit<KidsWorshipSong, 'id'>[] = [
+      {
+        songId: 'SONG-001',
+        churchId: cId,
+        title: "I'm in the Lord's Army",
+        titleTelugu: 'నేను ప్రభువు సైనికుడను (ఆక్షన్ సాంగ్)',
+        category: 'action_song',
+        youtubeVideoId: '8cT6qGj7DkE',
+        coverEmoji: '🎖️',
+        duration: '3:15',
+        lyricsEnglish: `I may never march in the infantry,\nRide in the cavalry,\nShoot the artillery;\nI may never zoom o'er the enemy,\nBut I'm in the Lord's army! Yes, sir!`,
+        lyricsTelugu: `నేను కాల్బలములో నడవకపోయినను,\nగుఱ్ఱపు రౌతుగా వెళ్ళకపోయినను,\nఫిరంగులను పేల్చకపోయినను,\nఆకాశంలో ఎగురకపోయినను,\nనేను ప్రభువు సైనికుడను! ఎస్, సర్!`,
+        createdAt: now,
+      },
+      {
+        songId: 'SONG-002',
+        churchId: cId,
+        title: 'Read Your Bible, Pray Every Day',
+        titleTelugu: 'బైబిల్ చదువు ప్రార్థన చేయి',
+        category: 'action_song',
+        youtubeVideoId: 'uN2tEkmVj04',
+        coverEmoji: '📖',
+        duration: '2:40',
+        lyricsEnglish: `Read your Bible, pray every day, and you'll grow, grow, grow!\nForget your Bible, forget to pray, and you'll shrink, shrink, shrink!`,
+        lyricsTelugu: `ప్రతిరోజు బైబిల్ చదువు ప్రార్థన చేయి - నీవు ఎదుగుతావు, ఎదుగుతావు!\nబైబిల్ మరచి ప్రార్థన మానితే - నీవు కృంగిపోతావు, క్షీణిస్తావు!`,
+        createdAt: now,
+      },
+      {
+        songId: 'SONG-003',
+        churchId: cId,
+        title: 'Jesus Loves Me, This I Know',
+        titleTelugu: 'యేసయ్య నన్ను ప్రేమించును',
+        category: 'hymn',
+        youtubeVideoId: 'n5G9hW3L9bM',
+        coverEmoji: '❤️',
+        duration: '3:05',
+        lyricsEnglish: `Jesus loves me! This I know,\nFor the Bible tells me so;\nLittle ones to Him belong;\nThey are weak, but He is strong.\nYes, Jesus loves me!`,
+        lyricsTelugu: `యేసయ్య నన్ను ప్రేమించును,\nబైబిల్ వాక్యము చెప్పుచున్నది;\nచిన్నపిల్లలము ఆయనవారము,\nమనం బలహీనులము, ఆయన బలవంతుడు.\nఅవును, యేసయ్య నన్ను ప్రేమించును!`,
+        createdAt: now,
+      },
+    ];
+
+    const results: KidsWorshipSong[] = [];
+    for (const item of defaults) {
+      const docRef = await songsRef.add(sanitizeForFirestore(item));
+      results.push({ id: docRef.id, ...item });
+    }
+    return results;
+  }
+
+  subscribeToSongs(
+    churchId: string,
+    callback: (songs: KidsWorshipSong[]) => void
+  ): () => void {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getSongsCollection(cId).onSnapshot(
+      async snap => {
+        if (!snap || snap.empty) {
+          const seeded = await this.getOrInitSongs(cId);
+          callback(seeded);
+          return;
+        }
+        const list = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+        callback(list);
+      },
+      () => callback([])
+    );
+  }
+
+  // Admin Manual CMS Operations
+  async createStory(churchId: string, story: Partial<KidsBibleStory>): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const now = firestore.FieldValue.serverTimestamp();
+    await this.getStoriesCollection(cId).add(sanitizeForFirestore({ ...story, createdAt: now, updatedAt: now }));
+  }
+
+  async deleteStory(churchId: string, docId: string): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    await this.getStoriesCollection(cId).doc(docId).delete();
+  }
+
+  async createQuiz(churchId: string, quiz: Partial<KidsQuiz>): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const now = firestore.FieldValue.serverTimestamp();
+    await this.getQuizzesCollection(cId).add(sanitizeForFirestore({ ...quiz, createdAt: now }));
+  }
+
+  async deleteQuiz(churchId: string, docId: string): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    await this.getQuizzesCollection(cId).doc(docId).delete();
+  }
+
+  async createSong(churchId: string, song: Partial<KidsWorshipSong>): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const now = firestore.FieldValue.serverTimestamp();
+    await this.getSongsCollection(cId).add(sanitizeForFirestore({ ...song, createdAt: now }));
+  }
+
+  async deleteSong(churchId: string, docId: string): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    await this.getSongsCollection(cId).doc(docId).delete();
   }
 }
 

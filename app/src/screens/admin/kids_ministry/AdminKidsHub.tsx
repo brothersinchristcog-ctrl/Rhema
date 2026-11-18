@@ -32,15 +32,24 @@ import {
   Edit3,
   ShieldCheck,
   Clock,
+  BookOpen,
 } from 'lucide-react-native';
 import { useAuth } from '../../../context/AuthContext';
 import KidsMinistryService from '../../../services/KidsMinistryService';
-import { ChildRecord, KidsClassRecord, KidsTeacherRecord } from '../../../types/KidsMinistryTypes';
+import {
+  ChildRecord,
+  KidsClassRecord,
+  KidsTeacherRecord,
+  KidsBibleStory,
+  KidsQuiz,
+  KidsWorshipSong,
+} from '../../../types/KidsMinistryTypes';
 import EnrollChildModal from '../../kids_ministry/components/EnrollChildModal';
 import EditClassModal from './components/EditClassModal';
 import ClassRosterModal from './components/ClassRosterModal';
 import PromotionManagerModal from './components/PromotionManagerModal';
 import AdminTeachersModal from './components/AdminTeachersModal';
+import AdminContentManagerModal from './components/AdminContentManagerModal';
 
 const { width } = Dimensions.get('window');
 
@@ -62,8 +71,14 @@ export default function AdminKidsHub({ navigation }: any) {
   const [selectedClassForRoster, setSelectedClassForRoster] = useState<KidsClassRecord | null>(null);
   const [showPromotionModal, setShowPromotionModal] = useState(false);
   const [showTeachersModal, setShowTeachersModal] = useState(false);
+  const [showContentManagerModal, setShowContentManagerModal] = useState(false);
 
-  // Load children, classes, and teachers (Realtime)
+  // Phase 5: Learning content state
+  const [stories, setStories] = useState<KidsBibleStory[]>([]);
+  const [quizzes, setQuizzes] = useState<KidsQuiz[]>([]);
+  const [songs, setSongs] = useState<KidsWorshipSong[]>([]);
+
+  // Load children, classes, teachers, and learning content (Realtime)
   useEffect(() => {
     // 1. Realtime listener for Sunday School Classes
     const unsubClasses = KidsMinistryService.subscribeToClasses(churchId, classList => {
@@ -86,11 +101,29 @@ export default function AdminKidsHub({ navigation }: any) {
       setTodayTeacherAttendance(list);
     });
 
+    // 5. Realtime listener for Bible Stories
+    const unsubStories = KidsMinistryService.subscribeToStories(churchId, list => {
+      setStories(list);
+    });
+
+    // 6. Realtime listener for Quizzes
+    const unsubQuizzes = KidsMinistryService.subscribeToQuizzes(churchId, list => {
+      setQuizzes(list);
+    });
+
+    // 7. Realtime listener for Action Songs
+    const unsubSongs = KidsMinistryService.subscribeToSongs(churchId, list => {
+      setSongs(list);
+    });
+
     return () => {
       unsubClasses();
       unsubKids();
       unsubTeachers();
       unsubTeacherAtt();
+      unsubStories();
+      unsubQuizzes();
+      unsubSongs();
     };
   }, [churchId]);
 
@@ -358,6 +391,23 @@ export default function AdminKidsHub({ navigation }: any) {
                   </View>
                   <ChevronRight size={18} color="#6B7280" />
                 </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.portalCard}
+                  onPress={() => setShowContentManagerModal(true)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.portalIconBox, { backgroundColor: 'rgba(251, 191, 36, 0.15)' }]}>
+                    <BookOpen size={20} color="#FBBF24" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.portalTitle}>Bible Learning Center CMS</Text>
+                    <Text style={styles.portalSub}>
+                      {stories.length} Illustrated Stories · {quizzes.length} Quizzes · {songs.length} Worship Songs
+                    </Text>
+                  </View>
+                  <ChevronRight size={18} color="#6B7280" />
+                </TouchableOpacity>
               </View>
             </>
           )}
@@ -578,6 +628,26 @@ export default function AdminKidsHub({ navigation }: any) {
                 </View>
               </View>
 
+              {/* Learning Content CMS Quick Launcher */}
+              <TouchableOpacity
+                style={[styles.portalCard, { borderColor: '#FBBF24', borderWidth: 1 }]}
+                onPress={() => setShowContentManagerModal(true)}
+                activeOpacity={0.88}
+              >
+                <View style={[styles.portalIconBox, { backgroundColor: 'rgba(251, 191, 36, 0.2)' }]}>
+                  <BookOpen size={22} color="#FBBF24" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.portalTitle, { color: '#FBBF24' }]}>
+                    Open Bible Learning Center CMS
+                  </Text>
+                  <Text style={styles.portalSub}>
+                    Manage {stories.length} stories, {quizzes.length} interactive quizzes & {songs.length} action songs
+                  </Text>
+                </View>
+                <ChevronRight size={18} color="#FBBF24" />
+              </TouchableOpacity>
+
               <View style={styles.lessonCard}>
                 <View style={styles.lessonHeader}>
                   <Text style={styles.lessonWeek}>WEEK 42 · CURRENT LESSON</Text>
@@ -660,6 +730,18 @@ export default function AdminKidsHub({ navigation }: any) {
           todayAttendance={todayTeacherAttendance}
           churchId={churchId}
           onClose={() => setShowTeachersModal(false)}
+        />
+      )}
+
+      {/* ── BIBLE LEARNING CENTER CMS MODAL ── */}
+      {showContentManagerModal && (
+        <AdminContentManagerModal
+          visible={showContentManagerModal}
+          stories={stories}
+          quizzes={quizzes}
+          songs={songs}
+          churchId={churchId}
+          onClose={() => setShowContentManagerModal(false)}
         />
       )}
     </View>

@@ -230,3 +230,90 @@ export function generateDynamicPickupCode(): string {
   }
   return `RK-${random}`;
 }
+
+// ==========================================
+// PHASE 5: BIBLE LEARNING CENTER MODELS
+// ==========================================
+
+export interface KidsBibleStoryPage {
+  pageNumber: number;
+  heading: string;
+  textEnglish: string;
+  textTelugu: string;
+  illustrationEmoji: string;
+  imageUrl?: string;
+}
+
+export interface KidsBibleStory {
+  id: string;
+  storyId: string;
+  churchId: string;
+  title: string;
+  titleTelugu: string;
+  scriptureRef: string;
+  theme: string;
+  coverEmoji: string;
+  coverImageUrl?: string;
+  readTime: string;
+  summary: string;
+  summaryTelugu: string;
+  pages: KidsBibleStoryPage[];
+  reflectionQuestions: Array<{
+    questionEnglish: string;
+    questionTelugu: string;
+  }>;
+  audioNarrationUrl?: string;
+  createdAt: any;
+  updatedAt: any;
+}
+
+export interface KidsQuizQuestion {
+  id: string;
+  questionEnglish: string;
+  questionTelugu: string;
+  options: string[];
+  optionsTelugu?: string[];
+  correctIndex: number;
+  explanation: string;
+}
+
+export interface KidsQuiz {
+  id: string;
+  quizId: string;
+  churchId: string;
+  title: string;
+  titleTelugu: string;
+  scriptureRef: string;
+  pointsReward: number;
+  badgeReward: string;
+  coverEmoji: string;
+  questions: KidsQuizQuestion[];
+  createdAt: any;
+}
+
+export interface KidsWorshipSong {
+  id: string;
+  songId: string;
+  churchId: string;
+  title: string;
+  titleTelugu: string;
+  category: 'action_song' | 'praise' | 'hymn' | 'action_dance';
+  youtubeVideoId: string;
+  lyricsTelugu: string;
+  lyricsEnglish: string;
+  duration: string;
+  coverEmoji: string;
+  createdAt: any;
+}
+
+export interface KidsMemoryVerse {
+  id: string;
+  weekNumber: number;
+  scriptureRef: string;
+  scriptureRefTelugu: string;
+  verseEnglish: string;
+  verseTelugu: string;
+  theme: string;
+  audioPronunciationUrl?: string;
+  scrambleWords: string[];
+}

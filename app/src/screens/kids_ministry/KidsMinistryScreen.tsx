@@ -35,9 +35,19 @@ import {
 import QRCode from 'react-native-qrcode-svg';
 import { useAuth } from '../../context/AuthContext';
 import KidsMinistryService from '../../services/KidsMinistryService';
-import { ChildRecord, KidsClassRecord, generateDynamicPickupCode } from '../../types/KidsMinistryTypes';
+import {
+  ChildRecord,
+  KidsClassRecord,
+  KidsBibleStory,
+  KidsQuiz,
+  KidsWorshipSong,
+  generateDynamicPickupCode,
+} from '../../types/KidsMinistryTypes';
 import KidsSplashScreen from './components/KidsSplashScreen';
 import EnrollChildModal from './components/EnrollChildModal';
+import KidsStoryReaderModal from './components/KidsStoryReaderModal';
+import KidsQuizPlayerModal from './components/KidsQuizPlayerModal';
+import KidsSongPlayerModal from './components/KidsSongPlayerModal';
 
 const { width } = Dimensions.get('window');
 
@@ -52,10 +62,18 @@ export default function KidsMinistryScreen({ navigation }: any) {
   // Data State
   const [children, setChildren] = useState<ChildRecord[]>([]);
   const [classes, setClasses] = useState<KidsClassRecord[]>([]);
+  const [stories, setStories] = useState<KidsBibleStory[]>([]);
+  const [quizzes, setQuizzes] = useState<KidsQuiz[]>([]);
+  const [songs, setSongs] = useState<KidsWorshipSong[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedChildIndex, setSelectedChildIndex] = useState(0);
   const [existingHousehold, setExistingHousehold] = useState<any[]>([]);
   const [homeworkDone, setHomeworkDone] = useState(false);
+
+  // Modals state
+  const [selectedStoryForReader, setSelectedStoryForReader] = useState<KidsBibleStory | null>(null);
+  const [selectedQuizForPlayer, setSelectedQuizForPlayer] = useState<KidsQuiz | null>(null);
+  const [selectedSongForPlayer, setSelectedSongForPlayer] = useState<KidsWorshipSong | null>(null);
 
   // Navigation Tabs: 'home' | 'classroom' | 'lms' | 'pass'
   const [activeTab, setActiveTab] = useState<'home' | 'classroom' | 'lms' | 'pass'>('home');
@@ -84,6 +102,21 @@ export default function KidsMinistryScreen({ navigation }: any) {
       setClasses(classList);
     });
 
+    // Realtime subscription to Bible Stories
+    const unsubStories = KidsMinistryService.subscribeToStories(churchId, storyList => {
+      setStories(storyList);
+    });
+
+    // Realtime subscription to Quizzes
+    const unsubQuizzes = KidsMinistryService.subscribeToQuizzes(churchId, quizList => {
+      setQuizzes(quizList);
+    });
+
+    // Realtime subscription to Action Songs
+    const unsubSongs = KidsMinistryService.subscribeToSongs(churchId, songList => {
+      setSongs(songList);
+    });
+
     // Realtime subscription to children
     const unsubscribe = KidsMinistryService.subscribeToFamilyChildren(
       churchId,
@@ -96,6 +129,9 @@ export default function KidsMinistryScreen({ navigation }: any) {
 
     return () => {
       unsubClasses();
+      unsubStories();
+      unsubQuizzes();
+      unsubSongs();
       unsubscribe();
     };
   }, [member?.id, member?.accountId, churchId]);
@@ -593,82 +629,100 @@ export default function KidsMinistryScreen({ navigation }: any) {
           )}
 
           {/* ==================================================== */}
-          {/* TAB 3: BIBLE LMS (QUIZZES & STORIES)                 */}
+          {/* TAB 3: BIBLE LMS (QUIZZES, STORIES & WORSHIP)        */}
           {/* ==================================================== */}
           {activeTab === 'lms' && (
             <>
-              {/* Quiz of the Week */}
-              <View style={styles.quizCard}>
-                <View style={styles.quizHeader}>
-                  <View>
-                    <Text style={styles.quizHeaderTag}>BIBLE QUIZ OF THE WEEK</Text>
-                    <Text style={styles.quizTitle}>David & Goliath (దైర్యము)</Text>
+              {/* Featured Bible Quiz Card */}
+              {quizzes.length > 0 && (
+                <View style={styles.quizCard}>
+                  <View style={styles.quizHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.quizHeaderTag}>BIBLE CHALLENGE OF THE WEEK</Text>
+                      <Text style={styles.quizTitle}>{quizzes[0].title}</Text>
+                      <Text style={styles.quizTeluguSub}>{quizzes[0].titleTelugu} · {quizzes[0].scriptureRef}</Text>
+                    </View>
+                    <Text style={{ fontSize: 32 }}>{quizzes[0].coverEmoji || '🏆'}</Text>
                   </View>
-                  <Text style={{ fontSize: 28 }}>🏆</Text>
-                </View>
 
-                <Text style={styles.quizQuestion}>
-                  Q1. How many smooth stones did David take from the brook?
-                </Text>
-
-                <View style={styles.quizOptionsGrid}>
-                  <TouchableOpacity
-                    style={[styles.quizOptionBtn, styles.quizOptionCorrect]}
-                    onPress={() => Alert.alert('Correct Answer! 🎉', 'David picked up 5 smooth stones from the brook! ★ +10 Points')}
-                  >
-                    <Text style={styles.quizOptionTextCorrect}>✓ 5 Smooth Stones</Text>
-                  </TouchableOpacity>
+                  <View style={styles.quizRewardBadgeRow}>
+                    <View style={styles.quizPointsPill}>
+                      <Text style={styles.quizPointsText}>★ +{quizzes[0].pointsReward} Star Points</Text>
+                    </View>
+                    <View style={styles.quizBadgePill}>
+                      <Text style={styles.quizBadgePillText}>{quizzes[0].badgeReward}</Text>
+                    </View>
+                  </View>
 
                   <TouchableOpacity
-                    style={styles.quizOptionBtn}
-                    onPress={() => Alert.alert('Try Again', 'Read 1 Samuel 17:40!')}
+                    style={styles.startQuizBtn}
+                    onPress={() => setSelectedQuizForPlayer(quizzes[0])}
+                    activeOpacity={0.88}
                   >
-                    <Text style={styles.quizOptionText}>3 Stones</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.quizOptionBtn}
-                    onPress={() => Alert.alert('Try Again', 'Read 1 Samuel 17:40!')}
-                  >
-                    <Text style={styles.quizOptionText}>7 Stones</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.quizOptionBtn}
-                    onPress={() => Alert.alert('Try Again', 'Read 1 Samuel 17:40!')}
-                  >
-                    <Text style={styles.quizOptionText}>1 Heavy Boulder</Text>
+                    <Award size={16} color="#000000" />
+                    <Text style={styles.startQuizBtnText}>Start Interactive Quiz &rsaquo;</Text>
                   </TouchableOpacity>
                 </View>
+              )}
+
+              {/* Illustrated Bilingual Bible Stories */}
+              <View style={{ marginTop: 8 }}>
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.sectionHeader}>ILLUSTRATED BIBLE STORIES</Text>
+                  <Text style={styles.sectionHeaderSub}>Telugu & English</Text>
+                </View>
+
+                {stories.map(s => (
+                  <TouchableOpacity
+                    key={s.id}
+                    style={styles.storyCard}
+                    onPress={() => setSelectedStoryForReader(s)}
+                    activeOpacity={0.88}
+                  >
+                    <View style={styles.storyEmojiBubble}>
+                      <Text style={{ fontSize: 26 }}>{s.coverEmoji || '📖'}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.storyTitle}>{s.title}</Text>
+                      <Text style={styles.storyTeluguText}>{s.titleTelugu}</Text>
+                      <Text style={styles.storyMeta}>
+                        {s.scriptureRef} · {s.readTime || '5 min'} · {s.pages?.length || 4} Illustrated Pages
+                      </Text>
+                    </View>
+                    <View style={styles.storyReadPill}>
+                      <Text style={styles.storyReadPillText}>Read &rsaquo;</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
               </View>
 
-              {/* Illustrated Stories List */}
-              <View>
-                <Text style={styles.sectionHeader}>ILLUSTRATED BIBLE STORIES</Text>
-                
-                <TouchableOpacity
-                  style={styles.storyCard}
-                  onPress={() => Alert.alert('Story Reader', 'Opening "Daniel in the Lions\' Den" with Telugu narration.')}
-                >
-                  <Text style={{ fontSize: 24 }}>🦁</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.storyTitle}>Daniel in the Lions' Den</Text>
-                    <Text style={styles.storySub}>Telugu & English Narration · 8 min</Text>
-                  </View>
-                  <Text style={styles.storyLink}>Play &rsaquo;</Text>
-                </TouchableOpacity>
+              {/* Action Worship Songs Playlist */}
+              <View style={{ marginTop: 14 }}>
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.sectionHeader}>KIDS ACTION WORSHIP SONGS</Text>
+                  <Text style={styles.sectionHeaderSub}>Video & Lyrics</Text>
+                </View>
 
-                <TouchableOpacity
-                  style={styles.storyCard}
-                  onPress={() => Alert.alert('Story Reader', 'Opening "Noah and the Great Ark" with illustrated pages.')}
-                >
-                  <Text style={{ fontSize: 24 }}>🌈</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.storyTitle}>Noah and the Great Ark</Text>
-                    <Text style={styles.storySub}>Illustrated Picture Book · 6 min</Text>
-                  </View>
-                  <Text style={styles.storyLink}>Read &rsaquo;</Text>
-                </TouchableOpacity>
+                {songs.map(song => (
+                  <TouchableOpacity
+                    key={song.id}
+                    style={styles.songListCard}
+                    onPress={() => setSelectedSongForPlayer(song)}
+                    activeOpacity={0.88}
+                  >
+                    <View style={styles.songEmojiBubble}>
+                      <Text style={{ fontSize: 24 }}>{song.coverEmoji || '🎵'}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.songTitle}>{song.title}</Text>
+                      <Text style={styles.songTeluguSub}>{song.titleTelugu}</Text>
+                      <Text style={styles.songDurationMeta}>Duration: {song.duration || '3:00'} · Action Dance</Text>
+                    </View>
+                    <View style={styles.songPlayBtn}>
+                      <Volume2 size={14} color="#FBBF24" />
+                    </View>
+                  </TouchableOpacity>
+                ))}
               </View>
             </>
           )}
@@ -738,6 +792,35 @@ export default function KidsMinistryScreen({ navigation }: any) {
           onChildEnrolled={() => {
             // Handled via realtime subscription
           }}
+        />
+      )}
+
+      {/* ── BIBLE STORY READER MODAL ── */}
+      {selectedStoryForReader && (
+        <KidsStoryReaderModal
+          visible={!!selectedStoryForReader}
+          story={selectedStoryForReader}
+          onClose={() => setSelectedStoryForReader(null)}
+        />
+      )}
+
+      {/* ── BIBLE QUIZ PLAYER MODAL ── */}
+      {selectedQuizForPlayer && (
+        <KidsQuizPlayerModal
+          visible={!!selectedQuizForPlayer}
+          quiz={selectedQuizForPlayer}
+          onClose={() => setSelectedQuizForPlayer(null)}
+        />
+      )}
+
+      {/* ── WORSHIP SONG PLAYER MODAL ── */}
+      {selectedSongForPlayer && (
+        <KidsSongPlayerModal
+          visible={!!selectedSongForPlayer}
+          song={selectedSongForPlayer}
+          allSongs={songs}
+          onClose={() => setSelectedSongForPlayer(null)}
+          onSelectSong={s => setSelectedSongForPlayer(s)}
         />
       )}
     </View>
@@ -1354,6 +1437,141 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
     marginTop: 2,
+  },
+  quizTeluguSub: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    marginTop: 2,
+  },
+  quizRewardBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginVertical: 4,
+  },
+  quizPointsPill: {
+    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  quizPointsText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FBBF24',
+  },
+  quizBadgePill: {
+    backgroundColor: '#27272A',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  quizBadgePillText: {
+    fontSize: 10,
+    color: '#E4E4E7',
+    fontWeight: '600',
+  },
+  startQuizBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FBBF24',
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 6,
+    marginTop: 4,
+  },
+  startQuizBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  sectionHeaderSub: {
+    fontSize: 10,
+    color: '#FBBF24',
+    fontWeight: '600',
+  },
+  storyEmojiBubble: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#09090B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#27272A',
+  },
+  storyTeluguText: {
+    fontSize: 11,
+    color: '#E4E4E7',
+    fontWeight: '600',
+    marginTop: 1,
+  },
+  storyMeta: {
+    fontSize: 10,
+    color: '#9CA3AF',
+    marginTop: 2,
+  },
+  storyReadPill: {
+    backgroundColor: 'rgba(251, 191, 36, 0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  storyReadPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FBBF24',
+  },
+  songListCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#18181B',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#27272A',
+    gap: 12,
+    marginBottom: 8,
+  },
+  songEmojiBubble: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#09090B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#27272A',
+  },
+  songTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  songTeluguSub: {
+    fontSize: 11,
+    color: '#E4E4E7',
+    marginTop: 1,
+  },
+  songDurationMeta: {
+    fontSize: 10,
+    color: '#9CA3AF',
+    marginTop: 2,
+  },
+  songPlayBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#27272A',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   quizQuestion: {
     fontSize: 13,
