@@ -31,6 +31,7 @@ import {
   CareCellVisit,
   CareCellVisitMemberResponse,
   MemberVisitResponseStatus,
+  formatTime12h,
 } from '../../../../types/CareCellTypes';
 import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 
@@ -138,19 +139,19 @@ export default function CareCellVisitResponsesModal({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={styles.sheetContainer}>
+        <View style={[styles.sheetContainer, isDark && { backgroundColor: '#18181B' }]}>
           {/* Header */}
-          <View style={styles.header}>
+          <View style={[styles.header, isDark && { borderBottomColor: '#27272A' }]}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.visitTitle} numberOfLines={1}>
+              <Text style={[styles.visitTitle, isDark && { color: '#FFFFFF' }]} numberOfLines={1}>
                 {visit.title}
               </Text>
-              <Text style={styles.visitSubtitle}>
-                {visit.cellName} · {formatDateDisplay(visit.visitDate)} at {visit.visitTime}
+              <Text style={[styles.visitSubtitle, isDark && { color: '#A1A1AA' }]}>
+                {visit.cellName} · {formatDateDisplay(visit.visitDate)} at {formatTime12h(visit.visitTime)}
               </Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <X size={18} color="#64748B" />
+            <TouchableOpacity onPress={onClose} style={[styles.closeBtn, isDark && { backgroundColor: '#27272A' }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <X size={18} color={isDark ? '#A1A1AA' : '#64748B'} />
             </TouchableOpacity>
           </View>
 
@@ -159,61 +160,74 @@ export default function CareCellVisitResponsesModal({
             <TouchableOpacity
               style={[
                 styles.kpiCard,
+                isDark && { backgroundColor: '#27272A', borderColor: '#3F3F46' },
                 filter === 'ALL' && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
               ]}
               onPress={() => setFilter('ALL')}
             >
-              <Text style={[styles.kpiValue, filter === 'ALL' && { color: primaryBtnText }]}>{total}</Text>
-              <Text style={[styles.kpiLabel, filter === 'ALL' && { color: primaryBtnText }]}>Total</Text>
+              <Text style={[styles.kpiValue, isDark && { color: '#FFFFFF' }, filter === 'ALL' && { color: primaryBtnText }]}>{total}</Text>
+              <Text style={[styles.kpiLabel, isDark && { color: '#A1A1AA' }, filter === 'ALL' && { color: primaryBtnText }]}>Total</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.kpiCard, filter === 'Accepted' && styles.kpiCardActiveAccepted]}
+              style={[
+                styles.kpiCard,
+                isDark && { backgroundColor: '#27272A', borderColor: '#3F3F46' },
+                filter === 'Accepted' && (isDark ? { backgroundColor: 'rgba(5, 150, 105, 0.25)', borderColor: '#059669' } : styles.kpiCardActiveAccepted),
+              ]}
               onPress={() => setFilter('Accepted')}
             >
               <View style={styles.kpiTop}>
-                <CheckCircle2 size={13} color="#059669" />
-                <Text style={[styles.kpiValue, { color: '#059669' }]}>{accepted}</Text>
+                <CheckCircle2 size={13} color="#10B981" />
+                <Text style={[styles.kpiValue, { color: '#10B981' }]}>{accepted}</Text>
               </View>
-              <Text style={[styles.kpiLabel, { color: '#065F46' }]}>Accepted</Text>
+              <Text style={[styles.kpiLabel, { color: '#10B981' }]}>Accepted</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.kpiCard, filter === 'Declined' && styles.kpiCardActiveDeclined]}
+              style={[
+                styles.kpiCard,
+                isDark && { backgroundColor: '#27272A', borderColor: '#3F3F46' },
+                filter === 'Declined' && (isDark ? { backgroundColor: 'rgba(220, 38, 38, 0.25)', borderColor: '#DC2626' } : styles.kpiCardActiveDeclined),
+              ]}
               onPress={() => setFilter('Declined')}
             >
               <View style={styles.kpiTop}>
-                <XCircle size={13} color="#E11D48" />
-                <Text style={[styles.kpiValue, { color: '#E11D48' }]}>{declined}</Text>
+                <XCircle size={13} color="#EF4444" />
+                <Text style={[styles.kpiValue, { color: '#EF4444' }]}>{declined}</Text>
               </View>
-              <Text style={[styles.kpiLabel, { color: '#9F1239' }]}>Declined</Text>
+              <Text style={[styles.kpiLabel, { color: '#EF4444' }]}>Declined</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.kpiCard, filter === 'Pending' && styles.kpiCardActivePending]}
+              style={[
+                styles.kpiCard,
+                isDark && { backgroundColor: '#27272A', borderColor: '#3F3F46' },
+                filter === 'Pending' && (isDark ? { backgroundColor: 'rgba(217, 119, 6, 0.25)', borderColor: '#D97706' } : styles.kpiCardActivePending),
+              ]}
               onPress={() => setFilter('Pending')}
             >
               <View style={styles.kpiTop}>
-                <Clock size={13} color="#D97706" />
-                <Text style={[styles.kpiValue, { color: '#D97706' }]}>{pending}</Text>
+                <Clock size={13} color="#F59E0B" />
+                <Text style={[styles.kpiValue, { color: '#F59E0B' }]}>{pending}</Text>
               </View>
-              <Text style={[styles.kpiLabel, { color: '#92400E' }]}>Pending</Text>
+              <Text style={[styles.kpiLabel, { color: '#F59E0B' }]}>Pending</Text>
             </TouchableOpacity>
           </View>
 
           {/* Search Box */}
-          <View style={styles.searchWrap}>
-            <Search size={15} color="#94A3B8" style={{ marginRight: 8 }} />
+          <View style={[styles.searchWrap, isDark && { backgroundColor: '#27272A', borderColor: '#3F3F46' }]}>
+            <Search size={15} color={isDark ? '#A1A1AA' : '#94A3B8'} style={{ marginRight: 8 }} />
             <TextInput
-              style={styles.searchInput}
+              style={[styles.searchInput, isDark && { color: '#FFFFFF' }]}
               placeholder="Search member name or phone..."
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
               value={search}
               onChangeText={setSearch}
             />
             {search.length > 0 && (
               <TouchableOpacity onPress={() => setSearch('')}>
-                <X size={14} color="#94A3B8" />
+                <X size={14} color={isDark ? '#A1A1AA' : '#94A3B8'} />
               </TouchableOpacity>
             )}
           </View>
@@ -236,55 +250,55 @@ export default function CareCellVisitResponsesModal({
               const isUpdating = updatingMemberId === item.memberId;
 
               return (
-                <View style={styles.memberCard}>
+                <View style={[styles.memberCard, isDark && { backgroundColor: '#18181B', borderColor: '#27272A' }]}>
                   <View style={styles.memberLeft}>
                     {item.memberPhoto ? (
                       <Image source={{ uri: item.memberPhoto }} style={styles.avatarImg} />
                     ) : (
-                      <View style={styles.avatarFallback}>
-                        <Text style={styles.avatarTxt}>{(item.memberName || 'M').charAt(0).toUpperCase()}</Text>
+                      <View style={[styles.avatarFallback, isDark && { backgroundColor: '#27272A' }]}>
+                        <Text style={[styles.avatarTxt, isDark && { color: '#FFFFFF' }]}>{(item.memberName || 'M').charAt(0).toUpperCase()}</Text>
                       </View>
                     )}
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.memberName}>{item.memberName}</Text>
+                      <Text style={[styles.memberName, isDark && { color: '#FFFFFF' }]}>{item.memberName}</Text>
                       {item.memberPhone ? (
-                        <Text style={styles.memberPhone}>{item.memberPhone}</Text>
+                        <Text style={[styles.memberPhone, isDark && { color: '#A1A1AA' }]}>{item.memberPhone}</Text>
                       ) : null}
 
                       {/* Response Status Pill */}
                       <View style={styles.statusPillRow}>
                         {isAccepted && (
-                          <View style={styles.acceptedPill}>
-                            <CheckCircle2 size={12} color="#059669" style={{ marginRight: 4 }} />
-                            <Text style={styles.acceptedPillTxt}>Available (Accepted)</Text>
+                          <View style={[styles.acceptedPill, isDark && { backgroundColor: 'rgba(5, 150, 105, 0.25)', borderColor: '#059669' }]}>
+                            <CheckCircle2 size={12} color="#10B981" style={{ marginRight: 4 }} />
+                            <Text style={[styles.acceptedPillTxt, isDark && { color: '#34D399' }]}>Available (Accepted)</Text>
                           </View>
                         )}
                         {isDeclined && (
-                          <View style={styles.declinedPill}>
-                            <XCircle size={12} color="#E11D48" style={{ marginRight: 4 }} />
-                            <Text style={styles.declinedPillTxt}>Unavailable (Declined)</Text>
+                          <View style={[styles.declinedPill, isDark && { backgroundColor: 'rgba(220, 38, 38, 0.25)', borderColor: '#DC2626' }]}>
+                            <XCircle size={12} color="#EF4444" style={{ marginRight: 4 }} />
+                            <Text style={[styles.declinedPillTxt, isDark && { color: '#F87171' }]}>Unavailable (Declined)</Text>
                           </View>
                         )}
                         {!isAccepted && !isDeclined && (
-                          <View style={styles.pendingPill}>
-                            <Clock size={12} color="#D97706" style={{ marginRight: 4 }} />
-                            <Text style={styles.pendingPillTxt}>Awaiting Response</Text>
+                          <View style={[styles.pendingPill, isDark && { backgroundColor: 'rgba(217, 119, 6, 0.25)', borderColor: '#D97706' }]}>
+                            <Clock size={12} color="#F59E0B" style={{ marginRight: 4 }} />
+                            <Text style={[styles.pendingPillTxt, isDark && { color: '#FBBF24' }]}>Awaiting Response</Text>
                           </View>
                         )}
                       </View>
 
                       {/* Preferred Visit Time Highlight for Leaders */}
                       {isAccepted && (
-                        <View style={styles.leaderPreferredTimeRow}>
-                          <Clock size={11} color="#047857" style={{ marginRight: 4 }} />
-                          <Text style={styles.leaderPreferredTimeTxt}>
-                            Preferred Time: <Text style={{ fontWeight: '800' }}>{item.preferredTime || `Scheduled (${visit.visitTime})`}</Text>
+                        <View style={[styles.leaderPreferredTimeRow, isDark && { backgroundColor: 'rgba(5, 150, 105, 0.15)', borderColor: 'rgba(5, 150, 105, 0.3)' }]}>
+                          <Clock size={11} color={isDark ? '#34D399' : '#047857'} style={{ marginRight: 4 }} />
+                          <Text style={[styles.leaderPreferredTimeTxt, isDark && { color: '#A7F3D0' }]}>
+                            Preferred Time: <Text style={{ fontWeight: '800' }}>{item.preferredTime ? formatTime12h(item.preferredTime) : `Scheduled (${formatTime12h(visit.visitTime)})`}</Text>
                           </Text>
                         </View>
                       )}
 
                       {item.notes ? (
-                        <Text style={styles.memberResponseNotesTxt} numberOfLines={2}>
+                        <Text style={[styles.memberResponseNotesTxt, isDark && { color: '#94A3B8' }]} numberOfLines={2}>
                           "{item.notes}"
                         </Text>
                       ) : null}
@@ -363,21 +377,21 @@ export default function CareCellVisitResponsesModal({
           onRequestClose={() => setEditingPreferredMember(null)}
         >
           <View style={styles.leaderEditOverlay}>
-            <View style={styles.leaderEditCard}>
+            <View style={[styles.leaderEditCard, isDark && { backgroundColor: '#18181B', borderColor: '#27272A', borderWidth: 1 }]}>
               <View style={styles.leaderEditHeader}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.leaderEditTitle}>Preferred Visit Time</Text>
-                  <Text style={styles.leaderEditSub}>For {editingPreferredMember.memberName}</Text>
+                  <Text style={[styles.leaderEditTitle, isDark && { color: '#FFFFFF' }]}>Preferred Visit Time</Text>
+                  <Text style={[styles.leaderEditSub, isDark && { color: '#A1A1AA' }]}>For {editingPreferredMember.memberName}</Text>
                 </View>
-                <TouchableOpacity onPress={() => setEditingPreferredMember(null)} style={styles.leaderEditCloseBtn}>
-                  <X size={16} color={secondaryText} />
+                <TouchableOpacity onPress={() => setEditingPreferredMember(null)} style={[styles.leaderEditCloseBtn, isDark && { backgroundColor: '#27272A' }]}>
+                  <X size={16} color={isDark ? '#A1A1AA' : secondaryText} />
                 </TouchableOpacity>
               </View>
 
-              <Text style={styles.leaderEditSectionLabel}>SELECT OR ENTER PREFERRED TIME</Text>
+              <Text style={[styles.leaderEditSectionLabel, isDark && { color: '#A1A1AA' }]}>SELECT OR ENTER PREFERRED TIME</Text>
               <View style={styles.leaderTimePillsRow}>
                 {[
-                  `Scheduled (${visit.visitTime})`,
+                  `Scheduled (${formatTime12h(visit.visitTime)})`,
                   'Morning (10:00 AM – 12:00 PM)',
                   'Afternoon (2:00 PM – 4:00 PM)',
                   'Evening (5:00 PM – 7:00 PM)',
@@ -389,11 +403,12 @@ export default function CareCellVisitResponsesModal({
                       key={slot}
                       style={[
                         styles.leaderTimeSlotPill,
+                        isDark && { backgroundColor: '#27272A', borderColor: '#3F3F46' },
                         isActive && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
                       ]}
                       onPress={() => setLeaderCustomTime(slot)}
                     >
-                      <Text style={[styles.leaderTimeSlotPillTxt, isActive && { color: primaryBtnText, fontWeight: '800' }]}>
+                      <Text style={[styles.leaderTimeSlotPillTxt, isDark && { color: '#E4E4E7' }, isActive && { color: primaryBtnText, fontWeight: '800' }]}>
                         {slot}
                       </Text>
                     </TouchableOpacity>

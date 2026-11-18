@@ -245,6 +245,15 @@ export declare const pushCareCellVisit: import("firebase-functions").CloudFuncti
     visitId: string;
 }>>;
 /**
+ * 🏡 CARE CELL VISIT RESPONSE UPDATED PUSH
+ * Sends push notification strictly to the respective Care Cell Leader / Admin when a member
+ * responds with acceptance/decline or submits their preferred visiting time.
+ */
+export declare const onCareCellVisitResponseUpdated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+    churchId: string;
+    visitId: string;
+}>>;
+/**
  * ✨ TRIGGER 1: Member Submits Testimony (Notifies Authorized Admins)
  */
 export declare const onTestimonyCreatedAdmin: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {

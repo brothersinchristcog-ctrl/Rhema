@@ -86,6 +86,7 @@ import AdminBaptism from '../screens/admin/AdminBaptism';
 import ChurchService from '../services/ChurchService';
 import AdminDailyVersesManager from '../screens/admin/AdminDailyVersesManager';
 import AdminCareCellsHub from '../screens/admin/care_cells/AdminCareCellsHub';
+import AdminKidsHub from '../screens/admin/kids_ministry/AdminKidsHub';
 import AdminServicePlanner from '../screens/admin/AdminServicePlanner';
 import AdminTestimonies from '../screens/admin/AdminTestimonies';
 import AdminVolunteerManagement from '../screens/admin/AdminVolunteerManagement';
@@ -300,6 +301,7 @@ export default function AdminNavigator({ navigation, route }: any) {
     { name: 'Testimonies', icon: Sparkles, component: AdminTestimonies },
     { name: 'Attendance', icon: ClipboardCheck, component: AdminAttendance },
     ...(isSuperAdminUser || hasCareCellAccess ? [{ name: 'Care Cells', icon: HeartHandshake, component: AdminCareCellsHub }] : []),
+    { name: 'Kids Ministry', icon: Crown, component: AdminKidsHub },
     { name: 'Service Roster', icon: CalendarDays, component: AdminServicePlanner },
     { name: 'Job Circle', icon: Briefcase, component: AdminJobCircleDashboard },
     { name: 'Volunteer Management', icon: HeartHandshake, component: AdminVolunteerManagement },

@@ -12,7 +12,9 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X, UserPlus, MapPin, Shield, Calendar, Clock, Users, CheckCircle2, ChevronDown, User, Sparkles, Check, AlertCircle, Building2, Trash2, AlertTriangle } from 'lucide-react-native';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import FirestoreService from '../../../../services/FirestoreService';
@@ -39,6 +41,11 @@ export default function CareCellFormModal({
   cellToEdit,
 }: CareCellFormModalProps) {
   const { isDark, primaryText, secondaryText, cardSurface, secondarySurface, borderColor } = useAdminTheme();
+  const insets = useSafeAreaInsets();
+  const formHeaderTopPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight || 28) : 44
+  ) + 8;
   const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
   const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
   const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
@@ -414,6 +421,11 @@ export default function CareCellFormModal({
   return (
     <>
       <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+        <StatusBar
+          barStyle={isDark ? 'light-content' : 'dark-content'}
+          translucent
+          backgroundColor="transparent"
+        />
         <View style={styles.overlay}>
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -422,7 +434,7 @@ export default function CareCellFormModal({
           >
             <View style={styles.sheetContainer}>
               {/* Sheet Header */}
-              <View style={styles.header}>
+              <View style={[styles.header, { paddingTop: formHeaderTopPadding }]}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.headerTitle}>{isEditing ? 'Edit Care Cell' : 'Create Care Cell'}</Text>
                   <Text style={styles.headerSubtitle}>
@@ -528,9 +540,9 @@ export default function CareCellFormModal({
                     </View>
                     <TouchableOpacity
                       onPress={() => setLeaderLookupVisible(true)}
-                      style={styles.changeLeaderBtn}
+                      style={[styles.changeLeaderBtn, { backgroundColor: primaryBtnBg }]}
                     >
-                      <Text style={styles.changeLeaderBtnTxt}>Change</Text>
+                      <Text style={[styles.changeLeaderBtnTxt, { color: primaryBtnText }]}>Change</Text>
                     </TouchableOpacity>
                   </View>
                 ) : (
@@ -604,15 +616,27 @@ export default function CareCellFormModal({
 
                   {locationMatchedMembers.length > 0 && (
                     <TouchableOpacity
-                      style={styles.toggleAllBtn}
+                      style={[
+                        styles.toggleAllBtn,
+                        {
+                          backgroundColor: secondaryBtnBg,
+                          borderWidth: 1,
+                          borderColor: secondaryBtnBorder,
+                        },
+                      ]}
                       onPress={
                         selectedMembersMap.size === locationMatchedMembers.length
                           ? handleDeselectAllMatched
                           : handleSelectAllMatched
                       }
                     >
-                      <Text style={styles.toggleAllBtnTxt}>
-                        {selectedMembersMap.size === locationMatchedMembers.length ? 'Deselect' : 'Select All'}
+                      <Text
+                        style={[
+                          styles.toggleAllBtnTxt,
+                          { color: secondaryBtnText, fontWeight: '700' },
+                        ]}
+                      >
+                        {selectedMembersMap.size === locationMatchedMembers.length ? 'Deselect All' : 'Select All'}
                       </Text>
                     </TouchableOpacity>
                   )}
@@ -641,7 +665,15 @@ export default function CareCellFormModal({
                             key={mem.id}
                             style={[
                               styles.matchedMemberItem,
-                              isSelected && styles.matchedMemberItemSelected,
+                              {
+                                backgroundColor: isDark
+                                  ? (isSelected ? '#27272A' : '#18181B')
+                                  : (isSelected ? '#F8FAFC' : '#FFFFFF'),
+                                borderColor: isSelected
+                                  ? (isDark ? '#FFFFFF' : '#0F172A')
+                                  : (isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0'),
+                                borderWidth: isSelected ? 1.5 : 1,
+                              },
                             ]}
                             onPress={() => toggleMemberSelection(mem)}
                             activeOpacity={0.8}
@@ -649,27 +681,91 @@ export default function CareCellFormModal({
                             <View
                               style={[
                                 styles.memberCheckbox,
-                                isSelected && styles.memberCheckboxSelected,
+                                {
+                                  backgroundColor: isSelected
+                                    ? (isDark ? '#FFFFFF' : '#0F172A')
+                                    : (isDark ? '#27272A' : '#FFFFFF'),
+                                  borderColor: isSelected
+                                    ? (isDark ? '#FFFFFF' : '#0F172A')
+                                    : (isDark ? '#52525B' : '#94A3B8'),
+                                },
                               ]}
                             >
-                              {isSelected && <Check size={12} color="#FFFFFF" strokeWidth={3} />}
+                              {isSelected && <Check size={12} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={3} />}
                             </View>
 
                             <View style={{ flex: 1, marginLeft: 10 }}>
-                              <Text style={styles.matchedMemberName}>{mem.name}</Text>
-                              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2, gap: 6 }}>
-                                <View style={styles.localityBadge}>
-                                  <MapPin size={9} color="#1A2D5A" style={{ marginRight: 2 }} />
-                                  <Text style={styles.localityBadgeTxt}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                                <Text
+                                  style={[
+                                    styles.matchedMemberName,
+                                    { color: isDark ? '#FFFFFF' : '#0F172A', fontSize: 14, fontWeight: '700' },
+                                  ]}
+                                >
+                                  {mem.name}
+                                </Text>
+                                {(mem as any).memberCode ? (
+                                  <View
+                                    style={{
+                                      backgroundColor: isDark ? '#27272A' : '#F1F5F9',
+                                      borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1',
+                                      borderWidth: 1,
+                                      paddingHorizontal: 6,
+                                      paddingVertical: 1.5,
+                                      borderRadius: 5,
+                                    }}
+                                  >
+                                    <Text
+                                      style={{
+                                        fontSize: 10,
+                                        fontWeight: '700',
+                                        color: isDark ? '#E4E4E7' : '#334155',
+                                      }}
+                                    >
+                                      {(mem as any).memberCode}
+                                    </Text>
+                                  </View>
+                                ) : null}
+                              </View>
+
+                              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 6 }}>
+                                <View
+                                  style={[
+                                    styles.localityBadge,
+                                    {
+                                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9',
+                                    },
+                                  ]}
+                                >
+                                  <MapPin size={9} color={isDark ? '#A1A1AA' : '#64748B'} style={{ marginRight: 2 }} />
+                                  <Text
+                                    style={[
+                                      styles.localityBadgeTxt,
+                                      { color: isDark ? '#E4E4E7' : '#334155' },
+                                    ]}
+                                  >
                                     {mem.city || mem.village || mem.locality || location}
                                   </Text>
                                 </View>
                                 {mem.phone ? (
-                                  <Text style={styles.matchedMemberPhone}>{mem.phone}</Text>
+                                  <Text
+                                    style={[
+                                      styles.matchedMemberPhone,
+                                      { color: isDark ? '#A1A1AA' : '#64748B', fontSize: 12 },
+                                    ]}
+                                  >
+                                    {mem.phone}
+                                  </Text>
                                 ) : null}
                               </View>
                               {mem.address ? (
-                                <Text style={styles.matchedMemberAddr} numberOfLines={1}>
+                                <Text
+                                  style={[
+                                    styles.matchedMemberAddr,
+                                    { color: isDark ? '#71717A' : '#94A3B8' },
+                                  ]}
+                                  numberOfLines={1}
+                                >
                                   {mem.address}
                                 </Text>
                               ) : null}
@@ -683,12 +779,19 @@ export default function CareCellFormModal({
 
                 {/* Open Full Member Lookup Modal Button */}
                 <TouchableOpacity
-                  style={styles.openLookupModalBtn}
+                  style={[
+                    styles.openLookupModalBtn,
+                    {
+                      backgroundColor: secondaryBtnBg,
+                      borderColor: secondaryBtnBorder,
+                      borderWidth: 1,
+                    },
+                  ]}
                   onPress={() => setMembersLookupVisible(true)}
                   activeOpacity={0.8}
                 >
-                  <UserPlus size={14} color="#1A2D5A" style={{ marginRight: 6 }} />
-                  <Text style={styles.openLookupModalBtnTxt}>
+                  <UserPlus size={14} color={secondaryBtnText} style={{ marginRight: 6 }} />
+                  <Text style={[styles.openLookupModalBtnTxt, { color: secondaryBtnText }]}>
                     {location.trim()
                       ? `Browse / Filter Members in ${location.trim()} (${selectedMembersMap.size} selected)`
                       : `Select Members (${selectedMembersMap.size} selected)`}
@@ -696,14 +799,15 @@ export default function CareCellFormModal({
                 </TouchableOpacity>
               </View>
 
-              {/* Meeting Day (Full Width Clean Selector) */}
+              {/* Meeting Day (Clean 7-Day Grid) */}
               <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>Meeting Day *</Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.daySelectorScrollContainer}
-                >
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <Text style={styles.fieldLabel}>Meeting Day *</Text>
+                  <Text style={{ fontSize: 11.5, fontWeight: '600', color: isDark ? '#A1A1AA' : '#64748B' }}>
+                    {meetingDay || 'Select Day'}
+                  </Text>
+                </View>
+                <View style={styles.daySelectorRow}>
                   {DAYS_OF_WEEK.map((d) => {
                     const isSelected = meetingDay === d;
                     return (
@@ -711,7 +815,14 @@ export default function CareCellFormModal({
                         key={d}
                         style={[
                           styles.dayChip,
-                          isSelected && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                          {
+                            backgroundColor: isSelected
+                              ? primaryBtnBg
+                              : (isDark ? '#1C1917' : '#F8FAFC'),
+                            borderColor: isSelected
+                              ? primaryBtnBg
+                              : (isDark ? '#2E2E2E' : '#E2E8F0'),
+                          },
                         ]}
                         onPress={() => setMeetingDay(d)}
                         activeOpacity={0.8}
@@ -719,7 +830,12 @@ export default function CareCellFormModal({
                         <Text
                           style={[
                             styles.dayChipTxt,
-                            isSelected && { color: primaryBtnText, fontWeight: '800' },
+                            {
+                              color: isSelected
+                                ? primaryBtnText
+                                : (isDark ? '#A1A1AA' : '#64748B'),
+                              fontWeight: isSelected ? '800' : '600',
+                            },
                           ]}
                         >
                           {d.slice(0, 3)}
@@ -727,37 +843,49 @@ export default function CareCellFormModal({
                       </TouchableOpacity>
                     );
                   })}
-                </ScrollView>
+                </View>
               </View>
 
-              {/* Meeting Starting Time & Ending Time (Clean 2-Column Row) */}
+              {/* Meeting Starting Time & Ending Time (Clean 2-Column Row - IST) */}
               <View style={styles.rowTwoCols}>
                 {/* Meeting Start Time */}
                 <View style={[styles.fieldGroup, { flex: 1, marginRight: 10 }]}>
-                  <Text style={styles.fieldLabel}>Starting Time *</Text>
+                  <Text style={styles.fieldLabel}>Starting Time (IST) *</Text>
                   <TouchableOpacity
-                    style={styles.timePickerBtn}
+                    style={[
+                      styles.timePickerBtn,
+                      {
+                        backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                        borderColor: isDark ? '#27272A' : '#E2E8F0',
+                      },
+                    ]}
                     onPress={() => {
                       setActiveTimePickerTarget('start');
                       setTimePickerVisible(true);
                     }}
                     activeOpacity={0.8}
                   >
-                    <Clock size={16} color="#1A2D5A" style={{ marginRight: 8 }} />
+                    <Clock size={16} color={isDark ? '#60A5FA' : '#1A2D5A'} style={{ marginRight: 8 }} />
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.timePickerTxt} numberOfLines={1}>
+                      <Text style={[styles.timePickerTxt, { color: isDark ? '#FFFFFF' : '#0F172A' }]} numberOfLines={1}>
                         {formatTimeDisplay(meetingTime)}
                       </Text>
-                      <Text style={styles.timePickerSub}>{meetingTime} (24h)</Text>
+                      <Text style={[styles.timePickerSub, { color: isDark ? '#A1A1AA' : '#64748B' }]}>IST (Asia/Kolkata)</Text>
                     </View>
                   </TouchableOpacity>
                 </View>
 
                 {/* Meeting End Time */}
                 <View style={[styles.fieldGroup, { flex: 1 }]}>
-                  <Text style={styles.fieldLabel}>Ending Time</Text>
+                  <Text style={styles.fieldLabel}>Ending Time (IST)</Text>
                   <TouchableOpacity
-                    style={styles.timePickerBtn}
+                    style={[
+                      styles.timePickerBtn,
+                      {
+                        backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                        borderColor: isDark ? '#27272A' : '#E2E8F0',
+                      },
+                    ]}
                     onPress={() => {
                       setActiveTimePickerTarget('end');
                       setTimePickerVisible(true);
@@ -766,11 +894,11 @@ export default function CareCellFormModal({
                   >
                     <Clock size={16} color="#C9A84C" style={{ marginRight: 8 }} />
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.timePickerTxt} numberOfLines={1}>
+                      <Text style={[styles.timePickerTxt, { color: isDark ? '#FFFFFF' : '#0F172A' }]} numberOfLines={1}>
                         {meetingEndTime ? formatTimeDisplay(meetingEndTime) : 'Select End Time'}
                       </Text>
-                      <Text style={styles.timePickerSub}>
-                        {meetingEndTime ? `${meetingEndTime} (24h)` : 'Optional'}
+                      <Text style={[styles.timePickerSub, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+                        {meetingEndTime ? 'IST (Asia/Kolkata)' : 'Optional'}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -1431,7 +1559,7 @@ const styles = createAdminThemedStyles({
     marginTop: 1,
   },
   changeLeaderBtn: {
-    backgroundColor: '#1A2D5A',
+    backgroundColor: '#0F172A',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 6,
@@ -1465,18 +1593,17 @@ const styles = createAdminThemedStyles({
     paddingVertical: 2,
     gap: 8,
   },
-  daySelectorScroll: {
+  daySelectorRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 4,
     paddingVertical: 2,
   },
   dayChip: {
-    minWidth: 46,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    flex: 1,
+    paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: '#F8FAFC',
     borderWidth: 1.2,
-    borderColor: '#E2E8F0',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1571,15 +1698,15 @@ const styles = createAdminThemedStyles({
     lineHeight: 16,
   },
   toggleAllBtn: {
-    backgroundColor: '#E0E7FF',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 8,
   },
   toggleAllBtnTxt: {
-    fontSize: 11,
+    fontSize: 11.5,
     fontWeight: '700',
-    color: '#1A2D5A',
+    color: '#1E3A8A',
   },
   membersLoadingRow: {
     flexDirection: 'row',
@@ -1620,8 +1747,8 @@ const styles = createAdminThemedStyles({
     padding: 10,
   },
   matchedMemberItemSelected: {
-    borderColor: '#1A2D5A',
-    backgroundColor: '#F0F5FF',
+    borderColor: '#0F172A',
+    backgroundColor: '#F8FAFC',
   },
   memberCheckbox: {
     width: 22,
@@ -1634,8 +1761,8 @@ const styles = createAdminThemedStyles({
     backgroundColor: '#FFFFFF',
   },
   memberCheckboxSelected: {
-    backgroundColor: '#1A2D5A',
-    borderColor: '#1A2D5A',
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
   },
   matchedMemberName: {
     fontSize: 13.5,
@@ -1645,7 +1772,7 @@ const styles = createAdminThemedStyles({
   localityBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 6,
     paddingVertical: 1.5,
     borderRadius: 4,
@@ -1653,7 +1780,7 @@ const styles = createAdminThemedStyles({
   localityBadgeTxt: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#1A2D5A',
+    color: '#334155',
   },
   matchedMemberPhone: {
     fontSize: 11,
@@ -1678,16 +1805,16 @@ const styles = createAdminThemedStyles({
   openLookupModalBtnTxt: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#1A2D5A',
+    color: '#334155',
   },
   submitBtn: {
-    backgroundColor: '#1A2D5A',
+    backgroundColor: '#0F172A',
     borderRadius: 14,
     paddingVertical: 15,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
-    shadowColor: '#1A2D5A',
+    shadowColor: '#000000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,

@@ -957,14 +957,11 @@ async function handleBroadcastPushDispatch(data: any, churchIdParam?: string, me
   const type = data.type || 'general';
   const body = data.content || '';
   let title = (data.title || 'Church Update').trim();
-  // Strip bracketed date prefix (e.g. [17-11-2026] or [17 Nov 2026]) so only the calendar icon is shown
+  // Strip bracketed date prefix (e.g. [17-11-2026] or [17 Nov 2026])
   title = title.replace(/\[\s*[^\]]*\d{4}[^\]]*\]\s*/g, '');
   title = title.replace(/\[\s*\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\s*\]\s*/g, '');
-  // Replace the static 📅 emoji (which displays "July 17" in mobile OS fonts) with 🗓️ (clean spiral calendar with no dates)
-  title = title.replace(/📅\s*/g, '🗓️ ');
-  if (type === 'event' && !title.includes('🗓️')) {
-    title = `🗓️ ${title}`;
-  }
+  // Strip calendar emojis (📅, 🗓️, 📆) which mobile OS fonts (e.g. Android Noto Emoji) permanently render with "July 17"
+  title = title.replace(/[📅🗓️📆]/gu, '').trim();
   const churchId = churchIdParam || data.targetChurchId || DEFAULT_CHURCH_ID;
 
   // Atomic coordination with onVolunteerPostCreated so volunteer_post_new is sent once and never skipped
@@ -1837,6 +1834,7 @@ export {
   pushCareCellMeeting,
   pushCareCellPrayerRequest,
   pushCareCellVisit,
+  onCareCellVisitResponseUpdated,
   onTestimonyCreatedAdmin,
   onTestimonyCreatedAdminLegacy,
   onTestimonyUpdatedWorkflow,

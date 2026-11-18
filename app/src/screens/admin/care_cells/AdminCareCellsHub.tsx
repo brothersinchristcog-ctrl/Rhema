@@ -21,6 +21,7 @@ import {
   Heart,
   Megaphone,
   Home,
+  MapPin,
 } from 'lucide-react-native';
 import { AdminTabContext } from '../../../context/AdminTabContext';
 import { useAuth } from '../../../context/AuthContext';
@@ -29,6 +30,7 @@ import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThem
 import CareCellsOverviewTab from './tabs/CareCellsOverviewTab';
 import CareCellsManageTab from './tabs/CareCellsManageTab';
 import CareCellMembersTab from './tabs/CareCellMembersTab';
+import CareCellMemberLocationsTab from './tabs/CareCellMemberLocationsTab';
 import CareCellMeetingsTab from './tabs/CareCellMeetingsTab';
 import CareCellAttendanceTab from './tabs/CareCellAttendanceTab';
 import CareCellVisitsTab from './tabs/CareCellVisitsTab';
@@ -40,12 +42,13 @@ import { CareCell, CareCellMeeting } from '../../../types/CareCellTypes';
 
 const { width } = Dimensions.get('window');
 
-type SubTabKey = 'overview' | 'manage' | 'members' | 'meetings' | 'attendance' | 'visits' | 'followups' | 'announcements';
+type SubTabKey = 'overview' | 'manage' | 'members' | 'locations' | 'meetings' | 'attendance' | 'visits' | 'followups' | 'announcements';
 
 const SUB_TABS = [
   { key: 'overview' as SubTabKey, label: 'Overview', icon: LayoutDashboard },
   { key: 'manage' as SubTabKey, label: 'Care Cells', icon: Building2 },
   { key: 'members' as SubTabKey, label: 'Members', icon: Users },
+  { key: 'locations' as SubTabKey, label: 'Member Locations', icon: MapPin },
   { key: 'meetings' as SubTabKey, label: 'Meetings', icon: Calendar },
   { key: 'attendance' as SubTabKey, label: 'Attendance', icon: ClipboardCheck },
   { key: 'visits' as SubTabKey, label: 'Visits', icon: Home },
@@ -117,45 +120,86 @@ export default function AdminCareCellsHub() {
   };
 
   const activeCellsCount = cells.filter((c) => c.status === 'Active').length;
+  const headerTopPadding =
+    Platform.OS === 'android'
+      ? Math.max(insets.top, StatusBar.currentHeight || 28) + 6
+      : insets.top + 6;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={['left', 'right']}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={screenBg} />
 
       {/* Hero Header */}
-      <View style={[styles.heroHeader, { borderBottomWidth: 1.2, borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1' }]}>
-        <TouchableOpacity
-          onPress={handleBack}
-          style={styles.circularBackBtn}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          activeOpacity={0.7}
-        >
-          <ArrowLeft size={22} color={primaryText} strokeWidth={2.2} />
-        </TouchableOpacity>
+      <View
+        style={[
+          styles.heroHeader,
+          {
+            paddingTop: headerTopPadding,
+            backgroundColor: isDark ? '#000000' : '#FFFFFF',
+            borderBottomWidth: 1,
+            borderBottomColor: isDark ? '#27272A' : '#E2E8F0',
+          },
+        ]}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+          {/* Left: Back Button */}
+          <View style={{ minWidth: 40, alignItems: 'flex-start', justifyContent: 'center' }}>
+            <TouchableOpacity
+              onPress={handleBack}
+              style={styles.circularBackBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              activeOpacity={0.7}
+            >
+              <ArrowLeft size={22} color={isDark ? '#FFFFFF' : '#0F172A'} strokeWidth={2.2} />
+            </TouchableOpacity>
+          </View>
 
-        <View style={styles.headerTitleWrap}>
-          <Text style={[styles.headerTitle, { color: primaryText, textAlign: 'center' }]}>Care Cells</Text>
-          <Text style={[styles.headerSubtitle, { color: secondaryText, textAlign: 'center' }]}>
-            {activeCellsCount} active fellowship {activeCellsCount === 1 ? 'group' : 'groups'}
-          </Text>
+          {/* Middle: Title */}
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 }}>
+            <Text
+              style={[
+                styles.headerTitle,
+                {
+                  color: isDark ? '#FFFFFF' : '#0F172A',
+                  fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+                },
+              ]}
+              numberOfLines={1}
+            >
+              Care Cells
+            </Text>
+            <Text style={[styles.headerSubtitle, { color: isDark ? '#A1A1AA' : '#64748B' }]} numberOfLines={1}>
+              {activeCellsCount} active fellowship {activeCellsCount === 1 ? 'group' : 'groups'}
+            </Text>
+          </View>
+
+          {/* Right: + New Button */}
+          <View style={{ minWidth: 40, alignItems: 'flex-end', justifyContent: 'center' }}>
+            {isPlatformSuperAdmin ? (
+              <TouchableOpacity
+                style={[
+                  styles.quickAddHeaderBtn,
+                  {
+                    backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                    borderColor: isDark ? '#FFFFFF' : '#000000',
+                  },
+                ]}
+                onPress={() => {
+                  setEditingCell(null);
+                  setCreateCellModalVisible(true);
+                }}
+                activeOpacity={0.8}
+              >
+                <Plus size={14} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.5} style={{ marginRight: 4 }} />
+                <Text style={[styles.quickAddHeaderBtnTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+                  New Cell
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={{ width: 40, height: 40 }} />
+            )}
+          </View>
         </View>
-
-        {/* Quick Add Button (Super Admin Only) */}
-        {isPlatformSuperAdmin ? (
-          <TouchableOpacity
-            style={[styles.quickAddHeaderBtn, { backgroundColor: primaryBtnBg }]}
-            onPress={() => {
-              setEditingCell(null);
-              setCreateCellModalVisible(true);
-            }}
-            activeOpacity={0.85}
-          >
-            <Plus size={16} color={primaryBtnText} strokeWidth={2.5} style={{ marginRight: 5 }} />
-            <Text style={[styles.quickAddHeaderBtnTxt, { color: primaryBtnText }]}>New Cell</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={{ width: 42, height: 42 }} />
-        )}
       </View>
 
       {/* Segmented Subtab Navigation Bar */}
@@ -242,6 +286,14 @@ export default function AdminCareCellsHub() {
 
         {activeSubTab === 'members' && (
           <CareCellMembersTab
+            cells={cells}
+            selectedCellId={selectedCellId}
+            onSelectCellId={setSelectedCellId}
+          />
+        )}
+
+        {activeSubTab === 'locations' && (
+          <CareCellMemberLocationsTab
             cells={cells}
             selectedCellId={selectedCellId}
             onSelectCellId={setSelectedCellId}
@@ -335,15 +387,14 @@ const styles = createAdminThemedStyles({
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,
-    backgroundColor: 'transparent',
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   circularBackBtn: {
-    width: 42,
-    height: 42,
+    width: 40,
+    height: 40,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -354,35 +405,34 @@ const styles = createAdminThemedStyles({
     paddingHorizontal: 8,
   },
   headerTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '800',
-    color: '#0F172A',
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    textAlign: 'center',
     letterSpacing: -0.4,
   },
   headerSubtitle: {
-    fontSize: 12,
-    color: '#64748B',
+    fontSize: 11.5,
     fontWeight: '500',
     marginTop: 1,
+    textAlign: 'center',
   },
   quickAddHeaderBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0F172A',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 20,
+    justifyContent: 'center',
+    paddingHorizontal: 13,
+    paddingVertical: 7.5,
+    borderRadius: 999,
+    borderWidth: 1.5,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
     elevation: 2,
   },
   quickAddHeaderBtnTxt: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '800',
-    color: '#FFFFFF',
   },
   tabBarContainer: {
     marginBottom: 8,

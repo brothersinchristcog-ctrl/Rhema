@@ -16,6 +16,8 @@ import {
   MemberVisitResponseStatus,
   VisitStatus,
   AttendanceStatus,
+  VisitRoutePoint,
+  PreselectedVisitMember,
 } from '../types/CareCellTypes';
 
 /**
@@ -54,18 +56,27 @@ function sanitizeForFirestore<T>(data: T): T {
  * Known approximate coordinates for mandals & regions in Kurnool / Nandyal district
  */
 export const KNOWN_REGION_COORDS: Record<string, { lat: number; lng: number; radiusKm: number }> = {
-  koilakuntla: { lat: 15.2333, lng: 78.3167, radiusKm: 25 },
-  kollakuntla: { lat: 15.2333, lng: 78.3167, radiusKm: 25 },
-  owk: { lat: 15.2167, lng: 78.1167, radiusKm: 18 },
-  sivavaram: { lat: 15.2600, lng: 78.3300, radiusKm: 15 },
-  singanapalli: { lat: 15.3500, lng: 78.2800, radiusKm: 15 },
-  banaganapalle: { lat: 15.3200, lng: 78.2300, radiusKm: 20 },
-  kurnool: { lat: 15.8281, lng: 78.0373, radiusKm: 15 },
-  nandyal: { lat: 15.4770, lng: 78.4836, radiusKm: 18 },
-  dhone: { lat: 15.4200, lng: 77.8700, radiusKm: 18 },
-  allagadda: { lat: 15.1300, lng: 78.5100, radiusKm: 18 },
-  bethamcherla: { lat: 15.4700, lng: 78.1600, radiusKm: 18 },
+  koilakuntla: { lat: 15.2333, lng: 78.3167, radiusKm: 3.5 },
+  koilkuntla: { lat: 15.2333, lng: 78.3167, radiusKm: 3.5 },
+  kollakuntla: { lat: 15.2333, lng: 78.3167, radiusKm: 3.5 },
+  owk: { lat: 15.2167, lng: 78.1167, radiusKm: 4.0 },
+  sivavaram: { lat: 15.2600, lng: 78.3300, radiusKm: 2.5 },
+  singanapalli: { lat: 15.3500, lng: 78.2800, radiusKm: 3.0 },
+  banaganapalle: { lat: 15.3200, lng: 78.2300, radiusKm: 4.0 },
+  kurnool: { lat: 15.8281, lng: 78.0373, radiusKm: 8.0 },
+  nandyal: { lat: 15.4770, lng: 78.4836, radiusKm: 8.0 },
+  dhone: { lat: 15.4200, lng: 77.8700, radiusKm: 5.0 },
+  allagadda: { lat: 15.1300, lng: 78.5100, radiusKm: 5.0 },
+  bethamcherla: { lat: 15.4700, lng: 78.1600, radiusKm: 5.0 },
 };
+
+export function normalizeLocalityToken(token: string): string {
+  const t = token.toLowerCase().trim();
+  if (t === 'koilkuntla' || t === 'koilakuntla' || t === 'kollakuntla') {
+    return 'koilakuntla';
+  }
+  return t;
+}
 
 export function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371; // Earth's radius in km
@@ -107,14 +118,16 @@ export function isMemberInLocation(
     targetTokens.push(rawTarget);
   }
 
+  const normalizedTargetTokens = targetTokens.map(normalizeLocalityToken);
+
   // 1. Textual match against all saved member address & location fields
   const memberLocationStrings = [
-    member.city,
-    member.mailingCity,
     member.village,
-    member.mandal,
     member.locality,
     member.area,
+    member.city,
+    member.mailingCity,
+    member.mandal,
     member.district,
     member.address,
     member.street,
@@ -124,20 +137,36 @@ export function isMemberInLocation(
     .map((s) => (s as string).trim().toLowerCase());
 
   const hasTextMatch = memberLocationStrings.some((fieldStr) => {
-    return targetTokens.some((tok) => fieldStr.includes(tok) || tok.includes(fieldStr));
+    const normField = normalizeLocalityToken(fieldStr);
+    return normalizedTargetTokens.some(
+      (tok) => normField.includes(tok) || tok.includes(normField) || fieldStr.includes(tok) || tok.includes(fieldStr)
+    );
   });
 
   if (hasTextMatch) {
     return true;
   }
 
+  // If member has an explicit locality or village (e.g. "Sivavaram") that did NOT match the target ("Koilakuntla"),
+  // do not let broad GPS proximity pull them into a different village.
+  const explicitMemberLocality = (member.village || member.locality || '').trim().toLowerCase();
+  if (explicitMemberLocality.length > 0) {
+    const normExplicit = normalizeLocalityToken(explicitMemberLocality);
+    const matchesExplicit = normalizedTargetTokens.some(
+      (tok) => normExplicit.includes(tok) || tok.includes(normExplicit)
+    );
+    if (!matchesExplicit) {
+      return false;
+    }
+  }
+
   // 2. GPS / Google Maps coordinates proximity match
   let centerLat = targetLat;
   let centerLng = targetLng;
-  let maxRadius = 20; // 20 km radius for mandal matching
+  let maxRadius = 3.5; // Tighter radius for village boundary matching
 
   if (centerLat === undefined || centerLng === undefined) {
-    for (const tok of targetTokens) {
+    for (const tok of normalizedTargetTokens) {
       if (KNOWN_REGION_COORDS[tok]) {
         centerLat = KNOWN_REGION_COORDS[tok].lat;
         centerLng = KNOWN_REGION_COORDS[tok].lng;
@@ -241,7 +270,7 @@ class CareCellService {
       let maxNum = 0;
       snap.docs.forEach((doc) => {
         const code = String(doc.data()?.cellCode || '').trim();
-        const match = code.match(/^Rhema_CareCell-(\d+)$/i);
+        const match = code.match(/(\d+)/);
         if (match) {
           const parsed = parseInt(match[1], 10);
           if (!isNaN(parsed) && parsed > maxNum) {
@@ -251,7 +280,7 @@ class CareCellService {
       });
 
       let candidateNum = maxNum + 1;
-      let candidateCode = `Rhema_CareCell-${String(candidateNum).padStart(3, '0')}`;
+      let candidateCode = `Rhema-CC-${String(candidateNum).padStart(3, '0')}`;
 
       // Extra safety check in case of custom or manual codes
       let collision = true;
@@ -261,14 +290,14 @@ class CareCellService {
           collision = false;
         } else {
           candidateNum++;
-          candidateCode = `Rhema_CareCell-${String(candidateNum).padStart(3, '0')}`;
+          candidateCode = `Rhema-CC-${String(candidateNum).padStart(3, '0')}`;
         }
       }
 
       return candidateCode;
     } catch (error) {
       console.error('Error generating Care Cell code:', error);
-      return 'Rhema_CareCell-001';
+      return 'Rhema-CC-001';
     }
   }
 
@@ -1280,19 +1309,34 @@ class CareCellService {
       createdBy: string;
       createdByName?: string;
       targetMemberIds?: string[];
+      assignedLeaderId?: string;
+      assignedLeaderName?: string;
+      routeStops?: VisitRoutePoint[];
+      preselectedMembers?: PreselectedVisitMember[];
+      initialStatus?: VisitStatus;
     }
   ): Promise<string> {
     const activeChurchId = churchId || (await this.getChurchId());
     const col = await this.getVisitsRef(activeChurchId);
     const docRef = col.doc();
 
-    // 1. Fetch all active members assigned to this specific Care Cell
-    const allCellMembers = await this.getActiveCellMemberships(activeChurchId, data.cellId);
+    // 1. Fetch target members: either from preselectedMembers or cell memberships
+    let targetMembers: Array<{
+      memberId: string;
+      memberName: string;
+      memberPhone?: string;
+      memberPhoto?: string;
+      preferredVisitTime?: string;
+    }> = [];
 
-    // Filter to selected members if specific members were selected
-    const targetMembers = data.targetMemberIds && data.targetMemberIds.length > 0
-      ? allCellMembers.filter((mem) => data.targetMemberIds!.includes(mem.memberId))
-      : allCellMembers;
+    if (data.preselectedMembers && data.preselectedMembers.length > 0) {
+      targetMembers = data.preselectedMembers;
+    } else if (data.cellId && data.cellId !== 'DIRECT') {
+      const allCellMembers = await this.getActiveCellMemberships(activeChurchId, data.cellId);
+      targetMembers = data.targetMemberIds && data.targetMemberIds.length > 0
+        ? allCellMembers.filter((mem) => data.targetMemberIds!.includes(mem.memberId))
+        : allCellMembers;
+    }
 
     // 2. Initialize each target member's availability response as 'Pending'
     const responses: Record<string, CareCellVisitMemberResponse> = {};
@@ -1318,10 +1362,13 @@ class CareCellService {
       visitDate: data.visitDate,
       visitTime: data.visitTime,
       visitors: data.visitors,
-      status: 'Scheduled',
+      status: data.initialStatus || 'Scheduled',
       notificationSent: false,
       createdBy: data.createdBy,
       createdByName: data.createdByName || '',
+      assignedLeaderId: data.assignedLeaderId,
+      assignedLeaderName: data.assignedLeaderName,
+      routeStops: data.routeStops,
       totalMembersCount: targetMembers.length,
       acceptedCount: 0,
       declinedCount: 0,
@@ -1479,6 +1526,64 @@ class CareCellService {
         updatedAt: firestore.FieldValue.serverTimestamp(),
       })
     );
+
+    // Notify the respective Care Cell Leader / Admin of the member's response or preferred time
+    try {
+      const activeChurchId = churchId || (await this.getChurchId());
+      const cellCol = await this.getCareCellsRef(activeChurchId);
+      const cellDoc = await cellCol.doc(currentData.cellId).get();
+      const cellData = cellDoc.exists ? (cellDoc.data() as CareCell) : null;
+
+      const targetLeaderIds = new Set<string>();
+      if (cellData?.leaderId) targetLeaderIds.add(cellData.leaderId);
+      if (cellData?.assistantLeaderId) targetLeaderIds.add(cellData.assistantLeaderId);
+      if (currentData.assignedLeaderId) targetLeaderIds.add(currentData.assignedLeaderId);
+      if (targetLeaderIds.size === 0 && currentData.createdBy) {
+        targetLeaderIds.add(currentData.createdBy);
+      }
+
+      // Do not self-notify if member responding is the leader
+      targetLeaderIds.delete(memberId);
+
+      if (targetLeaderIds.size > 0) {
+        const notifBatch = firestore().batch();
+        const memberName = responses[memberId]?.memberName || 'Cell Member';
+        const actionWord = response === 'Accepted' ? 'accepted' : 'declined';
+        const timeNote = preferredTime ? ` with preferred time: ${preferredTime}` : '';
+
+        for (const leaderId of Array.from(targetLeaderIds)) {
+          const leaderNotifRef = firestore()
+            .collection(RHEMA_ROOT_COLLECTION)
+            .doc(activeChurchId)
+            .collection('members')
+            .doc(leaderId)
+            .collection('notifications')
+            .doc();
+
+          notifBatch.set(
+            leaderNotifRef,
+            sanitizeForFirestore({
+              id: leaderNotifRef.id,
+              type: 'care_cell_visit_response',
+              title: `🏡 Visit Response: ${memberName}`,
+              body: `${memberName} has ${actionWord} the visit on ${currentData.visitDate}${timeNote}.`,
+              visitId,
+              cellId: currentData.cellId,
+              cellName: currentData.cellName || '',
+              memberId,
+              memberName,
+              response,
+              preferredTime: preferredTime || '',
+              read: false,
+              createdAt: firestore.FieldValue.serverTimestamp(),
+            })
+          );
+        }
+        await notifBatch.commit();
+      }
+    } catch (leaderNotifErr) {
+      console.warn('⚠️ Non-fatal error notifying care cell leader of member visit response:', leaderNotifErr);
+    }
   }
 
   /**
@@ -1502,6 +1607,61 @@ class CareCellService {
   async deleteVisit(churchId: string | undefined, visitId: string): Promise<void> {
     const col = await this.getVisitsRef(churchId);
     await col.doc(visitId).delete();
+  }
+
+  /**
+   * Updates the sequential route stops for an existing visit in Firestore.
+   */
+  async updateVisitRouteStops(
+    churchId: string | undefined,
+    visitId: string,
+    routeStops: VisitRoutePoint[]
+  ): Promise<void> {
+    const activeChurchId = churchId || (await this.getChurchId());
+    const col = await this.getVisitsRef(activeChurchId);
+    await col.doc(visitId).update(
+      sanitizeForFirestore({
+        routeStops,
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+      })
+    );
+  }
+
+  /**
+   * Fetches visit history (past & upcoming) associated with a specific member across the church.
+   */
+  async getMemberVisitHistory(
+    churchId: string | undefined,
+    memberId: string,
+    memberPhone?: string
+  ): Promise<CareCellVisit[]> {
+    try {
+      const col = await this.getVisitsRef(churchId);
+      const snap = await col.get();
+      const list: CareCellVisit[] = [];
+
+      snap.docs.forEach((d: any) => {
+        const data = d.data() as CareCellVisit;
+        const inTargets = Array.isArray(data.targetMemberIds) && data.targetMemberIds.includes(memberId);
+        const inResponses = Boolean(data.responses && data.responses[memberId]);
+        const inRouteStops = Array.isArray(data.routeStops) && data.routeStops.some((s) => s.memberId === memberId);
+
+        if (inTargets || inResponses || inRouteStops) {
+          list.push({ id: d.id, ...data });
+        }
+      });
+
+      list.sort((a, b) => {
+        const tA = new Date(`${a.visitDate}T${a.visitTime || '00:00'}`).getTime();
+        const tB = new Date(`${b.visitDate}T${b.visitTime || '00:00'}`).getTime();
+        return tB - tA; // Most recent first
+      });
+
+      return list;
+    } catch (e) {
+      console.error('Error fetching member visit history:', e);
+      return [];
+    }
   }
 
   /**

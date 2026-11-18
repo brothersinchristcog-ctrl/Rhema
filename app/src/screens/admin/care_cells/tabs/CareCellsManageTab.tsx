@@ -39,7 +39,20 @@ import CareCellService from '../../../../services/CareCellService';
 import { useAuth } from '../../../../context/AuthContext';
 import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 import GrantAdminAccessModal from '../components/GrantAdminAccessModal';
-import { CareCell, CareCellStatus } from '../../../../types/CareCellTypes';
+import { CareCell, CareCellStatus, formatCareCellCode, formatCareCellDisplayName } from '../../../../types/CareCellTypes';
+
+function formatTime12Hour(time24?: string): string {
+  if (!time24) return '';
+  const trimmed = time24.trim();
+  if (/am|pm/i.test(trimmed)) return trimmed;
+  const match = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return trimmed;
+  let hours = parseInt(match[1], 10);
+  const minutes = match[2];
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12 || 12;
+  return `${hours}:${minutes} ${ampm}`;
+}
 
 const { width } = Dimensions.get('window');
 
@@ -198,7 +211,7 @@ export default function CareCellsManageTab({
         {/* Top Header Row */}
         <View style={styles.cardHeader}>
           <View style={styles.codeBadge}>
-            <Text style={styles.codeBadgeTxt}>{item.cellCode || 'Rhema_CareCell'}</Text>
+            <Text style={styles.codeBadgeTxt}>{formatCareCellCode(item.cellCode)}</Text>
           </View>
           <View
             style={[
@@ -222,7 +235,7 @@ export default function CareCellsManageTab({
         </View>
 
         {/* Name & Description */}
-        <Text style={styles.cellName}>{item.name}</Text>
+        <Text style={styles.cellName}>{formatCareCellDisplayName(item.name, item.cellCode)}</Text>
         {item.description ? (
           <Text style={styles.cellDesc} numberOfLines={2}>
             {item.description}
@@ -266,7 +279,10 @@ export default function CareCellsManageTab({
           </View>
           <View style={styles.metaItem}>
             <Clock size={13} color={secondaryText} style={{ marginRight: 4 }} />
-            <Text style={styles.metaTxt}>{item.meetingTime || '19:00'}{item.meetingEndTime ? ` – ${item.meetingEndTime}` : ''}</Text>
+            <Text style={styles.metaTxt}>
+              {formatTime12Hour(item.meetingTime) || '7:00 PM'}
+              {item.meetingEndTime ? ` – ${formatTime12Hour(item.meetingEndTime)}` : ''}
+            </Text>
           </View>
           {item.location ? (
             <View style={[styles.metaItem, { flex: 1 }]}>
@@ -863,7 +879,7 @@ const styles = createAdminThemedStyles({
     color: '#0F172A',
   },
   leaderRoleBadge: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 6,
     paddingVertical: 1,
     borderRadius: 4,
@@ -872,7 +888,7 @@ const styles = createAdminThemedStyles({
   leaderRoleBadgeTxt: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#1A2D5A',
+    color: '#334155',
   },
   leaderPhone: {
     fontSize: 11.5,
@@ -1061,9 +1077,9 @@ const styles = createAdminThemedStyles({
     marginRight: 6,
   },
   deleteCellCodeBadge: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderColor: '#CBD5E1',
     borderRadius: 6,
     paddingHorizontal: 6,
     paddingVertical: 2,
@@ -1072,7 +1088,7 @@ const styles = createAdminThemedStyles({
     fontSize: 10,
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     fontWeight: '700',
-    color: '#1E3A8A',
+    color: '#334155',
   },
   deleteDivider: {
     height: 1,
