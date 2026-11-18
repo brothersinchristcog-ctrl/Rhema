@@ -44,7 +44,6 @@ import {
   Footprints,
   ChevronLeft,
   ChevronRight,
-  ExternalLink,
   Crosshair,
   Clock,
   Save,
@@ -97,6 +96,7 @@ interface CareCellMapModalProps {
   onLogFollowup?: (member: CareCellMembership) => void;
   initialPlannedRouteIds?: string[];
   autoSelectRoute?: boolean;
+  autoStartNavigation?: boolean;
   headerSubtitleOverride?: string;
   onConfirmRoute?: (stops: VisitRoutePoint[]) => void;
   onSaveVisitRoute?: (stops: any[]) => void;
@@ -118,6 +118,7 @@ export default function CareCellMapModal({
   onLogFollowup,
   initialPlannedRouteIds,
   autoSelectRoute = false,
+  autoStartNavigation = false,
   headerSubtitleOverride,
   onConfirmRoute,
   onSaveVisitRoute,
@@ -622,15 +623,11 @@ export default function CareCellMapModal({
         consent: Boolean((m as EnrichedCareCellMembership).isVerifiedPin),
       };
       startInAppNavigation([singleStop]);
-    } else if (m.address || m.locality) {
-      const fallbackCity = cell?.location || 'India';
-      const query = encodeURIComponent(`${m.address || ''}, ${m.locality || fallbackCity}`);
-      const url = `https://www.google.com/maps/search/?api=1&query=${query}`;
-      Linking.openURL(url).catch(() => {
-        Alert.alert('Navigation Error', 'Could not open Google Maps.');
-      });
     } else {
-      Alert.alert('No Address', 'Member does not have GPS coordinates or an address saved.');
+      Alert.alert(
+        'Location Pending',
+        'This member does not have resolved GPS coordinates yet. Please make sure their village, city, or address is saved in their profile.'
+      );
     }
   };
 
@@ -719,6 +716,14 @@ export default function CareCellMapModal({
     [plannedStops]
   );
 
+  // Auto-launch in-app navigation if requested by caller (e.g. In-App Directions from Visits Tab)
+  useEffect(() => {
+    if (!visible || !autoStartNavigation || navActive) return;
+    if (plannedStops.length > 0) {
+      startInAppNavigation(plannedStops);
+    }
+  }, [visible, autoStartNavigation, plannedStops.length, navActive]);
+
   // Route optimization helper: Nearest Neighbor TSP
   const handleOptimizeRoute = () => {
     const candidateIds =
@@ -780,22 +785,6 @@ export default function CareCellMapModal({
       return;
     }
     Alert.alert('Missing Coordinates', 'The selected members for the visit route do not have GPS coordinates.');
-  };
-
-  // Optional external Google Maps launch from inside In-App Navigation HUD
-  const handleLaunchExternalGoogleMaps = async () => {
-    const remainingStops = navStops.slice(navStopIndex);
-    if (remainingStops.length === 0) return;
-    try {
-      await MemberLocationService.openGoogleMapsMultiStopRoute({
-        stops: remainingStops,
-        originLat: userNavCoords?.latitude,
-        originLng: userNavCoords?.longitude,
-        travelMode,
-      });
-    } catch (_) {
-      Alert.alert('Maps Error', 'Unable to open Google Maps.');
-    }
   };
 
   const handleConfirmAndSaveRoute = () => {
@@ -1162,12 +1151,19 @@ export default function CareCellMapModal({
                             </Text>
                           </View>
                           <TouchableOpacity
-                            style={styles.navExternalGmapsBtn}
-                            onPress={handleLaunchExternalGoogleMaps}
+                            style={[
+                              styles.navExternalGmapsBtn,
+                              {
+                                backgroundColor: secondaryBtnBg,
+                                borderColor: secondaryBtnBorder,
+                                borderWidth: 1,
+                              },
+                            ]}
+                            onPress={handleRecenterNavCamera}
                             activeOpacity={0.8}
                           >
-                            <ExternalLink size={12} color="#2563EB" style={{ marginRight: 4 }} />
-                            <Text style={styles.navExternalGmapsTxt}>Google Maps</Text>
+                            <Navigation size={12} color={secondaryBtnText} style={{ marginRight: 4 }} />
+                            <Text style={[styles.navExternalGmapsTxt, { color: secondaryBtnText }]}>Recenter View</Text>
                           </TouchableOpacity>
                         </View>
 

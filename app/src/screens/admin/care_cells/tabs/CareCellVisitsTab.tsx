@@ -29,7 +29,6 @@ import {
   MapPin,
   Navigation,
 } from 'lucide-react-native';
-import { Linking } from 'react-native';
 import CareCellService from '../../../../services/CareCellService';
 import { formatDateDisplay } from '../../../../utils/DateUtils';
 import { useAuth } from '../../../../context/AuthContext';
@@ -84,6 +83,7 @@ export default function CareCellVisitsTab({
     initialPlannedRouteIds: string[];
     visitMemberMeta: Record<string, { response?: any; preferredTime?: string }>;
     visitTitle: string;
+    autoStartNavigation?: boolean;
   }>({
     visible: false,
     cell: null,
@@ -92,9 +92,10 @@ export default function CareCellVisitsTab({
     initialPlannedRouteIds: [],
     visitMemberMeta: {},
     visitTitle: '',
+    autoStartNavigation: false,
   });
 
-  const handleOpenVisitRouteMap = async (visit: CareCellVisit) => {
+  const handleOpenVisitRouteMap = async (visit: CareCellVisit, autoStartNav = false) => {
     const targetCell = cells.find((c) => c.id === (visit.cellId || (visit as any).careCellId)) || cells[0];
     if (!targetCell) {
       Alert.alert('Care Cell Not Found', 'No Care Cell linked to this visit.');
@@ -135,7 +136,8 @@ export default function CareCellVisitsTab({
         members: cellMembers,
         initialPlannedRouteIds: routeIds,
         visitMemberMeta: meta,
-        visitTitle: `${visit.title} · Route Map`,
+        visitTitle: `${visit.title} · ${autoStartNav ? 'In-App Navigation' : 'Route Map'}`,
+        autoStartNavigation: autoStartNav,
       });
     } catch (e: any) {
       console.error('Error opening visit route map:', e);
@@ -156,32 +158,8 @@ export default function CareCellVisitsTab({
   };
 
   const handleDirectionsForVisit = async (visit: CareCellVisit) => {
-    if (visit.routeStops && visit.routeStops.length > 0) {
-      const validStops = visit.routeStops.filter(
-        (s) => typeof s.latitude === 'number' && typeof s.longitude === 'number'
-      );
-      if (validStops.length === 0) {
-        Alert.alert('No Coordinates', 'Visit stops do not have saved GPS coordinates.');
-        return;
-      }
-      if (validStops.length === 1) {
-        const url = `https://www.google.com/maps/dir/?api=1&destination=${validStops[0].latitude},${validStops[0].longitude}`;
-        Linking.openURL(url);
-        return;
-      }
-      const destination = `${validStops[validStops.length - 1].latitude},${validStops[validStops.length - 1].longitude}`;
-      const midWaypoints = validStops
-        .slice(0, validStops.length - 1)
-        .map((s) => `${s.latitude},${s.longitude}`)
-        .join('|');
-      const routeUrl = `https://www.google.com/maps/dir/?api=1&destination=${destination}&waypoints=${midWaypoints}&travelmode=driving`;
-      Linking.openURL(routeUrl).catch(() => {
-        Alert.alert('Navigation Error', 'Could not open Google Maps navigation.');
-      });
-      return;
-    }
-
-    handleOpenVisitRouteMap(visit);
+    // Always open Google Maps directly inside Rhema (no external browser or app redirect!)
+    handleOpenVisitRouteMap(visit, true);
   };
 
   const loadVisits = useCallback(async () => {
@@ -660,6 +638,7 @@ export default function CareCellVisitsTab({
           cell={routeMapState.cell}
           members={routeMapState.members}
           initialPlannedRouteIds={routeMapState.initialPlannedRouteIds}
+          autoStartNavigation={routeMapState.autoStartNavigation}
           visitMemberMeta={routeMapState.visitMemberMeta}
           visitDefaultTime={routeMapState.visit?.visitTime}
           onSaveVisitRoute={handleSaveOptimizedVisitRoute}
