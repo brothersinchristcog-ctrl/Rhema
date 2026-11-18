@@ -385,3 +385,57 @@ export interface KidsCurriculumLesson {
   createdAt?: any;
   updatedAt?: any;
 }
+
+// ─── PHASE 9: KIDS EVENTS, VBS & REWARDS/CERTIFICATES ─────────
+
+export interface KidsVBSHouse {
+  id: string; // e.g. "house_red"
+  name: string; // e.g. "Red Warriors"
+  nameTelugu: string; // "ఎరుపు వీరులు"
+  color: string; // "#EF4444"
+  score: number;
+  memberCount: number;
+}
+
+export interface KidsVBSEventRecord {
+  id: string;
+  eventId: string;
+  churchId: string;
+  title: string;
+  titleTelugu: string;
+  themeVerse: string;
+  themeVerseTelugu: string;
+  startDate: string;
+  endDate: string;
+  status: 'upcoming' | 'active' | 'completed';
+  houses: KidsVBSHouse[];
+  totalRegistered: number;
+  createdAt: any;
+  updatedAt: any;
+}
+
+export interface KidsBadge {
+  id: string;
+  title: string;
+  titleTelugu: string;
+  description: string;
+  emoji: string;
+  color: string;
+  pointsRequired: number;
+  category: 'attendance' | 'scripture' | 'quiz' | 'craft' | 'vbs';
+}
+
+export interface KidsCertificateData {
+  childName: string;
+  childId: string;
+  eventName: string;
+  eventNameTelugu: string;
+  tierOrHouse: string;
+  dateIssued: string;
+  academicYear: string;
+  directorName: string;
+  pastorName: string;
+  churchName: string;
+  verse: string;
+  verseTelugu: string;
+}

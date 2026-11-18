@@ -47,6 +47,9 @@ import {
   KidsQuiz,
   KidsWorshipSong,
   KidsCurriculumLesson,
+  KidsVBSEventRecord,
+  KidsBadge,
+  KidsCertificateData,
   generateDynamicPickupCode,
 } from '../../types/KidsMinistryTypes';
 import KidsSplashScreen from './components/KidsSplashScreen';
@@ -56,6 +59,7 @@ import KidsQuizPlayerModal from './components/KidsQuizPlayerModal';
 import KidsSongPlayerModal from './components/KidsSongPlayerModal';
 import KidsLessonDetailModal from './components/KidsLessonDetailModal';
 import AddGuardianModal from './components/AddGuardianModal';
+import KidsCertificateModal from './components/KidsCertificateModal';
 
 const { width } = Dimensions.get('window');
 
@@ -84,6 +88,9 @@ export default function KidsMinistryScreen({ navigation }: any) {
   const [selectedQuizForPlayer, setSelectedQuizForPlayer] = useState<KidsQuiz | null>(null);
   const [selectedSongForPlayer, setSelectedSongForPlayer] = useState<KidsWorshipSong | null>(null);
   const [selectedLessonForModal, setSelectedLessonForModal] = useState<KidsCurriculumLesson | null>(null);
+  const [selectedCertData, setSelectedCertData] = useState<KidsCertificateData | null>(null);
+  const [vbsEvent, setVbsEvent] = useState<KidsVBSEventRecord | null>(null);
+  const [kingdomBadges] = useState<KidsBadge[]>(() => KidsMinistryService.getKingdomBadges());
 
   // Navigation Tabs: 'home' | 'classroom' | 'lms' | 'pass'
   const [activeTab, setActiveTab] = useState<'home' | 'classroom' | 'lms' | 'pass'>('home');
@@ -134,6 +141,11 @@ export default function KidsMinistryScreen({ navigation }: any) {
       setCurriculum(curList);
     });
 
+    // Realtime subscription to VBS 2026
+    const unsubVBS = KidsMinistryService.subscribeToVBSEvent(churchId, ev => {
+      setVbsEvent(ev);
+    });
+
     // Realtime subscription to children
     const unsubscribe = KidsMinistryService.subscribeToFamilyChildren(
       churchId,
@@ -150,6 +162,7 @@ export default function KidsMinistryScreen({ navigation }: any) {
       unsubQuizzes();
       unsubSongs();
       unsubCurriculum();
+      unsubVBS();
       unsubscribe();
     };
   }, [member?.id, member?.accountId, churchId]);
@@ -524,6 +537,60 @@ export default function KidsMinistryScreen({ navigation }: any) {
                     <Text style={styles.gridSub}>Worship with Lyrics</Text>
                   </TouchableOpacity>
                 </View>
+              </View>
+
+              {/* Kingdom Rewards & Graduation Certificate Banner */}
+              <View style={styles.rewardsCard}>
+                <View style={styles.rewardsTopRow}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Award size={18} color="#FBBF24" />
+                    <Text style={styles.rewardsHeading}>KINGDOM REWARDS & BADGES</Text>
+                  </View>
+                  <View style={styles.pointsBadge}>
+                    <Text style={styles.pointsBadgeText}>270 PTS</Text>
+                  </View>
+                </View>
+
+                {/* Badges preview row */}
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.badgesScrollRow}>
+                  {kingdomBadges.map(badge => (
+                    <View key={badge.id} style={styles.badgeChip}>
+                      <Text style={styles.badgeEmoji}>{badge.emoji}</Text>
+                      <View>
+                        <Text style={styles.badgeTitle}>{badge.title}</Text>
+                        <Text style={styles.badgeTitleTe}>{badge.titleTelugu}</Text>
+                      </View>
+                    </View>
+                  ))}
+                </ScrollView>
+
+                {/* Certificate Launcher */}
+                <TouchableOpacity
+                  style={styles.certLaunchBtn}
+                  onPress={() => {
+                    if (!activeChild) return;
+                    setSelectedCertData({
+                      childName: activeChild.fullName,
+                      childId: activeChild.childId,
+                      eventName: 'Annual Sunday School Completion',
+                      eventNameTelugu: 'వార్షిక ఆదివార పాఠశాల దీవెన పత్రము',
+                      tierOrHouse: `${activeChild.assignedClassName || 'Primary Stars'} Tier`,
+                      dateIssued: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+                      academicYear: '2026-2027',
+                      directorName: 'Mrs. Sarah Jenkins',
+                      pastorName: 'Rev. Dr. P. Johnson',
+                      churchName: (member as any)?.churchName || 'Rhema Global Ministries',
+                      verse: 'Train up a child in the way he should go; even when he is old he will not depart from it.',
+                      verseTelugu: 'బాలుడు నడవవలసిన త్రోవను వానికి నేర్పుము; వాడు పెద్దవాడైనప్పుడు దానినుండి తొలగిపోడు. — సామెతలు 22:6',
+                    });
+                  }}
+                  activeOpacity={0.88}
+                >
+                  <Award size={16} color="#000000" />
+                  <Text style={styles.certLaunchBtnText}>
+                    View & Share {activeChild?.firstName}'s Official Certificate 🎓
+                  </Text>
+                </TouchableOpacity>
               </View>
 
               {/* Entrance & Dismissal Stations */}
@@ -1126,6 +1193,15 @@ export default function KidsMinistryScreen({ navigation }: any) {
           childName={activeChild.fullName}
           churchId={churchId}
           onClose={() => setShowAddGuardianModal(false)}
+        />
+      )}
+
+      {/* ── BILINGUAL GRADUATION & VBS CERTIFICATE MODAL ── */}
+      {selectedCertData && (
+        <KidsCertificateModal
+          visible={!!selectedCertData}
+          data={selectedCertData}
+          onClose={() => setSelectedCertData(null)}
         />
       )}
     </View>
@@ -2361,5 +2437,77 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(251, 191, 36, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  rewardsCard: {
+    backgroundColor: '#18181B',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#27272A',
+    marginTop: 14,
+    gap: 12,
+  },
+  rewardsTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  rewardsHeading: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FBBF24',
+    letterSpacing: 0.5,
+  },
+  pointsBadge: {
+    backgroundColor: 'rgba(251, 191, 36, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  pointsBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FBBF24',
+  },
+  badgesScrollRow: {
+    gap: 10,
+    paddingVertical: 2,
+  },
+  badgeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#09090B',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#27272A',
+    gap: 8,
+  },
+  badgeEmoji: {
+    fontSize: 20,
+  },
+  badgeTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  badgeTitleTe: {
+    fontSize: 10,
+    color: '#FBBF24',
+  },
+  certLaunchBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#FBBF24',
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  certLaunchBtnText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#000000',
   },
 });

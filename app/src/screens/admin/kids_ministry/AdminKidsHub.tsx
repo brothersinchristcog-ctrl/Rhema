@@ -44,6 +44,8 @@ import {
   KidsQuiz,
   KidsWorshipSong,
   KidsCurriculumLesson,
+  KidsVBSEventRecord,
+  KidsCertificateData,
 } from '../../../types/KidsMinistryTypes';
 import EnrollChildModal from '../../kids_ministry/components/EnrollChildModal';
 import EditClassModal from './components/EditClassModal';
@@ -53,6 +55,8 @@ import AdminTeachersModal from './components/AdminTeachersModal';
 import AdminContentManagerModal from './components/AdminContentManagerModal';
 import AdminCurriculumModal from './components/AdminCurriculumModal';
 import AdminAICopilotModal from './components/AdminAICopilotModal';
+import AdminVBSManagerModal from './components/AdminVBSManagerModal';
+import KidsCertificateModal from '../../kids_ministry/components/KidsCertificateModal';
 
 const { width } = Dimensions.get('window');
 
@@ -77,14 +81,17 @@ export default function AdminKidsHub({ navigation }: any) {
   const [showContentManagerModal, setShowContentManagerModal] = useState(false);
   const [showCurriculumModal, setShowCurriculumModal] = useState(false);
   const [showAICopilotModal, setShowAICopilotModal] = useState(false);
+  const [showVBSModal, setShowVBSModal] = useState(false);
+  const [selectedCertData, setSelectedCertData] = useState<KidsCertificateData | null>(null);
 
-  // Phase 5 & 6: Learning content & 52-week curriculum state
+  // Phase 5, 6 & 9: Learning content, 52-week curriculum & VBS state
   const [stories, setStories] = useState<KidsBibleStory[]>([]);
   const [quizzes, setQuizzes] = useState<KidsQuiz[]>([]);
   const [songs, setSongs] = useState<KidsWorshipSong[]>([]);
   const [curriculum, setCurriculum] = useState<KidsCurriculumLesson[]>([]);
+  const [vbsEvent, setVbsEvent] = useState<KidsVBSEventRecord | null>(null);
 
-  // Load children, classes, teachers, and curriculum (Realtime)
+  // Load children, classes, teachers, curriculum & VBS (Realtime)
   useEffect(() => {
     // 1. Realtime listener for Sunday School Classes
     const unsubClasses = KidsMinistryService.subscribeToClasses(churchId, classList => {
@@ -127,6 +134,11 @@ export default function AdminKidsHub({ navigation }: any) {
       setCurriculum(list);
     });
 
+    // 9. Realtime listener for VBS Events
+    const unsubVBS = KidsMinistryService.subscribeToVBSEvent(churchId, ev => {
+      setVbsEvent(ev);
+    });
+
     return () => {
       unsubClasses();
       unsubKids();
@@ -136,6 +148,7 @@ export default function AdminKidsHub({ navigation }: any) {
       unsubQuizzes();
       unsubSongs();
       unsubCurriculum();
+      unsubVBS();
     };
   }, [churchId]);
 
@@ -438,6 +451,25 @@ export default function AdminKidsHub({ navigation }: any) {
                     </Text>
                   </View>
                   <ChevronRight size={18} color="#C084FC" />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.portalCard, { borderColor: '#EF4444', borderWidth: 1 }]}
+                  onPress={() => setShowVBSModal(true)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.portalIconBox, { backgroundColor: 'rgba(239, 68, 68, 0.2)' }]}>
+                    <Award size={20} color="#EF4444" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.portalTitle, { color: '#EF4444' }]}>
+                      VBS & Summer Camps Hub (4 Houses)
+                    </Text>
+                    <Text style={styles.portalSub}>
+                      {vbsEvent?.title || 'Kingdom Champions VBS 2026'} · Live scores, house cheer & certificates
+                    </Text>
+                  </View>
+                  <ChevronRight size={18} color="#EF4444" />
                 </TouchableOpacity>
               </View>
             </>
@@ -851,6 +883,42 @@ export default function AdminKidsHub({ navigation }: any) {
           visible={showAICopilotModal}
           churchId={churchId}
           onClose={() => setShowAICopilotModal(false)}
+        />
+      )}
+
+      {/* ── VBS & SUMMER CAMPS MANAGER MODAL ── */}
+      {showVBSModal && (
+        <AdminVBSManagerModal
+          visible={showVBSModal}
+          event={vbsEvent}
+          churchId={churchId}
+          onClose={() => setShowVBSModal(false)}
+          onOpenCertificateGenerator={() => {
+            const sampleChild = children[0];
+            setSelectedCertData({
+              childName: sampleChild?.fullName || 'Ethan Joshua Raj',
+              childId: sampleChild?.childId || 'KID-2026-0001',
+              eventName: 'Kingdom Champions VBS 2026',
+              eventNameTelugu: 'పరలోక రాజ్య వీరులు VBS 2026',
+              tierOrHouse: 'Gold Lions (జయము)',
+              dateIssued: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+              academicYear: '2026-2027',
+              directorName: 'Mrs. Sarah Jenkins',
+              pastorName: 'Rev. Dr. P. Johnson',
+              churchName: (member as any)?.churchName || 'Rhema Global Ministries',
+              verse: 'Be strong in the Lord and in his mighty power. — Ephesians 6:10',
+              verseTelugu: 'ప్రభువు యొక్క మహాబలమునుబట్టి ఆయనయందు బలవంతులై యుండుడి. — ఎఫెసీ 6:10',
+            });
+          }}
+        />
+      )}
+
+      {/* ── BILINGUAL GRADUATION & VBS CERTIFICATE MODAL ── */}
+      {selectedCertData && (
+        <KidsCertificateModal
+          visible={!!selectedCertData}
+          data={selectedCertData}
+          onClose={() => setSelectedCertData(null)}
         />
       )}
     </View>

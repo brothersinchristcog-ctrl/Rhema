@@ -13,6 +13,10 @@ import {
   KidsMemoryVerse,
   KidsCurriculumLesson,
   CurriculumQuarter,
+  KidsVBSEventRecord,
+  KidsBadge,
+  KidsCertificateData,
+  KidsVBSHouse,
   calculateChildAge,
   getRecommendedClassTier,
   formatChildId,
@@ -149,6 +153,14 @@ class KidsMinistryService {
       .collection(RHEMA_ROOT_COLLECTION)
       .doc(cId)
       .collection('kids_curriculum');
+  }
+
+  private getEventsCollection(churchId?: string) {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getDb()
+      .collection(RHEMA_ROOT_COLLECTION)
+      .doc(cId)
+      .collection('kids_events');
   }
 
   /**
@@ -2719,6 +2731,147 @@ class KidsMinistryService {
   async deleteSong(churchId: string, docId: string): Promise<void> {
     const cId = churchId || RHEMA_CHURCH_ID;
     await this.getSongsCollection(cId).doc(docId).delete();
+  }
+
+  // ─── PHASE 9: KIDS EVENTS, VBS & REWARDS ───────────────────────
+
+  async getOrInitVBSEvent(churchId: string): Promise<KidsVBSEventRecord> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const eventsRef = this.getEventsCollection(cId);
+    const snap = await eventsRef.where('status', 'in', ['active', 'upcoming']).limit(1).get();
+
+    if (!snap.empty) {
+      const doc = snap.docs[0];
+      return { id: doc.id, ...(doc.data() as any) };
+    }
+
+    // Default VBS 2026 Event
+    const now = firestore.FieldValue.serverTimestamp();
+    const defaultVBS: Omit<KidsVBSEventRecord, 'id'> = {
+      eventId: 'VBS-2026',
+      churchId: cId,
+      title: 'Kingdom Champions: Living for Jesus VBS 2026',
+      titleTelugu: 'పరలోక రాజ్య వీరులు: క్రీస్తు కొరకు జీవించుట VBS 2026',
+      themeVerse: 'Be strong in the Lord and in his mighty power. — Ephesians 6:10',
+      themeVerseTelugu: 'ప్రభువు యొక్క మహాబలమునుబట్టి ఆయనయందు బలవంతులై యుండుడి. — ఎఫెసీ 6:10',
+      startDate: '2026-05-18',
+      endDate: '2026-05-23',
+      status: 'active',
+      houses: [
+        { id: 'house_red', name: 'Red Tigers (ధైర్యము)', nameTelugu: 'ఎరుపు పులులు', color: '#EF4444', score: 340, memberCount: 18 },
+        { id: 'house_blue', name: 'Blue Eagles (విశ్వాసము)', nameTelugu: 'నీలి గద్దలు', color: '#3B82F6', score: 395, memberCount: 22 },
+        { id: 'house_gold', name: 'Gold Lions (జయము)', nameTelugu: 'బంగారు సింహాలు', color: '#FBBF24', score: 410, memberCount: 20 },
+        { id: 'house_green', name: 'Emerald Champions (ప్రేమ)', nameTelugu: 'పచ్చటి వీరులు', color: '#10B981', score: 320, memberCount: 16 },
+      ],
+      totalRegistered: 76,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const docRef = await eventsRef.add(sanitizeForFirestore(defaultVBS));
+    return { id: docRef.id, ...defaultVBS } as any;
+  }
+
+  subscribeToVBSEvent(
+    churchId: string,
+    callback: (event: KidsVBSEventRecord | null) => void
+  ): () => void {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getEventsCollection(cId)
+      .where('status', 'in', ['active', 'upcoming'])
+      .limit(1)
+      .onSnapshot(
+        async snap => {
+          if (!snap || snap.empty) {
+            const seeded = await this.getOrInitVBSEvent(cId);
+            callback(seeded);
+            return;
+          }
+          const doc = snap.docs[0];
+          callback({ id: doc.id, ...(doc.data() as any) });
+        },
+        () => callback(null)
+      );
+  }
+
+  async updateVBSHouseScore(
+    churchId: string,
+    eventDocId: string,
+    houseId: string,
+    pointsToAdd: number
+  ): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const docRef = this.getEventsCollection(cId).doc(eventDocId);
+    const snap = await docRef.get();
+    if (!snap.exists) return;
+
+    const data = snap.data() as KidsVBSEventRecord;
+    const updatedHouses = (data.houses || []).map(h => {
+      if (h.id === houseId) {
+        return { ...h, score: Math.max(0, (h.score || 0) + pointsToAdd) };
+      }
+      return h;
+    });
+
+    await docRef.update({
+      houses: updatedHouses,
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    });
+  }
+
+  getKingdomBadges(): KidsBadge[] {
+    return [
+      {
+        id: 'badge_star',
+        title: 'Sunday Star Disciple',
+        titleTelugu: 'ఆదివార నక్షత్ర శిష్యుడు',
+        description: 'Earned for perfect Sunday School attendance streak (4 consecutive weeks).',
+        emoji: '⭐',
+        color: '#FBBF24',
+        pointsRequired: 100,
+        category: 'attendance',
+      },
+      {
+        id: 'badge_sword',
+        title: 'Scripture Sword Master',
+        titleTelugu: 'వాక్య ఖడ్గ వీరుడు',
+        description: 'Memorized and recited 5 full Scripture memory verses in Telugu and English.',
+        emoji: '⚔️',
+        color: '#60A5FA',
+        pointsRequired: 150,
+        category: 'scripture',
+      },
+      {
+        id: 'badge_quiz_champ',
+        title: 'Kingdom Trivia Champion',
+        titleTelugu: 'రాజ్య క్విజ్ విజేత',
+        description: 'Scored 100% on 3 interactive Sunday School Bible trivia quizzes.',
+        emoji: '🏆',
+        color: '#F59E0B',
+        pointsRequired: 200,
+        category: 'quiz',
+      },
+      {
+        id: 'badge_worship_hero',
+        title: 'Joyful Praise Leader',
+        titleTelugu: 'ఆనంద స్తుతి వీరుడు',
+        description: 'Learned motions to 5 action songs and led classroom worship.',
+        emoji: '🎵',
+        color: '#EC4899',
+        pointsRequired: 80,
+        category: 'craft',
+      },
+      {
+        id: 'badge_vbs_warrior',
+        title: 'VBS Kingdom Hero',
+        titleTelugu: 'VBS రాజ్య వీరుడు',
+        description: 'Graduated Vacation Bible School with House Spirit Honors.',
+        emoji: '👑',
+        color: '#10B981',
+        pointsRequired: 300,
+        category: 'vbs',
+      },
+    ];
   }
 }
 
