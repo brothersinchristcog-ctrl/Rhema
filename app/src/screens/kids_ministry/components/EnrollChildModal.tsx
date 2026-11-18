@@ -12,7 +12,8 @@ import {
   Alert,
   Platform,
 } from 'react-native';
-import { X, Camera, AlertTriangle, ShieldCheck, UserCheck, Plus, Check } from 'lucide-react-native';
+import { X, Camera, AlertTriangle, ShieldCheck, UserCheck, Plus, Check, Calendar } from 'lucide-react-native';
+import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import * as ImagePicker from 'expo-image-picker';
 import storage from '@react-native-firebase/storage';
 import {
@@ -84,6 +85,7 @@ export default function EnrollChildModal({
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [dob, setDob] = useState('2018-05-15'); // YYYY-MM-DD
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [gender, setGender] = useState<'male' | 'female'>('male');
   const [allergiesList, setAllergiesList] = useState<string[]>([]);
   const [customAllergy, setCustomAllergy] = useState('');
@@ -234,8 +236,10 @@ export default function EnrollChildModal({
     if (contact.dob) setDob(contact.dob);
     if (contact.gender) {
       const g = contact.gender.toLowerCase();
-      if (g === 'female' || contact.relation === 'Daughter') setGender('female');
+      if (g === 'female' || contact.relation === 'Daughter' || contact.Relation === 'Daughter') setGender('female');
       else setGender('male');
+    } else if (contact.relation === 'Daughter' || contact.Relation === 'Daughter') {
+      setGender('female');
     }
   };
 
@@ -328,14 +332,15 @@ export default function EnrollChildModal({
             {/* DOB & Gender */}
             <View style={styles.rowTwo}>
               <View style={styles.halfInput}>
-                <Text style={styles.inputLabel}>Date of Birth (YYYY-MM-DD)</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={dob}
-                  onChangeText={setDob}
-                  placeholder="2018-05-15"
-                  placeholderTextColor="#64748B"
-                />
+                <Text style={styles.inputLabel}>Date of Birth (Tap to select)</Text>
+                <TouchableOpacity
+                  style={styles.datePickerBtn}
+                  onPress={() => setShowDatePicker(true)}
+                  activeOpacity={0.8}
+                >
+                  <Calendar size={16} color="#FBBF24" style={{ marginRight: 8 }} />
+                  <Text style={styles.datePickerText}>{dob || 'Select Date'}</Text>
+                </TouchableOpacity>
               </View>
               <View style={styles.halfInput}>
                 <Text style={styles.inputLabel}>Gender</Text>
@@ -362,6 +367,9 @@ export default function EnrollChildModal({
                 <Text style={styles.tierLabel}>Recommended Sunday School Class:</Text>
                 <Text style={styles.tierName}>{recommendedTier.displayName}</Text>
                 <Text style={styles.tierAge}>Age: {calculatedAge} years ({recommendedTier.ageRange}) · {recommendedTier.roomDefault}</Text>
+                <Text style={styles.tierExplainer}>
+                  Auto-grouped by age ({calculatedAge} yrs) so your child is in the right class & curriculum.
+                </Text>
               </View>
               <ShieldCheck size={26} color="#10B981" />
             </View>
@@ -370,10 +378,12 @@ export default function EnrollChildModal({
           {/* Medical & Allergies */}
           <View style={styles.sectionCard}>
             <View style={styles.sectionLabelRow}>
-              <Text style={styles.sectionLabel}>2. MEDICAL & ALLERGY ALERTS</Text>
+              <Text style={styles.sectionLabel}>2. MEDICAL & ALLERGY ALERTS (OPTIONAL)</Text>
               <AlertTriangle size={14} color="#EF4444" />
             </View>
-            <Text style={styles.helpText}>Restricted to assigned teachers for emergency safety:</Text>
+            <Text style={styles.helpText}>
+              Informs teachers to safeguard your child during snacks & playtime (e.g. food allergies, asthma inhaler). Leave blank if none.
+            </Text>
 
             {/* Allergy Chips */}
             <View style={styles.chipsWrap}>
@@ -507,6 +517,21 @@ export default function EnrollChildModal({
             )}
           </TouchableOpacity>
         </ScrollView>
+
+        <DateTimePickerModal
+          isVisible={showDatePicker}
+          mode="date"
+          maximumDate={new Date()}
+          date={dob && !isNaN(Date.parse(dob)) ? new Date(dob) : new Date(2018, 4, 15)}
+          onConfirm={(selectedDate) => {
+            setShowDatePicker(false);
+            const year = selectedDate.getFullYear();
+            const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+            const day = String(selectedDate.getDate()).padStart(2, '0');
+            setDob(`${year}-${month}-${day}`);
+          }}
+          onCancel={() => setShowDatePicker(false)}
+        />
       </View>
     </Modal>
   );
@@ -652,6 +677,21 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
   },
+  datePickerBtn: {
+    backgroundColor: '#09090B',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  datePickerText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
   genderRow: {
     flexDirection: 'row',
     gap: 8,
@@ -709,6 +749,12 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#9CA3AF',
     marginTop: 2,
+  },
+  tierExplainer: {
+    fontSize: 10,
+    color: '#6EE7B7',
+    marginTop: 4,
+    fontStyle: 'italic',
   },
   chipsWrap: {
     flexDirection: 'row',
