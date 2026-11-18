@@ -879,7 +879,7 @@ const styles = createAdminThemedStyles({
     color: '#0F172A',
   },
   leaderRoleBadge: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 6,
     paddingVertical: 1,
     borderRadius: 4,
@@ -888,7 +888,7 @@ const styles = createAdminThemedStyles({
   leaderRoleBadgeTxt: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#1A2D5A',
+    color: '#334155',
   },
   leaderPhone: {
     fontSize: 11.5,
@@ -1077,9 +1077,9 @@ const styles = createAdminThemedStyles({
     marginRight: 6,
   },
   deleteCellCodeBadge: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderColor: '#CBD5E1',
     borderRadius: 6,
     paddingHorizontal: 6,
     paddingVertical: 2,
@@ -1088,7 +1088,7 @@ const styles = createAdminThemedStyles({
     fontSize: 10,
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     fontWeight: '700',
-    color: '#1E3A8A',
+    color: '#334155',
   },
   deleteDivider: {
     height: 1,

@@ -310,8 +310,8 @@ export default function MemberLookupModal({
               {item.name}
             </Text>
             {item.memberCode ? (
-              <View style={[styles.memberCodeBadge, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF', borderColor: isDark ? 'rgba(59, 130, 246, 0.3)' : '#BFDBFE' }]}>
-                <Text style={[styles.memberCodeBadgeTxt, { color: isDark ? '#93C5FD' : '#1D4ED8' }]}>{item.memberCode}</Text>
+              <View style={[styles.memberCodeBadge, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1', borderWidth: 1 }]}>
+                <Text style={[styles.memberCodeBadgeTxt, { color: isDark ? '#E4E4E7' : '#334155' }]}>{item.memberCode}</Text>
               </View>
             ) : null}
             {item.userType && item.userType.toUpperCase().includes('ADMIN') && (
@@ -330,9 +330,9 @@ export default function MemberLookupModal({
 
           {/* Locality & Address */}
           {item.locality ? (
-            <View style={styles.localityTagRow}>
-              <MapPin size={10} color="#1A2D5A" style={{ marginRight: 3 }} />
-              <Text style={styles.localityTagRowTxt}>{item.locality}</Text>
+            <View style={[styles.localityTagRow, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9' }]}>
+              <MapPin size={10} color={isDark ? '#A1A1AA' : '#64748B'} style={{ marginRight: 3 }} />
+              <Text style={[styles.localityTagRowTxt, { color: isDark ? '#E4E4E7' : '#334155' }]}>{item.locality}</Text>
             </View>
           ) : null}
 
@@ -418,14 +418,23 @@ export default function MemberLookupModal({
 
           {/* Location-Based Filter Banner */}
           {targetLocation && targetLocation.trim().length > 0 && (
-            <View style={styles.targetLocationBanner}>
+            <View
+              style={[
+                styles.targetLocationBanner,
+                {
+                  backgroundColor: isDark ? '#18181B' : '#F8FAFC',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1',
+                  borderWidth: 1.2,
+                },
+              ]}
+            >
               <View style={styles.targetLocationLeft}>
-                <MapPin size={16} color={primaryText} />
+                <MapPin size={16} color={isDark ? '#E4E4E7' : '#0F172A'} />
                 <View style={{ marginLeft: 8, flex: 1 }}>
-                  <Text style={styles.targetLocationTitle}>
+                  <Text style={[styles.targetLocationTitle, { color: isDark ? '#FFFFFF' : '#0F172A', fontWeight: '700' }]}>
                     Showing members in: {targetLocation}
                   </Text>
-                  <Text style={styles.targetLocationSub}>
+                  <Text style={[styles.targetLocationSub, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
                     {filterByLocation
                       ? `Matching saved residential locations (${filteredMembers.length} found)`
                       : 'Showing all church members regardless of location'}
@@ -435,7 +444,17 @@ export default function MemberLookupModal({
               <TouchableOpacity
                 style={[
                   styles.locationToggleBtn,
-                  filterByLocation ? { backgroundColor: primaryBtnBg } : styles.locationToggleBtnInactive,
+                  filterByLocation
+                    ? {
+                        backgroundColor: primaryBtnBg,
+                        borderColor: primaryBtnBg,
+                        borderWidth: 1,
+                      }
+                    : {
+                        backgroundColor: secondaryBtnBg,
+                        borderColor: secondaryBtnBorder,
+                        borderWidth: 1,
+                      },
                 ]}
                 onPress={() => setFilterByLocation(!filterByLocation)}
                 activeOpacity={0.8}
@@ -443,7 +462,10 @@ export default function MemberLookupModal({
                 <Text
                   style={[
                     styles.locationToggleTxt,
-                    filterByLocation ? { color: primaryBtnText } : styles.locationToggleTxtInactive,
+                    {
+                      color: filterByLocation ? primaryBtnText : secondaryBtnText,
+                      fontWeight: '800',
+                    },
                   ]}
                 >
                   {filterByLocation ? 'Location: ON' : 'Show All'}
@@ -548,14 +570,31 @@ export default function MemberLookupModal({
               <TouchableOpacity
                 style={[
                   styles.confirmBtn,
-                  { backgroundColor: primaryBtnBg },
-                  selectedMap.size === 0 && styles.confirmBtnDisabled,
+                  {
+                    backgroundColor: selectedMap.size === 0
+                      ? (isDark ? '#27272A' : '#E2E8F0')
+                      : primaryBtnBg,
+                    borderColor: selectedMap.size === 0
+                      ? (isDark ? '#3F3F46' : '#CBD5E1')
+                      : primaryBtnBg,
+                    borderWidth: 1,
+                  },
                 ]}
                 disabled={selectedMap.size === 0}
                 onPress={handleConfirmMultiple}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.confirmBtnTxt, { color: selectedMap.size === 0 ? '#FFFFFF' : primaryBtnText }]}>
+                <Text
+                  style={[
+                    styles.confirmBtnTxt,
+                    {
+                      color: selectedMap.size === 0
+                        ? (isDark ? '#71717A' : '#94A3B8')
+                        : primaryBtnText,
+                      fontWeight: '800',
+                    },
+                  ]}
+                >
                   Assign Selected
                 </Text>
               </TouchableOpacity>
@@ -892,7 +931,7 @@ const styles = createAdminThemedStyles({
   localityTagRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -902,7 +941,7 @@ const styles = createAdminThemedStyles({
   localityTagRowTxt: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#1A2D5A',
+    color: '#475569',
   },
   memberAddressTxt: {
     fontSize: 11,
@@ -913,9 +952,9 @@ const styles = createAdminThemedStyles({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F8FAFC',
     borderWidth: 1.2,
-    borderColor: '#BFDBFE',
+    borderColor: '#CBD5E1',
     borderRadius: 14,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -931,11 +970,11 @@ const styles = createAdminThemedStyles({
   targetLocationTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#1E3A8A',
+    color: '#0F172A',
   },
   targetLocationSub: {
     fontSize: 11,
-    color: '#3B82F6',
+    color: '#64748B',
     marginTop: 1.5,
   },
   locationToggleBtn: {
@@ -963,7 +1002,7 @@ const styles = createAdminThemedStyles({
     marginTop: 14,
     paddingHorizontal: 16,
     paddingVertical: 9,
-    backgroundColor: '#1A2D5A',
+    backgroundColor: '#0F172A',
     borderRadius: 10,
   },
   showAllEmptyBtnTxt: {

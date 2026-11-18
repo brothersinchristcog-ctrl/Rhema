@@ -555,18 +555,19 @@ export default function CareCellVisitsTab({
                     style={[
                       styles.routeMapActionBtn,
                       {
-                        backgroundColor: isDark ? 'rgba(37, 99, 235, 0.2)' : '#EFF6FF',
-                        borderColor: isDark ? 'rgba(59, 130, 246, 0.35)' : '#BFDBFE',
+                        backgroundColor: secondaryBtnBg,
+                        borderColor: secondaryBtnBorder,
+                        borderWidth: 1.2,
                       },
                     ]}
                     onPress={() => handleOpenVisitRouteMap(item)}
                     activeOpacity={0.8}
                   >
-                    <MapPin size={13} color={isDark ? '#93C5FD' : '#1E3A8A'} style={{ marginRight: 4 }} />
+                    <MapPin size={13} color={secondaryBtnText} style={{ marginRight: 4 }} />
                     <Text
                       style={[
                         styles.routeMapActionBtnTxt,
-                        { color: isDark ? '#93C5FD' : '#1E3A8A' },
+                        { color: secondaryBtnText, fontWeight: '700' },
                       ]}
                     >
                       Route Map

@@ -834,20 +834,24 @@ export default function CareCellMapModal({
             <TouchableOpacity
               style={[
                 styles.modeToggleBtn,
-                viewMode === 'map' && { backgroundColor: isDark ? '#2563EB' : '#1E3A8A' },
+                viewMode === 'map'
+                  ? { backgroundColor: primaryBtnBg }
+                  : { backgroundColor: secondaryBtnBg },
               ]}
               onPress={() => setViewMode('map')}
             >
-              <MapIcon size={14} color={viewMode === 'map' ? '#FFFFFF' : secondaryText} />
+              <MapIcon size={14} color={viewMode === 'map' ? primaryBtnText : secondaryText} />
             </TouchableOpacity>
             <TouchableOpacity
               style={[
                 styles.modeToggleBtn,
-                viewMode === 'list' && { backgroundColor: isDark ? '#2563EB' : '#1E3A8A' },
+                viewMode === 'list'
+                  ? { backgroundColor: primaryBtnBg }
+                  : { backgroundColor: secondaryBtnBg },
               ]}
               onPress={() => setViewMode('list')}
             >
-              <List size={14} color={viewMode === 'list' ? '#FFFFFF' : secondaryText} />
+              <List size={14} color={viewMode === 'list' ? primaryBtnText : secondaryText} />
             </TouchableOpacity>
           </View>
         </View>
@@ -858,10 +862,15 @@ export default function CareCellMapModal({
             <TouchableOpacity
               style={[
                 styles.filterPill,
-                selectedLocality === 'ALL' && !filterNeedsVisitOnly && {
-                  backgroundColor: isDark ? '#2563EB' : '#1E3A8A',
-                  borderColor: isDark ? '#3B82F6' : '#1E3A8A',
-                },
+                selectedLocality === 'ALL' && !filterNeedsVisitOnly
+                  ? {
+                      backgroundColor: primaryBtnBg,
+                      borderColor: primaryBtnBg,
+                    }
+                  : {
+                      backgroundColor: secondaryBtnBg,
+                      borderColor: secondaryBtnBorder,
+                    },
               ]}
               onPress={() => {
                 setSelectedLocality('ALL');
@@ -871,7 +880,10 @@ export default function CareCellMapModal({
               <Text
                 style={[
                   styles.filterPillTxt,
-                  selectedLocality === 'ALL' && !filterNeedsVisitOnly && { color: '#FFFFFF', fontWeight: '700' },
+                  {
+                    color: selectedLocality === 'ALL' && !filterNeedsVisitOnly ? primaryBtnText : secondaryBtnText,
+                    fontWeight: '700',
+                  },
                 ]}
               >
                 All Members ({members.length})
@@ -909,18 +921,23 @@ export default function CareCellMapModal({
                   key={loc}
                   style={[
                     styles.filterPill,
-                    isSelected && {
-                      backgroundColor: isDark ? '#2563EB' : '#1E3A8A',
-                      borderColor: isDark ? '#3B82F6' : '#1E3A8A',
-                    },
+                    isSelected
+                      ? {
+                          backgroundColor: primaryBtnBg,
+                          borderColor: primaryBtnBg,
+                        }
+                      : {
+                          backgroundColor: secondaryBtnBg,
+                          borderColor: secondaryBtnBorder,
+                        },
                   ]}
                   onPress={() => {
                     setFilterNeedsVisitOnly(false);
                     setSelectedLocality(isSelected ? 'ALL' : loc);
                   }}
                 >
-                  <MapPin size={11} color={isSelected ? '#FFFFFF' : secondaryText} style={{ marginRight: 4 }} />
-                  <Text style={[styles.filterPillTxt, isSelected && { color: '#FFFFFF', fontWeight: '700' }]}>
+                  <MapPin size={11} color={isSelected ? primaryBtnText : secondaryText} style={{ marginRight: 4 }} />
+                  <Text style={[styles.filterPillTxt, { color: isSelected ? primaryBtnText : secondaryBtnText, fontWeight: '700' }]}>
                     {loc}
                   </Text>
                 </TouchableOpacity>
@@ -972,7 +989,7 @@ export default function CareCellMapModal({
                     ? '#059669'
                     : isInactive
                       ? '#DC2626'
-                      : '#1E3A8A';
+                      : (isDark ? '#E4E4E7' : '#0F172A');
 
                 return (
                   <Marker
@@ -1201,17 +1218,17 @@ export default function CareCellMapModal({
                           )}
 
                           <TouchableOpacity
-                            style={[styles.navNextPrimaryBtn, { backgroundColor: isDark ? '#2563EB' : '#1E3A8A' }]}
+                            style={[styles.navNextPrimaryBtn, { backgroundColor: primaryBtnBg }]}
                             onPress={() => handleAdvanceNavStop(1)}
                             activeOpacity={0.85}
                           >
-                            <Text style={styles.navNextPrimaryTxt}>
+                            <Text style={[styles.navNextPrimaryTxt, { color: primaryBtnText }]}>
                               {navStopIndex + 1 < navStops.length ? 'Arrived · Next Stop' : 'Complete Route'}
                             </Text>
                             {navStopIndex + 1 < navStops.length ? (
-                              <ChevronRight size={15} color="#FFFFFF" style={{ marginLeft: 3 }} />
+                              <ChevronRight size={15} color={primaryBtnText} style={{ marginLeft: 3 }} />
                             ) : (
-                              <Check size={15} color="#FFFFFF" strokeWidth={2.5} style={{ marginLeft: 4 }} />
+                              <Check size={15} color={primaryBtnText} strokeWidth={2.5} style={{ marginLeft: 4 }} />
                             )}
                           </TouchableOpacity>
                         </View>
@@ -1222,7 +1239,7 @@ export default function CareCellMapModal({
               </>
             ) : plannedRouteMemberIds.length > 0 ? (
               /* Floating Top Route Summary Bar */
-              <View style={[styles.floatingRouteBar, { backgroundColor: isDark ? '#18181B' : '#1E3A8A' }]}>
+              <View style={[styles.floatingRouteBar, { backgroundColor: isDark ? '#18181B' : '#0F172A' }]}>
                 <View style={styles.floatingRouteHeaderRow}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.floatingRouteTitle}>
@@ -1257,7 +1274,7 @@ export default function CareCellMapModal({
                       onPress={handleOptimizeRoute}
                       activeOpacity={0.85}
                     >
-                      <Sparkles size={13} color="#1E3A8A" style={{ marginRight: 5 }} />
+                      <Sparkles size={13} color={isDark ? '#FFFFFF' : '#0F172A'} style={{ marginRight: 5 }} />
                       <Text style={styles.floatingOptimizeBtnTxt}>Optimize</Text>
                     </TouchableOpacity>
                   )}
@@ -1484,15 +1501,15 @@ export default function CareCellMapModal({
                         <Text style={[styles.itemMemberName, { color: primaryText }]}>{item.memberName}</Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 2 }}>
                           {item.locality ? (
-                            <View style={styles.localityTag}>
-                              <MapPin size={10} color="#1E3A8A" />
-                              <Text style={styles.localityTagTxt}>{item.locality}</Text>
+                            <View style={[styles.localityTag, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9' }]}>
+                              <MapPin size={10} color={isDark ? '#E4E4E7' : '#475569'} />
+                              <Text style={[styles.localityTagTxt, { color: isDark ? '#E4E4E7' : '#334155' }]}>{item.locality}</Text>
                             </View>
                           ) : null}
                           {item.distanceKm != null ? (
-                            <View style={styles.distanceTag}>
-                              <Compass size={10} color="#2563EB" />
-                              <Text style={styles.distanceTagTxt}>{item.distanceKm} km away</Text>
+                            <View style={[styles.distanceTag, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : '#ECFDF5', borderColor: isDark ? 'rgba(16, 185, 129, 0.25)' : '#A7F3D0', borderWidth: 1 }]}>
+                              <Compass size={10} color={isDark ? '#34D399' : '#059669'} />
+                              <Text style={[styles.distanceTagTxt, { color: isDark ? '#34D399' : '#059669' }]}>{item.distanceKm} km away</Text>
                             </View>
                           ) : null}
                         </View>
@@ -1517,11 +1534,11 @@ export default function CareCellMapModal({
 
                     <View style={styles.listItemActionsRow}>
                       <TouchableOpacity
-                        style={[styles.itemDirectionsBtn, { backgroundColor: isDark ? '#2563EB' : '#1E3A8A' }]}
+                        style={[styles.itemDirectionsBtn, { backgroundColor: primaryBtnBg }]}
                         onPress={() => handleNavigateToMember(item)}
                       >
-                        <Navigation size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
-                        <Text style={styles.itemDirectionsBtnTxt}>Directions</Text>
+                        <Navigation size={13} color={primaryBtnText} style={{ marginRight: 4 }} />
+                        <Text style={[styles.itemDirectionsBtnTxt, { color: primaryBtnText }]}>Directions</Text>
                       </TouchableOpacity>
 
                       {item.memberPhone ? (
@@ -1893,7 +1910,7 @@ const styles = createAdminThemedStyles({
   localityTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 5,
@@ -1902,7 +1919,7 @@ const styles = createAdminThemedStyles({
   localityTagTxt: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#1E3A8A',
+    color: '#334155',
   },
   distanceTag: {
     flexDirection: 'row',

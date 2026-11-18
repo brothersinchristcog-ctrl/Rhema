@@ -234,8 +234,8 @@ export default function CareCellMembersTab({
           <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
             <Text style={styles.memberName}>{item.memberName}</Text>
             {item.memberCode ? (
-              <View style={[styles.memberCodeBadge, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF', borderColor: isDark ? 'rgba(59, 130, 246, 0.3)' : '#BFDBFE' }]}>
-                <Text style={[styles.memberCodeBadgeTxt, { color: isDark ? '#93C5FD' : '#1D4ED8' }]}>{item.memberCode}</Text>
+              <View style={[styles.memberCodeBadge, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1', borderWidth: 1 }]}>
+                <Text style={[styles.memberCodeBadgeTxt, { color: isDark ? '#E4E4E7' : '#334155' }]}>{item.memberCode}</Text>
               </View>
             ) : null}
           </View>
@@ -311,10 +311,15 @@ export default function CareCellMembersTab({
                 key={c.id}
                 style={[
                   styles.cellChip,
-                  isSelected && {
-                    backgroundColor: isDark ? '#2563EB' : '#1E3A8A',
-                    borderColor: isDark ? '#3B82F6' : '#1E3A8A',
-                  },
+                  isSelected
+                    ? {
+                        backgroundColor: primaryBtnBg,
+                        borderColor: primaryBtnBg,
+                      }
+                    : {
+                        backgroundColor: secondaryBtnBg,
+                        borderColor: secondaryBtnBorder,
+                      },
                 ]}
                 onPress={() => onSelectCellId(c.id)}
                 activeOpacity={0.75}
@@ -322,7 +327,10 @@ export default function CareCellMembersTab({
                 <Text
                   style={[
                     styles.cellChipTxt,
-                    isSelected && { color: '#FFFFFF', fontWeight: '800' },
+                    {
+                      color: isSelected ? primaryBtnText : secondaryBtnText,
+                      fontWeight: isSelected ? '800' : '600',
+                    },
                   ]}
                 >
                   {formatCareCellDisplayName(c.name, c.cellCode)}
@@ -364,12 +372,19 @@ export default function CareCellMembersTab({
               <Download size={15} color={secondaryBtnText} />
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.addMembersBtn, { backgroundColor: isDark ? '#2563EB' : '#1E3A8A' }]}
+              style={[
+                styles.addMembersBtn,
+                {
+                  backgroundColor: primaryBtnBg,
+                  borderColor: primaryBtnBg,
+                  borderWidth: 1,
+                },
+              ]}
               onPress={() => setAddMembersModalVisible(true)}
               activeOpacity={0.85}
             >
-              <UserPlus size={15} color="#FFFFFF" style={{ marginRight: 5 }} />
-              <Text style={[styles.addMembersBtnTxt, { color: '#FFFFFF' }]}>Add</Text>
+              <UserPlus size={15} color={primaryBtnText} style={{ marginRight: 5 }} />
+              <Text style={[styles.addMembersBtnTxt, { color: primaryBtnText }]}>Add</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -417,7 +432,7 @@ export default function CareCellMembersTab({
       {/* Member Lookup Modal for Adding Members (Multi-select) */}
       <MemberLookupModal
         visible={addMembersModalVisible}
-        title={`Add Members to ${activeCell?.cellCode || 'Cell'}`}
+        title={`Add Members to ${formatCareCellDisplayName(activeCell?.name, activeCell?.cellCode)}`}
         mode="multiple"
         currentCellId={activeCell?.id}
         currentCellName={activeCell?.cellCode}

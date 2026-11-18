@@ -74,6 +74,11 @@ export default function CareCellMemberLocationsTab({
 }: CareCellMemberLocationsTabProps) {
   const { isDark, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor } =
     useAdminTheme();
+  const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
+  const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
+  const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
+  const secondaryBtnBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
+  const secondaryBtnText = isDark ? '#E4E4E7' : '#334155';
   const { user, member } = useAuth();
   const mapRef = useRef<MapView | null>(null);
 
@@ -480,8 +485,8 @@ export default function CareCellMemberLocationsTab({
             style={[
               styles.filterPill,
               {
-                backgroundColor: activeCellId === 'ALL' ? (isDark ? '#3B82F6' : '#1a2d5a') : secondarySurface,
-                borderColor: activeCellId === 'ALL' ? '#3B82F6' : borderColor,
+                backgroundColor: activeCellId === 'ALL' ? primaryBtnBg : secondarySurface,
+                borderColor: activeCellId === 'ALL' ? primaryBtnBg : borderColor,
               },
             ]}
             onPress={() => setActiveCellId('ALL')}
@@ -489,7 +494,10 @@ export default function CareCellMemberLocationsTab({
             <Text
               style={[
                 styles.filterPillTxt,
-                { color: activeCellId === 'ALL' ? '#FFFFFF' : primaryText },
+                {
+                  color: activeCellId === 'ALL' ? primaryBtnText : primaryText,
+                  fontWeight: activeCellId === 'ALL' ? '800' : '600',
+                },
               ]}
             >
               All Cells ({records.length})
@@ -505,13 +513,21 @@ export default function CareCellMemberLocationsTab({
                 style={[
                   styles.filterPill,
                   {
-                    backgroundColor: isSel ? (isDark ? '#3B82F6' : '#1a2d5a') : secondarySurface,
-                    borderColor: isSel ? '#3B82F6' : borderColor,
+                    backgroundColor: isSel ? primaryBtnBg : secondarySurface,
+                    borderColor: isSel ? primaryBtnBg : borderColor,
                   },
                 ]}
                 onPress={() => setActiveCellId(c.id)}
               >
-                <Text style={[styles.filterPillTxt, { color: isSel ? '#FFFFFF' : primaryText }]}>
+                <Text
+                  style={[
+                    styles.filterPillTxt,
+                    {
+                      color: isSel ? primaryBtnText : primaryText,
+                      fontWeight: isSel ? '800' : '600',
+                    },
+                  ]}
+                >
                   {c.name} ({count})
                 </Text>
               </TouchableOpacity>
@@ -523,14 +539,14 @@ export default function CareCellMemberLocationsTab({
             style={[
               styles.filterPill,
               {
-                backgroundColor: statusFilter === 'scheduled' ? '#3B82F6' : secondarySurface,
-                borderColor: statusFilter === 'scheduled' ? '#3B82F6' : borderColor,
+                backgroundColor: statusFilter === 'scheduled' ? primaryBtnBg : secondarySurface,
+                borderColor: statusFilter === 'scheduled' ? primaryBtnBg : borderColor,
               },
             ]}
             onPress={() => setStatusFilter(statusFilter === 'scheduled' ? 'ALL' : 'scheduled')}
           >
-            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#3B82F6' }} />
-            <Text style={[styles.filterPillTxt, { color: statusFilter === 'scheduled' ? '#FFFFFF' : primaryText }]}>
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: statusFilter === 'scheduled' ? primaryBtnText : '#3B82F6' }} />
+            <Text style={[styles.filterPillTxt, { color: statusFilter === 'scheduled' ? primaryBtnText : primaryText, fontWeight: statusFilter === 'scheduled' ? '800' : '600' }]}>
               Scheduled
             </Text>
           </TouchableOpacity>
@@ -539,30 +555,30 @@ export default function CareCellMemberLocationsTab({
             style={[
               styles.filterPill,
               {
-                backgroundColor: statusFilter === 'awaiting_confirm' ? '#F59E0B' : secondarySurface,
-                borderColor: statusFilter === 'awaiting_confirm' ? '#F59E0B' : borderColor,
+                backgroundColor: statusFilter === 'awaiting_confirm' ? primaryBtnBg : secondarySurface,
+                borderColor: statusFilter === 'awaiting_confirm' ? primaryBtnBg : borderColor,
               },
             ]}
             onPress={() => setStatusFilter(statusFilter === 'awaiting_confirm' ? 'ALL' : 'awaiting_confirm')}
           >
-            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#F59E0B' }} />
-            <Text style={[styles.filterPillTxt, { color: statusFilter === 'awaiting_confirm' ? '#FFFFFF' : primaryText }]}>
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: statusFilter === 'awaiting_confirm' ? primaryBtnText : '#F59E0B' }} />
+            <Text style={[styles.filterPillTxt, { color: statusFilter === 'awaiting_confirm' ? primaryBtnText : primaryText, fontWeight: statusFilter === 'awaiting_confirm' ? '800' : '600' }]}>
               Awaiting Confirm
             </Text>
           </TouchableOpacity>
 
           {/* Real-time Member ID Backfill Action */}
           <TouchableOpacity
-            style={[styles.filterPill, { backgroundColor: isDark ? '#1E293B' : '#EFF6FF', borderColor: '#3B82F6' }]}
+            style={[styles.filterPill, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
             onPress={handleBackfillMemberIds}
             disabled={backfilling}
           >
             {backfilling ? (
-              <ActivityIndicator size="small" color="#3B82F6" />
+              <ActivityIndicator size="small" color={primaryText} />
             ) : (
               <>
-                <Hash size={13} color="#3B82F6" />
-                <Text style={[styles.filterPillTxt, { color: '#3B82F6' }]}>Sync Member IDs</Text>
+                <Hash size={13} color={primaryText} />
+                <Text style={[styles.filterPillTxt, { color: primaryText }]}>Sync Member IDs</Text>
               </>
             )}
           </TouchableOpacity>
@@ -1088,12 +1104,12 @@ export default function CareCellMemberLocationsTab({
           {multiSelectedMemberIds.length > 1 && (
             <View style={styles.multiPlanRow}>
               <TouchableOpacity
-                style={[styles.multiRouteBtn, { backgroundColor: isDark ? '#2563EB' : '#1a2d5a' }]}
+                style={[styles.multiRouteBtn, { backgroundColor: primaryBtnBg }]}
                 onPress={handlePlanCombinedRoute}
                 activeOpacity={0.85}
               >
-                <Route size={14} color="#FFFFFF" />
-                <Text style={styles.multiRouteTxt}>
+                <Route size={14} color={primaryBtnText} />
+                <Text style={[styles.multiRouteTxt, { color: primaryBtnText }]}>
                   Navigate Multi-Stop Route ({multiSelectedMemberIds.length} stops)
                 </Text>
               </TouchableOpacity>
