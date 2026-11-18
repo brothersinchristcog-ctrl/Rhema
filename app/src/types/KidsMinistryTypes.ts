@@ -7,6 +7,46 @@ export type KidsClassTier = 'nursery' | 'beginners' | 'primary' | 'junior' | 'te
 export type KidsEnrollmentStatus = 'pending' | 'approved' | 'active' | 'inactive' | 'graduated';
 export type KidsCustodyStatus = 'checked_out' | 'checked_in' | 'emergency_hold';
 export type KidsGender = 'male' | 'female';
+export type KidsTeacherRole = 'lead_teacher' | 'assistant_teacher' | 'volunteer' | 'director';
+
+export interface KidsTeacherRecord {
+  id: string; // Firestore doc ID
+  teacherId: string; // e.g. "TCH-2026-0001"
+  churchId: string;
+  memberId?: string;
+  name: string;
+  phone: string;
+  email?: string;
+  photoUrl?: string;
+  role: KidsTeacherRole;
+  assignedClassTier: KidsClassTier;
+  assignedClassName: string;
+  roomNumber?: string;
+  safeguardingStatus: 'verified' | 'pending' | 'in_review';
+  safeguardingVerifiedDate?: string;
+  backgroundCheckPassed: boolean;
+  faceEnrolled: boolean;
+  pinCode: string; // 4-digit PIN for clock-in e.g. "2026"
+  status: 'active' | 'on_leave' | 'substitute';
+  attendanceCount: number;
+  lastCheckInAt?: any;
+  createdAt: any;
+  updatedAt: any;
+}
+
+export interface KidsTeacherAttendanceRecord {
+  id: string;
+  teacherDocId: string;
+  teacherId: string;
+  teacherName: string;
+  date: string; // "YYYY-MM-DD"
+  checkInTime: any;
+  method: 'face_scan' | 'pin';
+  classTier: KidsClassTier;
+  className: string;
+  status: 'present' | 'late' | 'substitute';
+  createdAt: any;
+}
 
 export interface AuthorizedGuardian {
   id: string;

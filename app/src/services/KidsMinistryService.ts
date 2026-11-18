@@ -5,6 +5,8 @@ import {
   ChildRecord,
   KidsClassRecord,
   KidsClassTier,
+  KidsTeacherRecord,
+  KidsTeacherAttendanceRecord,
   calculateChildAge,
   getRecommendedClassTier,
   formatChildId,
@@ -85,6 +87,22 @@ class KidsMinistryService {
       .collection(RHEMA_ROOT_COLLECTION)
       .doc(cId)
       .collection('kids_audit_logs');
+  }
+
+  private getTeachersCollection(churchId?: string) {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getDb()
+      .collection(RHEMA_ROOT_COLLECTION)
+      .doc(cId)
+      .collection('kids_teachers');
+  }
+
+  private getTeacherAttendanceCollection(churchId?: string) {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getDb()
+      .collection(RHEMA_ROOT_COLLECTION)
+      .doc(cId)
+      .collection('kids_teacher_attendance');
   }
 
   /**
@@ -837,6 +855,306 @@ class KidsMinistryService {
     }
 
     return null;
+  }
+
+  /**
+   * Seeds default Sunday School teachers if collection is empty.
+   */
+  async getOrInitKidsTeachers(churchId?: string): Promise<KidsTeacherRecord[]> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const teachersRef = this.getTeachersCollection(cId);
+    const snap = await teachersRef.get();
+
+    if (!snap.empty) {
+      return snap.docs.map(doc => ({
+        id: doc.id,
+        ...(doc.data() as any),
+      }));
+    }
+
+    const now = firestore.FieldValue.serverTimestamp();
+    const defaults: Omit<KidsTeacherRecord, 'id'>[] = [
+      {
+        teacherId: 'TCH-2026-0001',
+        churchId: cId,
+        name: 'Bro. Sunil Babu',
+        phone: '+919876543211',
+        email: 'sunil.babu@rhema.org',
+        role: 'lead_teacher',
+        assignedClassTier: 'primary',
+        assignedClassName: 'Primary Stars',
+        roomNumber: 'Room 201',
+        safeguardingStatus: 'verified',
+        safeguardingVerifiedDate: '2026-01-10',
+        backgroundCheckPassed: true,
+        faceEnrolled: true,
+        pinCode: '1001',
+        status: 'active',
+        attendanceCount: 14,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        teacherId: 'TCH-2026-0002',
+        churchId: cId,
+        name: 'Bro. Rajesh Yeddula',
+        phone: '+919876543212',
+        email: 'rajesh.yeddula@rhema.org',
+        role: 'lead_teacher',
+        assignedClassTier: 'junior',
+        assignedClassName: 'Junior Champions',
+        roomNumber: 'Room 204',
+        safeguardingStatus: 'verified',
+        safeguardingVerifiedDate: '2026-01-08',
+        backgroundCheckPassed: true,
+        faceEnrolled: true,
+        pinCode: '1002',
+        status: 'active',
+        attendanceCount: 18,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        teacherId: 'TCH-2026-0003',
+        churchId: cId,
+        name: 'Sis. Jayanthi Admin',
+        phone: '+919876543213',
+        email: 'jayanthi@rhema.org',
+        role: 'lead_teacher',
+        assignedClassTier: 'beginners',
+        assignedClassName: 'Beginners Kingdom',
+        roomNumber: 'Room 102',
+        safeguardingStatus: 'verified',
+        safeguardingVerifiedDate: '2026-01-12',
+        backgroundCheckPassed: true,
+        faceEnrolled: true,
+        pinCode: '1003',
+        status: 'active',
+        attendanceCount: 16,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        teacherId: 'TCH-2026-0004',
+        churchId: cId,
+        name: 'Sis. Mary Grace',
+        phone: '+919876543214',
+        email: 'mary.grace@rhema.org',
+        role: 'lead_teacher',
+        assignedClassTier: 'nursery',
+        assignedClassName: 'Nursery Angels',
+        roomNumber: 'Room 101',
+        safeguardingStatus: 'verified',
+        safeguardingVerifiedDate: '2026-01-15',
+        backgroundCheckPassed: true,
+        faceEnrolled: true,
+        pinCode: '1004',
+        status: 'active',
+        attendanceCount: 12,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        teacherId: 'TCH-2026-0005',
+        churchId: cId,
+        name: 'Youth Pastor Caleb',
+        phone: '+919876543215',
+        email: 'caleb@rhema.org',
+        role: 'director',
+        assignedClassTier: 'teens',
+        assignedClassName: 'Teens for Christ',
+        roomNumber: 'Youth Hall',
+        safeguardingStatus: 'verified',
+        safeguardingVerifiedDate: '2026-01-05',
+        backgroundCheckPassed: true,
+        faceEnrolled: true,
+        pinCode: '1005',
+        status: 'active',
+        attendanceCount: 20,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ];
+
+    const results: KidsTeacherRecord[] = [];
+    for (const item of defaults) {
+      const docRef = await teachersRef.add(sanitizeForFirestore(item));
+      results.push({ id: docRef.id, ...item });
+    }
+    return results;
+  }
+
+  /**
+   * Realtime subscription to Sunday School teachers and volunteers.
+   */
+  subscribeToTeachers(
+    churchId: string,
+    callback: (teachers: KidsTeacherRecord[]) => void
+  ): () => void {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getTeachersCollection(cId).onSnapshot(
+      async snap => {
+        if (!snap || snap.empty) {
+          const seeded = await this.getOrInitKidsTeachers(cId);
+          callback(seeded);
+          return;
+        }
+        const list = snap.docs.map(doc => ({
+          id: doc.id,
+          ...(doc.data() as any),
+        }));
+        list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        callback(list);
+      },
+      err => {
+        console.warn('subscribeToTeachers error:', err);
+        callback([]);
+      }
+    );
+  }
+
+  /**
+   * Registers a new teacher or Sunday school volunteer.
+   */
+  async registerTeacher(
+    churchId: string,
+    data: {
+      name: string;
+      phone: string;
+      email?: string;
+      role: any;
+      assignedClassTier: KidsClassTier;
+      assignedClassName: string;
+      roomNumber?: string;
+      pinCode?: string;
+    }
+  ): Promise<KidsTeacherRecord> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const now = firestore.FieldValue.serverTimestamp();
+    const countSnap = await this.getTeachersCollection(cId).get();
+    const teacherId = `TCH-2026-${String(countSnap.size + 1).padStart(4, '0')}`;
+
+    const newRecord = {
+      teacherId,
+      churchId: cId,
+      name: data.name.trim(),
+      phone: data.phone.trim(),
+      email: data.email?.trim() || '',
+      role: data.role,
+      assignedClassTier: data.assignedClassTier,
+      assignedClassName: data.assignedClassName,
+      roomNumber: data.roomNumber || 'Room 201',
+      safeguardingStatus: 'verified' as const,
+      safeguardingVerifiedDate: new Date().toISOString().split('T')[0],
+      backgroundCheckPassed: true,
+      faceEnrolled: true,
+      pinCode: data.pinCode || '1234',
+      status: 'active' as const,
+      attendanceCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const docRef = await this.getTeachersCollection(cId).add(sanitizeForFirestore(newRecord));
+    return { id: docRef.id, ...newRecord };
+  }
+
+  /**
+   * Updates an existing teacher profile.
+   */
+  async updateTeacher(
+    churchId: string,
+    teacherDocId: string,
+    updates: Partial<KidsTeacherRecord>
+  ): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const cleanUpdates = sanitizeForFirestore({
+      ...updates,
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    });
+    await this.getTeachersCollection(cId).doc(teacherDocId).update(cleanUpdates);
+  }
+
+  /**
+   * Deletes a teacher from Sunday school roster.
+   */
+  async deleteTeacher(churchId: string, teacherDocId: string): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    await this.getTeachersCollection(cId).doc(teacherDocId).delete();
+  }
+
+  /**
+   * Clock in teacher with face scan or 4-digit PIN (blocks duplicate check-in today).
+   */
+  async teacherCheckIn(params: {
+    churchId?: string;
+    teacher: KidsTeacherRecord;
+    method: 'face_scan' | 'pin';
+  }): Promise<{ record: any; alreadyCheckedIn: boolean }> {
+    const cId = params.churchId || RHEMA_CHURCH_ID;
+    const today = new Date().toISOString().split('T')[0];
+    const attRef = this.getTeacherAttendanceCollection(cId);
+
+    const existingSnap = await attRef
+      .where('teacherDocId', '==', params.teacher.id)
+      .where('date', '==', today)
+      .get();
+
+    if (!existingSnap.empty) {
+      const existingDoc = existingSnap.docs[0];
+      return {
+        record: { id: existingDoc.id, ...(existingDoc.data() as any) },
+        alreadyCheckedIn: true,
+      };
+    }
+
+    const now = firestore.FieldValue.serverTimestamp();
+    const attData = {
+      teacherDocId: params.teacher.id,
+      teacherId: params.teacher.teacherId,
+      teacherName: params.teacher.name,
+      date: today,
+      checkInTime: now,
+      method: params.method,
+      classTier: params.teacher.assignedClassTier,
+      className: params.teacher.assignedClassName,
+      status: 'present',
+      createdAt: now,
+    };
+
+    const docRef = await attRef.add(sanitizeForFirestore(attData));
+
+    await this.getTeachersCollection(cId).doc(params.teacher.id).update({
+      attendanceCount: firestore.FieldValue.increment(1),
+      lastCheckInAt: now,
+      updatedAt: now,
+    });
+
+    return {
+      record: { id: docRef.id, ...attData },
+      alreadyCheckedIn: false,
+    };
+  }
+
+  /**
+   * Realtime subscription to today's teacher attendance.
+   */
+  subscribeToTodayTeacherAttendance(
+    churchId: string,
+    callback: (records: any[]) => void
+  ): () => void {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const today = new Date().toISOString().split('T')[0];
+    return this.getTeacherAttendanceCollection(cId)
+      .where('date', '==', today)
+      .onSnapshot(
+        snap => {
+          if (!snap) return callback([]);
+          const list = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+          callback(list);
+        },
+        () => callback([])
+      );
   }
 }
 

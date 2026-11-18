@@ -30,14 +30,17 @@ import {
   CheckCircle,
   GraduationCap,
   Edit3,
+  ShieldCheck,
+  Clock,
 } from 'lucide-react-native';
 import { useAuth } from '../../../context/AuthContext';
 import KidsMinistryService from '../../../services/KidsMinistryService';
-import { ChildRecord, KidsClassRecord } from '../../../types/KidsMinistryTypes';
+import { ChildRecord, KidsClassRecord, KidsTeacherRecord } from '../../../types/KidsMinistryTypes';
 import EnrollChildModal from '../../kids_ministry/components/EnrollChildModal';
 import EditClassModal from './components/EditClassModal';
 import ClassRosterModal from './components/ClassRosterModal';
 import PromotionManagerModal from './components/PromotionManagerModal';
+import AdminTeachersModal from './components/AdminTeachersModal';
 
 const { width } = Dimensions.get('window');
 
@@ -50,14 +53,17 @@ export default function AdminKidsHub({ navigation }: any) {
   const [activeTab, setActiveTab] = useState<'overview' | 'children' | 'classes' | 'curriculum'>('overview');
   const [children, setChildren] = useState<ChildRecord[]>([]);
   const [classes, setClasses] = useState<KidsClassRecord[]>([]);
+  const [teachers, setTeachers] = useState<KidsTeacherRecord[]>([]);
+  const [todayTeacherAttendance, setTodayTeacherAttendance] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [selectedClassForEdit, setSelectedClassForEdit] = useState<KidsClassRecord | null>(null);
   const [selectedClassForRoster, setSelectedClassForRoster] = useState<KidsClassRecord | null>(null);
   const [showPromotionModal, setShowPromotionModal] = useState(false);
+  const [showTeachersModal, setShowTeachersModal] = useState(false);
 
-  // Load children and classes (Realtime)
+  // Load children, classes, and teachers (Realtime)
   useEffect(() => {
     // 1. Realtime listener for Sunday School Classes
     const unsubClasses = KidsMinistryService.subscribeToClasses(churchId, classList => {
@@ -70,9 +76,21 @@ export default function AdminKidsHub({ navigation }: any) {
       setLoading(false);
     });
 
+    // 3. Realtime listener for teachers
+    const unsubTeachers = KidsMinistryService.subscribeToTeachers(churchId, list => {
+      setTeachers(list);
+    });
+
+    // 4. Realtime listener for today teacher clock-ins
+    const unsubTeacherAtt = KidsMinistryService.subscribeToTodayTeacherAttendance(churchId, list => {
+      setTodayTeacherAttendance(list);
+    });
+
     return () => {
       unsubClasses();
       unsubKids();
+      unsubTeachers();
+      unsubTeacherAtt();
     };
   }, [churchId]);
 
@@ -210,8 +228,10 @@ export default function AdminKidsHub({ navigation }: any) {
                   <Text style={styles.kpiLabel}>Checked-In Today</Text>
                 </View>
                 <View style={styles.kpiCard}>
-                  <Text style={[styles.kpiNumber, { color: '#FBBF24' }]}>5</Text>
-                  <Text style={styles.kpiLabel}>Sunday Classes</Text>
+                  <Text style={[styles.kpiNumber, { color: '#FBBF24' }]}>
+                    {todayTeacherAttendance.length}/{teachers.length || 5}
+                  </Text>
+                  <Text style={styles.kpiLabel}>Faculty On Duty</Text>
                 </View>
                 <View style={styles.kpiCard}>
                   <Text style={[styles.kpiNumber, { color: '#60A5FA' }]}>
@@ -237,7 +257,7 @@ export default function AdminKidsHub({ navigation }: any) {
                     <Text style={styles.stationTitle}>Face Scan Kiosk</Text>
                     <Text style={styles.stationSub}>Entrance rapid check-in & tokens</Text>
                     <View style={styles.stationPill}>
-                      <Text style={styles.stationPillText}>Launch Station &rsaquo;</Text>
+                      <Text style={styles.stationPillText}>Entrance &rsaquo;</Text>
                     </View>
                   </TouchableOpacity>
 
@@ -249,10 +269,25 @@ export default function AdminKidsHub({ navigation }: any) {
                     <View style={[styles.stationIconBox, { backgroundColor: 'rgba(52, 211, 153, 0.15)' }]}>
                       <UserCheck size={20} color="#34D399" />
                     </View>
-                    <Text style={styles.stationTitle}>Teacher Dismissal</Text>
-                    <Text style={styles.stationSub}>Exit scanner & guardian match</Text>
+                    <Text style={styles.stationTitle}>Teacher Exit</Text>
+                    <Text style={styles.stationSub}>Dismissal scanner & guardian match</Text>
                     <View style={[styles.stationPill, { backgroundColor: '#064E3B' }]}>
-                      <Text style={[styles.stationPillText, { color: '#34D399' }]}>Exit Scanner &rsaquo;</Text>
+                      <Text style={[styles.stationPillText, { color: '#34D399' }]}>Exit &rsaquo;</Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.stationCard}
+                    onPress={() => navigation.navigate('KidsTeacherKiosk')}
+                    activeOpacity={0.88}
+                  >
+                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(96, 165, 250, 0.15)' }]}>
+                      <Clock size={20} color="#60A5FA" />
+                    </View>
+                    <Text style={styles.stationTitle}>Faculty Clock-In</Text>
+                    <Text style={styles.stationSub}>Teacher biometric scan & PIN</Text>
+                    <View style={[styles.stationPill, { backgroundColor: '#1E3A8A' }]}>
+                      <Text style={[styles.stationPillText, { color: '#60A5FA' }]}>Clock In &rsaquo;</Text>
                     </View>
                   </TouchableOpacity>
                 </View>
@@ -288,6 +323,23 @@ export default function AdminKidsHub({ navigation }: any) {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.portalTitle}>Sunday School Classrooms & Capacities</Text>
                     <Text style={styles.portalSub}>Nursery to Teens tiers, teacher assignments & room limits</Text>
+                  </View>
+                  <ChevronRight size={18} color="#6B7280" />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.portalCard}
+                  onPress={() => setShowTeachersModal(true)}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.portalIconBox}>
+                    <ShieldCheck size={20} color="#34D399" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.portalTitle}>Sunday School Faculty & Safeguarding</Text>
+                    <Text style={styles.portalSub}>
+                      {teachers.length} Faculty · {todayTeacherAttendance.length} On Duty Today · Police Background Verified
+                    </Text>
                   </View>
                   <ChevronRight size={18} color="#6B7280" />
                 </TouchableOpacity>
@@ -597,6 +649,17 @@ export default function AdminKidsHub({ navigation }: any) {
           classes={classes}
           churchId={churchId}
           onClose={() => setShowPromotionModal(false)}
+        />
+      )}
+
+      {/* ── TEACHERS & SAFEGUARDING MODAL ── */}
+      {showTeachersModal && (
+        <AdminTeachersModal
+          visible={showTeachersModal}
+          teachers={teachers}
+          todayAttendance={todayTeacherAttendance}
+          churchId={churchId}
+          onClose={() => setShowTeachersModal(false)}
         />
       )}
     </View>

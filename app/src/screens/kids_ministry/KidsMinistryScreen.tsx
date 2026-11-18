@@ -416,6 +416,18 @@ export default function KidsMinistryScreen({ navigation }: any) {
                     <Text style={styles.stationTitle}>Teacher Exit</Text>
                     <Text style={styles.stationSub}>Guardian photo match</Text>
                   </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.stationCard}
+                    onPress={() => navigation.navigate('KidsTeacherKiosk')}
+                    activeOpacity={0.88}
+                  >
+                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(96, 165, 250, 0.15)' }]}>
+                      <Clock size={18} color="#60A5FA" />
+                    </View>
+                    <Text style={styles.stationTitle}>Faculty In</Text>
+                    <Text style={styles.stationSub}>Face scan & PIN</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             </>
