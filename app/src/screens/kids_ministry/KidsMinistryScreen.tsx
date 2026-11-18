@@ -25,6 +25,8 @@ import {
   Volume2,
   CheckCircle2,
   Sparkles,
+  Camera,
+  UserCheck,
 } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { useAuth } from '../../context/AuthContext';
@@ -364,6 +366,36 @@ export default function KidsMinistryScreen({ navigation }: any) {
                     <Text style={styles.gridEmoji}>🎵</Text>
                     <Text style={styles.gridTitle}>Action Songs</Text>
                     <Text style={styles.gridSub}>Worship with Lyrics</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Entrance & Dismissal Stations */}
+              <View style={{ marginTop: 16 }}>
+                <Text style={styles.sectionHeader}>SAFETY & ATTENDANCE STATIONS</Text>
+                <View style={styles.stationsRow}>
+                  <TouchableOpacity
+                    style={styles.stationCard}
+                    onPress={() => navigation.navigate('KidsFaceScanKiosk')}
+                    activeOpacity={0.88}
+                  >
+                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(251, 191, 36, 0.15)' }]}>
+                      <Camera size={18} color="#FBBF24" />
+                    </View>
+                    <Text style={styles.stationTitle}>Entrance Kiosk</Text>
+                    <Text style={styles.stationSub}>Face scan check-in</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.stationCard}
+                    onPress={() => navigation.navigate('KidsCheckOutScanner')}
+                    activeOpacity={0.88}
+                  >
+                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(52, 211, 153, 0.15)' }]}>
+                      <UserCheck size={18} color="#34D399" />
+                    </View>
+                    <Text style={styles.stationTitle}>Teacher Exit</Text>
+                    <Text style={styles.stationSub}>Guardian photo match</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -973,6 +1005,36 @@ const styles = StyleSheet.create({
   gridSub: {
     fontSize: 10,
     color: '#9CA3AF',
+  },
+  stationsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  stationCard: {
+    flex: 1,
+    backgroundColor: '#18181B',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#27272A',
+  },
+  stationIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  stationTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  stationSub: {
+    fontSize: 10,
+    color: '#9CA3AF',
+    marginTop: 2,
   },
   classTitleBig: {
     fontSize: 20,

@@ -205,6 +205,43 @@ export default function AdminKidsHub({ navigation }: any) {
                 </View>
               </View>
 
+              {/* Sunday Morning Stations */}
+              <View style={{ gap: 10, marginTop: 10, marginBottom: 6 }}>
+                <Text style={styles.sectionHeading}>SUNDAY MORNING ACTIVE STATIONS</Text>
+
+                <View style={styles.stationsRow}>
+                  <TouchableOpacity
+                    style={styles.stationCard}
+                    onPress={() => navigation.navigate('KidsFaceScanKiosk')}
+                    activeOpacity={0.88}
+                  >
+                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(251, 191, 36, 0.15)' }]}>
+                      <Camera size={20} color="#FBBF24" />
+                    </View>
+                    <Text style={styles.stationTitle}>Face Scan Kiosk</Text>
+                    <Text style={styles.stationSub}>Entrance rapid check-in & tokens</Text>
+                    <View style={styles.stationPill}>
+                      <Text style={styles.stationPillText}>Launch Station &rsaquo;</Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.stationCard}
+                    onPress={() => navigation.navigate('KidsCheckOutScanner')}
+                    activeOpacity={0.88}
+                  >
+                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(52, 211, 153, 0.15)' }]}>
+                      <UserCheck size={20} color="#34D399" />
+                    </View>
+                    <Text style={styles.stationTitle}>Teacher Dismissal</Text>
+                    <Text style={styles.stationSub}>Exit scanner & guardian match</Text>
+                    <View style={[styles.stationPill, { backgroundColor: '#064E3B' }]}>
+                      <Text style={[styles.stationPillText, { color: '#34D399' }]}>Exit Scanner &rsaquo;</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
               {/* Management Portals Navigation */}
               <View style={{ gap: 10, marginTop: 4 }}>
                 <Text style={styles.sectionHeading}>MANAGEMENT PORTALS</Text>
@@ -584,6 +621,51 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     letterSpacing: 1.5,
     marginBottom: 4,
+  },
+  stationsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  stationCard: {
+    flex: 1,
+    backgroundColor: '#18181B',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#27272A',
+  },
+  stationIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  stationTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 2,
+  },
+  stationSub: {
+    fontSize: 10,
+    color: '#9CA3AF',
+    lineHeight: 14,
+    minHeight: 28,
+  },
+  stationPill: {
+    marginTop: 8,
+    backgroundColor: 'rgba(251, 191, 36, 0.1)',
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  stationPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FBBF24',
   },
   portalCard: {
     backgroundColor: '#18181B',

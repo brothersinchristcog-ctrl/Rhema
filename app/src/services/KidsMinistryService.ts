@@ -63,6 +63,30 @@ class KidsMinistryService {
       .collection('kids_classes');
   }
 
+  private getSessionsCollection(churchId?: string) {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getDb()
+      .collection(RHEMA_ROOT_COLLECTION)
+      .doc(cId)
+      .collection('kids_sessions');
+  }
+
+  private getAttendanceCollection(churchId?: string) {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getDb()
+      .collection(RHEMA_ROOT_COLLECTION)
+      .doc(cId)
+      .collection('kids_attendance');
+  }
+
+  private getAuditLogsCollection(churchId?: string) {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getDb()
+      .collection(RHEMA_ROOT_COLLECTION)
+      .doc(cId)
+      .collection('kids_audit_logs');
+  }
+
   /**
    * Retrieves all children enrolled under a given family/household ID.
    */
@@ -391,6 +415,252 @@ class KidsMinistryService {
       results.push({ id: docRef.id, ...item });
     }
     return results;
+  }
+
+  /**
+   * Performs check-in for a child with duplicate check-in prevention.
+   */
+  async checkInChild(params: {
+    churchId?: string;
+    child: ChildRecord;
+    method: 'face_scan' | 'qr_code' | 'manual';
+    checkedInByMemberId: string;
+    checkedInByName: string;
+  }): Promise<{ session: any; alreadyCheckedIn: boolean }> {
+    const cId = params.churchId || RHEMA_CHURCH_ID;
+    const today = new Date().toISOString().split('T')[0]; // "YYYY-MM-DD"
+    const sessionsRef = this.getSessionsCollection(cId);
+
+    // 1. DUPLICATE CHECK-IN PREVENTION
+    const existingSnap = await sessionsRef
+      .where('childDocId', '==', params.child.id)
+      .where('sessionDate', '==', today)
+      .where('status', '==', 'active')
+      .get();
+
+    if (!existingSnap.empty) {
+      const existingDoc = existingSnap.docs[0];
+      return {
+        session: { id: existingDoc.id, ...(existingDoc.data() as any) },
+        alreadyCheckedIn: true,
+      };
+    }
+
+    // 2. GENERATE SECURE DYNAMIC PICKUP CODE (e.g. "RK-7942")
+    const pickupCode = generateDynamicPickupCode();
+    const now = firestore.FieldValue.serverTimestamp();
+
+    const sessionData = {
+      sessionId: `SESS_${today.replace(/-/g, '')}_${Date.now().toString().slice(-4)}`,
+      churchId: cId,
+      childId: params.child.childId,
+      childDocId: params.child.id,
+      childName: params.child.fullName,
+      childPhotoUrl: params.child.photoUrl || '',
+      classId: params.child.assignedClassId || params.child.assignedTier || 'general',
+      className: params.child.assignedClassName || 'Sunday School',
+      sessionDate: today,
+
+      pickupCode,
+      checkInTime: now,
+      checkedInByMemberId: params.checkedInByMemberId,
+      checkedInByName: params.checkedInByName,
+      checkedInMethod: params.method,
+
+      status: 'active',
+      allergyFlag: !!params.child.medical?.hasAllergies,
+      notes: params.child.notes || '',
+      createdAt: now,
+    };
+
+    const docRef = await sessionsRef.add(sanitizeForFirestore(sessionData));
+
+    // 3. UPDATE CHILD LIVE STATUS
+    await this.getKidsCollection(cId).doc(params.child.id).update({
+      custodyStatus: 'checked_in',
+      activePickupCode: pickupCode,
+      currentSessionId: docRef.id,
+      lastCheckInAt: now,
+      updatedAt: now,
+    });
+
+    // 4. LOG ATTENDANCE
+    await this.getAttendanceCollection(cId).add({
+      childDocId: params.child.id,
+      childId: params.child.childId,
+      childName: params.child.fullName,
+      classTier: params.child.assignedTier || 'primary',
+      sessionDate: today,
+      checkInTime: now,
+      method: params.method,
+      createdAt: now,
+    });
+
+    return {
+      session: { id: docRef.id, ...sessionData },
+      alreadyCheckedIn: false,
+    };
+  }
+
+  /**
+   * Verifies and checks out a child.
+   */
+  async checkOutChild(params: {
+    churchId?: string;
+    sessionId?: string;
+    childDocId?: string;
+    pickupCode: string;
+    verifiedByTeacherId: string;
+    checkedOutByName?: string;
+    checkedOutByPhone?: string;
+    overrideReason?: string;
+  }): Promise<{ success: boolean; error?: string; childName?: string }> {
+    const cId = params.churchId || RHEMA_CHURCH_ID;
+    const sessionsRef = this.getSessionsCollection(cId);
+
+    let sessionDoc: any = null;
+
+    if (params.sessionId) {
+      const snap = await sessionsRef.doc(params.sessionId).get();
+      if (snap.exists) sessionDoc = snap;
+    } else if (params.childDocId) {
+      const today = new Date().toISOString().split('T')[0];
+      const snap = await sessionsRef
+        .where('childDocId', '==', params.childDocId)
+        .where('sessionDate', '==', today)
+        .where('status', '==', 'active')
+        .get();
+      if (!snap.empty) sessionDoc = snap.docs[0];
+    } else if (params.pickupCode) {
+      const today = new Date().toISOString().split('T')[0];
+      const cleanCode = params.pickupCode.trim().toUpperCase();
+      const snap = await sessionsRef
+        .where('pickupCode', '==', cleanCode)
+        .where('sessionDate', '==', today)
+        .where('status', '==', 'active')
+        .get();
+      if (!snap.empty) sessionDoc = snap.docs[0];
+    }
+
+    if (!sessionDoc) {
+      return { success: false, error: 'No active Sunday School session found with this code.' };
+    }
+
+    const sData = sessionDoc.data() as any;
+
+    // Check code match (unless emergency override provided)
+    if (!params.overrideReason && sData.pickupCode !== params.pickupCode.trim().toUpperCase()) {
+      return { success: false, error: 'Pickup code mismatch. Custody release cannot be authorized.' };
+    }
+
+    const now = firestore.FieldValue.serverTimestamp();
+
+    // Update Session
+    await sessionsRef.doc(sessionDoc.id).update({
+      status: 'checked_out',
+      checkOutTime: now,
+      checkedOutByName: params.checkedOutByName || 'Authorized Guardian',
+      checkedOutByPhone: params.checkedOutByPhone || '',
+      verifiedByTeacherId: params.verifiedByTeacherId,
+      overrideReason: params.overrideReason || null,
+      updatedAt: now,
+    });
+
+    // Update Child record
+    await this.getKidsCollection(cId).doc(sData.childDocId).update({
+      custodyStatus: 'checked_out',
+      activePickupCode: '',
+      currentSessionId: '',
+      lastCheckOutAt: now,
+      updatedAt: now,
+    });
+
+    // Audit Log
+    await this.getAuditLogsCollection(cId).add({
+      action: 'CHECK_OUT',
+      childDocId: sData.childDocId,
+      childName: sData.childName,
+      sessionId: sessionDoc.id,
+      pickupCode: sData.pickupCode,
+      checkedOutByName: params.checkedOutByName || '',
+      verifiedByTeacherId: params.verifiedByTeacherId,
+      overrideReason: params.overrideReason || '',
+      timestamp: now,
+    });
+
+    return { success: true, childName: sData.childName };
+  }
+
+  /**
+   * Realtime subscription for active checked-in sessions (Live Headcount).
+   */
+  subscribeToActiveSessions(
+    churchId: string,
+    callback: (sessions: any[]) => void
+  ): () => void {
+    const today = new Date().toISOString().split('T')[0];
+    return this.getSessionsCollection(churchId)
+      .where('sessionDate', '==', today)
+      .where('status', '==', 'active')
+      .onSnapshot(
+        snap => {
+          if (!snap) return callback([]);
+          const list = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+          callback(list);
+        },
+        () => callback([])
+      );
+  }
+
+  /**
+   * Searches for a child record by QR Payload (e.g. "RHEMA_KIDS:<childId>:<code...>") or Child ID or Phone.
+   */
+  async findChildByScanQuery(churchId: string, query: string): Promise<ChildRecord | null> {
+    if (!query) return null;
+    const clean = query.trim();
+
+    // Check if it's our structured QR: "RHEMA_KIDS:docId:code"
+    if (clean.startsWith('RHEMA_KIDS:')) {
+      const parts = clean.split(':');
+      if (parts[1]) {
+        const snap = await this.getKidsCollection(churchId).doc(parts[1]).get();
+        if (snap.exists) {
+          return { id: snap.id, ...(snap.data() as any) };
+        }
+      }
+    }
+
+    // Try finding by childId (e.g. "KID-2026-0001")
+    const byIdSnap = await this.getKidsCollection(churchId)
+      .where('childId', '==', clean.toUpperCase())
+      .limit(1)
+      .get();
+    if (!byIdSnap.empty) {
+      return { id: byIdSnap.docs[0].id, ...(byIdSnap.docs[0].data() as any) };
+    }
+
+    // Try finding by activePickupCode (e.g. "RK-7942")
+    const byCodeSnap = await this.getKidsCollection(churchId)
+      .where('activePickupCode', '==', clean.toUpperCase())
+      .limit(1)
+      .get();
+    if (!byCodeSnap.empty) {
+      return { id: byCodeSnap.docs[0].id, ...(byCodeSnap.docs[0].data() as any) };
+    }
+
+    // Try finding by Parent Phone
+    const cleanPhone = clean.replace(/\D/g, '');
+    if (cleanPhone.length >= 10) {
+      const byPhoneSnap = await this.getKidsCollection(churchId)
+        .where('parentPhone', '==', cleanPhone)
+        .limit(1)
+        .get();
+      if (!byPhoneSnap.empty) {
+        return { id: byPhoneSnap.docs[0].id, ...(byPhoneSnap.docs[0].data() as any) };
+      }
+    }
+
+    return null;
   }
 }
 

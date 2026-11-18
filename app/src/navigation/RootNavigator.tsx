@@ -74,6 +74,8 @@ import ContactUsScreen from '../screens/ContactUsScreen';
 import AttendanceScreen from '../screens/AttendanceScreen';
 import CareCellScreen from '../screens/care_cells/CareCellScreen';
 import KidsMinistryScreen from '../screens/kids_ministry/KidsMinistryScreen';
+import KidsFaceScanKiosk from '../screens/kids_ministry/KidsFaceScanKiosk';
+import KidsCheckOutScanner from '../screens/kids_ministry/KidsCheckOutScanner';
 import EventAttendeesScreen from '../screens/admin/EventAttendeesScreen';
 import AdminRegistrationApprovals from '../screens/admin/AdminRegistrationApprovals';
 import PastorEventDetail from '../screens/admin/pastor_events/PastorEventDetail';
@@ -1397,6 +1399,8 @@ function Navigation() {
             <Stack.Screen name="CareCellScreen" component={renderPremium(CareCellScreen)} />
             <Stack.Screen name="KidsMinistry" component={renderPremium(KidsMinistryScreen)} />
             <Stack.Screen name="RhemaKids" component={renderPremium(KidsMinistryScreen)} />
+            <Stack.Screen name="KidsFaceScanKiosk" component={renderPremium(KidsFaceScanKiosk)} />
+            <Stack.Screen name="KidsCheckOutScanner" component={renderPremium(KidsCheckOutScanner)} />
             <Stack.Screen name="DailyVideo" component={renderPremium(DailyVideoScreen)} />
             <Stack.Screen name="SermonVideo" component={renderPremium(SermonVideoScreen)} />
             <Stack.Screen name="Events" component={renderPremium(EventsScreen)} />
