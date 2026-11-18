@@ -360,7 +360,7 @@ export default function AdminKidsHub({ navigation }: any) {
                 return (
                   <View key={cls.id} style={styles.classCard}>
                     <View style={styles.classCardHeader}>
-                      <div>
+                      <View>
                         <View style={styles.tierTag}>
                           <Text style={styles.tierTagText}>
                             Age {cls.ageRange.min}–{cls.ageRange.max} yrs
@@ -370,7 +370,7 @@ export default function AdminKidsHub({ navigation }: any) {
                         <Text style={styles.classSchedule}>
                           {cls.roomNumber} · {cls.schedule.dayOfWeek}s {cls.schedule.startTime}
                         </Text>
-                      </div>
+                      </View>
 
                       <View style={styles.capacityBadge}>
                         <Text style={styles.capacityText}>
