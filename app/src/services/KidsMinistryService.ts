@@ -1806,6 +1806,32 @@ class KidsMinistryService {
     );
   }
 
+  async createCurriculumLesson(
+    churchId: string,
+    lesson: Omit<KidsCurriculumLesson, 'id'>
+  ): Promise<string> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const now = firestore.FieldValue.serverTimestamp();
+    const docRef = this.getCurriculumCollection(cId).doc(`week_${lesson.weekNumber}`);
+    await docRef.set(
+      sanitizeForFirestore({
+        ...lesson,
+        createdAt: now,
+        updatedAt: now,
+      }),
+      { merge: true }
+    );
+    return docRef.id;
+  }
+
+  async deleteCurriculumLesson(
+    churchId: string,
+    lessonDocId: string
+  ): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    await this.getCurriculumCollection(cId).doc(lessonDocId).delete();
+  }
+
   private build52WeekCurriculumOutline(): KidsCurriculumLesson[] {
     const now = new Date().toISOString();
 
