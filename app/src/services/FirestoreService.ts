@@ -3908,51 +3908,113 @@ class FirestoreService {
     }
   }
 
+  private parseScheduleEventDate(dateStr?: string | any): Date | null {
+    if (!dateStr) return null;
+    if (dateStr instanceof Date) return isNaN(dateStr.getTime()) ? null : dateStr;
+    if (dateStr?.toDate && typeof dateStr.toDate === 'function') {
+      try {
+        const d = dateStr.toDate();
+        if (!isNaN(d.getTime())) return d;
+      } catch {}
+    }
+    if (typeof dateStr === 'number') {
+      const d = new Date(dateStr > 1e11 ? dateStr : dateStr * 1000);
+      if (!isNaN(d.getTime())) return d;
+    }
+    if (typeof dateStr === 'string') {
+      const clean = dateStr.trim();
+      if (clean.includes('-')) {
+        const parts = clean.split('-');
+        if (parts[0].length === 4) {
+          const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2].split('T')[0]));
+          if (!isNaN(d.getTime())) return d;
+        } else if (parts[0].length <= 2 && parts[2] && parts[2].length >= 4) {
+          const d = new Date(Number(parts[2].slice(0, 4)), Number(parts[1]) - 1, Number(parts[0]));
+          if (!isNaN(d.getTime())) return d;
+        }
+      }
+      if (clean.includes('/')) {
+        const parts = clean.split('/');
+        if (parts[0].length === 4) {
+          const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2].split('T')[0]));
+          if (!isNaN(d.getTime())) return d;
+        } else if (parts[0].length <= 2 && parts[2] && parts[2].length >= 4) {
+          const d = new Date(Number(parts[2].slice(0, 4)), Number(parts[1]) - 1, Number(parts[0]));
+          if (!isNaN(d.getTime())) return d;
+        }
+      }
+      const parsed = new Date(clean);
+      if (!isNaN(parsed.getTime())) return parsed;
+    }
+    return null;
+  }
+
+  private isScheduleEventPast(ev: ScheduleEvent, now: Date = new Date()): boolean {
+    if (String((ev as any).status || '').toLowerCase() === 'completed') {
+      return true;
+    }
+
+    const todayMidnight = new Date(now);
+    todayMidnight.setHours(0, 0, 0, 0);
+
+    const rawEndDate = ev.endDate || ev.date || (ev as any).startDate || (ev as any).eventDate;
+    const parsedEndDate = this.parseScheduleEventDate(rawEndDate);
+    if (!parsedEndDate) return true;
+
+    const eventDayMidnight = new Date(parsedEndDate);
+    eventDayMidnight.setHours(0, 0, 0, 0);
+
+    if (eventDayMidnight.getTime() < todayMidnight.getTime()) return true;
+    if (eventDayMidnight.getTime() > todayMidnight.getTime()) return false;
+
+    const timeToCompare = ev.endTime || ev.time || ev.startTime;
+    if (!timeToCompare) return false;
+
+    try {
+      let hour = 0;
+      let min = 0;
+      if (timeToCompare.includes('T')) {
+        const t = new Date(timeToCompare);
+        hour = t.getHours();
+        min = t.getMinutes();
+      } else if (timeToCompare.includes(':')) {
+        const cleanTime = timeToCompare.toUpperCase().replace(/\s+/g, '');
+        const isPM = cleanTime.includes('PM');
+        const isAM = cleanTime.includes('AM');
+        const timePart = cleanTime.replace('AM', '').replace('PM', '');
+        const parts = timePart.split(':');
+        hour = parseInt(parts[0], 10) || 0;
+        min = parseInt(parts[1], 10) || 0;
+        if (isPM && hour < 12) hour += 12;
+        if (isAM && hour === 12) hour = 0;
+      }
+      if (hour < now.getHours() || (hour === now.getHours() && min < now.getMinutes())) {
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
   async getUpcomingEvents(limit: number = 3): Promise<ScheduleEvent[]> {
     try {
       const col = await this.getCollection('events');
       const today = new Date();
       const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
       
-      // Fetch all events from today onwards
-      const snapshot = await col.where('date', '>=', todayStr).orderBy('date', 'asc').get();
+      // Bounded database query for events from today onwards
+      const fetchLimit = Math.max(limit * 2, 30);
+      const snapshot = await col
+        .where('date', '>=', todayStr)
+        .orderBy('date', 'asc')
+        .limit(fetchLimit)
+        .get();
       
       let events = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ScheduleEvent));
       
       // Filter out events that have completed or from TODAY that have already ended based on time
-      events = events.filter(ev => {
-        if (String((ev as any).status || '').toLowerCase() === 'completed') {
-          return false;
-        }
-        if (ev.date === todayStr) {
-          // Compare end time or start time against current time
-          const timeToCompare = ev.endTime || ev.time;
-          if (timeToCompare) {
-             try {
-                // time format is "HH:mm" or "YYYY-MM-DDTHH:mm:ss.sssZ"
-                let hour = 0, min = 0;
-                if (timeToCompare.includes('T')) {
-                   const t = new Date(timeToCompare);
-                   hour = t.getHours();
-                   min = t.getMinutes();
-                } else {
-                   const parts = timeToCompare.split(':');
-                   hour = parseInt(parts[0], 10);
-                   min = parseInt(parts[1], 10);
-                }
-                const nowHour = today.getHours();
-                const nowMin = today.getMinutes();
-                
-                if (hour < nowHour || (hour === nowHour && min < nowMin)) {
-                  return false; // Event has ended
-                }
-             } catch (e) {
-                // Ignore parse errors
-             }
-          }
-        }
-        return true;
-      });
+      events = events.filter(ev => !this.isScheduleEventPast(ev, today));
       
       return events.slice(0, limit);
     } catch (e) {
@@ -3961,63 +4023,81 @@ class FirestoreService {
     }
   }
 
-  async getPastEvents(limit: number = 3): Promise<ScheduleEvent[]> {
+  /**
+   * Database-level cursor pagination for Past Events.
+   * Queries Firestore strictly in small batches using `where('date', '<=', todayStr)`
+   * + `orderBy('date', 'desc')` + `startAfter(lastDoc)` + `limit(pageSize + 1)`
+   * so only 5 past events are fetched per page instead of loading the entire collection.
+   */
+  async getPastEventsPaginated(
+    pageSize: number = 5,
+    lastDoc: any = null
+  ): Promise<{ events: ScheduleEvent[]; lastDoc: any | null; hasMore: boolean }> {
     try {
       const col = await this.getCollection('events');
-      const today = new Date();
-      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-      
-      // We need to fetch past dates AND today's events that have ended
-      // 1. Fetch strictly past dates
-      const snapshotPast = await col.where('date', '<', todayStr).orderBy('date', 'desc').limit(limit).get();
-      let pastEvents = snapshotPast.docs.map(doc => ({ id: doc.id, ...doc.data() } as ScheduleEvent));
-      
-      // 2. Fetch today's events to find ones that have ended
-      const snapshotToday = await col.where('date', '==', todayStr).get();
-      const todayEvents = snapshotToday.docs.map(doc => ({ id: doc.id, ...doc.data() } as ScheduleEvent));
-      
-      const endedTodayEvents = todayEvents.filter(ev => {
-          const timeToCompare = ev.endTime || ev.time;
-          if (timeToCompare) {
-             try {
-                let hour = 0, min = 0;
-                if (timeToCompare.includes('T')) {
-                   const t = new Date(timeToCompare);
-                   hour = t.getHours();
-                   min = t.getMinutes();
-                } else {
-                   const parts = timeToCompare.split(':');
-                   hour = parseInt(parts[0], 10);
-                   min = parseInt(parts[1], 10);
-                }
-                const nowHour = today.getHours();
-                const nowMin = today.getMinutes();
-                
-                if (hour < nowHour || (hour === nowHour && min < nowMin)) {
-                  return true; // Event has ended
-                }
-             } catch (e) {}
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+      const accepted: Array<{ event: ScheduleEvent; docSnap: any }> = [];
+      let queryCursor = lastDoc || null;
+      let firestoreExhausted = false;
+      let iterations = 0;
+      const MAX_ITERATIONS = 5;
+
+      // Collect up to `pageSize + 1` verified past events so `hasMore` is 100% exact
+      // without needing an extra database round-trip or showing a ghost "Show More" button.
+      while (accepted.length <= pageSize && !firestoreExhausted && iterations < MAX_ITERATIONS) {
+        iterations++;
+        const batchLimit = Math.max(pageSize + 1 - accepted.length, pageSize + 1);
+
+        let q: any = col
+          .where('date', '<=', todayStr)
+          .orderBy('date', 'desc');
+
+        if (queryCursor) {
+          q = q.startAfter(queryCursor);
+        }
+
+        const snapshot = await q.limit(batchLimit).get();
+        if (!snapshot || snapshot.empty) {
+          firestoreExhausted = true;
+          break;
+        }
+
+        for (const doc of snapshot.docs) {
+          const ev = { id: doc.id, ...doc.data() } as ScheduleEvent;
+          if (this.isScheduleEventPast(ev, now)) {
+            accepted.push({ event: ev, docSnap: doc });
+            if (accepted.length > pageSize) {
+              break;
+            }
           }
-          return false;
-      });
-      
-      const allPast = [...endedTodayEvents, ...pastEvents];
-      
-      // Sort the combined list by date/time descending
-      allPast.sort((a, b) => {
-         if (a.date !== b.date) {
-            return b.date.localeCompare(a.date);
-         }
-         const aTime = a.endTime || a.time || '00:00';
-         const bTime = b.endTime || b.time || '00:00';
-         return bTime.localeCompare(aTime);
-      });
-      
-      return allPast.slice(0, limit);
+        }
+
+        queryCursor = snapshot.docs[snapshot.docs.length - 1];
+        if (snapshot.docs.length < batchLimit) {
+          firestoreExhausted = true;
+        }
+      }
+
+      const hasMore = accepted.length > pageSize;
+      const pageItems = accepted.slice(0, pageSize);
+      const nextCursor = pageItems.length > 0 ? pageItems[pageItems.length - 1].docSnap : (lastDoc || null);
+
+      return {
+        events: pageItems.map(item => item.event),
+        lastDoc: nextCursor,
+        hasMore,
+      };
     } catch (e) {
-      console.error('Error fetching past events:', e);
-      return [];
+      console.error('Error fetching paginated past events:', e);
+      return { events: [], lastDoc: lastDoc || null, hasMore: false };
     }
+  }
+
+  async getPastEvents(limit: number = 3): Promise<ScheduleEvent[]> {
+    const res = await this.getPastEventsPaginated(limit, null);
+    return res.events;
   }
 
   private generateRecurringDates(
