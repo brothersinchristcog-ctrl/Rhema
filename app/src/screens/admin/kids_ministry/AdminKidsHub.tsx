@@ -11,6 +11,7 @@ import {
   Dimensions,
   Platform,
   Alert,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -102,6 +103,10 @@ export default function AdminKidsHub({ navigation }: any) {
   const [showVBSModal, setShowVBSModal] = useState(false);
   const [showReportsModal, setShowReportsModal] = useState(false);
   const [selectedCertData, setSelectedCertData] = useState<KidsCertificateData | null>(null);
+
+  // Beautiful Delete Confirmation Modal state
+  const [childToDelete, setChildToDelete] = useState<{ id: string; name: string; childId?: string; parentName?: string; assignedClassName?: string } | null>(null);
+  const [deletingChild, setDeletingChild] = useState(false);
 
   // Phase 5, 6 & 9: Learning content, 52-week curriculum & VBS state
   const [stories, setStories] = useState<KidsBibleStory[]>([]);
@@ -195,25 +200,17 @@ export default function AdminKidsHub({ navigation }: any) {
     });
   }, [children, searchQuery]);
 
-  const handleDeleteChild = (childDocId: string, name: string) => {
-    Alert.alert(
-      'Remove Registration',
-      `Are you sure you want to remove ${name} from Sunday School?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await KidsMinistryService.deleteChild(churchId, childDocId);
-            } catch (e: any) {
-              Alert.alert('Error', e.message || 'Could not delete child');
-            }
-          },
-        },
-      ]
-    );
+  const handleConfirmDeleteChild = async () => {
+    if (!childToDelete) return;
+    try {
+      setDeletingChild(true);
+      await KidsMinistryService.deleteChild(churchId, childToDelete.id);
+      setChildToDelete(null);
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Could not delete child');
+    } finally {
+      setDeletingChild(false);
+    }
   };
 
   const getChildrenInClass = (cls: KidsClassRecord) => {
@@ -680,12 +677,22 @@ export default function AdminKidsHub({ navigation }: any) {
                         )}
                       </View>
 
-                      {/* Delete / Edit Button */}
+                      {/* Delete Child Button */}
                       <TouchableOpacity
                         style={styles.deleteBtn}
-                        onPress={() => handleDeleteChild(c.id, c.fullName)}
+                        onPress={() =>
+                          setChildToDelete({
+                            id: c.id,
+                            name: c.fullName,
+                            childId: c.childId,
+                            parentName: c.parentName,
+                            assignedClassName: c.assignedClassName,
+                          })
+                        }
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        activeOpacity={0.7}
                       >
-                        <X size={14} color="#EF4444" />
+                        <Trash2 size={15} color="#EF4444" />
                       </TouchableOpacity>
                     </View>
 
@@ -1114,6 +1121,83 @@ export default function AdminKidsHub({ navigation }: any) {
         />
       )}
 
+      {/* ── BEAUTIFUL DELETE CONFIRMATION MODAL ── */}
+      <Modal
+        visible={!!childToDelete}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!deletingChild) setChildToDelete(null);
+        }}
+      >
+        <View style={styles.confirmBackdrop}>
+          <View style={styles.confirmCard}>
+            <View style={styles.confirmIconBubble}>
+              <Trash2 size={24} color="#EF4444" />
+            </View>
+
+            <Text style={styles.confirmTitle}>Remove Registration?</Text>
+            <Text style={styles.confirmSubtitle}>
+              Are you sure you want to remove <Text style={{ color: '#FFFFFF', fontWeight: '800' }}>{childToDelete?.name}</Text> from Sunday School?
+            </Text>
+
+            {/* Information Summary Box */}
+            <View style={styles.confirmChildInfoBox}>
+              <View style={styles.confirmInfoRow}>
+                <Text style={styles.confirmInfoLabel}>Child ID</Text>
+                <Text style={styles.confirmInfoVal}>{childToDelete?.childId || 'N/A'}</Text>
+              </View>
+              {childToDelete?.assignedClassName && (
+                <View style={styles.confirmInfoRow}>
+                  <Text style={styles.confirmInfoLabel}>Classroom</Text>
+                  <Text style={styles.confirmInfoVal}>{childToDelete?.assignedClassName}</Text>
+                </View>
+              )}
+              {childToDelete?.parentName && (
+                <View style={styles.confirmInfoRow}>
+                  <Text style={styles.confirmInfoLabel}>Parent</Text>
+                  <Text style={styles.confirmInfoVal}>{childToDelete?.parentName}</Text>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.confirmNoticePill}>
+              <Shield size={14} color="#38BDF8" />
+              <Text style={styles.confirmNoticeText}>
+                The member's church family card under the Members tab will remain 100% safe and unaffected.
+              </Text>
+            </View>
+
+            <View style={styles.confirmActionsRow}>
+              <TouchableOpacity
+                style={styles.confirmCancelBtn}
+                onPress={() => setChildToDelete(null)}
+                disabled={deletingChild}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.confirmCancelText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.confirmDeleteBtn}
+                onPress={handleConfirmDeleteChild}
+                disabled={deletingChild}
+                activeOpacity={0.85}
+              >
+                {deletingChild ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Trash2 size={16} color="#FFFFFF" />
+                    <Text style={styles.confirmDeleteText}>Remove Child</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* ── EXECUTIVE HEALTH & ANALYTICS REPORT MODAL ── */}
       {showReportsModal && (
         <AdminKidsReportsModal
@@ -1524,10 +1608,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   deleteBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    width: 32,
+    height: 32,
+    borderRadius: 9,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.35)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1555,6 +1641,139 @@ const styles = StyleSheet.create({
     color: '#D4D4D8',
     fontSize: 10,
     fontWeight: '600',
+  },
+  // ── CONFIRMATION MODAL STYLES ──
+  confirmBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.78)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  confirmCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#0F172A',
+    borderRadius: 22,
+    padding: 22,
+    borderWidth: 1.5,
+    borderColor: '#334155',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  confirmIconBubble: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  confirmTitle: {
+    fontSize: 18,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontWeight: '800',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  confirmSubtitle: {
+    fontSize: 13,
+    color: '#94A3B8',
+    textAlign: 'center',
+    lineHeight: 19,
+    marginBottom: 16,
+  },
+  confirmChildInfoBox: {
+    width: '100%',
+    backgroundColor: '#1E293B',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+    gap: 8,
+    marginBottom: 14,
+  },
+  confirmInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  confirmInfoLabel: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontWeight: '600',
+  },
+  confirmInfoVal: {
+    fontSize: 12,
+    color: '#F1F5F9',
+    fontWeight: '700',
+  },
+  confirmNoticePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(56, 189, 248, 0.1)',
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.25)',
+    marginBottom: 20,
+    width: '100%',
+  },
+  confirmNoticeText: {
+    fontSize: 11,
+    color: '#7DD3FC',
+    lineHeight: 15,
+    flex: 1,
+  },
+  confirmActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    width: '100%',
+  },
+  confirmCancelBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#334155',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmCancelText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#E2E8F0',
+  },
+  confirmDeleteBtn: {
+    flex: 1.2,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#DC2626',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    shadowColor: '#DC2626',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  confirmDeleteText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   classCard: {
     backgroundColor: '#18181B',
