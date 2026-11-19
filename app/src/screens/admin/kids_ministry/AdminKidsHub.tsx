@@ -655,16 +655,18 @@ export default function AdminKidsHub({ navigation }: any) {
                       </View>
 
                       <View style={{ flex: 1 }}>
-                        <View style={styles.nameRow}>
-                          <Text style={styles.childNameSerif}>{c.fullName}</Text>
-                          <View style={styles.idBadge}>
-                            <Text style={styles.idBadgeText}>{c.childId}</Text>
-                          </View>
-                        </View>
+                        <Text style={styles.childNameSerif}>{c.fullName}</Text>
 
                         <Text style={styles.childMeta}>
                           Age: {c.age} · {c.gender === 'male' ? 'Boy' : 'Girl'} · {c.assignedClassName || 'Class'}
                         </Text>
+
+                        {/* Kid ID Badge shown below Age */}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                          <View style={styles.idBadge}>
+                            <Text style={styles.idBadgeText}>ID: {c.childId}</Text>
+                          </View>
+                        </View>
 
                         {/* Medical Alert Tag */}
                         {c.medical?.hasAllergies && (
