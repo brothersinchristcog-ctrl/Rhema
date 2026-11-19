@@ -21,6 +21,8 @@ import {
   getRecommendedClassTier,
   formatChildId,
   generateDynamicPickupCode,
+  KidsCurriculumConfig,
+  calculateCurriculumWeek,
 } from '../types/KidsMinistryTypes';
 
 /**
@@ -1715,6 +1717,65 @@ class KidsMinistryService {
     );
   }
 
+  private getCurriculumConfigDoc(churchId?: string) {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getDb()
+      .collection(RHEMA_ROOT_COLLECTION)
+      .doc(cId)
+      .collection('kids_settings')
+      .doc('curriculum_config');
+  }
+
+  subscribeToCurriculumConfig(
+    churchId: string,
+    callback: (config: KidsCurriculumConfig) => void
+  ): () => void {
+    const docRef = this.getCurriculumConfigDoc(churchId);
+    return docRef.onSnapshot(snap => {
+      if (snap && snap.exists) {
+        callback(snap.data() as KidsCurriculumConfig);
+      } else {
+        callback({
+          isLaunched: false,
+          officialLaunchDate: null,
+          manualOverrideWeek: null,
+        });
+      }
+    }, () => {
+      callback({
+        isLaunched: false,
+        officialLaunchDate: null,
+        manualOverrideWeek: null,
+      });
+    });
+  }
+
+  async setCurriculumLaunchDate(churchId: string, launchDate: string): Promise<void> {
+    const docRef = this.getCurriculumConfigDoc(churchId);
+    await docRef.set(
+      sanitizeForFirestore({
+        officialLaunchDate: launchDate,
+        isLaunched: true,
+        manualOverrideWeek: null,
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+      }),
+      { merge: true }
+    );
+  }
+
+  async resetCurriculumLaunchDate(churchId: string): Promise<void> {
+    const docRef = this.getCurriculumConfigDoc(churchId);
+    await docRef.set(
+      sanitizeForFirestore({
+        officialLaunchDate: null,
+        isLaunched: false,
+        manualOverrideWeek: 1,
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+      }),
+      { merge: true }
+    );
+  }
+
   async setCurrentActiveWeek(churchId: string, activeWeekNumber: number): Promise<void> {
     const cId = churchId || RHEMA_CHURCH_ID;
     const curriculumRef = this.getCurriculumCollection(cId);
@@ -1743,6 +1804,32 @@ class KidsMinistryService {
         updatedAt: firestore.FieldValue.serverTimestamp(),
       })
     );
+  }
+
+  async createCurriculumLesson(
+    churchId: string,
+    lesson: Omit<KidsCurriculumLesson, 'id'>
+  ): Promise<string> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const now = firestore.FieldValue.serverTimestamp();
+    const docRef = this.getCurriculumCollection(cId).doc(`week_${lesson.weekNumber}`);
+    await docRef.set(
+      sanitizeForFirestore({
+        ...lesson,
+        createdAt: now,
+        updatedAt: now,
+      }),
+      { merge: true }
+    );
+    return docRef.id;
+  }
+
+  async deleteCurriculumLesson(
+    churchId: string,
+    lessonDocId: string
+  ): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    await this.getCurriculumCollection(cId).doc(lessonDocId).delete();
   }
 
   private build52WeekCurriculumOutline(): KidsCurriculumLesson[] {

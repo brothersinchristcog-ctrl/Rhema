@@ -38,7 +38,6 @@ import {
   ShieldAlert,
 } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
-import * as Speech from 'expo-speech';
 import { useAuth } from '../../context/AuthContext';
 import KidsMinistryService from '../../services/KidsMinistryService';
 import {
@@ -51,6 +50,8 @@ import {
   KidsVBSEventRecord,
   KidsBadge,
   KidsCertificateData,
+  KidsCurriculumConfig,
+  calculateCurriculumWeek,
   generateDynamicPickupCode,
 } from '../../types/KidsMinistryTypes';
 import KidsSplashScreen from './components/KidsSplashScreen';
@@ -79,6 +80,7 @@ export default function KidsMinistryScreen({ navigation }: any) {
   const [quizzes, setQuizzes] = useState<KidsQuiz[]>([]);
   const [songs, setSongs] = useState<KidsWorshipSong[]>([]);
   const [curriculum, setCurriculum] = useState<KidsCurriculumLesson[]>([]);
+  const [curriculumConfig, setCurriculumConfig] = useState<KidsCurriculumConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedChildIndex, setSelectedChildIndex] = useState(0);
   const [existingHousehold, setExistingHousehold] = useState<any[]>([]);
@@ -102,48 +104,6 @@ export default function KidsMinistryScreen({ navigation }: any) {
 
   // Daily dynamic pickup code per session (can be manually regenerated)
   const [dailyPickupCode, setDailyPickupCode] = useState(() => generateDynamicPickupCode());
-  const [isSpeaking, setIsSpeaking] = useState(false);
-
-  useEffect(() => {
-    return () => {
-      Speech.stop();
-    };
-  }, []);
-
-  const handleToggleSpeech = async (textTe: string, textEn: string) => {
-    try {
-      if (isSpeaking) {
-        await Speech.stop();
-        setIsSpeaking(false);
-        return;
-      }
-
-      setIsSpeaking(true);
-      const textToSpeak = textTe || textEn;
-      Speech.speak(textToSpeak, {
-        language: textTe ? 'te-IN' : 'en-US',
-        rate: 0.8,
-        pitch: 1.0,
-        onDone: () => setIsSpeaking(false),
-        onStopped: () => setIsSpeaking(false),
-        onError: () => {
-          if (textEn) {
-            Speech.speak(textEn, {
-              language: 'en-US',
-              rate: 0.85,
-              onDone: () => setIsSpeaking(false),
-              onError: () => setIsSpeaking(false),
-            });
-          } else {
-            setIsSpeaking(false);
-          }
-        },
-      });
-    } catch (e) {
-      console.warn('Speech error:', e);
-      setIsSpeaking(false);
-    }
-  };
 
   // Load registered children for the family in realtime
   useEffect(() => {
@@ -184,6 +144,11 @@ export default function KidsMinistryScreen({ navigation }: any) {
       setCurriculum(curList);
     });
 
+    // Realtime subscription to Curriculum Launch Config
+    const unsubCurConfig = KidsMinistryService.subscribeToCurriculumConfig(churchId, cfg => {
+      setCurriculumConfig(cfg);
+    });
+
     // Realtime subscription to VBS 2026
     const unsubVBS = KidsMinistryService.subscribeToVBSEvent(churchId, ev => {
       setVbsEvent(ev);
@@ -205,6 +170,7 @@ export default function KidsMinistryScreen({ navigation }: any) {
       unsubQuizzes();
       unsubSongs();
       unsubCurriculum();
+      unsubCurConfig();
       unsubVBS();
       unsubscribe();
     };
@@ -485,12 +451,13 @@ export default function KidsMinistryScreen({ navigation }: any) {
 
               {/* Dynamic Sunday Bible Lesson & Memory Verse Card */}
               {(() => {
-                const activeLesson = curriculum.find(l => l.isCurrentWeek) || curriculum[0];
+                const currentWeek = calculateCurriculumWeek(curriculumConfig);
+                const activeLesson = curriculum.find(l => l.weekNumber === currentWeek) || curriculum[0];
                 const verseEn = activeLesson?.memoryVerse?.verseEnglish || "In the beginning God created the heavens and the earth.";
                 const verseTe = activeLesson?.memoryVerse?.verseTelugu || "ఆదియందు దేవుడు భూమ్యాకాశములను సృజించెను.";
                 const verseRef = activeLesson?.memoryVerse?.reference || "Genesis 1:1";
                 const lessonTitle = activeLesson?.title || "In the Beginning: God Created All Things";
-                const weekNum = activeLesson?.weekNumber || 1;
+                const weekNum = activeLesson?.weekNumber || currentWeek;
 
                 return (
                   <TouchableOpacity
@@ -520,25 +487,6 @@ export default function KidsMinistryScreen({ navigation }: any) {
                     <Text style={styles.verseEnglish}>
                       "{verseEn}"
                     </Text>
-
-                    <View style={styles.verseFooter}>
-                      <TouchableOpacity
-                        style={[
-                          styles.audioListenBtn,
-                          isSpeaking && { backgroundColor: '#DC2626', borderColor: '#EF4444' },
-                        ]}
-                        onPress={() => handleToggleSpeech(verseTe, verseEn)}
-                        activeOpacity={0.8}
-                      >
-                        <Volume2 size={14} color={isSpeaking ? '#FFFFFF' : '#FBBF24'} />
-                        <Text style={[styles.audioListenText, isSpeaking && { color: '#FFFFFF' }]}>
-                          {isSpeaking ? 'Stop Audio ⏹️' : 'Listen Audio (తెలుగు) 🔊'}
-                        </Text>
-                      </TouchableOpacity>
-                      <View style={styles.starBadge}>
-                        <Text style={styles.starBadgeText}>★ 20 Points Award</Text>
-                      </View>
-                    </View>
                   </TouchableOpacity>
                 );
               })()}

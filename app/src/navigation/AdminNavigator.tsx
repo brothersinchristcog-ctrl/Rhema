@@ -260,15 +260,14 @@ export default function AdminNavigator({ navigation, route }: any) {
       const prevTab = tabHistory[tabHistory.length - 1];
       setTabHistory(prev => prev.slice(0, -1));
       setActiveTab(prevTab);
-    } else {
-      // Optional: Navigate to home/member view if history is empty?
-      // setViewMode('member');
+    } else if (activeTab !== 0) {
+      setActiveTab(0);
     }
   };
 
   useEffect(() => {
     const backAction = () => {
-      if (tabHistory.length > 0) {
+      if (tabHistory.length > 0 || activeTab !== 0) {
         handleBack();
         return true; // Prevent default behavior
       }
@@ -281,7 +280,7 @@ export default function AdminNavigator({ navigation, route }: any) {
     );
 
     return () => backHandler.remove();
-  }, [tabHistory]);
+  }, [tabHistory, activeTab]);
 
   const tabs = [
     { name: 'Dashboard', icon: DotGridIcon, component: AdminDashboard },

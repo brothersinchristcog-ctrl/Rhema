@@ -60,6 +60,7 @@ import {
   getChannelId,
   checkVideoLiveStatus,
   resolveRhemaYoutubeUrl,
+  RHEMA_YOUTUBE_CHANNEL_ID,
 } from '../services/YouTubeService';
 import { useAuth } from '../context/AuthContext';
 import { useChurch } from '../context/ChurchContext';
@@ -447,6 +448,8 @@ export default function EventDetailsScreen({ route, navigation }: any) {
       return;
     }
 
+    const expectedChannelId = churchId === 'rhema' ? RHEMA_YOUTUBE_CHANNEL_ID : undefined;
+
     // 2. Real-time listener for church youtubeLiveState (broadcast from pastor/admin)
     const unsubChurch = firestore()
       .collection('Rhema Church')
@@ -456,10 +459,14 @@ export default function EventDetailsScreen({ route, navigation }: any) {
           if (!isMounted) return;
           if (doc.exists) {
             const lData = doc.data()?.youtubeLiveState;
-            const liveVid = lData?.videoId || lData?.lastNotifiedVideoId || lData?.latestVideoId;
+            const liveVid = lData?.videoId;
             if (lData?.isLive && liveVid) {
-              const vCheck = await checkVideoLiveStatus(liveVid);
+              const vCheck = await checkVideoLiveStatus(liveVid, expectedChannelId);
               if (!isMounted) return;
+              if (vCheck.channelMismatch) {
+                setIsStreamLiveNow(false);
+                return;
+              }
               if (vCheck.status === 'live' || vCheck.isLiveNow) {
                 setLiveStreamVideoId(liveVid);
                 setIsStreamLiveNow(true);
@@ -478,16 +485,17 @@ export default function EventDetailsScreen({ route, navigation }: any) {
       );
 
     // 3. Resolve channel or live URL via YouTubeService
-    const targetUrl =
+    const targetUrl = resolveRhemaYoutubeUrl(
       event.liveUrl ||
-      event.livestreamUrl ||
-      event.youtubeUrl ||
-      churchYoutubeUrl ||
-      'https://www.youtube.com/@RhemaGlobalMinistries';
+        event.livestreamUrl ||
+        event.youtubeUrl ||
+        churchYoutubeUrl ||
+        'https://www.youtube.com/@RhemaGlobalMinistries'
+    );
 
     if (targetUrl) {
       setLiveStreamLoading(true);
-      findActiveLiveStream(targetUrl)
+      findActiveLiveStream(targetUrl, expectedChannelId)
         .then((res) => {
           if (!isMounted) return;
           if (res.status === 'live' && res.isLiveNow && res.videoId) {

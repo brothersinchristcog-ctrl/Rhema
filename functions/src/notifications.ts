@@ -1139,20 +1139,34 @@ export const monitorMeetingLive = onSchedule({ schedule: '* * * * *', timeZone: 
 
 
 const YOUTUBE_DATA_API_KEY = 'AIzaSyBGkm7DNk_jpM-XKJI0JPk_vJlufS4Q7-Q';
-const ytChannelCache: Record<string, string> = {};
+const RHEMA_OFFICIAL_YOUTUBE_URL = 'https://www.youtube.com/@RhemaGlobalMinistries';
+const RHEMA_OFFICIAL_CHANNEL_ID = 'UCd7Ge98_3YHmo_Z3czAkUoQ';
+const ytChannelCache: Record<string, string> = {
+  [RHEMA_OFFICIAL_YOUTUBE_URL]: RHEMA_OFFICIAL_CHANNEL_ID,
+  'https://www.youtube.com/@rhemaglobalministries': RHEMA_OFFICIAL_CHANNEL_ID,
+  '@RhemaGlobalMinistries': RHEMA_OFFICIAL_CHANNEL_ID,
+  '@rhemaglobalministries': RHEMA_OFFICIAL_CHANNEL_ID,
+};
+const ytLastCheckMsByChannel: Record<string, number> = {};
 
 /**
  * Resolves the YouTube channel ID from a channel handle or URL.
  */
 async function resolveYouTubeChannelId(rawYtUrl: string): Promise<string | null> {
   const clean = rawYtUrl.trim();
+  const cleanLower = clean.toLowerCase();
   if (ytChannelCache[clean]) return ytChannelCache[clean] || null;
+  if (ytChannelCache[cleanLower]) return ytChannelCache[cleanLower] || null;
+  if (cleanLower.includes('rhemaglobalministries')) {
+    ytChannelCache[clean] = RHEMA_OFFICIAL_CHANNEL_ID;
+    return RHEMA_OFFICIAL_CHANNEL_ID;
+  }
 
   if (clean.includes('/channel/')) {
     const parts = clean.split('/channel/')[1];
     if (parts) {
       const cid = parts.split('/')[0]?.split('?')[0];
-      if (cid) {
+      if (cid && /^UC[\w-]{22}$/.test(cid)) {
         ytChannelCache[clean] = cid;
         return cid;
       }
@@ -1170,21 +1184,27 @@ async function resolveYouTubeChannelId(rawYtUrl: string): Promise<string | null>
   }
 
   if (handle) {
+    if (handle.toLowerCase() === 'rhemaglobalministries') {
+      ytChannelCache[clean] = RHEMA_OFFICIAL_CHANNEL_ID;
+      return RHEMA_OFFICIAL_CHANNEL_ID;
+    }
     try {
       const url = `https://www.googleapis.com/youtube/v3/channels?part=id&forHandle=${encodeURIComponent(handle)}&key=${YOUTUBE_DATA_API_KEY}`;
       const res = await fetch(url);
-      const data = await res.json();
-      if (data.items && data.items.length > 0) {
-        const cid = data.items[0]?.id;
-        if (cid) {
-          ytChannelCache[clean] = cid;
-          return cid;
+      if (res.ok) {
+        const data = await res.json();
+        if (data.items && data.items.length > 0) {
+          const cid = data.items[0]?.id;
+          if (cid && /^UC[\w-]{22}$/.test(cid)) {
+            ytChannelCache[clean] = cid;
+            return cid;
+          }
         }
       }
     } catch (_) {}
   }
 
-  if (clean.startsWith('UC') && clean.length > 20) {
+  if (/^UC[\w-]{22}$/.test(clean)) {
     ytChannelCache[clean] = clean;
     return clean;
   }
@@ -1193,13 +1213,69 @@ async function resolveYouTubeChannelId(rawYtUrl: string): Promise<string | null>
 }
 
 /**
- * 🔴 Automatically check if church's YouTube channel is currently streaming live.
- * Uses the official YouTube Data API v3 (reliable in cloud datacenters) with scrape fallback.
- * When a stream starts, immediately dispatches push notification to topic church_{churchId}
- * and adds to broadcasts, saving live state directly on the church document (NO extra documents or subcollections).
+ * Authoritatively verifies via YouTube Data API v3 `videos.list` (1 quota unit)
+ * whether any candidate videoId BOTH strictly belongs to `expectedChannelId`
+ * AND is currently broadcasting live right now (started and not ended).
+ * Prevents sidebar/recommended/foreign videos from EVER triggering a live alert.
  */
+async function verifyVideosLiveForChannel(
+  candidateIds: string[],
+  expectedChannelId: string
+): Promise<{ ok: boolean; liveVideo: { videoId: string; title: string } | null }> {
+  const uniqueIds = Array.from(
+    new Set(candidateIds.filter((id) => typeof id === 'string' && /^[\w-]{11}$/.test(id)))
+  ).slice(0, 15);
+
+  if (uniqueIds.length === 0) {
+    return { ok: true, liveVideo: null };
+  }
+
+  try {
+    const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,liveStreamingDetails&id=${encodeURIComponent(uniqueIds.join(','))}&key=${YOUTUBE_DATA_API_KEY}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.warn(`[verifyVideosLiveForChannel] videos.list HTTP ${res.status}`);
+      return { ok: false, liveVideo: null };
+    }
+    const data = await res.json();
+    const items = Array.isArray(data.items) ? data.items : [];
+
+    for (const item of items) {
+      const ownerChannelId = item?.snippet?.channelId || '';
+      const liveBroadcastContent = item?.snippet?.liveBroadcastContent || '';
+      const liveDetails = item?.liveStreamingDetails || {};
+      const actualStartTime = liveDetails?.actualStartTime;
+      const actualEndTime = liveDetails?.actualEndTime;
+
+      if (ownerChannelId !== expectedChannelId) {
+        console.warn(
+          `🚫 [YouTube Live Guard] Rejected foreign video ${item?.id} owned by ${ownerChannelId} ("${item?.snippet?.channelTitle}") — expected ${expectedChannelId}`
+        );
+        continue;
+      }
+
+      if (liveBroadcastContent === 'live' && actualStartTime && !actualEndTime) {
+        return {
+          ok: true,
+          liveVideo: {
+            videoId: item.id,
+            title: item?.snippet?.title || '',
+          },
+        };
+      }
+    }
+
+    return { ok: true, liveVideo: null };
+  } catch (err: any) {
+    console.warn('[verifyVideosLiveForChannel] Error:', err?.message);
+    return { ok: false, liveVideo: null };
+  }
+}
+
 /**
- * Formats meaningful, uplifting, church-appropriate notification titles and messages for YouTube Live broadcasts.
+ * 🔴 Automatically check if church's YouTube channel is currently streaming live.
+ * Uses low-quota YouTube Data API v3 (`UULV` live playlist + channel RSS + `videos.list`, 2 quota units total,
+ * ZERO `search.list` calls) with strict channel ownership verification so foreign or ended videos can NEVER trigger alerts.
  */
 function formatLiveNotification(churchName?: string, rawTitle?: string): { pushTitle: string; pushBody: string } {
   return {
@@ -1216,109 +1292,157 @@ export async function checkChurchYouTubeLive(churchDoc: any, churchId: string, d
 
   // Fix typos in raw URL and discard legacy Brothers in Christ placeholder handles for Rhema
   rawYtUrl = rawYtUrl.replace(/https?:\/\/(www\w*)\.(?:yyoutube|youtube)\.com/i, 'https://www.youtube.com');
-  if (churchId === 'rhema' && (!rawYtUrl || /brothersinchrist/i.test(rawYtUrl))) {
-    rawYtUrl = 'https://www.youtube.com/@RhemaGlobalMinistries';
+  if (
+    churchId === 'rhema' &&
+    (!rawYtUrl || /brothersinchrist/i.test(rawYtUrl) || /uc3j_2zp2biucweia_asvghw/i.test(rawYtUrl))
+  ) {
+    rawYtUrl = RHEMA_OFFICIAL_YOUTUBE_URL;
   }
 
   if (!rawYtUrl) return;
 
   try {
+    const channelId = await resolveYouTubeChannelId(rawYtUrl);
+    if (!channelId) {
+      console.warn(`[checkChurchYouTubeLive] Could not resolve channelId for ${churchId} (${rawYtUrl}); skipping.`);
+      return;
+    }
+
+    // Prevent back-to-back redundant checks within 35s in the same instance
+    const nowCheckMs = Date.now();
+    const lastLocalCheck = ytLastCheckMsByChannel[channelId] || 0;
+    if (nowCheckMs - lastLocalCheck < 35_000) {
+      return;
+    }
+    ytLastCheckMsByChannel[channelId] = nowCheckMs;
+
+    const prevState = cData.youtubeLiveState || { isLive: false };
     let isLive = false;
     let videoId = '';
     let streamTitle = '';
 
-    // ── Method 1: Official YouTube Data API v3 (100% reliable in Google Cloud) ──
-    const channelId = await resolveYouTubeChannelId(rawYtUrl);
-    if (channelId) {
-      try {
-        const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&eventType=live&type=video&key=${YOUTUBE_DATA_API_KEY}`;
-        const apiRes = await fetch(searchUrl);
-        if (apiRes.ok) {
-          const apiData = await apiRes.json();
-          if (apiData.items && apiData.items.length > 0) {
-            isLive = true;
-            videoId = apiData.items[0].id?.videoId || '';
-            streamTitle = apiData.items[0].snippet?.title || '';
-            console.log(`🔴 [YouTube API] Live stream detected for church ${churchId}: ${videoId} - "${streamTitle}"`);
-          }
-        }
-      } catch (apiErr) {
-        console.warn('[checkChurchYouTubeLive] YouTube API query notice:', apiErr);
-      }
+    // ── Method 1: Channel-Scoped Live Streams Playlist (UULV) + Channel RSS + videos.list (2 quota units, ZERO search.list) ──
+    const candidateIds: string[] = [];
+    if (prevState?.isLive && typeof prevState?.videoId === 'string' && /^[\w-]{11}$/.test(prevState.videoId)) {
+      candidateIds.push(prevState.videoId);
     }
 
-    // ── Method 2: Scrape Fallback (/live and /streams) if API quota or network fails ──
-    if (!isLive) {
-      const baseHandleUrl = rawYtUrl.replace(/\/(live|streams)\/?$/i, '');
-      const candidateUrls = Array.from(
-        new Set([
-          baseHandleUrl.includes('@') || baseHandleUrl.includes('/channel/')
-            ? `${baseHandleUrl}/live`
-            : rawYtUrl,
-          baseHandleUrl.includes('@') || baseHandleUrl.includes('/channel/')
-            ? `${baseHandleUrl}/streams`
-            : rawYtUrl,
-        ])
+    const channelSuffix = channelId.slice(2);
+    let uulvSucceeded = false;
+
+    // 1a. Live Streams Playlist (UULV...) — 1 quota unit
+    try {
+      const uulvUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&playlistId=UULV${channelSuffix}&maxResults=5&key=${YOUTUBE_DATA_API_KEY}`;
+      const uulvRes = await fetch(uulvUrl);
+      if (uulvRes.ok) {
+        uulvSucceeded = true;
+        const uulvData = await uulvRes.json();
+        for (const item of uulvData.items || []) {
+          const vid = item?.contentDetails?.videoId;
+          if (vid) candidateIds.push(vid);
+        }
+      }
+    } catch (uulvErr: any) {
+      console.warn('[checkChurchYouTubeLive] UULV playlist notice:', uulvErr?.message);
+    }
+
+    // 1b. Channel Atom RSS Feed — 0 quota units (catches brand-new streams & uploads immediately)
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      const rssRes = await fetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`, {
+        signal: controller.signal,
+      }).catch(() => null);
+      clearTimeout(timeout);
+      if (rssRes && rssRes.ok) {
+        const xml = await rssRes.text();
+        const rssMatches = xml.matchAll(/<yt:videoId>([\w-]{11})<\/yt:videoId>/g);
+        let count = 0;
+        for (const m of rssMatches) {
+          if (m[1]) candidateIds.push(m[1]);
+          count++;
+          if (count >= 6) break;
+        }
+      }
+    } catch (_) {}
+
+    // 1c. If UULV failed and RSS yielded nothing, check Uploads Playlist (UU...) — 1 quota unit
+    if (!uulvSucceeded && candidateIds.length === 0) {
+      try {
+        const uuUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&playlistId=UU${channelSuffix}&maxResults=5&key=${YOUTUBE_DATA_API_KEY}`;
+        const uuRes = await fetch(uuUrl);
+        if (uuRes.ok) {
+          const uuData = await uuRes.json();
+          for (const item of uuData.items || []) {
+            const vid = item?.contentDetails?.videoId;
+            if (vid) candidateIds.push(vid);
+          }
+        }
+      } catch (_) {}
+    }
+
+    const verifiedCandidates = new Set(candidateIds);
+    const verification = await verifyVideosLiveForChannel(candidateIds, channelId);
+    if (verification.liveVideo) {
+      isLive = true;
+      videoId = verification.liveVideo.videoId;
+      streamTitle = verification.liveVideo.title;
+      console.log(
+        `🔴 [YouTube Live Verified] Church ${churchId} (${channelId}) is LIVE: ${videoId} - "${streamTitle}"`
       );
+    }
 
-      for (const liveCheckUrl of candidateUrls) {
-        try {
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 6000);
-          const res = await fetch(liveCheckUrl, {
-            signal: controller.signal,
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept-Language': 'en-US,en;q=0.9',
-            },
-          }).catch(() => null);
-          clearTimeout(timeout);
+    // ── Method 2: Fast-Start Hardened `/channel/{id}/live` Check (ALWAYS gated by videos.list channel verification) ──
+    if (!isLive) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        const res = await fetch(`https://www.youtube.com/channel/${channelId}/live`, {
+          signal: controller.signal,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
+          },
+          redirect: 'follow',
+        }).catch(() => null);
+        clearTimeout(timeout);
 
-          if (res && res.ok) {
-            const html = await res.text().catch(() => '');
-            const isStreamsPage = liveCheckUrl.endsWith('/streams');
-            const looksLive = isStreamsPage
-              ? html.includes('"style":"LIVE"') || html.includes('LIVE_NOW')
-              : (html.includes('"isLive":true') ||
-                  html.includes('"style":"LIVE"') ||
-                  html.includes('LIVE_STREAM') ||
-                  html.includes('"status":"LIVE"')) &&
-                !html.includes('"isUpcoming":true');
+        if (res && res.ok) {
+          const html = await res.text().catch(() => '');
+          // Strictly parse ONLY the primary player's `videoDetails` object (NEVER sidebar/related videos!)
+          const isBotWall = html.includes('"status":"LOGIN_REQUIRED"');
+          const vdMatch = !isBotWall
+            ? html.match(/"videoDetails":\{"videoId":"([\w-]{11})"([\s\S]{0,2000})/)
+            : null;
+          if (vdMatch && vdMatch[1]) {
+            const candidateId = vdMatch[1];
+            const vdChunk = vdMatch[2] || '';
+            const matchesOwner = vdChunk.includes(`"channelId":"${channelId}"`);
+            const looksLiveInPlayer = vdChunk.includes('"isLive":true') && !vdChunk.includes('"isUpcoming":true');
 
-            if (looksLive) {
-              const match = isStreamsPage
-                ? html.match(/"videoRenderer":\{"videoId":"([\w-]{11})"[\s\S]{0,1200}?"style":"LIVE"/) ||
-                  html.match(/"videoId":"([\w-]{11})"[\s\S]{0,1200}?"style":"LIVE"/)
-                : (res.url && res.url.match(/watch\?v=([\w-]{11})/)) ||
-                  html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([\w-]{11})">/) ||
-                  html.match(/"liveStreamability".*?"videoId":"([^"]+)"/) ||
-                  html.match(/"videoId":"([\w-]{11})"/);
-
-              if (match && match[1]) {
-                videoId = match[1];
+            if (matchesOwner && looksLiveInPlayer && !verifiedCandidates.has(candidateId)) {
+              // Mandatory final authoritative gate via YouTube Data API v3 `videos.list`
+              const finalCheck = await verifyVideosLiveForChannel([candidateId], channelId);
+              if (finalCheck.liveVideo) {
                 isLive = true;
-                const titleMatch =
-                  html.match(/<title>([^<]+)<\/title>/) ||
-                  html.match(/"title":{"runs":\[{"text":"([^"]+)"}\]}/) ||
-                  html.match(/<meta name="title" content="([^"]+)"/);
-                if (titleMatch && titleMatch[1]) {
-                  streamTitle = titleMatch[1].replace(/ - YouTube$/i, '').trim();
-                }
-                break;
+                videoId = finalCheck.liveVideo.videoId;
+                streamTitle = finalCheck.liveVideo.title;
+                console.log(
+                  `🔴 [YouTube /live Verified] Church ${churchId} (${channelId}) is LIVE: ${videoId} - "${streamTitle}"`
+                );
               }
             }
           }
-        } catch (_) {}
-      }
+        }
+      } catch (_) {}
     }
 
-    const prevState = cData.youtubeLiveState || { isLive: false };
     const liveWatchUrl = videoId
       ? `https://www.youtube.com/watch?v=${videoId}`
       : rawYtUrl;
 
-    if (isLive) {
-      // Clean up streamTitle if it matched YouTube promo junk
+    if (isLive && videoId && /^[\w-]{11}$/.test(videoId)) {
+      // Clean up streamTitle if empty
       if (
         !streamTitle ||
         streamTitle.includes('Want to watch this again later') ||
@@ -1328,7 +1452,7 @@ export async function checkChurchYouTubeLive(churchDoc: any, churchId: string, d
         streamTitle = 'Join the live worship service now! 🎥🙏';
       }
 
-      const resolvedVideoId = videoId || prevState?.videoId || '';
+      const resolvedVideoId = videoId;
 
       // Atomic Firestore Transaction so concurrent schedulers (monitorMeetingLive + checkYouTubeLive)
       // claim a short pending lease first and mark completion ONLY after push delivery succeeds.
@@ -1368,6 +1492,7 @@ export async function checkChurchYouTubeLive(churchDoc: any, churchId: string, d
               isLive: true,
               url: liveWatchUrl,
               videoId: resolvedVideoId,
+              channelId,
               title: streamTitle || curState?.title || '',
               lastChecked: FieldValue.serverTimestamp(),
             };
@@ -1439,6 +1564,31 @@ export async function checkChurchYouTubeLive(churchDoc: any, churchId: string, d
           },
         };
 
+        // 1. Always persist deterministically in broadcasts subcollection (youtube_live_{videoId})
+        // so the Updates screen ALWAYS shows the live alert immediately with zero duplicates.
+        const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+        await churchDoc.ref
+          .collection('broadcasts')
+          .doc(`youtube_live_${resolvedVideoId}`)
+          .set(
+            {
+              title: pushTitle,
+              content: pushBody,
+              date: dateStr,
+              type: 'youtube_live',
+              url: liveWatchUrl,
+              videoId: resolvedVideoId,
+              channelId,
+              silent: true,
+              createdAt: FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          )
+          .catch((bErr: any) => {
+            console.error('Error writing YouTube Live broadcast for Updates screen:', bErr);
+          });
+
+        // 2. Send topic push to all church members
         try {
           await getMessaging().send(topicMessage);
 
@@ -1451,26 +1601,6 @@ export async function checkChurchYouTubeLive(churchDoc: any, churchId: string, d
               'youtubeLiveState.pendingNotifyAt': FieldValue.delete(),
             })
             .catch(() => {});
-
-          // 2. Persist deterministically in broadcasts subcollection (youtube_live_{videoId}) so Updates screen has no duplicates
-          const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-          await churchDoc.ref
-            .collection('broadcasts')
-            .doc(`youtube_live_${resolvedVideoId}`)
-            .set(
-              {
-                title: pushTitle,
-                content: pushBody,
-                date: dateStr,
-                type: 'youtube_live',
-                url: liveWatchUrl,
-                videoId: resolvedVideoId,
-                silent: true,
-                createdAt: FieldValue.serverTimestamp(),
-              },
-              { merge: true }
-            )
-            .catch(() => {});
         } catch (sendErr) {
           console.error('Error sending YouTube Live topic push; releasing pending claim for retry:', sendErr);
           await churchDoc.ref
@@ -1482,12 +1612,16 @@ export async function checkChurchYouTubeLive(churchDoc: any, churchId: string, d
         }
       }
     } else {
-      // Offline: reset isLive on church document if previously live
+      // Offline: reset isLive and clear stale video fields on church document if previously live
       if (prevState?.isLive) {
         await churchDoc.ref.set(
           {
             youtubeLiveState: {
               isLive: false,
+              videoId: '',
+              url: '',
+              title: '',
+              channelId,
               pendingNotifyVideoId: FieldValue.delete(),
               pendingNotifyAt: FieldValue.delete(),
               lastChecked: FieldValue.serverTimestamp(),
@@ -1816,21 +1950,43 @@ export async function sendDailyQuizNotificationInternal(force: boolean = false):
     }
   }
 
-  // ── ATOMIC EARLY IDEMPOTENCY GUARD ─────────────────────────────────────────
-  // Write lastBroadcastDate NOW — before any network I/O — so that any other
-  // concurrent scheduler invocation (automatedDailyQuiz / periodicDailyQuizSafetyNet
-  // / monitorMeetingLive) that reads Firestore will see today's date and exit early.
-  try {
-    const earlyLockPayload = { lastBroadcastDate: dStr, lastBroadcastAt: FieldValue.serverTimestamp() };
-    if (scheduleDocRef) {
-      await scheduleDocRef.set(earlyLockPayload, { merge: true });
-    } else {
-      await db.collection('Rhema Church').doc('rhema').collection('settings').doc('daily_quiz_schedule').set(earlyLockPayload, { merge: true });
+  // ── ATOMIC FIRESTORE TRANSACTION IDEMPOTENCY LOCK ──────────────────────────
+  // Because automatedDailyQuiz, periodicDailyQuizSafetyNet, and monitorMeetingLive
+  // can all fire at 06:00:00 IST simultaneously, use a true Firestore transaction
+  // so strictly ONE invocation acquires today's broadcast lock.
+  const lockRef =
+    scheduleDocRef ||
+    db.collection('Rhema Church').doc('rhema').collection('settings').doc('daily_quiz_schedule');
+
+  if (!force) {
+    try {
+      const acquired = await db.runTransaction(async (tx: any) => {
+        const snap: any = await tx.get(lockRef);
+        const cur = snap.exists ? snap.data() || {} : {};
+        if (cur.lastBroadcastDate === dStr) {
+          return false;
+        }
+        tx.set(
+          lockRef,
+          { lastBroadcastDate: dStr, lastBroadcastAt: FieldValue.serverTimestamp() },
+          { merge: true }
+        );
+        return true;
+      });
+      if (!acquired) {
+        console.log(`ℹ️ [DailyQuiz] Transaction lock already claimed for ${dStr}; skipping duplicate run.`);
+        return { success: true, sentCount: 0, message: 'Already sent today' };
+      }
+      await db
+        .collection('settings')
+        .doc('daily_quiz_schedule')
+        .set({ lastBroadcastDate: dStr, lastBroadcastAt: FieldValue.serverTimestamp() }, { merge: true })
+        .catch(() => {});
+      console.log(`🔒 [DailyQuiz] Atomic transaction lock acquired for ${dStr}. Proceeding with delivery...`);
+    } catch (lockErr) {
+      console.warn('[DailyQuiz] Transaction lock error; aborting to avoid duplicate delivery:', lockErr);
+      return { success: false, sentCount: 0, message: 'Lock error' };
     }
-    await db.collection('settings').doc('daily_quiz_schedule').set(earlyLockPayload, { merge: true });
-    console.log(`🔒 [DailyQuiz] Idempotency lock acquired for ${dStr}. Proceeding with delivery...`);
-  } catch (lockErr) {
-    console.warn('[DailyQuiz] Could not acquire idempotency lock; continuing anyway:', lockErr);
   }
 
   const dParts = dStr.split('-');
@@ -1907,40 +2063,33 @@ export async function sendDailyQuizNotificationInternal(force: boolean = false):
     console.log(`✅ [DailyQuiz] Multicast push sent: ${multicastSuccess} success, ${multicastFailed} failed.`);
   }
 
-  // 5. Log in broadcasts/notifications for Rhema Church
+  // 5. Persist ONE deterministic broadcast entry per day (doc ID = daily_quiz_YYYY-MM-DD)
+  // Do NOT also write a duplicate doc into `notifications` because UpdatesScreen merges both collections!
   try {
     const churchesSnap = await db.collection('Rhema Church').get();
     for (const cDoc of churchesSnap.docs) {
       const churchId = cDoc.id;
       if (churchId === 'global') continue;
 
-      // Add to broadcasts collection (silent — no secondary push)
-      await cDoc.ref.collection('broadcasts').add({
-        title: pushTitle,
-        content: pushBody,
-        type: 'quiz',
-        quizId: quizId,
-        id: quizId,
-        relatedId: quizId,
-        screen: 'BibleQuizDetail',
-        churchId: churchId,
-        silent: true,
-        createdAt: FieldValue.serverTimestamp(),
-      }).catch(() => {});
-
-      // Add to notifications collection
-      await cDoc.ref.collection('notifications').add({
-        title: pushTitle,
-        body: pushBody,
-        type: 'quiz',
-        quizId: quizId,
-        id: quizId,
-        relatedId: quizId,
-        screen: 'BibleQuizDetail',
-        churchId: churchId,
-        read: false,
-        createdAt: FieldValue.serverTimestamp(),
-      }).catch(() => {});
+      await cDoc.ref
+        .collection('broadcasts')
+        .doc(quizId)
+        .set(
+          {
+            title: pushTitle,
+            content: pushBody,
+            type: 'quiz',
+            quizId: quizId,
+            id: quizId,
+            relatedId: quizId,
+            screen: 'BibleQuizDetail',
+            churchId: churchId,
+            silent: true,
+            createdAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        )
+        .catch(() => {});
     }
   } catch (churchErr) {
     console.warn('[DailyQuiz] Error logging to churches:', churchErr);

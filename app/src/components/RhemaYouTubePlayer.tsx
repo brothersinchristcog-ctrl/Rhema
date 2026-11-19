@@ -138,14 +138,19 @@ export default function RhemaYouTubePlayer({
             const url = req?.url || '';
             if (!url || url === 'about:blank') return true;
             if (url.startsWith(TRUSTED_ORIGIN)) return true;
+            // Allow all YouTube media streams, asset CDNs, and Google Video endpoints
             if (
-              url.includes('youtube-nocookie.com/embed/') ||
-              url.includes('youtube.com/embed/') ||
-              url.includes('youtube.com/iframe_api')
+              url.includes('youtube.com') ||
+              url.includes('youtube-nocookie.com') ||
+              url.includes('googlevideo.com') ||
+              url.includes('ytimg.com') ||
+              url.includes('google.com') ||
+              url.includes('gstatic.com') ||
+              url.includes('doubleclick.net')
             ) {
               return true;
             }
-            // Prevent leaving the Rhema app for YouTube app or external browser
+            // Prevent navigating away to unrelated external websites
             return false;
           }}
         />

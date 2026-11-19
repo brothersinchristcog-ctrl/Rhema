@@ -448,3 +448,38 @@ export interface KidsCertificateData {
   verse: string;
   verseTelugu: string;
 }
+
+export interface KidsCurriculumConfig {
+  officialLaunchDate?: string | null; // "YYYY-MM-DD" e.g. "2026-12-06"
+  isLaunched: boolean;
+  manualOverrideWeek?: number | null; // Admin can manually override any week if needed
+  updatedAt?: any;
+}
+
+/**
+ * Calculates the current active curriculum week based on the Church Admin's official launch date.
+ * If Rhema has not officially launched yet, it stays on Week 1.
+ * Once launched, it automatically progresses to Week 2, 3, 4 every following Sunday.
+ */
+export function calculateCurriculumWeek(config?: KidsCurriculumConfig | null): number {
+  if (!config) return 1;
+  if (config.manualOverrideWeek && config.manualOverrideWeek >= 1 && config.manualOverrideWeek <= 52) {
+    return config.manualOverrideWeek;
+  }
+  if (!config.isLaunched || !config.officialLaunchDate) {
+    return 1;
+  }
+
+  const parts = config.officialLaunchDate.split('-').map(Number);
+  if (parts.length !== 3) return 1;
+  const launchDate = new Date(parts[0], parts[1] - 1, parts[2]);
+  const today = new Date();
+
+  // If today is before launch date, stay on Week 1 standby
+  if (today < launchDate) return 1;
+
+  const diffMs = today.getTime() - launchDate.getTime();
+  const diffWeeks = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000));
+  const weekNumber = 1 + diffWeeks;
+  return Math.min(Math.max(1, weekNumber), 52);
+}
