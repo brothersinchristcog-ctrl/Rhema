@@ -289,6 +289,9 @@ export default function AdminKidsHub({ navigation }: any) {
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.tabsRow}
+          keyboardShouldPersistTaps="handled"
+          bounces={true}
+          overScrollMode="never"
         >
           <TouchableOpacity
             style={[styles.tabPill, activeTab === 'overview' && styles.tabPillActive]}
@@ -1130,12 +1133,16 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   tabsRowWrapper: {
+    width: '100%',
     borderBottomWidth: 1,
     borderBottomColor: '#121215',
+    backgroundColor: '#000000',
   },
   tabsRow: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
+    alignItems: 'center',
+    paddingLeft: 16,
+    paddingRight: 40,
     paddingVertical: 10,
     gap: 8,
   },
