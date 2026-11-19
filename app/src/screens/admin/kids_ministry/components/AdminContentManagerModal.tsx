@@ -138,7 +138,7 @@ export default function AdminContentManagerModal({
     setEditingStoryId(null);
     setStoryTitle('');
     setStoryTelugu('');
-    setStoryRef('Genesis 1');
+    setStoryRef('');
     setStorySummary('');
     setStorySummaryTelugu('');
     setStoryEmoji('📖');
@@ -146,10 +146,10 @@ export default function AdminContentManagerModal({
     setStoryPages([
       {
         pageNumber: 1,
-        heading: 'Creation / సృష్టి',
-        textEnglish: 'In the beginning God created the heavens and the earth.',
-        textTelugu: 'ఆదియందు దేవుడు భూమ్యాకాశములను సృజించెను.',
-        illustrationEmoji: '🌍',
+        heading: '',
+        textEnglish: '',
+        textTelugu: '',
+        illustrationEmoji: '📖',
         imageUrl: '',
       },
     ]);
@@ -741,98 +741,191 @@ export default function AdminContentManagerModal({
         {/* ══════════════════════════════════════════════════════════════ */}
         {/* STORY CREATE / EDIT MODAL                                    */}
         {/* ══════════════════════════════════════════════════════════════ */}
-        <Modal visible={showStoryModal} animationType="slide" transparent onRequestClose={() => setShowStoryModal(false)}>
-          <View style={styles.editorBackdrop}>
-            <View style={styles.editorCard}>
-              <View style={styles.editorHeader}>
-                <View>
-                  <Text style={styles.editorTag}>ILLUSTRATED BIBLE STORY</Text>
-                  <Text style={styles.editorTitle}>{editingStoryId ? 'Edit Bible Story' : 'Create New Story'}</Text>
+        <Modal visible={showStoryModal} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setShowStoryModal(false)}>
+          <View style={[styles.container, { paddingTop: insets.top }]}>
+            <View style={styles.topHeader}>
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <View style={styles.hubBadgeRow}>
+                  <View style={styles.hubBadge}>
+                    <BookOpen size={11} color="#93C5FD" />
+                    <Text style={styles.hubBadgeText}>BIBLE STORY EDITOR</Text>
+                  </View>
                 </View>
-                <TouchableOpacity onPress={() => setShowStoryModal(false)} style={styles.editorCloseBtn}>
-                  <X size={18} color="#94A3B8" />
-                </TouchableOpacity>
+                <Text style={styles.headerTitle}>{editingStoryId ? 'Edit Bible Story' : 'Create New Bible Story'}</Text>
+                <Text style={styles.headerSubtitle} numberOfLines={1}>
+                  Scripture-based or thematic story with bilingual pages
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowStoryModal(false)} style={styles.closeHeaderBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <X size={20} color="#94A3B8" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.editorFullScroll}>
+              {/* Section 1: Titles & Scripture */}
+              <View style={styles.formCardSection}>
+                <Text style={styles.formSectionHeading}>1. STORY TITLES & SCRIPTURE REFERENCE</Text>
+                <Text style={styles.formSectionHelper}>
+                  You can write a direct Scripture passage (e.g. Genesis 1) or an adapted Sunday school thematic story (e.g. "Jesus Loves the Children").
+                </Text>
+
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.inputMiniLabel}>English Story Title *</Text>
+                  <TextInput
+                    style={styles.formInput}
+                    value={storyTitle}
+                    onChangeText={setStoryTitle}
+                    placeholder="e.g. David and Goliath / The Good Samaritan"
+                    placeholderTextColor="#64748B"
+                  />
+                </View>
+
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.inputMiniLabel}>Telugu Story Title (తెలుగు శీర్షిక)</Text>
+                  <TextInput
+                    style={styles.formInput}
+                    value={storyTelugu}
+                    onChangeText={setStoryTelugu}
+                    placeholder="e.g. దావీదు మరియు గొల్యాతు / మంచి సమరయుడు"
+                    placeholderTextColor="#64748B"
+                  />
+                </View>
+
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.inputMiniLabel}>Scripture Reference (Bible Book & Chapter/Verse)</Text>
+                  <TextInput
+                    style={styles.formInput}
+                    value={storyRef}
+                    onChangeText={setStoryRef}
+                    placeholder="e.g. 1 Samuel 17:1-50 or Luke 10:25-37"
+                    placeholderTextColor="#64748B"
+                  />
+                </View>
               </View>
 
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.editorFormScroll}>
-                <Text style={styles.formSectionHeading}>1. TITLES & SCRIPTURE REFERENCE</Text>
-                <TextInput
-                  style={styles.formInput}
-                  value={storyTitle}
-                  onChangeText={setStoryTitle}
-                  placeholder="English Story Title (e.g. David and Goliath)"
-                  placeholderTextColor="#64748B"
-                />
-                <TextInput
-                  style={styles.formInput}
-                  value={storyTelugu}
-                  onChangeText={setStoryTelugu}
-                  placeholder="Telugu Story Title (e.g. దావీదు మరియు గొల్యాతు)"
-                  placeholderTextColor="#64748B"
-                />
-                <TextInput
-                  style={styles.formInput}
-                  value={storyRef}
-                  onChangeText={setStoryRef}
-                  placeholder="Scripture Reference (e.g. 1 Samuel 17:1-50)"
-                  placeholderTextColor="#64748B"
-                />
+              {/* Section 2: Cover Emoji & Upload Illustration */}
+              <View style={styles.formCardSection}>
+                <Text style={styles.formSectionHeading}>2. COVER EMOJI & ILLUSTRATION IMAGE</Text>
+                <Text style={styles.formSectionHelper}>
+                  Choose a display emoji and/or upload a colorful illustration photo for kids.
+                </Text>
 
-                <Text style={styles.formSectionHeading}>2. COVER EMOJI & ILLUSTRATION</Text>
-                <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-                  <TextInput
-                    style={[styles.formInput, { width: 70, textAlign: 'center', fontSize: 20 }]}
-                    value={storyEmoji}
-                    onChangeText={setStoryEmoji}
-                    maxLength={2}
-                  />
-                  <TouchableOpacity style={styles.uploadImageBtn} onPress={handlePickStoryCover}>
-                    <Upload size={14} color="#93C5FD" />
-                    <Text style={styles.uploadImageBtnText}>
-                      {storyCoverUrl ? 'Change Cover Image' : 'Upload Illustration'}
-                    </Text>
-                  </TouchableOpacity>
+                <View style={styles.coverRow}>
+                  <View style={{ alignItems: 'center', gap: 4 }}>
+                    <Text style={styles.inputMiniLabel}>Cover Emoji</Text>
+                    <TextInput
+                      style={[styles.formInput, styles.emojiInputBox]}
+                      value={storyEmoji}
+                      onChangeText={setStoryEmoji}
+                      maxLength={2}
+                    />
+                  </View>
+
+                  <View style={{ flex: 1, gap: 6 }}>
+                    <Text style={styles.inputMiniLabel}>Custom Illustration Image</Text>
+                    <TouchableOpacity style={styles.uploadImageBtn} onPress={handlePickStoryCover} activeOpacity={0.8}>
+                      <Upload size={16} color="#93C5FD" />
+                      <Text style={styles.uploadImageBtnText}>
+                        {storyCoverUrl ? 'Change Uploaded Image' : 'Pick Image from Device'}
+                      </Text>
+                    </TouchableOpacity>
+                    {storyCoverUrl ? (
+                      <View style={styles.uploadedPreviewRow}>
+                        <CheckCircle size={14} color="#34D399" />
+                        <Text style={styles.uploadedSuccessText} numberOfLines={1}>
+                          Image successfully selected
+                        </Text>
+                        <TouchableOpacity onPress={() => setStoryCoverUrl('')} style={{ marginLeft: 'auto' }}>
+                          <Text style={styles.removeImageText}>Remove</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <Text style={styles.noImageHint}>No image selected (default emoji will be used)</Text>
+                    )}
+                  </View>
                 </View>
 
-                <Text style={styles.formSectionHeading}>3. BILINGUAL NARRATIVE PAGES</Text>
+                {storyCoverUrl ? (
+                  <View style={styles.imagePreviewBox}>
+                    <Image source={{ uri: storyCoverUrl }} style={styles.imagePreviewImg} resizeMode="cover" />
+                  </View>
+                ) : null}
+              </View>
+
+              {/* Section 3: Bilingual Story Pages */}
+              <View style={styles.formCardSection}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Text style={styles.formSectionHeading}>3. BILINGUAL STORY NARRATIVE PAGES ({storyPages.length})</Text>
+                </View>
+                <Text style={styles.formSectionHelper}>
+                  Break the story into bite-sized pages with English & Telugu paragraphs for children to read or listen.
+                </Text>
+
                 {storyPages.map((page, idx) => (
                   <View key={idx} style={styles.pageCard}>
-                    <Text style={styles.pageCardTitle}>Page {idx + 1}</Text>
-                    <TextInput
-                      style={styles.formInput}
-                      value={page.heading}
-                      onChangeText={txt => {
-                        const updated = [...storyPages];
-                        updated[idx].heading = txt;
-                        setStoryPages(updated);
-                      }}
-                      placeholder="Page Heading (English / Telugu)"
-                      placeholderTextColor="#64748B"
-                    />
-                    <TextInput
-                      style={[styles.formInput, { height: 70, textAlignVertical: 'top' }]}
-                      value={page.textEnglish}
-                      onChangeText={txt => {
-                        const updated = [...storyPages];
-                        updated[idx].textEnglish = txt;
-                        setStoryPages(updated);
-                      }}
-                      placeholder="English story narrative for this page..."
-                      placeholderTextColor="#64748B"
-                      multiline
-                    />
-                    <TextInput
-                      style={[styles.formInput, { height: 70, textAlignVertical: 'top' }]}
-                      value={page.textTelugu}
-                      onChangeText={txt => {
-                        const updated = [...storyPages];
-                        updated[idx].textTelugu = txt;
-                        setStoryPages(updated);
-                      }}
-                      placeholder="తెలుగు వివరణ..."
-                      placeholderTextColor="#64748B"
-                      multiline
-                    />
+                    <View style={styles.pageCardTopRow}>
+                      <View style={styles.pageNumBadge}>
+                        <Text style={styles.pageNumBadgeText}>PAGE {idx + 1}</Text>
+                      </View>
+                      {storyPages.length > 1 && (
+                        <TouchableOpacity
+                          onPress={() => {
+                            const updated = storyPages.filter((_, pIdx) => pIdx !== idx);
+                            setStoryPages(updated);
+                          }}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Trash2 size={15} color="#EF4444" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.inputMiniLabel}>Page Heading</Text>
+                      <TextInput
+                        style={styles.formInput}
+                        value={page.heading}
+                        onChangeText={txt => {
+                          const updated = [...storyPages];
+                          updated[idx].heading = txt;
+                          setStoryPages(updated);
+                        }}
+                        placeholder="e.g. Part 1: The Young Shepherd / భాగం 1"
+                        placeholderTextColor="#64748B"
+                      />
+                    </View>
+
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.inputMiniLabel}>English Narrative (Page {idx + 1})</Text>
+                      <TextInput
+                        style={[styles.formInput, styles.narrativeInput]}
+                        value={page.textEnglish}
+                        onChangeText={txt => {
+                          const updated = [...storyPages];
+                          updated[idx].textEnglish = txt;
+                          setStoryPages(updated);
+                        }}
+                        placeholder="Write the English story text for this page..."
+                        placeholderTextColor="#64748B"
+                        multiline
+                      />
+                    </View>
+
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.inputMiniLabel}>Telugu Narrative (తెలుగు కథనం)</Text>
+                      <TextInput
+                        style={[styles.formInput, styles.narrativeInput]}
+                        value={page.textTelugu}
+                        onChangeText={txt => {
+                          const updated = [...storyPages];
+                          updated[idx].textTelugu = txt;
+                          setStoryPages(updated);
+                        }}
+                        placeholder="ఈ పేజీకి సంబంధించిన తెలుగు వివరణ ఇక్కడ రాయండి..."
+                        placeholderTextColor="#64748B"
+                        multiline
+                      />
+                    </View>
                   </View>
                 ))}
 
@@ -843,44 +936,54 @@ export default function AdminContentManagerModal({
                       ...storyPages,
                       {
                         pageNumber: storyPages.length + 1,
-                        heading: `Part ${storyPages.length + 1}`,
+                        heading: '',
                         textEnglish: '',
                         textTelugu: '',
                         illustrationEmoji: '📖',
                       },
                     ]);
                   }}
+                  activeOpacity={0.8}
                 >
-                  <Plus size={14} color="#93C5FD" />
-                  <Text style={styles.addPageBtnText}>Add Another Story Page</Text>
-                </TouchableOpacity>
-
-                {/* Publish Toggle */}
-                <View style={styles.toggleRow}>
-                  <Text style={styles.toggleLabel}>Publish to Kids Bible Reader App:</Text>
-                  <TouchableOpacity
-                    style={[styles.toggleBtn, storyPublished && styles.toggleBtnActive]}
-                    onPress={() => setStoryPublished(!storyPublished)}
-                  >
-                    <Text style={[styles.toggleBtnText, storyPublished && styles.toggleBtnTextActive]}>
-                      {storyPublished ? 'Published' : 'Draft Only'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </ScrollView>
-
-              <View style={styles.editorActionsRow}>
-                <TouchableOpacity style={styles.cancelActionBtn} onPress={() => setShowStoryModal(false)}>
-                  <Text style={styles.cancelActionText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.saveActionBtn} onPress={handleSaveStory} disabled={saving}>
-                  {saving ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.saveActionText}>{editingStoryId ? 'Save Changes' : 'Publish Story'}</Text>
-                  )}
+                  <Plus size={16} color="#60A5FA" />
+                  <Text style={styles.addPageBtnText}>Add Another Story Page (+ Page {storyPages.length + 1})</Text>
                 </TouchableOpacity>
               </View>
+
+              {/* Section 4: Publishing Status */}
+              <View style={[styles.formCardSection, styles.toggleRowCard]}>
+                <View style={{ flex: 1, marginRight: 10 }}>
+                  <Text style={styles.toggleTitle}>Publish to Rhema Kids App</Text>
+                  <Text style={styles.toggleDesc}>
+                    {storyPublished
+                      ? 'Live: Children and parents can read and listen to this story immediately.'
+                      : 'Draft: Saved privately for Sunday School teachers to review before release.'}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.toggleBtn, storyPublished && styles.toggleBtnActive]}
+                  onPress={() => setStoryPublished(!storyPublished)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.toggleBtnText, storyPublished && styles.toggleBtnTextActive]}>
+                    {storyPublished ? 'Published' : 'Draft Only'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+
+            {/* Bottom Actions Bar */}
+            <View style={styles.editorBottomBar}>
+              <TouchableOpacity style={styles.cancelActionBtn} onPress={() => setShowStoryModal(false)} activeOpacity={0.8}>
+                <Text style={styles.cancelActionText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.saveActionBtn} onPress={handleSaveStory} disabled={saving} activeOpacity={0.85}>
+                {saving ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.saveActionText}>{editingStoryId ? 'Save Changes' : 'Publish Bible Story'}</Text>
+                )}
+              </TouchableOpacity>
             </View>
           </View>
         </Modal>
@@ -1461,12 +1564,33 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     gap: 12,
   },
+  editorFullScroll: {
+    padding: 16,
+    paddingBottom: 110,
+    gap: 14,
+  },
+  formCardSection: {
+    backgroundColor: '#0F172A',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    gap: 10,
+  },
   formSectionHeading: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '800',
-    color: '#93C5FD',
+    color: '#60A5FA',
     letterSpacing: 1,
-    marginTop: 8,
+  },
+  formSectionHelper: {
+    fontSize: 11,
+    color: '#94A3B8',
+    lineHeight: 16,
+    marginTop: -4,
+  },
+  fieldGroup: {
+    gap: 4,
   },
   formInput: {
     backgroundColor: '#1E293B',
@@ -1476,21 +1600,34 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     paddingHorizontal: 12,
-    paddingVertical: 9,
+    paddingVertical: 10,
   },
   inputMiniLabel: {
     fontSize: 11,
-    color: '#94A3B8',
+    color: '#CBD5E1',
     fontWeight: '700',
-    marginBottom: 4,
+  },
+  coverRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  emojiInputBox: {
+    width: 60,
+    height: 48,
+    textAlign: 'center',
+    fontSize: 22,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
   },
   uploadImageBtn: {
     backgroundColor: '#1E3A8A',
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 11,
     borderRadius: 10,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
     borderWidth: 1,
     borderColor: '#3B82F6',
@@ -1500,22 +1637,84 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  pageCard: {
-    backgroundColor: '#162032',
+  uploadedPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(52, 211, 153, 0.1)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(52, 211, 153, 0.3)',
+  },
+  uploadedSuccessText: {
+    color: '#34D399',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  removeImageText: {
+    color: '#F87171',
+    fontSize: 11,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
+  },
+  noImageHint: {
+    fontSize: 10.5,
+    color: '#64748B',
+    fontStyle: 'italic',
+  },
+  imagePreviewBox: {
+    height: 140,
     borderRadius: 12,
-    padding: 12,
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: '#334155',
-    gap: 8,
+    marginTop: 4,
+  },
+  imagePreviewImg: {
+    width: '100%',
+    height: '100%',
   },
   pageCardTitle: {
     fontSize: 12,
     fontWeight: '800',
     color: '#FBBF24',
   },
+  pageCard: {
+    backgroundColor: '#162032',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#253349',
+    gap: 10,
+  },
+  pageCardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  pageNumBadge: {
+    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  pageNumBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FBBF24',
+    letterSpacing: 0.8,
+  },
+  narrativeInput: {
+    height: 80,
+    textAlignVertical: 'top',
+    fontSize: 12.5,
+    lineHeight: 18,
+  },
   addPageBtn: {
     backgroundColor: '#1E293B',
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderRadius: 10,
     borderWidth: 1,
     borderStyle: 'dashed',
@@ -1527,8 +1726,37 @@ const styles = StyleSheet.create({
   },
   addPageBtnText: {
     color: '#93C5FD',
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '700',
+  },
+  toggleRowCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  toggleTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  toggleDesc: {
+    fontSize: 10.5,
+    color: '#94A3B8',
+    marginTop: 2,
+    lineHeight: 14,
+  },
+  editorBottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#0F172A',
+    borderTopWidth: 1,
+    borderTopColor: '#1E293B',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    gap: 12,
   },
   toggleRow: {
     flexDirection: 'row',
