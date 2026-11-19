@@ -1448,6 +1448,27 @@ export async function checkChurchYouTubeLive(churchDoc, churchId, db) {
                         },
                     },
                 };
+                // 1. Always persist deterministically in broadcasts subcollection (youtube_live_{videoId})
+                // so the Updates screen ALWAYS shows the live alert immediately with zero duplicates.
+                const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+                await churchDoc.ref
+                    .collection('broadcasts')
+                    .doc(`youtube_live_${resolvedVideoId}`)
+                    .set({
+                    title: pushTitle,
+                    content: pushBody,
+                    date: dateStr,
+                    type: 'youtube_live',
+                    url: liveWatchUrl,
+                    videoId: resolvedVideoId,
+                    channelId,
+                    silent: true,
+                    createdAt: FieldValue.serverTimestamp(),
+                }, { merge: true })
+                    .catch((bErr) => {
+                    console.error('Error writing YouTube Live broadcast for Updates screen:', bErr);
+                });
+                // 2. Send topic push to all church members
                 try {
                     await getMessaging().send(topicMessage);
                     // Record completion only after FCM topic delivery succeeded
@@ -1458,22 +1479,6 @@ export async function checkChurchYouTubeLive(churchDoc, churchId, db) {
                         'youtubeLiveState.pendingNotifyVideoId': FieldValue.delete(),
                         'youtubeLiveState.pendingNotifyAt': FieldValue.delete(),
                     })
-                        .catch(() => { });
-                    // 2. Persist deterministically in broadcasts subcollection (youtube_live_{videoId}) so Updates screen has no duplicates
-                    const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-                    await churchDoc.ref
-                        .collection('broadcasts')
-                        .doc(`youtube_live_${resolvedVideoId}`)
-                        .set({
-                        title: pushTitle,
-                        content: pushBody,
-                        date: dateStr,
-                        type: 'youtube_live',
-                        url: liveWatchUrl,
-                        videoId: resolvedVideoId,
-                        silent: true,
-                        createdAt: FieldValue.serverTimestamp(),
-                    }, { merge: true })
                         .catch(() => { });
                 }
                 catch (sendErr) {

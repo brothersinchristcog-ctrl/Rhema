@@ -1547,21 +1547,22 @@ export default function UpdatesScreen({ navigation, route }: any) {
                   <TouchableOpacity
                     style={styles.joinLiveBtn}
                     onPress={() => {
-                    let liveUrl = selectedUpdate?.url || activeChurch?.socialLinks?.youtube;
-                    if (liveUrl) {
-                      let base = liveUrl.split('?')[0];
-                      if (base.includes('@') && !base.includes('/live') && !base.includes('/streams')) {
-                        base = base.endsWith('/') ? `${base}live` : `${base}/live`;
+                      const rawUrl =
+                        selectedUpdate?.url ||
+                        activeChurch?.socialLinks?.youtube ||
+                        'https://www.youtube.com/@RhemaGlobalMinistries/live';
+                      let targetUrl = rawUrl;
+                      if (rawUrl.includes('@') && !rawUrl.includes('/live') && !rawUrl.includes('/streams')) {
+                        const base = rawUrl.split('?')[0];
+                        targetUrl = base.endsWith('/') ? `${base}live` : `${base}/live`;
                       }
                       setSelectedUpdate(null);
                       navigation.navigate('YouTubeLive', {
-                        url: base,
+                        url: targetUrl,
                         videoId: selectedUpdate?.videoId,
                         title: selectedUpdate?.title,
+                        churchId: activeChurch?.id || 'rhema',
                       });
-                    } else {
-                      Alert.alert(t('updates.alerts.notConfiguredTitle'), t('updates.alerts.notConfiguredMsg'));
-                    }
                     }}
                   >
                     <Text style={styles.joinLiveBtnTxt}>📺 {t('updates.joinLiveStream')}</Text>
