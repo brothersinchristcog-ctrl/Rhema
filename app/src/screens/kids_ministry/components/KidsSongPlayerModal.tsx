@@ -9,7 +9,9 @@ import {
   Platform,
   Dimensions,
   Linking,
+  StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X, Music, Play, ExternalLink, Heart } from 'lucide-react-native';
 import YoutubePlayer from 'react-native-youtube-iframe';
 import { KidsWorshipSong } from '../../../types/KidsMinistryTypes';
@@ -42,22 +44,24 @@ export default function KidsSongPlayerModal({
 }: KidsSongPlayerModalProps) {
   if (!song) return null;
 
+  const insets = useSafeAreaInsets();
   const [lyricsTab, setLyricsTab] = useState<'both' | 'telugu' | 'english'>('both');
   const [playing, setPlaying] = useState(false);
-  const videoId = extractYoutubeId(song.youtubeVideoId) || '8cT6qGj7DkE';
+  const videoId = extractYoutubeId(song.youtubeVideoId) || 'AyKSwGvUbcY';
 
   return (
     <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
-      <View style={styles.container}>
+      <View style={[styles.container, { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) }]}>
+        <StatusBar barStyle="light-content" backgroundColor="#000000" />
         {/* Header */}
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+          <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <X size={20} color="#FFFFFF" />
           </TouchableOpacity>
 
           <View style={styles.headerTitles}>
-            <Text style={styles.headerTitleSerif}>{song.title}</Text>
-            <Text style={styles.headerTeluguSub}>{song.titleTelugu}</Text>
+            <Text style={styles.headerTitleSerif} numberOfLines={1}>{song.title}</Text>
+            <Text style={styles.headerTeluguSub} numberOfLines={1}>{song.titleTelugu}</Text>
           </View>
 
           <View style={styles.categoryBadge}>
@@ -183,8 +187,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 54 : 20,
+    paddingHorizontal: 16,
+    paddingTop: 8,
     paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#18181B',
@@ -199,18 +203,22 @@ const styles = StyleSheet.create({
   },
   headerTitles: {
     alignItems: 'center',
+    justifyContent: 'center',
     flex: 1,
+    paddingHorizontal: 8,
   },
   headerTitleSerif: {
     fontSize: 16,
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     fontWeight: '800',
     color: '#FFFFFF',
+    textAlign: 'center',
   },
   headerTeluguSub: {
     fontSize: 11,
     color: '#9CA3AF',
     marginTop: 2,
+    textAlign: 'center',
   },
   categoryBadge: {
     backgroundColor: '#18181B',
