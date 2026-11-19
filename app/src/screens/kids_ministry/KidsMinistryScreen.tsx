@@ -11,11 +11,14 @@ import {
   Platform,
   Alert,
   Linking,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ArrowLeft,
   ChevronDown,
+  ChevronUp,
+  Users,
   Shield,
   BookOpen,
   Award,
@@ -113,6 +116,11 @@ export default function KidsMinistryScreen({ navigation }: any) {
     }
 
     const familyId = member.accountId || member.id;
+
+    // Automatically sync registered children from Member tab to Rhema Kids (single source of truth)
+    KidsMinistryService.syncMemberChildrenToKidsMinistry(churchId, familyId).catch(err => {
+      console.warn('[KidsMinistryScreen] Auto-sync children error:', err);
+    });
 
     // Load existing household members for seamless pre-fill (without touching existing screens)
     KidsMinistryService.getExistingFamilyMembers(churchId, familyId).then(contacts => {
@@ -240,6 +248,50 @@ export default function KidsMinistryScreen({ navigation }: any) {
     );
   };
 
+  const handleDeleteStory = (storyId: string, storyTitle: string) => {
+    Alert.alert(
+      'Delete Bible Story',
+      `Are you sure you want to delete "${storyTitle}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await KidsMinistryService.deleteStory(churchId, storyId);
+              Alert.alert('Story Deleted', `"${storyTitle}" has been removed.`);
+            } catch (e: any) {
+              Alert.alert('Error', e.message || 'Could not delete story');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteSong = (songId: string, songTitle: string) => {
+    Alert.alert(
+      'Delete Worship Song',
+      `Are you sure you want to delete "${songTitle}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await KidsMinistryService.deleteSong(churchId, songId);
+              Alert.alert('Song Deleted', `"${songTitle}" has been removed.`);
+            } catch (e: any) {
+              Alert.alert('Error', e.message || 'Could not delete song');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   // If splash is showing, render cinematic splash screen
   if (showSplash) {
     return (
@@ -273,13 +325,27 @@ export default function KidsMinistryScreen({ navigation }: any) {
 
           {children.length > 0 && activeChild ? (
             <TouchableOpacity
-              style={styles.childSwitcher}
-              onPress={() => setShowChildPicker(!showChildPicker)}
+              style={[
+                styles.childSwitcher,
+                children.length > 1 && styles.childSwitcherInteractive,
+              ]}
+              onPress={() => {
+                if (children.length > 1) {
+                  setShowChildPicker(!showChildPicker);
+                }
+              }}
+              activeOpacity={children.length > 1 ? 0.7 : 1}
             >
               <Text style={styles.childSwitcherText} numberOfLines={1}>
                 {activeChild.fullName} (Age {activeChild.age})
               </Text>
-              <ChevronDown size={12} color="#FBBF24" />
+              {children.length > 1 && (
+                showChildPicker ? (
+                  <ChevronUp size={13} color="#FBBF24" strokeWidth={2.6} />
+                ) : (
+                  <ChevronDown size={13} color="#FBBF24" strokeWidth={2.6} />
+                )
+              )}
             </TouchableOpacity>
           ) : (
             <Text style={styles.childSwitcherSub}>Sunday School Ministry</Text>
@@ -297,10 +363,74 @@ export default function KidsMinistryScreen({ navigation }: any) {
         </TouchableOpacity>
       </View>
 
-      {/* Child Dropdown Menu (If family has multiple kids) */}
+      {/* Prominent Multi-Child Switcher Banner (Shows clearly when family has multiple kids) */}
+      {children.length > 1 && (
+        <View style={styles.childBarContainer}>
+          <View style={styles.childBarHeader}>
+            <View style={styles.childBarLabelWrap}>
+              <Users size={12} color="#FBBF24" />
+              <Text style={styles.childBarLabel}>ACTIVE CHILD</Text>
+            </View>
+            <Text style={styles.childBarSub}>Tap to switch</Text>
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.childChipsScroll}
+          >
+            {children.map((k, idx) => {
+              const isSelected = idx === selectedChildIndex;
+              return (
+                <TouchableOpacity
+                  key={k.id}
+                  style={[
+                    styles.childChip,
+                    isSelected ? styles.childChipActive : styles.childChipInactive,
+                  ]}
+                  onPress={() => {
+                    setSelectedChildIndex(idx);
+                    setShowChildPicker(false);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.childChipEmoji}>
+                    {k.gender === 'female' ? '👧' : '🧒'}
+                  </Text>
+                  <View style={{ flexShrink: 1 }}>
+                    <Text
+                      style={[
+                        styles.childChipName,
+                        isSelected ? styles.childChipNameActive : styles.childChipNameInactive,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {k.fullName}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.childChipMeta,
+                        isSelected ? styles.childChipMetaActive : styles.childChipMetaInactive,
+                      ]}
+                    >
+                      Age {k.age} · {k.assignedClassName || 'Sunday School'}
+                    </Text>
+                  </View>
+                  {isSelected && (
+                    <View style={styles.childChipActiveBadge}>
+                      <Check size={11} color="#000000" strokeWidth={3} />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Child Dropdown Menu (If opened from header chevron) */}
       {showChildPicker && children.length > 1 && (
         <View style={styles.dropdownPicker}>
-          <Text style={styles.dropdownHeader}>SWITCH CHILD:</Text>
+          <Text style={styles.dropdownHeader}>SWITCH CHILD PROFILE:</Text>
           {children.map((k, idx) => (
             <TouchableOpacity
               key={k.id}
@@ -319,7 +449,7 @@ export default function KidsMinistryScreen({ navigation }: any) {
                   idx === selectedChildIndex && styles.dropdownItemTextActive,
                 ]}
               >
-                🧒 {k.fullName} · Age {k.age} ({k.assignedClassName || 'Class'})
+                {k.gender === 'female' ? '👧' : '🧒'} {k.fullName} · Age {k.age} ({k.assignedClassName || 'Class'})
               </Text>
             </TouchableOpacity>
           ))}
@@ -500,7 +630,7 @@ export default function KidsMinistryScreen({ navigation }: any) {
                     onPress={() => setActiveTab('lms')}
                     activeOpacity={0.8}
                   >
-                    <Text style={styles.gridEmoji}>🎨</Text>
+                    <Text style={styles.gridEmoji}>📖</Text>
                     <Text style={styles.gridTitle}>Bible Stories</Text>
                     <Text style={styles.gridSub}>Illustrated & Telugu Audio</Text>
                   </TouchableOpacity>
@@ -549,7 +679,7 @@ export default function KidsMinistryScreen({ navigation }: any) {
                 <View style={styles.stationsRow}>
                   <TouchableOpacity
                     style={styles.stationCard}
-                    onPress={() => navigation.navigate('KidsFaceScanKiosk')}
+                    onPress={() => navigation.navigate('KidsFaceScanKiosk', { targetChildId: activeChild?.id })}
                     activeOpacity={0.88}
                   >
                     <View style={[styles.stationIconBox, { backgroundColor: 'rgba(251, 191, 36, 0.15)' }]}>
@@ -798,17 +928,30 @@ export default function KidsMinistryScreen({ navigation }: any) {
                     activeOpacity={0.88}
                   >
                     <View style={styles.storyEmojiBubble}>
-                      <Text style={{ fontSize: 26 }}>{s.coverEmoji || '📖'}</Text>
+                      {s.coverImageUrl ? (
+                        <Image source={{ uri: s.coverImageUrl }} style={styles.storyCoverImg} />
+                      ) : (
+                        <Text style={{ fontSize: 26 }}>{s.coverEmoji || '📖'}</Text>
+                      )}
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.storyTitle}>{s.title}</Text>
                       <Text style={styles.storyTeluguText}>{s.titleTelugu}</Text>
                       <Text style={styles.storyMeta}>
-                        {s.scriptureRef} · {s.readTime || '5 min'} · {s.pages?.length || 4} Illustrated Pages
+                        {s.scriptureRef ? `${s.scriptureRef} · ` : ''}{s.readTime || '5 min'} · {s.pages?.length || 1} Pages
                       </Text>
                     </View>
-                    <View style={styles.storyReadPill}>
-                      <Text style={styles.storyReadPillText}>Read &rsaquo;</Text>
+                    <View style={styles.cardActionsRow}>
+                      <View style={styles.storyReadPill}>
+                        <Text style={styles.storyReadPillText}>Read &rsaquo;</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.itemDeleteBtn}
+                        onPress={() => handleDeleteStory(s.id, s.title)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Trash2 size={15} color="#EF4444" />
+                      </TouchableOpacity>
                     </View>
                   </TouchableOpacity>
                 ))}
@@ -829,15 +972,28 @@ export default function KidsMinistryScreen({ navigation }: any) {
                     activeOpacity={0.88}
                   >
                     <View style={styles.songEmojiBubble}>
-                      <Text style={{ fontSize: 24 }}>{song.coverEmoji || '🎵'}</Text>
+                      {song.thumbnailUrl ? (
+                        <Image source={{ uri: song.thumbnailUrl }} style={styles.storyCoverImg} />
+                      ) : (
+                        <Text style={{ fontSize: 24 }}>{song.coverEmoji || '🎵'}</Text>
+                      )}
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.songTitle}>{song.title}</Text>
                       <Text style={styles.songTeluguSub}>{song.titleTelugu}</Text>
                       <Text style={styles.songDurationMeta}>Duration: {song.duration || '3:00'} · Action Dance</Text>
                     </View>
-                    <View style={styles.songPlayBtn}>
-                      <Volume2 size={14} color="#FBBF24" />
+                    <View style={styles.cardActionsRow}>
+                      <View style={styles.songPlayBtn}>
+                        <Volume2 size={14} color="#FBBF24" />
+                      </View>
+                      <TouchableOpacity
+                        style={styles.itemDeleteBtn}
+                        onPress={() => handleDeleteSong(song.id, song.title)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Trash2 size={15} color="#EF4444" />
+                      </TouchableOpacity>
                     </View>
                   </TouchableOpacity>
                 ))}
@@ -1203,17 +1359,110 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     marginTop: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  childSwitcherInteractive: {
+    backgroundColor: 'rgba(251, 191, 36, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.3)',
   },
   childSwitcherText: {
     fontSize: 11,
     color: '#FBBF24',
     fontWeight: '700',
-    maxWidth: 160,
+    maxWidth: 180,
   },
   childSwitcherSub: {
     fontSize: 11,
     color: '#9CA3AF',
     marginTop: 2,
+  },
+  childBarContainer: {
+    backgroundColor: '#0D0D11',
+    borderBottomWidth: 1,
+    borderBottomColor: '#1F1F24',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  childBarHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  childBarLabelWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  childBarLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FBBF24',
+    letterSpacing: 0.5,
+  },
+  childBarSub: {
+    fontSize: 10,
+    color: '#71717A',
+    fontWeight: '500',
+  },
+  childChipsScroll: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingRight: 20,
+  },
+  childChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 14,
+    borderWidth: 1.5,
+  },
+  childChipActive: {
+    backgroundColor: '#1E1B13',
+    borderColor: '#FBBF24',
+  },
+  childChipInactive: {
+    backgroundColor: '#18181B',
+    borderColor: '#27272A',
+  },
+  childChipEmoji: {
+    fontSize: 16,
+  },
+  childChipName: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  childChipNameActive: {
+    color: '#FFFFFF',
+  },
+  childChipNameInactive: {
+    color: '#D4D4D8',
+  },
+  childChipMeta: {
+    fontSize: 10,
+    marginTop: 1,
+  },
+  childChipMetaActive: {
+    color: '#FBBF24',
+    fontWeight: '600',
+  },
+  childChipMetaInactive: {
+    color: '#71717A',
+  },
+  childChipActiveBadge: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#FBBF24',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 2,
   },
   topActionBtn: {
     flexDirection: 'row',
@@ -1840,6 +2089,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#27272A',
+    overflow: 'hidden',
+  },
+  storyCoverImg: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
   },
   storyTeluguText: {
     fontSize: 11,
@@ -1862,6 +2117,21 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#FBBF24',
+  },
+  cardActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  itemDeleteBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 7,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   songListCard: {
     flexDirection: 'row',

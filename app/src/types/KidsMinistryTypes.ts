@@ -113,6 +113,9 @@ export interface ChildRecord {
   guardians: AuthorizedGuardian[];
   
   notes?: string;
+  // Single Source of Truth link to Church Member registration
+  memberContactId?: string; // Doc ID from `Rhema Church/{churchId}/members`
+  isSyncedFromMember?: boolean;
   approvedByAdminId?: string;
   approvedAt?: any;
   enrolledAt: any;
@@ -272,6 +275,8 @@ export interface KidsBibleStory {
     questionTelugu: string;
   }>;
   audioNarrationUrl?: string;
+  isPublished?: boolean;
+  ageGroup?: string;
   createdAt: any;
   updatedAt: any;
 }
@@ -296,8 +301,12 @@ export interface KidsQuiz {
   pointsReward: number;
   badgeReward: string;
   coverEmoji: string;
+  difficulty?: 'beginner' | 'intermediate' | 'advanced';
+  ageGroup?: string;
+  isPublished?: boolean;
   questions: KidsQuizQuestion[];
   createdAt: any;
+  updatedAt?: any;
 }
 
 export interface KidsWorshipSong {
@@ -308,11 +317,16 @@ export interface KidsWorshipSong {
   titleTelugu: string;
   category: 'action_song' | 'praise' | 'hymn' | 'action_dance';
   youtubeVideoId: string;
+  audioUrl?: string;
+  audioFileName?: string;
+  thumbnailUrl?: string;
   lyricsTelugu: string;
   lyricsEnglish: string;
   duration: string;
   coverEmoji: string;
+  isPublished?: boolean;
   createdAt: any;
+  updatedAt?: any;
 }
 
 export interface KidsMemoryVerse {

@@ -279,6 +279,8 @@ class KidsMinistryService {
       guardians?: any[];
       emergencyContact?: { name: string; phone: string; relationship: string };
       notes?: string;
+      memberContactId?: string;
+      isSyncedFromMember?: boolean;
     }
   ): Promise<ChildRecord> {
     const cId = churchId || RHEMA_CHURCH_ID;
@@ -348,9 +350,48 @@ class KidsMinistryService {
           ],
 
       notes: data.notes || '',
+      ...(data.memberContactId ? { memberContactId: data.memberContactId } : {}),
+      ...(data.isSyncedFromMember ? { isSyncedFromMember: true } : {}),
       enrolledAt: now,
       updatedAt: now,
     };
+
+    // If this registration originated from Rhema Kids directly, ensure the child is also
+    // mirrored into `Rhema Church/{churchId}/members` so the Members tab reflects it seamlessly!
+    let linkedMemberContactId = data.memberContactId;
+    if (!linkedMemberContactId && data.familyId) {
+      try {
+        const memberRef = await firestore()
+          .collection(RHEMA_ROOT_COLLECTION)
+          .doc(cId)
+          .collection('members')
+          .add(
+            sanitizeForFirestore({
+              firstName: data.firstName.trim(),
+              lastName: (data.lastName || '').trim(),
+              name: fullName,
+              displayName: fullName,
+              relation: data.gender === 'female' ? 'Daughter' : 'Son',
+              gender: data.gender === 'female' ? 'Female' : 'Male',
+              dob: data.dob,
+              anniversaryDate: '',
+              email: data.parentEmail || '',
+              phone: '',
+              referencePhone: (data.parentPhone || '').replace(/\D/g, '').slice(-10),
+              isKidMember: true,
+              accountId: data.familyId,
+              profilePhoto: data.photoUrl || '',
+              createdAt: firestore.FieldValue.serverTimestamp(),
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            })
+          );
+        linkedMemberContactId = memberRef.id;
+        (newRecord as any).memberContactId = linkedMemberContactId;
+        (newRecord as any).isSyncedFromMember = true;
+      } catch (memSyncErr) {
+        console.warn('[KidsMinistryService] Error mirroring child to members:', memSyncErr);
+      }
+    }
 
     const docRef = await collectionRef.add(sanitizeForFirestore(newRecord));
     return {
@@ -375,10 +416,42 @@ class KidsMinistryService {
   }
 
   /**
-   * Deletes a child registration.
+   * Deletes a child registration from Rhema Kids.
+   * 
+   * Marks the linked church member record as `removedFromKids: true` (or sets a flag)
+   * so that auto-sync does not immediately re-add the deleted child into Rhema Kids,
+   * while keeping the member's family card completely safe and untouched in Church Members!
    */
   async deleteChild(churchId: string, childDocId: string): Promise<void> {
-    await this.getKidsCollection(churchId).doc(childDocId).delete();
+    const cId = churchId || RHEMA_CHURCH_ID;
+    try {
+      const childDoc = await this.getKidsCollection(cId).doc(childDocId).get();
+      if (childDoc.exists) {
+        const data = childDoc.data() as any;
+        const linkedMemberContactId = data?.memberContactId;
+        if (linkedMemberContactId) {
+          // Flag the member record in `Rhema Church/{cId}/members` so auto-sync ignores it for Kids Ministry
+          // (DO NOT delete the member! The family member card remains 100% intact)
+          await firestore()
+            .collection(RHEMA_ROOT_COLLECTION)
+            .doc(cId)
+            .collection('members')
+            .doc(linkedMemberContactId)
+            .update({
+              removedFromKids: true,
+              removedFromKidsAt: firestore.FieldValue.serverTimestamp(),
+            })
+            .catch(err => {
+              console.warn('[KidsMinistryService] Could not set removedFromKids flag on member:', err);
+            });
+        }
+      }
+    } catch (err) {
+      console.warn('[KidsMinistryService] Error reading child doc before delete:', err);
+    }
+
+    // Delete from kids_children collection
+    await this.getKidsCollection(cId).doc(childDocId).delete();
   }
 
   /**
@@ -390,6 +463,166 @@ class KidsMinistryService {
     } catch (e) {
       console.warn('Could not load related contacts for family:', e);
       return [];
+    }
+  }
+
+  /**
+   * Synchronizes registered children from Church Member Registration (`Rhema Church/{churchId}/members`)
+   * to the Rhema Kids Sunday School module (`kids_children`).
+   * 
+   * Single Source of Truth:
+   * - Scans family members with kid relations (Son, Daughter, Child, Grandson, Granddaughter, Nephew, Niece)
+   *   or flagged with isKidMember: true.
+   * - Deduplicates strictly by `memberContactId`, exact full name matching, or `(familyId + fullName)`.
+   * - Automatically registers missing children with their age, recommended class tier, and guardian contacts.
+   * - Updates existing kids_children if details like DOB, names, or photo have changed.
+   * - Can sync for a single family (familyId) or across the entire church.
+   */
+  async syncMemberChildrenToKidsMinistry(churchId: string, familyId?: string): Promise<{ synced: number; created: number }> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const kidRelations = ['Son', 'Daughter', 'Child', 'Grandson', 'Granddaughter', 'Nephew', 'Niece'];
+
+    try {
+      // 1. Fetch relevant member records
+      let membersQuery: any = firestore().collection(RHEMA_ROOT_COLLECTION).doc(cId).collection('members');
+      if (familyId) {
+        membersQuery = membersQuery.where('accountId', '==', familyId);
+      }
+      const membersSnap = await membersQuery.get();
+      if (membersSnap.empty) {
+        return { synced: 0, created: 0 };
+      }
+
+      // Filter down to children/kids (under 18) and ensure not intentionally removed from Kids Ministry
+      const childDocs = membersSnap.docs.filter((doc: any) => {
+        const d = doc.data();
+        // If an admin or parent intentionally deleted/removed this child from Rhema Kids, do not re-sync them
+        if (d.removedFromKids === true) return false;
+
+        const rel = (d.relation || d.Relation || '').trim();
+        const isKid = d.isKidMember === true || kidRelations.some(r => r.toLowerCase() === rel.toLowerCase());
+        if (!isKid) return false;
+        // Age guard: must be under 18 years old to be in Kids Ministry
+        if (d.dob) {
+          const age = calculateChildAge(d.dob);
+          if (age > 17) return false;
+        }
+        return true;
+      });
+
+      if (childDocs.length === 0) {
+        return { synced: 0, created: 0 };
+      }
+
+      // 2. Fetch existing kids_children in this church/family to prevent duplicates
+      let existingKidsQuery: any = this.getKidsCollection(cId);
+      if (familyId) {
+        existingKidsQuery = existingKidsQuery.where('familyId', '==', familyId);
+      }
+      const existingKidsSnap = await existingKidsQuery.get();
+      const existingKids = existingKidsSnap.docs.map((d: any) => ({
+        docId: d.id,
+        ...(d.data() as ChildRecord),
+      }));
+
+      // Cache parents for pre-populating guardian & contact info
+      const parentCache: Record<string, any> = {};
+      const getParentInfo = async (accId: string) => {
+        if (!accId) return null;
+        if (parentCache[accId]) return parentCache[accId];
+        try {
+          const parentDoc = await firestore().collection(RHEMA_ROOT_COLLECTION).doc(cId).collection('members').doc(accId).get();
+          if (parentDoc.exists) {
+            parentCache[accId] = parentDoc.data();
+            return parentDoc.data();
+          }
+        } catch {
+          // ignore lookup error
+        }
+        return null;
+      };
+
+      let created = 0;
+      let synced = 0;
+
+      for (const mDoc of childDocs) {
+        const mData = mDoc.data();
+        const memberContactId = mDoc.id;
+        const mFamilyId = mData.accountId || familyId || memberContactId;
+
+        const firstName = (mData.firstName || mData.FirstName || '').trim() || (mData.name ? mData.name.split(' ')[0] : 'Child');
+        const lastName = (mData.lastName || mData.LastName || '').trim() || (mData.name ? mData.name.split(' ').slice(1).join(' ') : '');
+        const fullName = (`${firstName} ${lastName}`).trim() || mData.name || 'Child';
+        const dob = mData.dob || mData.dateOfBirth || mData.DOB || '2020-01-01';
+        const gender: 'male' | 'female' = (mData.gender || mData.Gender || '').toLowerCase() === 'female' ? 'female' : 'male';
+
+        // Check if this child already exists in kids_children
+        const existingMatch = existingKids.find((k: any) => {
+          if (k.memberContactId && k.memberContactId === memberContactId) return true;
+          // Match by name within same family
+          if (k.familyId === mFamilyId && k.fullName.toLowerCase() === fullName.toLowerCase()) return true;
+          return false;
+        });
+
+        if (existingMatch) {
+          // Keep synchronized if DOB or link changed
+          const updates: any = {};
+          if (!existingMatch.memberContactId) {
+            updates.memberContactId = memberContactId;
+            updates.isSyncedFromMember = true;
+          }
+          if (mData.dob && existingMatch.dob !== mData.dob) {
+            updates.dob = mData.dob;
+            const newAge = calculateChildAge(mData.dob);
+            updates.age = newAge;
+            const rec = getRecommendedClassTier(newAge);
+            updates.assignedTier = rec.tier;
+            updates.assignedClassName = rec.displayName;
+          }
+          if (Object.keys(updates).length > 0) {
+            await this.updateChildProfile(cId, existingMatch.docId, updates);
+            synced++;
+          }
+        } else {
+          // Not in kids_children yet -> automatically create linked record
+          const parentData = await getParentInfo(mFamilyId);
+          const parentName = parentData?.name || `${parentData?.firstName || ''} ${parentData?.lastName || ''}`.trim() || 'Parent';
+          const parentPhone = parentData?.phone || parentData?.MobilePhone || mData.referencePhone || mData.phone || '';
+          const parentEmail = parentData?.email || '';
+
+          await this.registerChild(cId, {
+            familyId: mFamilyId,
+            parentMemberId: mFamilyId,
+            parentName,
+            parentPhone,
+            parentEmail,
+            firstName,
+            lastName,
+            dob,
+            gender,
+            photoUrl: mData.profilePhoto || mData.photoUrl || '',
+            guardians: [
+              {
+                id: mFamilyId,
+                name: parentName,
+                relationship: mData.relation === 'Daughter' || mData.relation === 'Son' ? 'Father' : 'Guardian',
+                phone: parentPhone,
+                isPrimaryContact: true,
+                canPickup: true,
+              },
+            ],
+            notes: 'Auto-synced from Church Member Registration',
+            memberContactId,
+            isSyncedFromMember: true,
+          });
+          created++;
+        }
+      }
+
+      return { synced, created };
+    } catch (err) {
+      console.error('[KidsMinistryService] Error syncing member children:', err);
+      return { synced: 0, created: 0 };
     }
   }
 
@@ -570,6 +803,7 @@ class KidsMinistryService {
       ageRange: { min: number; max: number };
       roomNumber: string;
       maxCapacity: number;
+      leadTeacherId?: string;
       leadTeacherName: string;
       leadTeacherPhone?: string;
       schedule: { dayOfWeek: string; startTime: string; endTime: string };
@@ -592,7 +826,7 @@ class KidsMinistryService {
       roomNumber: data.roomNumber.trim() || 'Room TBD',
       maxCapacity: Number(data.maxCapacity) || 25,
       currentEnrolledCount: 0,
-      leadTeacherId: '',
+      leadTeacherId: data.leadTeacherId || '',
       leadTeacherName: data.leadTeacherName.trim() || 'TBD',
       leadTeacherPhone: (data.leadTeacherPhone || '').trim(),
       schedule: {
@@ -1254,11 +1488,14 @@ class KidsMinistryService {
       name: string;
       phone: string;
       email?: string;
+      memberId?: string;
       role: any;
       assignedClassTier: KidsClassTier;
       assignedClassName: string;
       roomNumber?: string;
       pinCode?: string;
+      backgroundCheckPassed?: boolean;
+      safeguardingStatus?: 'verified' | 'pending' | 'in_review';
     }
   ): Promise<KidsTeacherRecord> {
     const cId = churchId || RHEMA_CHURCH_ID;
@@ -1269,6 +1506,7 @@ class KidsMinistryService {
     const newRecord = {
       teacherId,
       churchId: cId,
+      memberId: data.memberId || '',
       name: data.name.trim(),
       phone: data.phone.trim(),
       email: data.email?.trim() || '',
@@ -1276,10 +1514,10 @@ class KidsMinistryService {
       assignedClassTier: data.assignedClassTier,
       assignedClassName: data.assignedClassName,
       roomNumber: data.roomNumber || 'Room 201',
-      safeguardingStatus: 'verified' as const,
-      safeguardingVerifiedDate: new Date().toISOString().split('T')[0],
-      backgroundCheckPassed: true,
-      faceEnrolled: true,
+      safeguardingStatus: data.safeguardingStatus || 'verified',
+      safeguardingVerifiedDate: data.backgroundCheckPassed ? new Date().toISOString().split('T')[0] : '',
+      backgroundCheckPassed: Boolean(data.backgroundCheckPassed),
+      faceEnrolled: false,
       pinCode: data.pinCode || '1234',
       status: 'active' as const,
       attendanceCount: 0,
@@ -1289,6 +1527,34 @@ class KidsMinistryService {
 
     const docRef = await this.getTeachersCollection(cId).add(sanitizeForFirestore(newRecord));
     return { id: docRef.id, ...newRecord };
+  }
+
+  /**
+   * Fetches church members for search and selection when registering faculty.
+   */
+  async searchChurchMembers(churchId: string, search: string): Promise<any[]> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    try {
+      const snap = await firestore()
+        .collection(RHEMA_ROOT_COLLECTION)
+        .doc(cId)
+        .collection('members')
+        .limit(100)
+        .get();
+
+      const q = search.trim().toLowerCase();
+      return snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter((m: any) => {
+          const name = (m.name || `${m.firstName || ''} ${m.lastName || ''}`).trim().toLowerCase();
+          const phone = (m.phone || m.mobileNumber || '').toLowerCase();
+          if (!q) return true;
+          return name.includes(q) || phone.includes(q);
+        });
+    } catch (err) {
+      console.warn('searchChurchMembers error:', err);
+      return [];
+    }
   }
 
   /**
@@ -1718,7 +1984,7 @@ class KidsMinistryService {
         title: "I'm in the Lord's Army",
         titleTelugu: 'నేను ప్రభువు సైనికుడను (ఆక్షన్ సాంగ్)',
         category: 'action_song',
-        youtubeVideoId: '8cT6qGj7DkE',
+        youtubeVideoId: 'zeuoPQznpFo',
         coverEmoji: '🎖️',
         duration: '3:15',
         lyricsEnglish: `I may never march in the infantry,\nRide in the cavalry,\nShoot the artillery;\nI may never zoom o'er the enemy,\nBut I'm in the Lord's army! Yes, sir!`,
@@ -1731,7 +1997,7 @@ class KidsMinistryService {
         title: 'Read Your Bible, Pray Every Day',
         titleTelugu: 'బైబిల్ చదువు ప్రార్థన చేయి',
         category: 'action_song',
-        youtubeVideoId: 'uN2tEkmVj04',
+        youtubeVideoId: 'AyKSwGvUbcY',
         coverEmoji: '📖',
         duration: '2:40',
         lyricsEnglish: `Read your Bible, pray every day, and you'll grow, grow, grow!\nForget your Bible, forget to pray, and you'll shrink, shrink, shrink!`,
@@ -1744,7 +2010,7 @@ class KidsMinistryService {
         title: 'Jesus Loves Me, This I Know',
         titleTelugu: 'యేసయ్య నన్ను ప్రేమించును',
         category: 'hymn',
-        youtubeVideoId: 'n5G9hW3L9bM',
+        youtubeVideoId: 'QSaWPYb6_6k',
         coverEmoji: '❤️',
         duration: '3:05',
         lyricsEnglish: `Jesus loves me! This I know,\nFor the Bible tells me so;\nLittle ones to Him belong;\nThey are weak, but He is strong.\nYes, Jesus loves me!`,
@@ -2896,10 +3162,29 @@ class KidsMinistryService {
       };
     });
   }
-  async createStory(churchId: string, story: Partial<KidsBibleStory>): Promise<void> {
+  async createStory(churchId: string, story: Partial<KidsBibleStory>): Promise<string> {
     const cId = churchId || RHEMA_CHURCH_ID;
     const now = firestore.FieldValue.serverTimestamp();
-    await this.getStoriesCollection(cId).add(sanitizeForFirestore({ ...story, createdAt: now, updatedAt: now }));
+    const docRef = await this.getStoriesCollection(cId).add(
+      sanitizeForFirestore({
+        ...story,
+        isPublished: story.isPublished ?? true,
+        createdAt: now,
+        updatedAt: now,
+      })
+    );
+    return docRef.id;
+  }
+
+  async updateStory(churchId: string, docId: string, updates: Partial<KidsBibleStory>): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const now = firestore.FieldValue.serverTimestamp();
+    await this.getStoriesCollection(cId).doc(docId).update(
+      sanitizeForFirestore({
+        ...updates,
+        updatedAt: now,
+      })
+    );
   }
 
   async deleteStory(churchId: string, docId: string): Promise<void> {
@@ -2907,10 +3192,29 @@ class KidsMinistryService {
     await this.getStoriesCollection(cId).doc(docId).delete();
   }
 
-  async createQuiz(churchId: string, quiz: Partial<KidsQuiz>): Promise<void> {
+  async createQuiz(churchId: string, quiz: Partial<KidsQuiz>): Promise<string> {
     const cId = churchId || RHEMA_CHURCH_ID;
     const now = firestore.FieldValue.serverTimestamp();
-    await this.getQuizzesCollection(cId).add(sanitizeForFirestore({ ...quiz, createdAt: now }));
+    const docRef = await this.getQuizzesCollection(cId).add(
+      sanitizeForFirestore({
+        ...quiz,
+        isPublished: quiz.isPublished ?? true,
+        createdAt: now,
+        updatedAt: now,
+      })
+    );
+    return docRef.id;
+  }
+
+  async updateQuiz(churchId: string, docId: string, updates: Partial<KidsQuiz>): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const now = firestore.FieldValue.serverTimestamp();
+    await this.getQuizzesCollection(cId).doc(docId).update(
+      sanitizeForFirestore({
+        ...updates,
+        updatedAt: now,
+      })
+    );
   }
 
   async deleteQuiz(churchId: string, docId: string): Promise<void> {
@@ -2918,10 +3222,29 @@ class KidsMinistryService {
     await this.getQuizzesCollection(cId).doc(docId).delete();
   }
 
-  async createSong(churchId: string, song: Partial<KidsWorshipSong>): Promise<void> {
+  async createSong(churchId: string, song: Partial<KidsWorshipSong>): Promise<string> {
     const cId = churchId || RHEMA_CHURCH_ID;
     const now = firestore.FieldValue.serverTimestamp();
-    await this.getSongsCollection(cId).add(sanitizeForFirestore({ ...song, createdAt: now }));
+    const docRef = await this.getSongsCollection(cId).add(
+      sanitizeForFirestore({
+        ...song,
+        isPublished: song.isPublished ?? true,
+        createdAt: now,
+        updatedAt: now,
+      })
+    );
+    return docRef.id;
+  }
+
+  async updateSong(churchId: string, docId: string, updates: Partial<KidsWorshipSong>): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const now = firestore.FieldValue.serverTimestamp();
+    await this.getSongsCollection(cId).doc(docId).update(
+      sanitizeForFirestore({
+        ...updates,
+        updatedAt: now,
+      })
+    );
   }
 
   async deleteSong(churchId: string, docId: string): Promise<void> {

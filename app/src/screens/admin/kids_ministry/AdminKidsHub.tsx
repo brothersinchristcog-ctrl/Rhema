@@ -11,6 +11,7 @@ import {
   Dimensions,
   Platform,
   Alert,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -103,6 +104,10 @@ export default function AdminKidsHub({ navigation }: any) {
   const [showReportsModal, setShowReportsModal] = useState(false);
   const [selectedCertData, setSelectedCertData] = useState<KidsCertificateData | null>(null);
 
+  // Beautiful Delete Confirmation Modal state
+  const [childToDelete, setChildToDelete] = useState<{ id: string; name: string; childId?: string; parentName?: string; assignedClassName?: string } | null>(null);
+  const [deletingChild, setDeletingChild] = useState(false);
+
   // Phase 5, 6 & 9: Learning content, 52-week curriculum & VBS state
   const [stories, setStories] = useState<KidsBibleStory[]>([]);
   const [quizzes, setQuizzes] = useState<KidsQuiz[]>([]);
@@ -112,6 +117,11 @@ export default function AdminKidsHub({ navigation }: any) {
 
   // Load children, classes, teachers, curriculum & VBS (Realtime)
   useEffect(() => {
+    // Sync all church registered children from Member module into Kids Ministry
+    KidsMinistryService.syncMemberChildrenToKidsMinistry(churchId).catch(err => {
+      console.warn('[AdminKidsHub] Auto-sync church member children error:', err);
+    });
+
     // 1. Realtime listener for Sunday School Classes
     const unsubClasses = KidsMinistryService.subscribeToClasses(churchId, classList => {
       setClasses(classList);
@@ -190,25 +200,17 @@ export default function AdminKidsHub({ navigation }: any) {
     });
   }, [children, searchQuery]);
 
-  const handleDeleteChild = (childDocId: string, name: string) => {
-    Alert.alert(
-      'Remove Registration',
-      `Are you sure you want to remove ${name} from Sunday School?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await KidsMinistryService.deleteChild(churchId, childDocId);
-            } catch (e: any) {
-              Alert.alert('Error', e.message || 'Could not delete child');
-            }
-          },
-        },
-      ]
-    );
+  const handleConfirmDeleteChild = async () => {
+    if (!childToDelete) return;
+    try {
+      setDeletingChild(true);
+      await KidsMinistryService.deleteChild(churchId, childToDelete.id);
+      setChildToDelete(null);
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Could not delete child');
+    } finally {
+      setDeletingChild(false);
+    }
   };
 
   const getChildrenInClass = (cls: KidsClassRecord) => {
@@ -344,223 +346,267 @@ export default function AdminKidsHub({ navigation }: any) {
           {/* ==================================================== */}
           {activeTab === 'overview' && (
             <>
-              {/* 4 Key Performance Indicators */}
+              {/* 4 Clean & Compact Executive Metric Cards */}
               <View style={styles.kpiGrid}>
+                {/* 1. Enrolled Children */}
                 <View style={styles.kpiCard}>
-                  <Text style={styles.kpiNumber}>{children.length}</Text>
-                  <Text style={styles.kpiLabel}>Enrolled Children</Text>
+                  <View style={styles.kpiHeaderRow}>
+                    <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
+                      <Users size={16} color="#60A5FA" />
+                    </View>
+                    <Text style={styles.kpiNumber}>{children.length}</Text>
+                  </View>
+                  <Text style={styles.kpiTitle}>Enrolled Kids</Text>
+                  <Text style={styles.kpiSub}>Total Sunday School</Text>
                 </View>
+
+                {/* 2. Checked-In Today */}
                 <View style={styles.kpiCard}>
-                  <Text style={[styles.kpiNumber, { color: '#34D399' }]}>
-                    {children.filter(c => c.custodyStatus === 'checked_in').length}
-                  </Text>
-                  <Text style={styles.kpiLabel}>Checked-In Today</Text>
+                  <View style={styles.kpiHeaderRow}>
+                    <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
+                      <UserCheck size={16} color="#34D399" />
+                    </View>
+                    <Text style={[styles.kpiNumber, { color: '#34D399' }]}>
+                      {children.filter(c => c.custodyStatus === 'checked_in').length}
+                    </Text>
+                  </View>
+                  <Text style={styles.kpiTitle}>Checked-In</Text>
+                  <Text style={styles.kpiSub}>Active today in class</Text>
                 </View>
+
+                {/* 3. Faculty On Duty */}
                 <View style={styles.kpiCard}>
-                  <Text style={[styles.kpiNumber, { color: '#FBBF24' }]}>
-                    {todayTeacherAttendance.length}/{teachers.length || 5}
-                  </Text>
-                  <Text style={styles.kpiLabel}>Faculty On Duty</Text>
+                  <View style={styles.kpiHeaderRow}>
+                    <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
+                      <Clock size={16} color="#FBBF24" />
+                    </View>
+                    <Text style={[styles.kpiNumber, { color: '#FBBF24' }]}>
+                      {todayTeacherAttendance.length}/{teachers.length || 5}
+                    </Text>
+                  </View>
+                  <Text style={styles.kpiTitle}>Faculty On Duty</Text>
+                  <Text style={styles.kpiSub}>Clocked-in teachers</Text>
                 </View>
+
+                {/* 4. Face Scan Ready */}
                 <View style={styles.kpiCard}>
-                  <Text style={[styles.kpiNumber, { color: '#60A5FA' }]}>
-                    {children.filter(c => c.faceEnrolled).length}
-                  </Text>
-                  <Text style={styles.kpiLabel}>Face Scan Ready</Text>
+                  <View style={styles.kpiHeaderRow}>
+                    <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(139, 92, 246, 0.15)' }]}>
+                      <Camera size={16} color="#C084FC" />
+                    </View>
+                    <Text style={[styles.kpiNumber, { color: '#A78BFA' }]}>
+                      {children.filter(c => c.faceEnrolled).length}
+                    </Text>
+                  </View>
+                  <Text style={styles.kpiTitle}>Face Scan</Text>
+                  <Text style={styles.kpiSub}>Biometric profiles</Text>
                 </View>
               </View>
 
               {/* Sunday Morning Stations */}
-              <View style={{ gap: 10, marginTop: 10, marginBottom: 6 }}>
+              <View style={{ gap: 8, marginTop: 14, marginBottom: 4 }}>
                 <Text style={styles.sectionHeading}>SUNDAY MORNING ACTIVE STATIONS</Text>
 
                 <View style={styles.stationsRow}>
+                  {/* Face Scan Kiosk */}
                   <TouchableOpacity
                     style={styles.stationCard}
                     onPress={() => navigation.navigate('KidsFaceScanKiosk')}
-                    activeOpacity={0.88}
+                    activeOpacity={0.85}
                   >
-                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(251, 191, 36, 0.15)' }]}>
-                      <Camera size={20} color="#FBBF24" />
+                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
+                      <Camera size={18} color="#60A5FA" />
                     </View>
-                    <Text style={styles.stationTitle}>Face Scan Kiosk</Text>
-                    <Text style={styles.stationSub}>Entrance rapid check-in & tokens</Text>
-                    <View style={styles.stationPill}>
-                      <Text style={styles.stationPillText}>Entrance &rsaquo;</Text>
+                    <Text style={styles.stationTitle}>Face Scan</Text>
+                    <Text style={styles.stationSub}>Entrance kiosk</Text>
+                    <View style={styles.stationArrow}>
+                      <ChevronRight size={14} color="#60A5FA" />
                     </View>
                   </TouchableOpacity>
 
+                  {/* Teacher Exit */}
                   <TouchableOpacity
                     style={styles.stationCard}
                     onPress={() => navigation.navigate('KidsCheckOutScanner')}
-                    activeOpacity={0.88}
+                    activeOpacity={0.85}
                   >
-                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(52, 211, 153, 0.15)' }]}>
-                      <UserCheck size={20} color="#34D399" />
+                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
+                      <UserCheck size={18} color="#34D399" />
                     </View>
                     <Text style={styles.stationTitle}>Teacher Exit</Text>
-                    <Text style={styles.stationSub}>Dismissal scanner & guardian match</Text>
-                    <View style={[styles.stationPill, { backgroundColor: '#064E3B' }]}>
-                      <Text style={[styles.stationPillText, { color: '#34D399' }]}>Exit &rsaquo;</Text>
+                    <Text style={styles.stationSub}>Dismissal scanner</Text>
+                    <View style={styles.stationArrow}>
+                      <ChevronRight size={14} color="#34D399" />
                     </View>
                   </TouchableOpacity>
 
+                  {/* Faculty Clock-In */}
                   <TouchableOpacity
                     style={styles.stationCard}
                     onPress={() => navigation.navigate('KidsTeacherKiosk')}
-                    activeOpacity={0.88}
+                    activeOpacity={0.85}
                   >
-                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(96, 165, 250, 0.15)' }]}>
-                      <Clock size={20} color="#60A5FA" />
+                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
+                      <Clock size={18} color="#FBBF24" />
                     </View>
-                    <Text style={styles.stationTitle}>Faculty Clock-In</Text>
-                    <Text style={styles.stationSub}>Teacher biometric scan & PIN</Text>
-                    <View style={[styles.stationPill, { backgroundColor: '#1E3A8A' }]}>
-                      <Text style={[styles.stationPillText, { color: '#60A5FA' }]}>Clock In &rsaquo;</Text>
+                    <Text style={styles.stationTitle}>Clock-In</Text>
+                    <Text style={styles.stationSub}>Teacher arrival</Text>
+                    <View style={styles.stationArrow}>
+                      <ChevronRight size={14} color="#FBBF24" />
                     </View>
                   </TouchableOpacity>
                 </View>
               </View>
 
-              {/* Management Portals Navigation */}
-              <View style={{ gap: 10, marginTop: 4 }}>
+              {/* Management Portals - Clean 2x4 Grid (All 8 Portals in uniform card design) */}
+              <View style={{ gap: 8, marginTop: 12 }}>
                 <Text style={styles.sectionHeading}>MANAGEMENT PORTALS</Text>
 
-                <TouchableOpacity
-                  style={styles.portalCard}
-                  onPress={() => setActiveTab('children')}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.portalIconBox}>
-                    <Users size={20} color="#FBBF24" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.portalTitle}>Children Roster & Guardian Verification</Text>
-                    <Text style={styles.portalSub}>View emergency alerts, medical notes & authorized pickup lists</Text>
-                  </View>
-                  <ChevronRight size={18} color="#6B7280" />
-                </TouchableOpacity>
+                <View style={styles.portalGrid2x2}>
+                  {/* Grid 1: Children Roster */}
+                  <TouchableOpacity
+                    style={styles.portalGridCard}
+                    onPress={() => setActiveTab('children')}
+                    activeOpacity={0.82}
+                  >
+                    <View style={styles.portalCardHeader}>
+                      <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.12)' }]}>
+                        <Users size={18} color="#60A5FA" />
+                      </View>
+                      <ChevronRight size={15} color="#64748B" />
+                    </View>
+                    <Text style={styles.portalGridTitle}>Children Roster</Text>
+                    <Text style={styles.portalGridSub}>
+                      {children.length} enrolled · Medical & alerts
+                    </Text>
+                  </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={styles.portalCard}
-                  onPress={() => setActiveTab('classes')}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.portalIconBox}>
-                    <Calendar size={20} color="#60A5FA" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.portalTitle}>Sunday School Classrooms & Capacities</Text>
-                    <Text style={styles.portalSub}>Nursery to Teens tiers, teacher assignments & room limits</Text>
-                  </View>
-                  <ChevronRight size={18} color="#6B7280" />
-                </TouchableOpacity>
+                  {/* Grid 2: Classrooms & Capacities */}
+                  <TouchableOpacity
+                    style={styles.portalGridCard}
+                    onPress={() => setActiveTab('classes')}
+                    activeOpacity={0.82}
+                  >
+                    <View style={styles.portalCardHeader}>
+                      <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
+                        <Calendar size={18} color="#34D399" />
+                      </View>
+                      <ChevronRight size={15} color="#64748B" />
+                    </View>
+                    <Text style={styles.portalGridTitle}>Classrooms</Text>
+                    <Text style={styles.portalGridSub}>
+                      {classes.length} rooms · Capacities & age tiers
+                    </Text>
+                  </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={styles.portalCard}
-                  onPress={() => setShowTeachersModal(true)}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.portalIconBox}>
-                    <ShieldCheck size={20} color="#34D399" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.portalTitle}>Sunday School Faculty & Safeguarding</Text>
-                    <Text style={styles.portalSub}>
-                      {teachers.length} Faculty · {todayTeacherAttendance.length} On Duty Today · Police Background Verified
+                  {/* Grid 3: Sunday School Faculty */}
+                  <TouchableOpacity
+                    style={styles.portalGridCard}
+                    onPress={() => setShowTeachersModal(true)}
+                    activeOpacity={0.82}
+                  >
+                    <View style={styles.portalCardHeader}>
+                      <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.12)' }]}>
+                        <ShieldCheck size={18} color="#FBBF24" />
+                      </View>
+                      <ChevronRight size={15} color="#64748B" />
+                    </View>
+                    <Text style={styles.portalGridTitle}>Faculty & Helpers</Text>
+                    <Text style={styles.portalGridSub}>
+                      {teachers.length} members · {todayTeacherAttendance.length} on duty
                     </Text>
-                  </View>
-                  <ChevronRight size={18} color="#6B7280" />
-                </TouchableOpacity>
+                  </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={styles.portalCard}
-                  onPress={() => setActiveTab('curriculum')}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.portalIconBox}>
-                    <Sparkles size={20} color="#F472B6" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.portalTitle}>52-Week Curriculum & AI Studio</Text>
-                    <Text style={styles.portalSub}>Bilingual Telugu & English lessons, quizzes & crafts</Text>
-                  </View>
-                  <ChevronRight size={18} color="#6B7280" />
-                </TouchableOpacity>
+                  {/* Grid 4: Bible Learning Center CMS */}
+                  <TouchableOpacity
+                    style={styles.portalGridCard}
+                    onPress={() => setShowContentManagerModal(true)}
+                    activeOpacity={0.82}
+                  >
+                    <View style={styles.portalCardHeader}>
+                      <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(168, 85, 247, 0.12)' }]}>
+                        <BookOpen size={18} color="#C084FC" />
+                      </View>
+                      <ChevronRight size={15} color="#64748B" />
+                    </View>
+                    <Text style={styles.portalGridTitle}>Bible LMS CMS</Text>
+                    <Text style={styles.portalGridSub}>
+                      {stories.length} stories · {quizzes.length} quizzes · {songs.length} songs
+                    </Text>
+                  </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={styles.portalCard}
-                  onPress={() => setShowContentManagerModal(true)}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.portalIconBox, { backgroundColor: 'rgba(251, 191, 36, 0.15)' }]}>
-                    <BookOpen size={20} color="#FBBF24" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.portalTitle}>Bible Learning Center CMS</Text>
-                    <Text style={styles.portalSub}>
-                      {stories.length} Illustrated Stories · {quizzes.length} Quizzes · {songs.length} Worship Songs
+                  {/* Grid 5: 52-Week Curriculum */}
+                  <TouchableOpacity
+                    style={styles.portalGridCard}
+                    onPress={() => setActiveTab('curriculum')}
+                    activeOpacity={0.82}
+                  >
+                    <View style={styles.portalCardHeader}>
+                      <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(244, 114, 182, 0.12)' }]}>
+                        <Sparkles size={18} color="#F472B6" />
+                      </View>
+                      <ChevronRight size={15} color="#64748B" />
+                    </View>
+                    <Text style={styles.portalGridTitle}>52-Wk Curriculum</Text>
+                    <Text style={styles.portalGridSub}>
+                      52 weekly scripture & memory plans
                     </Text>
-                  </View>
-                  <ChevronRight size={18} color="#6B7280" />
-                </TouchableOpacity>
+                  </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={[styles.portalCard, { borderColor: '#8B5CF6', borderWidth: 1 }]}
-                  onPress={() => setShowAICopilotModal(true)}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.portalIconBox, { backgroundColor: 'rgba(139, 92, 246, 0.2)' }]}>
-                    <Sparkles size={20} color="#C084FC" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.portalTitle, { color: '#C084FC' }]}>
-                      AI Kids Ministry Studio (Claude 3.5 Sonnet)
+                  {/* Grid 6: AI Lesson Studio */}
+                  <TouchableOpacity
+                    style={styles.portalGridCard}
+                    onPress={() => setShowAICopilotModal(true)}
+                    activeOpacity={0.82}
+                  >
+                    <View style={styles.portalCardHeader}>
+                      <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(147, 51, 234, 0.12)' }]}>
+                        <Sparkles size={18} color="#A855F7" />
+                      </View>
+                      <ChevronRight size={15} color="#64748B" />
+                    </View>
+                    <Text style={styles.portalGridTitle}>Claude AI Studio</Text>
+                    <Text style={styles.portalGridSub}>
+                      Automated crafts, stories & quiz maker
                     </Text>
-                    <Text style={styles.portalSub}>
-                      Generate bilingual lesson plans, interactive quizzes, stories & verse actions on-demand
-                    </Text>
-                  </View>
-                  <ChevronRight size={18} color="#C084FC" />
-                </TouchableOpacity>
+                  </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={[styles.portalCard, { borderColor: '#EF4444', borderWidth: 1 }]}
-                  onPress={() => setShowVBSModal(true)}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.portalIconBox, { backgroundColor: 'rgba(239, 68, 68, 0.2)' }]}>
-                    <Award size={20} color="#EF4444" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.portalTitle, { color: '#EF4444' }]}>
-                      VBS & Summer Camps Hub (4 Houses)
+                  {/* Grid 7: VBS & Special Camps */}
+                  <TouchableOpacity
+                    style={styles.portalGridCard}
+                    onPress={() => setShowVBSModal(true)}
+                    activeOpacity={0.82}
+                  >
+                    <View style={styles.portalCardHeader}>
+                      <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(239, 68, 68, 0.12)' }]}>
+                        <Award size={18} color="#EF4444" />
+                      </View>
+                      <ChevronRight size={15} color="#64748B" />
+                    </View>
+                    <Text style={styles.portalGridTitle}>VBS & Camps</Text>
+                    <Text style={styles.portalGridSub}>
+                      Vacation Bible School registrations
                     </Text>
-                    <Text style={styles.portalSub}>
-                      {vbsEvent?.title || 'Kingdom Champions VBS 2026'} · Live scores, house cheer & certificates
-                    </Text>
-                  </View>
-                  <ChevronRight size={18} color="#EF4444" />
-                </TouchableOpacity>
+                  </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={[styles.portalCard, { borderColor: '#10B981', borderWidth: 1 }]}
-                  onPress={() => setShowReportsModal(true)}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.portalIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]}>
-                    <TrendingUp size={20} color="#10B981" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.portalTitle, { color: '#10B981' }]}>
-                      Ministry Health & Board Analytics
+                  {/* Grid 8: Analytics & Safety Reports */}
+                  <TouchableOpacity
+                    style={styles.portalGridCard}
+                    onPress={() => setShowReportsModal(true)}
+                    activeOpacity={0.82}
+                  >
+                    <View style={styles.portalCardHeader}>
+                      <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
+                        <TrendingUp size={18} color="#34D399" />
+                      </View>
+                      <ChevronRight size={15} color="#64748B" />
+                    </View>
+                    <Text style={styles.portalGridTitle}>Safety Reports</Text>
+                    <Text style={styles.portalGridSub}>
+                      Attendance logs, incident records & PDF
                     </Text>
-                    <Text style={styles.portalSub}>
-                      Safeguarding ratios, attendance trends, medical audits & WhatsApp export
-                    </Text>
-                  </View>
-                  <ChevronRight size={18} color="#10B981" />
-                </TouchableOpacity>
+                  </TouchableOpacity>
+                </View>
               </View>
             </>
           )}
@@ -609,16 +655,18 @@ export default function AdminKidsHub({ navigation }: any) {
                       </View>
 
                       <View style={{ flex: 1 }}>
-                        <View style={styles.nameRow}>
-                          <Text style={styles.childNameSerif}>{c.fullName}</Text>
-                          <View style={styles.idBadge}>
-                            <Text style={styles.idBadgeText}>{c.childId}</Text>
-                          </View>
-                        </View>
+                        <Text style={styles.childNameSerif}>{c.fullName}</Text>
 
                         <Text style={styles.childMeta}>
                           Age: {c.age} · {c.gender === 'male' ? 'Boy' : 'Girl'} · {c.assignedClassName || 'Class'}
                         </Text>
+
+                        {/* Kid ID Badge shown below Age */}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                          <View style={styles.idBadge}>
+                            <Text style={styles.idBadgeText}>ID: {c.childId}</Text>
+                          </View>
+                        </View>
 
                         {/* Medical Alert Tag */}
                         {c.medical?.hasAllergies && (
@@ -631,12 +679,22 @@ export default function AdminKidsHub({ navigation }: any) {
                         )}
                       </View>
 
-                      {/* Delete / Edit Button */}
+                      {/* Delete Child Button */}
                       <TouchableOpacity
                         style={styles.deleteBtn}
-                        onPress={() => handleDeleteChild(c.id, c.fullName)}
+                        onPress={() =>
+                          setChildToDelete({
+                            id: c.id,
+                            name: c.fullName,
+                            childId: c.childId,
+                            parentName: c.parentName,
+                            assignedClassName: c.assignedClassName,
+                          })
+                        }
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        activeOpacity={0.7}
                       >
-                        <X size={14} color="#EF4444" />
+                        <Trash2 size={15} color="#EF4444" />
                       </TouchableOpacity>
                     </View>
 
@@ -1065,6 +1123,83 @@ export default function AdminKidsHub({ navigation }: any) {
         />
       )}
 
+      {/* ── BEAUTIFUL DELETE CONFIRMATION MODAL ── */}
+      <Modal
+        visible={!!childToDelete}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!deletingChild) setChildToDelete(null);
+        }}
+      >
+        <View style={styles.confirmBackdrop}>
+          <View style={styles.confirmCard}>
+            <View style={styles.confirmIconBubble}>
+              <Trash2 size={24} color="#EF4444" />
+            </View>
+
+            <Text style={styles.confirmTitle}>Remove Registration?</Text>
+            <Text style={styles.confirmSubtitle}>
+              Are you sure you want to remove <Text style={{ color: '#FFFFFF', fontWeight: '800' }}>{childToDelete?.name}</Text> from Sunday School?
+            </Text>
+
+            {/* Information Summary Box */}
+            <View style={styles.confirmChildInfoBox}>
+              <View style={styles.confirmInfoRow}>
+                <Text style={styles.confirmInfoLabel}>Child ID</Text>
+                <Text style={styles.confirmInfoVal}>{childToDelete?.childId || 'N/A'}</Text>
+              </View>
+              {childToDelete?.assignedClassName && (
+                <View style={styles.confirmInfoRow}>
+                  <Text style={styles.confirmInfoLabel}>Classroom</Text>
+                  <Text style={styles.confirmInfoVal}>{childToDelete?.assignedClassName}</Text>
+                </View>
+              )}
+              {childToDelete?.parentName && (
+                <View style={styles.confirmInfoRow}>
+                  <Text style={styles.confirmInfoLabel}>Parent</Text>
+                  <Text style={styles.confirmInfoVal}>{childToDelete?.parentName}</Text>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.confirmNoticePill}>
+              <Shield size={14} color="#38BDF8" />
+              <Text style={styles.confirmNoticeText}>
+                The member's church family card under the Members tab will remain 100% safe and unaffected.
+              </Text>
+            </View>
+
+            <View style={styles.confirmActionsRow}>
+              <TouchableOpacity
+                style={styles.confirmCancelBtn}
+                onPress={() => setChildToDelete(null)}
+                disabled={deletingChild}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.confirmCancelText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.confirmDeleteBtn}
+                onPress={handleConfirmDeleteChild}
+                disabled={deletingChild}
+                activeOpacity={0.85}
+              >
+                {deletingChild ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Trash2 size={16} color="#FFFFFF" />
+                    <Text style={styles.confirmDeleteText}>Remove Child</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* ── EXECUTIVE HEALTH & ANALYTICS REPORT MODAL ── */}
       {showReportsModal && (
         <AdminKidsReportsModal
@@ -1185,81 +1320,151 @@ const styles = StyleSheet.create({
   kpiGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    gap: 8,
   },
   kpiCard: {
-    width: (width - 50) / 2,
-    backgroundColor: '#18181B',
-    borderRadius: 18,
-    padding: 16,
+    width: (width - 48) / 2,
+    backgroundColor: '#0F172A',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: '#1E293B',
+  },
+  kpiHeaderRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  kpiIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   kpiNumber: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: '900',
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     color: '#FFFFFF',
   },
-  kpiLabel: {
+  kpiTitle: {
+    fontSize: 13,
+    color: '#F1F5F9',
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  kpiSub: {
     fontSize: 11,
-    color: '#9CA3AF',
-    marginTop: 4,
-    fontWeight: '500',
+    color: '#94A3B8',
+    marginTop: 2,
   },
   sectionHeading: {
     fontSize: 11,
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    fontWeight: '700',
-    color: '#9CA3AF',
-    letterSpacing: 1.5,
+    fontWeight: '800',
+    color: '#94A3B8',
+    letterSpacing: 1.2,
     marginBottom: 4,
   },
   stationsRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
   },
   stationCard: {
     flex: 1,
-    backgroundColor: '#18181B',
-    borderRadius: 16,
-    padding: 14,
+    backgroundColor: '#0F172A',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 11,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: '#1E293B',
+    position: 'relative',
   },
   stationIconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   stationTitle: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#FFFFFF',
     marginBottom: 2,
   },
   stationSub: {
-    fontSize: 10,
-    color: '#9CA3AF',
+    fontSize: 10.5,
+    color: '#94A3B8',
     lineHeight: 14,
-    minHeight: 28,
   },
-  stationPill: {
-    marginTop: 8,
-    backgroundColor: 'rgba(251, 191, 36, 0.1)',
-    paddingVertical: 5,
-    paddingHorizontal: 8,
-    borderRadius: 6,
-    alignSelf: 'flex-start',
+  stationArrow: {
+    position: 'absolute',
+    top: 10,
+    right: 8,
   },
-  stationPillText: {
-    fontSize: 10,
+  portalGrid2x2: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  portalGridCard: {
+    width: (width - 48) / 2,
+    backgroundColor: '#0F172A',
+    borderRadius: 14,
+    padding: 13,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+  },
+  portalCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  portalGridIconBox: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  portalGridTitle: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  portalGridSub: {
+    fontSize: 11,
+    color: '#94A3B8',
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  additionalPortalsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    flexWrap: 'wrap',
+    marginTop: 6,
+  },
+  smallPortalPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#0F172A',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+  },
+  smallPortalPillText: {
+    fontSize: 10.5,
+    color: '#E2E8F0',
     fontWeight: '700',
-    color: '#FBBF24',
   },
   portalCard: {
     backgroundColor: '#18181B',
@@ -1405,10 +1610,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   deleteBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    width: 32,
+    height: 32,
+    borderRadius: 9,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.35)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1436,6 +1643,139 @@ const styles = StyleSheet.create({
     color: '#D4D4D8',
     fontSize: 10,
     fontWeight: '600',
+  },
+  // ── CONFIRMATION MODAL STYLES ──
+  confirmBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.78)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  confirmCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#0F172A',
+    borderRadius: 22,
+    padding: 22,
+    borderWidth: 1.5,
+    borderColor: '#334155',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  confirmIconBubble: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  confirmTitle: {
+    fontSize: 18,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontWeight: '800',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  confirmSubtitle: {
+    fontSize: 13,
+    color: '#94A3B8',
+    textAlign: 'center',
+    lineHeight: 19,
+    marginBottom: 16,
+  },
+  confirmChildInfoBox: {
+    width: '100%',
+    backgroundColor: '#1E293B',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+    gap: 8,
+    marginBottom: 14,
+  },
+  confirmInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  confirmInfoLabel: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontWeight: '600',
+  },
+  confirmInfoVal: {
+    fontSize: 12,
+    color: '#F1F5F9',
+    fontWeight: '700',
+  },
+  confirmNoticePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(56, 189, 248, 0.1)',
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.25)',
+    marginBottom: 20,
+    width: '100%',
+  },
+  confirmNoticeText: {
+    fontSize: 11,
+    color: '#7DD3FC',
+    lineHeight: 15,
+    flex: 1,
+  },
+  confirmActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    width: '100%',
+  },
+  confirmCancelBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#334155',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmCancelText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#E2E8F0',
+  },
+  confirmDeleteBtn: {
+    flex: 1.2,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#DC2626',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    shadowColor: '#DC2626',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  confirmDeleteText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   classCard: {
     backgroundColor: '#18181B',

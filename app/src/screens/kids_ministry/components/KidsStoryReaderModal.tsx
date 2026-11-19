@@ -9,11 +9,13 @@ import {
   Platform,
   Alert,
   Dimensions,
+  StatusBar,
+  Image,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   X,
   BookOpen,
-  Volume2,
   ChevronLeft,
   ChevronRight,
   CheckCircle,
@@ -37,9 +39,9 @@ export default function KidsStoryReaderModal({
 }: KidsStoryReaderModalProps) {
   if (!story) return null;
 
+  const insets = useSafeAreaInsets();
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [langMode, setLangMode] = useState<'both' | 'english' | 'telugu'>('both');
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
 
   const pages = story.pages || [];
   const totalPages = pages.length;
@@ -58,15 +60,6 @@ export default function KidsStoryReaderModal({
     }
   };
 
-  const handlePlayVoice = () => {
-    setIsPlayingAudio(true);
-    Alert.alert(
-      'Audio Narration 🎙️',
-      `Playing Telugu & English narration for Page ${currentPageIndex + 1}...`,
-      [{ text: 'Stop', onPress: () => setIsPlayingAudio(false) }]
-    );
-  };
-
   const handleCompleteStory = () => {
     Alert.alert(
       'Story Completed! 🌟',
@@ -77,21 +70,22 @@ export default function KidsStoryReaderModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
-      <View style={styles.container}>
+      <View style={[styles.container, { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) }]}>
+        <StatusBar barStyle="light-content" backgroundColor="#000000" />
+
         {/* ── TOP NAV HEADER ── */}
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+          <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <X size={20} color="#FFFFFF" />
           </TouchableOpacity>
 
           <View style={styles.headerTitles}>
-            <Text style={styles.headerTitleSerif}>{story.title}</Text>
-            <Text style={styles.headerTeluguSub}>{story.titleTelugu}</Text>
+            <Text style={styles.headerTitleSerif} numberOfLines={1}>{story.title}</Text>
+            <Text style={styles.headerTeluguSub} numberOfLines={1}>{story.titleTelugu}</Text>
           </View>
 
-          <TouchableOpacity onPress={handlePlayVoice} style={styles.voiceBtn}>
-            <Volume2 size={16} color={isPlayingAudio ? '#10B981' : '#FBBF24'} />
-          </TouchableOpacity>
+          {/* Spacer to keep center title balanced without audio button */}
+          <View style={styles.headerSpacer} />
         </View>
 
         {/* ── LANGUAGE FILTER BAR & PROGRESS ── */}
@@ -123,14 +117,24 @@ export default function KidsStoryReaderModal({
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
           {currentPage && (
             <View style={styles.pageCard}>
-              {/* Giant Illustration Bubble */}
-              <View style={styles.illustrationBubble}>
-                <Text style={styles.illustrationEmoji}>{currentPage.illustrationEmoji || '📖'}</Text>
-              </View>
+              {/* Illustration: Show Uploaded Image if available, otherwise display bubble */}
+              {(currentPage.imageUrl || story.coverImageUrl) ? (
+                <View style={styles.illustrationImageBox}>
+                  <Image
+                    source={{ uri: currentPage.imageUrl || story.coverImageUrl }}
+                    style={styles.illustrationImage}
+                    resizeMode="cover"
+                  />
+                </View>
+              ) : (
+                <View style={styles.illustrationBubble}>
+                  <Text style={styles.illustrationEmoji}>{currentPage.illustrationEmoji || story.coverEmoji || '📖'}</Text>
+                </View>
+              )}
 
               {/* Page Heading */}
-              <Text style={styles.pageHeading}>{currentPage.heading}</Text>
-              <Text style={styles.scriptureRefBadge}>{story.scriptureRef}</Text>
+              {currentPage.heading ? <Text style={styles.pageHeading}>{currentPage.heading}</Text> : null}
+              {story.scriptureRef ? <Text style={styles.scriptureRefBadge}>{story.scriptureRef}</Text> : null}
 
               <View style={styles.divider} />
 
@@ -218,9 +222,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 54 : 20,
-    paddingBottom: 14,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#18181B',
   },
@@ -234,26 +238,26 @@ const styles = StyleSheet.create({
   },
   headerTitles: {
     alignItems: 'center',
+    justifyContent: 'center',
     flex: 1,
+    paddingHorizontal: 8,
   },
   headerTitleSerif: {
     fontSize: 16,
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     fontWeight: '800',
     color: '#FFFFFF',
+    textAlign: 'center',
   },
   headerTeluguSub: {
     fontSize: 11,
     color: '#9CA3AF',
     marginTop: 2,
+    textAlign: 'center',
   },
-  voiceBtn: {
+  headerSpacer: {
     width: 36,
     height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(251, 191, 36, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   controlBar: {
     flexDirection: 'row',
@@ -324,6 +328,20 @@ const styles = StyleSheet.create({
   },
   illustrationEmoji: {
     fontSize: 44,
+  },
+  illustrationImageBox: {
+    width: '100%',
+    height: 200,
+    borderRadius: 18,
+    overflow: 'hidden',
+    marginBottom: 16,
+    borderWidth: 1.5,
+    borderColor: '#334155',
+    backgroundColor: '#09090B',
+  },
+  illustrationImage: {
+    width: '100%',
+    height: '100%',
   },
   pageHeading: {
     fontSize: 18,

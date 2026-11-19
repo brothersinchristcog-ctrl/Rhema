@@ -130,9 +130,9 @@ export default function KidsTeacherKiosk({ navigation }: any) {
     if (candidatesWithPhotos.length === 0) {
       Alert.alert(
         'No Teacher Photos Enrolled',
-        'No teacher profile photos are enrolled for face scan yet. Please check in using your 4-Digit Teacher PIN or ask Admin to upload teacher photos.',
+        'No teacher profile photos are enrolled for face scan yet. Please clock in by selecting your name from the Teachers Roster or ask Admin to upload teacher photos.',
         [
-          { text: 'Use 4-Digit PIN', onPress: () => setKioskMode('pin_pad') },
+          { text: 'Teachers Roster', onPress: () => setKioskMode('roster') },
           { text: 'Cancel', style: 'cancel' },
         ]
       );
@@ -177,14 +177,14 @@ export default function KidsTeacherKiosk({ navigation }: any) {
 
       Alert.alert(
         verification.faceDetected ? 'Face Not Recognized' : 'No Clear Face Detected',
-        verification.reason || 'Your face did not match any enrolled teacher profile. Please try again or use your 4-Digit Teacher PIN.',
+        verification.reason || 'Your face did not match any enrolled teacher profile. Please try again or clock in from the Teachers Roster.',
         [
-          { text: 'Use 4-Digit PIN', onPress: () => setKioskMode('pin_pad') },
+          { text: 'Teachers Roster', onPress: () => setKioskMode('roster') },
           { text: 'Try Again', style: 'cancel' },
         ]
       );
     } catch (err: any) {
-      Alert.alert('Verification Error', err?.message || 'Could not verify face right now. Please use your 4-Digit Teacher PIN.');
+      Alert.alert('Verification Error', err?.message || 'Could not verify face right now. Please select your name from the Teachers Roster.');
     } finally {
       setScanning(false);
     }
@@ -292,19 +292,6 @@ export default function KidsTeacherKiosk({ navigation }: any) {
           <Camera size={14} color={kioskMode === 'face_scan' ? '#000000' : '#9CA3AF'} />
           <Text style={[styles.modeTabText, kioskMode === 'face_scan' && styles.modeTabTextActive]}>
             Face Scan
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.modeTab, kioskMode === 'pin_pad' && styles.modeTabActive]}
-          onPress={() => {
-            setKioskMode('pin_pad');
-            setMatchedTeacher(null);
-          }}
-        >
-          <KeyRound size={14} color={kioskMode === 'pin_pad' ? '#000000' : '#9CA3AF'} />
-          <Text style={[styles.modeTabText, kioskMode === 'pin_pad' && styles.modeTabTextActive]}>
-            4-Digit PIN
           </Text>
         </TouchableOpacity>
 
