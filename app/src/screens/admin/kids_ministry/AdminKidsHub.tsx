@@ -283,43 +283,49 @@ export default function AdminKidsHub({ navigation }: any) {
         </TouchableOpacity>
       </View>
 
-      {/* ── TAB PILLS (MATCHING CARE CELLS PILLS) ── */}
-      <View style={styles.tabsRow}>
-        <TouchableOpacity
-          style={[styles.tabPill, activeTab === 'overview' && styles.tabPillActive]}
-          onPress={() => setActiveTab('overview')}
+      {/* ── TAB PILLS (HORIZONTALLY SCROLLABLE SO NO TAB IS CLIPPED) ── */}
+      <View style={styles.tabsRowWrapper}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabsRow}
         >
-          <Text style={[styles.tabPillText, activeTab === 'overview' && styles.tabPillTextActive]}>
-            Overview
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabPill, activeTab === 'overview' && styles.tabPillActive]}
+            onPress={() => setActiveTab('overview')}
+          >
+            <Text style={[styles.tabPillText, activeTab === 'overview' && styles.tabPillTextActive]}>
+              Overview
+            </Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.tabPill, activeTab === 'children' && styles.tabPillActive]}
-          onPress={() => setActiveTab('children')}
-        >
-          <Text style={[styles.tabPillText, activeTab === 'children' && styles.tabPillTextActive]}>
-            Children ({children.length})
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabPill, activeTab === 'children' && styles.tabPillActive]}
+            onPress={() => setActiveTab('children')}
+          >
+            <Text style={[styles.tabPillText, activeTab === 'children' && styles.tabPillTextActive]}>
+              Children ({children.length})
+            </Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.tabPill, activeTab === 'classes' && styles.tabPillActive]}
-          onPress={() => setActiveTab('classes')}
-        >
-          <Text style={[styles.tabPillText, activeTab === 'classes' && styles.tabPillTextActive]}>
-            Classes ({classes.length}){promotionCandidates.length > 0 ? ` · 🎓 ${promotionCandidates.length}` : ''}
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabPill, activeTab === 'classes' && styles.tabPillActive]}
+            onPress={() => setActiveTab('classes')}
+          >
+            <Text style={[styles.tabPillText, activeTab === 'classes' && styles.tabPillTextActive]}>
+              Classes ({classes.length}){promotionCandidates.length > 0 ? ` · 🎓 ${promotionCandidates.length}` : ''}
+            </Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.tabPill, activeTab === 'curriculum' && styles.tabPillActive]}
-          onPress={() => setActiveTab('curriculum')}
-        >
-          <Text style={[styles.tabPillText, activeTab === 'curriculum' && styles.tabPillTextActive]}>
-            Curriculum
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabPill, activeTab === 'curriculum' && styles.tabPillActive]}
+            onPress={() => setActiveTab('curriculum')}
+          >
+            <Text style={[styles.tabPillText, activeTab === 'curriculum' && styles.tabPillTextActive]}>
+              Curriculum
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
       </View>
 
       {/* ── CONTENT BODY ── */}
@@ -682,9 +688,13 @@ export default function AdminKidsHub({ navigation }: any) {
 
               {/* Classes Action Header Bar */}
               <View style={styles.classesActionBar}>
-                <View>
-                  <Text style={styles.classesHeaderTitle}>Sunday School Classes ({classes.length})</Text>
-                  <Text style={styles.classesHeaderSub}>Create, edit, or delete age-group classrooms</Text>
+                <View style={{ flex: 1, marginRight: 10 }}>
+                  <Text style={styles.classesHeaderTitle} numberOfLines={1}>
+                    Sunday School Classes ({classes.length})
+                  </Text>
+                  <Text style={styles.classesHeaderSub} numberOfLines={2}>
+                    Create, edit, or delete classrooms
+                  </Text>
                 </View>
                 <TouchableOpacity
                   style={styles.createClassBtn}
@@ -1119,13 +1129,15 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
   },
-  tabsRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    gap: 8,
+  tabsRowWrapper: {
     borderBottomWidth: 1,
     borderBottomColor: '#121215',
+  },
+  tabsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 8,
   },
   tabPill: {
     paddingHorizontal: 14,
@@ -1638,16 +1650,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 10,
+    gap: 8,
     backgroundColor: '#18181B',
-    borderRadius: 14,
+    borderRadius: 16,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderWidth: 1,
     borderColor: '#27272A',
+    overflow: 'hidden',
   },
   classesHeaderTitle: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: '800',
     color: '#FFFFFF',
   },
@@ -1655,14 +1668,17 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#9CA3AF',
     marginTop: 2,
+    lineHeight: 15,
   },
   createClassBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
     gap: 5,
     backgroundColor: '#FBBF24',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 9,
     borderRadius: 10,
   },
   createClassBtnText: {

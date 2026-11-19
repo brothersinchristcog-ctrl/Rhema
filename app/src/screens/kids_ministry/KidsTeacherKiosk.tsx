@@ -35,6 +35,7 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import KidsMinistryService from '../../services/KidsMinistryService';
+import KidsFaceRecognitionService from '../../services/KidsFaceRecognitionService';
 import { KidsTeacherRecord } from '../../types/KidsMinistryTypes';
 
 const { width } = Dimensions.get('window');
@@ -45,6 +46,7 @@ export default function KidsTeacherKiosk({ navigation }: any) {
   const churchId = member?.churchId || 'rhema';
 
   // Camera permissions
+  const cameraRef = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>('front');
 
@@ -108,26 +110,84 @@ export default function KidsTeacherKiosk({ navigation }: any) {
     outputRange: [-100, 100],
   });
 
-  // Handle Face Recognition Trigger
-  const triggerFaceScan = () => {
+  // Strict Biometric Teacher Face Recognition (NEVER fakes or guesses a match)
+  const triggerFaceScan = async () => {
+    if (scanning) return;
     if (teachers.length === 0) {
       Alert.alert('No Teachers', 'No Sunday School teachers found on roster.');
       return;
     }
 
-    setScanning(true);
-    setTimeout(() => {
-      setScanning(false);
-      // Pick first teacher or current member if matched
-      const matched = teachers.find(t => t.memberId === member?.id) || teachers[0];
-      const isAlready = todayAttendance.some(a => a.teacherDocId === matched.id);
+    const candidatesWithPhotos = teachers
+      .filter(t => Boolean(t.photoUrl && t.photoUrl.trim().length > 10))
+      .map(t => ({
+        id: t.id,
+        name: t.name,
+        photoUrl: t.photoUrl!,
+        role: 'teacher' as const,
+      }));
 
-      setMatchedTeacher({
-        teacher: matched,
-        confidence: 98.4,
-        alreadyCheckedIn: isAlready,
+    if (candidatesWithPhotos.length === 0) {
+      Alert.alert(
+        'No Teacher Photos Enrolled',
+        'No teacher profile photos are enrolled for face scan yet. Please check in using your 4-Digit Teacher PIN or ask Admin to upload teacher photos.',
+        [
+          { text: 'Use 4-Digit PIN', onPress: () => setKioskMode('pin_pad') },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+      return;
+    }
+
+    if (!cameraRef.current) {
+      Alert.alert('Camera Initializing', 'Please wait a moment for the camera to become ready.');
+      return;
+    }
+
+    try {
+      setScanning(true);
+      const captured = await cameraRef.current.takePictureAsync({
+        quality: 0.35,
+        base64: true,
       });
-    }, 1200);
+
+      if (!captured?.base64) {
+        Alert.alert('Capture Failed', 'Could not capture a clear camera image. Please try again.');
+        return;
+      }
+
+      const verification = await KidsFaceRecognitionService.verifyLiveFace(
+        captured.base64,
+        candidatesWithPhotos,
+        'teacher'
+      );
+
+      if (verification.matched && verification.matchedCandidateId && verification.confidence >= 85) {
+        const matched = teachers.find(t => t.id === verification.matchedCandidateId);
+        if (matched) {
+          const isAlready = todayAttendance.some(a => a.teacherDocId === matched.id);
+          setMatchedTeacher({
+            teacher: matched,
+            confidence: verification.confidence,
+            alreadyCheckedIn: isAlready,
+          });
+          return;
+        }
+      }
+
+      Alert.alert(
+        verification.faceDetected ? 'Face Not Recognized' : 'No Clear Face Detected',
+        verification.reason || 'Your face did not match any enrolled teacher profile. Please try again or use your 4-Digit Teacher PIN.',
+        [
+          { text: 'Use 4-Digit PIN', onPress: () => setKioskMode('pin_pad') },
+          { text: 'Try Again', style: 'cancel' },
+        ]
+      );
+    } catch (err: any) {
+      Alert.alert('Verification Error', err?.message || 'Could not verify face right now. Please use your 4-Digit Teacher PIN.');
+    } finally {
+      setScanning(false);
+    }
   };
 
   // Handle PIN Pad digit press
@@ -279,6 +339,7 @@ export default function KidsTeacherKiosk({ navigation }: any) {
           ) : (
             <View style={styles.viewfinder}>
               <CameraView
+                ref={cameraRef}
                 style={StyleSheet.absoluteFillObject}
                 facing={cameraFacing}
               />
@@ -327,11 +388,14 @@ export default function KidsTeacherKiosk({ navigation }: any) {
                     activeOpacity={0.88}
                   >
                     {scanning ? (
-                      <ActivityIndicator size="small" color="#000000" />
+                      <>
+                        <ActivityIndicator size="small" color="#000000" />
+                        <Text style={styles.scanTriggerText}>Verifying Face...</Text>
+                      </>
                     ) : (
                       <>
-                        <Zap size={16} color="#000000" />
-                        <Text style={styles.scanTriggerText}>Simulate Teacher Step-Up (Scan)</Text>
+                        <Camera size={16} color="#000000" />
+                        <Text style={styles.scanTriggerText}>Scan & Verify Teacher Face</Text>
                       </>
                     )}
                   </TouchableOpacity>

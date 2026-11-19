@@ -12,6 +12,7 @@ import {
   Alert,
   StatusBar,
   ScrollView,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -35,6 +36,7 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import KidsMinistryService from '../../services/KidsMinistryService';
+import KidsFaceRecognitionService from '../../services/KidsFaceRecognitionService';
 import { ChildRecord } from '../../types/KidsMinistryTypes';
 
 const { width, height } = Dimensions.get('window');
@@ -58,7 +60,13 @@ export default function KidsFaceScanKiosk({ navigation }: any) {
   const [loadingKids, setLoadingKids] = useState(true);
 
   // Scanning & Match States
+  const cameraRef = useRef<CameraView>(null);
   const [scanning, setScanning] = useState(false);
+  const [scanStatusText, setScanStatusText] = useState('Align child face inside the oval guide');
+  const [scanRejected, setScanRejected] = useState<{
+    title: string;
+    reason: string;
+  } | null>(null);
   const [scannedResult, setScannedResult] = useState<{
     child: ChildRecord;
     confidence: number;
@@ -104,29 +112,97 @@ export default function KidsFaceScanKiosk({ navigation }: any) {
     outputRange: [-100, 100],
   });
 
-  // Handle Face Scan Trigger (Simulated matching against registered children)
+  // REAL Strict Biometric Face Recognition:
+  // Captures live camera frame and strictly compares against enrolled child reference photos.
+  // Rejects adults, strangers, wrong children, or empty frames — NEVER allows unverified faces.
   const triggerFaceRecognition = async () => {
+    if (scanning) return;
+
     if (enrolledChildren.length === 0) {
       Alert.alert('No Children Enrolled', 'Please enroll children in Sunday School first.');
       return;
     }
 
-    setScanning(true);
+    const candidatesWithPhotos = enrolledChildren
+      .filter(c => Boolean(c.photoUrl && c.photoUrl.trim().length > 10))
+      .map(c => ({
+        id: c.id,
+        name: c.fullName,
+        photoUrl: c.photoUrl!,
+        role: 'child' as const,
+        age: c.age,
+        gender: c.gender,
+      }));
 
-    // Simulate real-time face detection & cosine embedding comparison
-    setTimeout(() => {
-      setScanning(false);
-      // Pick first child or child with faceEnrolled
-      const matchedChild = enrolledChildren.find(c => c.faceEnrolled) || enrolledChildren[0];
-      const confidence = 96.4;
-
-      setScannedResult({
-        child: matchedChild,
-        confidence,
-        pickupCode: matchedChild.activePickupCode,
-        alreadyCheckedIn: matchedChild.custodyStatus === 'checked_in',
+    if (candidatesWithPhotos.length === 0) {
+      setScanRejected({
+        title: 'No Child Face Photos Enrolled',
+        reason:
+          'None of the enrolled children have a profile photo uploaded yet. Please add a clear face photo during enrollment, or use Scan App QR / Manual Search.',
       });
-    }, 1200);
+      return;
+    }
+
+    if (!cameraRef.current) {
+      Alert.alert('Camera Initializing', 'Please wait a moment for the camera to become ready.');
+      return;
+    }
+
+    try {
+      setScanRejected(null);
+      setScannedResult(null);
+      setScanning(true);
+      setScanStatusText('Capturing live face frame...');
+
+      const captured = await cameraRef.current.takePictureAsync({
+        quality: 0.35,
+        base64: true,
+      });
+
+      if (!captured?.base64) {
+        setScanRejected({
+          title: 'Camera Capture Failed',
+          reason: 'Could not capture a clear frame. Hold steady and try again.',
+        });
+        return;
+      }
+
+      setScanStatusText('Verifying child identity strictly...');
+      const verification = await KidsFaceRecognitionService.verifyLiveFace(
+        captured.base64,
+        candidatesWithPhotos,
+        'child'
+      );
+
+      if (verification.matched && verification.matchedCandidateId && verification.confidence >= 85) {
+        const matchedChild = enrolledChildren.find(c => c.id === verification.matchedCandidateId);
+        if (matchedChild) {
+          setScannedResult({
+            child: matchedChild,
+            confidence: verification.confidence,
+            pickupCode: matchedChild.activePickupCode,
+            alreadyCheckedIn: matchedChild.custodyStatus === 'checked_in',
+          });
+          return;
+        }
+      }
+
+      // STRICT REJECTION — Never allow non-matching faces (adults, parents, strangers, blurry/no face)
+      setScanRejected({
+        title: verification.faceDetected ? 'Face Not Recognized' : 'No Clear Face Detected',
+        reason:
+          verification.reason ||
+          'Only enrolled Sunday School children can check in via face scan. Please position the enrolled child in front of the camera or use QR / Manual Search.',
+      });
+    } catch (err: any) {
+      setScanRejected({
+        title: 'Verification Error',
+        reason: err?.message || 'Unable to verify face right now. Please try again or use QR / Manual Search.',
+      });
+    } finally {
+      setScanning(false);
+      setScanStatusText('Align child face inside the oval guide');
+    }
   };
 
   // Handle QR code detected by CameraView
@@ -289,6 +365,7 @@ export default function KidsFaceScanKiosk({ navigation }: any) {
           ) : (
             <View style={styles.viewfinder}>
               <CameraView
+                ref={cameraRef}
                 style={StyleSheet.absoluteFillObject}
                 facing={cameraFacing}
                 enableTorch={isTorchOn}
@@ -332,14 +409,14 @@ export default function KidsFaceScanKiosk({ navigation }: any) {
                 <View style={styles.instructionPill}>
                   <Text style={styles.instructionText}>
                     {kioskMode === 'face_scan'
-                      ? 'Align child face inside the oval guide'
+                      ? scanStatusText
                       : 'Align Parent App QR Code'}
                   </Text>
                 </View>
               </View>
 
-              {/* BOTTOM SCAN TRIGGER (FOR FACE RECOGNITION) */}
-              {kioskMode === 'face_scan' && !scannedResult && (
+              {/* BOTTOM SCAN TRIGGER (FOR STRICT FACE RECOGNITION) */}
+              {kioskMode === 'face_scan' && !scannedResult && !scanRejected && (
                 <View style={styles.triggerBar}>
                   <TouchableOpacity
                     style={[styles.scanTriggerBtn, scanning && { opacity: 0.7 }]}
@@ -348,11 +425,14 @@ export default function KidsFaceScanKiosk({ navigation }: any) {
                     activeOpacity={0.88}
                   >
                     {scanning ? (
-                      <ActivityIndicator size="small" color="#000000" />
+                      <>
+                        <ActivityIndicator size="small" color="#000000" />
+                        <Text style={styles.scanTriggerText}>Verifying Face...</Text>
+                      </>
                     ) : (
                       <>
-                        <Zap size={16} color="#000000" />
-                        <Text style={styles.scanTriggerText}>Simulate Child Step-Up (Scan)</Text>
+                        <Camera size={16} color="#000000" />
+                        <Text style={styles.scanTriggerText}>Scan & Verify Child Face</Text>
                       </>
                     )}
                   </TouchableOpacity>
@@ -423,6 +503,48 @@ export default function KidsFaceScanKiosk({ navigation }: any) {
         </View>
       )}
 
+      {/* ── STRICT REJECTION CARD (ON NON-MATCHING / ADULT / UNRECOGNIZED FACE) ── */}
+      {scanRejected && !scannedResult && (
+        <View style={styles.resultCardOverlay}>
+          <View style={[styles.resultCard, styles.rejectedCard]}>
+            <View style={styles.resultHeader}>
+              <View style={styles.verifiedRow}>
+                <AlertTriangle size={18} color="#EF4444" />
+                <Text style={styles.rejectedHeaderText}>VERIFICATION DENIED</Text>
+              </View>
+              <TouchableOpacity onPress={() => setScanRejected(null)} style={styles.closeResultBtn}>
+                <X size={16} color="#9CA3AF" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.rejectedTitle}>{scanRejected.title}</Text>
+            <Text style={styles.rejectedReason}>{scanRejected.reason}</Text>
+
+            <View style={styles.resultActionRow}>
+              <TouchableOpacity
+                style={styles.retryScanBtn}
+                onPress={() => setScanRejected(null)}
+                activeOpacity={0.85}
+              >
+                <Camera size={15} color="#000000" />
+                <Text style={styles.confirmCheckInText}>Try Again</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.cancelResultBtn}
+                onPress={() => {
+                  setScanRejected(null);
+                  setKioskMode('scan_qr');
+                  setCameraFacing('back');
+                }}
+              >
+                <Text style={styles.cancelResultText}>Use QR</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+
       {/* ── POPUP RESULT CARD (ON SCAN MATCH) ── */}
       {scannedResult && (
         <View style={styles.resultCardOverlay}>
@@ -432,7 +554,7 @@ export default function KidsFaceScanKiosk({ navigation }: any) {
                 <CheckCircle size={16} color="#34D399" />
                 <Text style={styles.verifiedText}>
                   {scannedResult.confidence < 100
-                    ? `FACE MATCHED (${scannedResult.confidence}%)`
+                    ? `FACE VERIFIED (${scannedResult.confidence}%)`
                     : 'CHILD IDENTIFIED'}
                 </Text>
               </View>
@@ -442,11 +564,18 @@ export default function KidsFaceScanKiosk({ navigation }: any) {
             </View>
 
             <View style={styles.childInfoRow}>
-              <View style={styles.matchedAvatar}>
-                <Text style={styles.matchedAvatarText}>
-                  {scannedResult.child.firstName.charAt(0)}
-                </Text>
-              </View>
+              {scannedResult.child.photoUrl ? (
+                <Image
+                  source={{ uri: scannedResult.child.photoUrl }}
+                  style={styles.matchedAvatarPhoto}
+                />
+              ) : (
+                <View style={styles.matchedAvatar}>
+                  <Text style={styles.matchedAvatarText}>
+                    {scannedResult.child.firstName.charAt(0)}
+                  </Text>
+                </View>
+              )}
               <View style={{ flex: 1 }}>
                 <Text style={styles.matchedName}>{scannedResult.child.fullName}</Text>
                 <Text style={styles.matchedClass}>
@@ -956,5 +1085,45 @@ const styles = StyleSheet.create({
     color: '#D4D4D8',
     fontSize: 12,
     fontWeight: '600',
+  },
+  rejectedCard: {
+    borderColor: 'rgba(239, 68, 68, 0.5)',
+    borderWidth: 1.5,
+  },
+  rejectedHeaderText: {
+    color: '#EF4444',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  rejectedTitle: {
+    fontSize: 17,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginTop: 4,
+  },
+  rejectedReason: {
+    fontSize: 12.5,
+    color: '#D4D4D8',
+    lineHeight: 19,
+    marginBottom: 8,
+  },
+  retryScanBtn: {
+    flex: 1,
+    height: 48,
+    backgroundColor: '#FBBF24',
+    borderRadius: 14,
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  matchedAvatarPhoto: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 2,
+    borderColor: '#34D399',
   },
 });
