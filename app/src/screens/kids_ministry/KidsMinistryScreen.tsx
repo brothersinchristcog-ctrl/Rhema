@@ -248,6 +248,50 @@ export default function KidsMinistryScreen({ navigation }: any) {
     );
   };
 
+  const handleDeleteStory = (storyId: string, storyTitle: string) => {
+    Alert.alert(
+      'Delete Bible Story',
+      `Are you sure you want to delete "${storyTitle}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await KidsMinistryService.deleteStory(churchId, storyId);
+              Alert.alert('Story Deleted', `"${storyTitle}" has been removed.`);
+            } catch (e: any) {
+              Alert.alert('Error', e.message || 'Could not delete story');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteSong = (songId: string, songTitle: string) => {
+    Alert.alert(
+      'Delete Worship Song',
+      `Are you sure you want to delete "${songTitle}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await KidsMinistryService.deleteSong(churchId, songId);
+              Alert.alert('Song Deleted', `"${songTitle}" has been removed.`);
+            } catch (e: any) {
+              Alert.alert('Error', e.message || 'Could not delete song');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   // If splash is showing, render cinematic splash screen
   if (showSplash) {
     return (
@@ -897,8 +941,17 @@ export default function KidsMinistryScreen({ navigation }: any) {
                         {s.scriptureRef ? `${s.scriptureRef} · ` : ''}{s.readTime || '5 min'} · {s.pages?.length || 1} Pages
                       </Text>
                     </View>
-                    <View style={styles.storyReadPill}>
-                      <Text style={styles.storyReadPillText}>Read &rsaquo;</Text>
+                    <View style={styles.cardActionsRow}>
+                      <View style={styles.storyReadPill}>
+                        <Text style={styles.storyReadPillText}>Read &rsaquo;</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.itemDeleteBtn}
+                        onPress={() => handleDeleteStory(s.id, s.title)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Trash2 size={15} color="#EF4444" />
+                      </TouchableOpacity>
                     </View>
                   </TouchableOpacity>
                 ))}
@@ -919,15 +972,28 @@ export default function KidsMinistryScreen({ navigation }: any) {
                     activeOpacity={0.88}
                   >
                     <View style={styles.songEmojiBubble}>
-                      <Text style={{ fontSize: 24 }}>{song.coverEmoji || '🎵'}</Text>
+                      {song.thumbnailUrl ? (
+                        <Image source={{ uri: song.thumbnailUrl }} style={styles.storyCoverImg} />
+                      ) : (
+                        <Text style={{ fontSize: 24 }}>{song.coverEmoji || '🎵'}</Text>
+                      )}
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.songTitle}>{song.title}</Text>
                       <Text style={styles.songTeluguSub}>{song.titleTelugu}</Text>
                       <Text style={styles.songDurationMeta}>Duration: {song.duration || '3:00'} · Action Dance</Text>
                     </View>
-                    <View style={styles.songPlayBtn}>
-                      <Volume2 size={14} color="#FBBF24" />
+                    <View style={styles.cardActionsRow}>
+                      <View style={styles.songPlayBtn}>
+                        <Volume2 size={14} color="#FBBF24" />
+                      </View>
+                      <TouchableOpacity
+                        style={styles.itemDeleteBtn}
+                        onPress={() => handleDeleteSong(song.id, song.title)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Trash2 size={15} color="#EF4444" />
+                      </TouchableOpacity>
                     </View>
                   </TouchableOpacity>
                 ))}
@@ -2051,6 +2117,21 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#FBBF24',
+  },
+  cardActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  itemDeleteBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 7,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   songListCard: {
     flexDirection: 'row',
