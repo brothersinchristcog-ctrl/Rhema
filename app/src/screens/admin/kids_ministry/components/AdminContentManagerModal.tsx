@@ -1160,113 +1160,210 @@ export default function AdminContentManagerModal({
         </Modal>
 
         {/* ══════════════════════════════════════════════════════════════ */}
-        {/* WORSHIP SONG CREATE / EDIT MODAL                             */}
+        {/* WORSHIP SONG CREATE / EDIT MODAL (FULL SCREEN SCROLLABLE)      */}
         {/* ══════════════════════════════════════════════════════════════ */}
-        <Modal visible={showSongModal} animationType="slide" transparent onRequestClose={() => setShowSongModal(false)}>
-          <View style={styles.editorBackdrop}>
-            <View style={styles.editorCard}>
-              <View style={styles.editorHeader}>
-                <View>
-                  <Text style={styles.editorTag}>WORSHIP & PRAISE SONGS</Text>
-                  <Text style={styles.editorTitle}>{editingSongId ? 'Edit Worship Song' : 'Add Worship Song'}</Text>
+        <Modal visible={showSongModal} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setShowSongModal(false)}>
+          <View style={[styles.container, { paddingTop: insets.top }]}>
+            {/* Top Header */}
+            <View style={styles.topHeader}>
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <View style={styles.hubBadgeRow}>
+                  <View style={styles.hubBadge}>
+                    <Music size={11} color="#93C5FD" />
+                    <Text style={styles.hubBadgeText}>PRAISE & ACTION SONGS</Text>
+                  </View>
                 </View>
-                <TouchableOpacity onPress={() => setShowSongModal(false)} style={styles.editorCloseBtn}>
-                  <X size={18} color="#94A3B8" />
-                </TouchableOpacity>
+                <Text style={styles.headerTitle}>{editingSongId ? 'Edit Worship Song' : 'Add Worship Song'}</Text>
+                <Text style={styles.headerSubtitle} numberOfLines={1}>
+                  Action songs, bilingual lyrics, YouTube & audio accompaniment
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowSongModal(false)}
+                style={styles.closeHeaderBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <X size={20} color="#94A3B8" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.editorFullScroll}>
+              {/* Section 1: Titles & Category */}
+              <View style={styles.formCardSection}>
+                <Text style={styles.formSectionHeading}>1. SONG TITLES & CATEGORY</Text>
+                <Text style={styles.formSectionHelper}>
+                  Enter the song title in English and Telugu, and select the song type for Sunday School children.
+                </Text>
+
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.inputMiniLabel}>English Song Title *</Text>
+                  <TextInput
+                    style={styles.formInput}
+                    value={songTitle}
+                    onChangeText={setSongTitle}
+                    placeholder="e.g. Read Your Bible, Pray Every Day / Father Abraham"
+                    placeholderTextColor="#64748B"
+                  />
+                </View>
+
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.inputMiniLabel}>Telugu Song Title (తెలుగు పాట శీర్షిక)</Text>
+                  <TextInput
+                    style={styles.formInput}
+                    value={songTelugu}
+                    onChangeText={setSongTelugu}
+                    placeholder="e.g. బైబిల్ చదువు ప్రార్థన చేయి"
+                    placeholderTextColor="#64748B"
+                  />
+                </View>
+
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.inputMiniLabel}>Song Category</Text>
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                    {[
+                      { key: 'action_song', label: 'Action Song' },
+                      { key: 'praise', label: 'Praise & Worship' },
+                      { key: 'hymn', label: 'Classic Hymn' },
+                    ].map(c => (
+                      <TouchableOpacity
+                        key={c.key}
+                        style={[styles.categoryChip, songCategory === c.key && styles.categoryChipActive]}
+                        onPress={() => setSongCategory(c.key as any)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.categoryChipText, songCategory === c.key && styles.categoryChipTextActive]}>
+                          {c.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
               </View>
 
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.editorFormScroll}>
-                <Text style={styles.formSectionHeading}>1. SONG TITLES & CATEGORY</Text>
-                <TextInput
-                  style={styles.formInput}
-                  value={songTitle}
-                  onChangeText={setSongTitle}
-                  placeholder="Song Title (e.g. Read Your Bible, Pray Every Day)"
-                  placeholderTextColor="#64748B"
-                />
-                <TextInput
-                  style={styles.formInput}
-                  value={songTelugu}
-                  onChangeText={setSongTelugu}
-                  placeholder="Telugu Title (e.g. బైబిల్ చదువు ప్రార్థన చేయి)"
-                  placeholderTextColor="#64748B"
-                />
+              {/* Section 2: Media Attachments */}
+              <View style={styles.formCardSection}>
+                <Text style={styles.formSectionHeading}>2. MEDIA ATTACHMENTS (YOUTUBE / AUDIO / THUMBNAIL)</Text>
+                <Text style={styles.formSectionHelper}>
+                  Attach a YouTube video ID or full link, an MP3 audio track, or a colorful video thumbnail.
+                </Text>
 
-                <Text style={styles.inputMiniLabel}>Song Category</Text>
-                <View style={{ flexDirection: 'row', gap: 6, marginBottom: 12 }}>
-                  {[
-                    { key: 'action_song', label: 'Action Song' },
-                    { key: 'praise', label: 'Praise & Worship' },
-                    { key: 'hymn', label: 'Classic Hymn' },
-                  ].map(c => (
-                    <TouchableOpacity
-                      key={c.key}
-                      style={[styles.categoryChip, songCategory === c.key && styles.categoryChipActive]}
-                      onPress={() => setSongCategory(c.key as any)}
-                    >
-                      <Text style={[styles.categoryChipText, songCategory === c.key && styles.categoryChipTextActive]}>
-                        {c.label}
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.inputMiniLabel}>YouTube Video ID or Link</Text>
+                  <TextInput
+                    style={styles.formInput}
+                    value={songVideoId}
+                    onChangeText={setSongVideoId}
+                    placeholder="e.g. AyKSwGvUbcY or https://youtu.be/..."
+                    placeholderTextColor="#64748B"
+                  />
+                </View>
+
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.inputMiniLabel}>Audio Track & Custom Artwork</Text>
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+                    <TouchableOpacity style={[styles.uploadImageBtn, { flex: 1 }]} onPress={handlePickAudioFile} activeOpacity={0.8}>
+                      <Upload size={14} color="#93C5FD" />
+                      <Text style={styles.uploadImageBtnText} numberOfLines={1}>
+                        {songAudioName ? `Audio: ${songAudioName}` : 'Attach Audio (MP3)'}
                       </Text>
                     </TouchableOpacity>
-                  ))}
+
+                    <TouchableOpacity style={[styles.uploadImageBtn, { flex: 1 }]} onPress={handlePickSongThumbnail} activeOpacity={0.8}>
+                      <Upload size={14} color="#93C5FD" />
+                      <Text style={styles.uploadImageBtnText} numberOfLines={1}>
+                        {songThumbnailUrl ? 'Change Thumbnail' : 'Pick Thumbnail'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {songAudioName ? (
+                    <View style={[styles.uploadedPreviewRow, { marginTop: 6 }]}>
+                      <CheckCircle size={14} color="#34D399" />
+                      <Text style={styles.uploadedSuccessText} numberOfLines={1}>Audio track linked: {songAudioName}</Text>
+                      <TouchableOpacity onPress={() => { setSongAudioUrl(''); setSongAudioName(''); }} style={{ marginLeft: 'auto' }}>
+                        <Text style={styles.removeImageText}>Remove</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : null}
+
+                  {songThumbnailUrl ? (
+                    <View style={[styles.uploadedPreviewRow, { marginTop: 6 }]}>
+                      <CheckCircle size={14} color="#34D399" />
+                      <Text style={styles.uploadedSuccessText} numberOfLines={1}>Custom thumbnail attached</Text>
+                      <TouchableOpacity onPress={() => setSongThumbnailUrl('')} style={{ marginLeft: 'auto' }}>
+                        <Text style={styles.removeImageText}>Remove</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : null}
                 </View>
+              </View>
 
-                <Text style={styles.formSectionHeading}>2. MEDIA ATTACHMENTS (YOUTUBE / AUDIO / THUMBNAIL)</Text>
-                <TextInput
-                  style={styles.formInput}
-                  value={songVideoId}
-                  onChangeText={setSongVideoId}
-                  placeholder="YouTube Video ID or Full URL (e.g. AyKSwGvUbcY)"
-                  placeholderTextColor="#64748B"
-                />
-
-                <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
-                  <TouchableOpacity style={[styles.uploadImageBtn, { flex: 1 }]} onPress={handlePickAudioFile}>
-                    <Upload size={14} color="#93C5FD" />
-                    <Text style={styles.uploadImageBtnText} numberOfLines={1}>
-                      {songAudioName ? `Audio: ${songAudioName}` : 'Attach Audio (MP3)'}
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={[styles.uploadImageBtn, { flex: 1 }]} onPress={handlePickSongThumbnail}>
-                    <Upload size={14} color="#93C5FD" />
-                    <Text style={styles.uploadImageBtnText} numberOfLines={1}>
-                      {songThumbnailUrl ? 'Thumbnail Added' : 'Custom Thumbnail'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
+              {/* Section 3: Bilingual Lyrics */}
+              <View style={styles.formCardSection}>
                 <Text style={styles.formSectionHeading}>3. BILINGUAL LYRICS</Text>
-                <TextInput
-                  style={[styles.formInput, { height: 90, textAlignVertical: 'top' }]}
-                  value={songLyricsEng}
-                  onChangeText={setSongLyricsEng}
-                  placeholder="English lyrics with actions or verse lines..."
-                  placeholderTextColor="#64748B"
-                  multiline
-                />
-                <TextInput
-                  style={[styles.formInput, { height: 90, textAlignVertical: 'top' }]}
-                  value={songLyricsTel}
-                  onChangeText={setSongLyricsTel}
-                  placeholder="తెలుగు పాట సాహిత్యం..."
-                  placeholderTextColor="#64748B"
-                  multiline
-                />
-              </ScrollView>
+                <Text style={styles.formSectionHelper}>
+                  Provide the lyrics with motion guides or verse lines for children and teachers.
+                </Text>
 
-              <View style={styles.editorActionsRow}>
-                <TouchableOpacity style={styles.cancelActionBtn} onPress={() => setShowSongModal(false)}>
-                  <Text style={styles.cancelActionText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.saveActionBtn} onPress={handleSaveSong} disabled={saving}>
-                  {saving ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.saveActionText}>{editingSongId ? 'Save Changes' : 'Publish Song'}</Text>
-                  )}
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.inputMiniLabel}>English Lyrics & Action Motions</Text>
+                  <TextInput
+                    style={[styles.formInput, { height: 120, textAlignVertical: 'top' }]}
+                    value={songLyricsEng}
+                    onChangeText={setSongLyricsEng}
+                    placeholder="English lyrics with action choreography (e.g. Clap hands, Jump up)..."
+                    placeholderTextColor="#64748B"
+                    multiline
+                  />
+                </View>
+
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.inputMiniLabel}>Telugu Lyrics (తెలుగు పాట సాహిత్యం)</Text>
+                  <TextInput
+                    style={[styles.formInput, { height: 120, textAlignVertical: 'top' }]}
+                    value={songLyricsTel}
+                    onChangeText={setSongLyricsTel}
+                    placeholder="ఈ పాట యొక్క తెలుగు సాహిత్యం..."
+                    placeholderTextColor="#64748B"
+                    multiline
+                  />
+                </View>
+              </View>
+
+              {/* Section 4: Publishing Status */}
+              <View style={[styles.formCardSection, styles.toggleRowCard]}>
+                <View style={{ flex: 1, marginRight: 10 }}>
+                  <Text style={styles.toggleTitle}>Publish to Rhema Kids App</Text>
+                  <Text style={styles.toggleDesc}>
+                    {songPublished
+                      ? 'Live: Children and parents can sing along and practice actions immediately.'
+                      : 'Draft: Saved privately for Sunday School teachers to review before release.'}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.toggleBtn, songPublished && styles.toggleBtnActive]}
+                  onPress={() => setSongPublished(!songPublished)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.toggleBtnText, songPublished && styles.toggleBtnTextActive]}>
+                    {songPublished ? 'Published' : 'Draft Only'}
+                  </Text>
                 </TouchableOpacity>
               </View>
+            </ScrollView>
+
+            {/* Bottom Actions Bar */}
+            <View style={styles.editorBottomBar}>
+              <TouchableOpacity style={styles.cancelActionBtn} onPress={() => setShowSongModal(false)} activeOpacity={0.8}>
+                <Text style={styles.cancelActionText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.saveActionBtn} onPress={handleSaveSong} disabled={saving} activeOpacity={0.85}>
+                {saving ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.saveActionText}>{editingSongId ? 'Save Changes' : 'Publish Song'}</Text>
+                )}
+              </TouchableOpacity>
             </View>
           </View>
         </Modal>
