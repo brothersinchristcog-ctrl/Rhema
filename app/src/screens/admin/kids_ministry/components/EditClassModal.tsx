@@ -11,7 +11,21 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { X, Save, Clock, DoorOpen, Users, User, Phone, Trash2, Plus, Calendar } from 'lucide-react-native';
+import {
+  X,
+  Save,
+  Clock,
+  DoorOpen,
+  Users,
+  User,
+  Phone,
+  Trash2,
+  Plus,
+  Calendar,
+  Search,
+  CheckCircle,
+} from 'lucide-react-native';
+import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import KidsMinistryService from '../../../../services/KidsMinistryService';
 import { KidsClassRecord, KidsClassTier } from '../../../../types/KidsMinistryTypes';
 
@@ -53,10 +67,19 @@ export default function EditClassModal({
   const [leadTeacherName, setLeadTeacherName] = useState('');
   const [leadTeacherPhone, setLeadTeacherPhone] = useState('');
   const [dayOfWeek, setDayOfWeek] = useState('Sunday');
-  const [startTime, setStartTime] = useState('09:30');
-  const [endTime, setEndTime] = useState('11:30');
+  const [startTime, setStartTime] = useState('09:30 AM');
+  const [endTime, setEndTime] = useState('11:30 AM');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Search Members for Lead Teacher
+  const [memberResults, setMemberResults] = useState<any[]>([]);
+  const [searchingMembers, setSearchingMembers] = useState(false);
+  const [showMemberDropdown, setShowMemberDropdown] = useState(false);
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+
+  // DateTimePicker State
+  const [timePickerTarget, setTimePickerTarget] = useState<'start' | 'end' | null>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -70,8 +93,9 @@ export default function EditClassModal({
       setLeadTeacherName(classData.leadTeacherName || '');
       setLeadTeacherPhone(classData.leadTeacherPhone || '');
       setDayOfWeek(classData.schedule?.dayOfWeek || 'Sunday');
-      setStartTime(classData.schedule?.startTime || '09:30');
-      setEndTime(classData.schedule?.endTime || '11:30');
+      setStartTime(classData.schedule?.startTime || '09:30 AM');
+      setEndTime(classData.schedule?.endTime || '11:30 AM');
+      setSelectedMemberId(classData.leadTeacherId || null);
     } else {
       setName('');
       setTier('primary');
@@ -82,10 +106,63 @@ export default function EditClassModal({
       setLeadTeacherName('');
       setLeadTeacherPhone('');
       setDayOfWeek('Sunday');
-      setStartTime('09:30');
-      setEndTime('11:30');
+      setStartTime('09:30 AM');
+      setEndTime('11:30 AM');
+      setSelectedMemberId(null);
     }
+    setMemberResults([]);
+    setShowMemberDropdown(false);
   }, [visible, classData]);
+
+  // Lead Teacher Member Search
+  const handleSearchTeacher = async (text: string) => {
+    setLeadTeacherName(text);
+    if (!text.trim()) {
+      setMemberResults([]);
+      setShowMemberDropdown(false);
+      return;
+    }
+    setSearchingMembers(true);
+    setShowMemberDropdown(true);
+    try {
+      const results = await KidsMinistryService.searchChurchMembers(churchId, text);
+      setMemberResults(results.slice(0, 8));
+    } catch {
+      setMemberResults([]);
+    } finally {
+      setSearchingMembers(false);
+    }
+  };
+
+  const handleSelectMember = (m: any) => {
+    const displayName = (m.name || `${m.firstName || ''} ${m.lastName || ''}`).trim();
+    const phone = m.phone || m.mobileNumber || m.phoneNumber || '';
+    setSelectedMemberId(m.id);
+    setLeadTeacherName(displayName);
+    setLeadTeacherPhone(phone);
+    setShowMemberDropdown(false);
+  };
+
+  const formatTimeToString = (date: Date) => {
+    let hours = date.getHours();
+    const minutes = date.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const strMinutes = minutes < 10 ? `0${minutes}` : `${minutes}`;
+    const strHours = hours < 10 ? `0${hours}` : `${hours}`;
+    return `${strHours}:${strMinutes} ${ampm}`;
+  };
+
+  const handleConfirmTime = (date: Date) => {
+    const formatted = formatTimeToString(date);
+    if (timePickerTarget === 'start') {
+      setStartTime(formatted);
+    } else if (timePickerTarget === 'end') {
+      setEndTime(formatted);
+    }
+    setTimePickerTarget(null);
+  };
 
   const handleSelectTier = (selectedTier: KidsClassTier) => {
     setTier(selectedTier);
@@ -122,12 +199,13 @@ export default function EditClassModal({
           ageRange: { min: parsedMin, max: parsedMax },
           roomNumber: roomNumber.trim() || 'Room TBD',
           maxCapacity: cap,
+          leadTeacherId: selectedMemberId || undefined,
           leadTeacherName: leadTeacherName.trim(),
           leadTeacherPhone: leadTeacherPhone.trim(),
           schedule: {
             dayOfWeek: dayOfWeek.trim() || 'Sunday',
-            startTime: startTime.trim() || '09:30',
-            endTime: endTime.trim() || '11:30',
+            startTime: startTime.trim() || '09:30 AM',
+            endTime: endTime.trim() || '11:30 AM',
           },
         });
         Alert.alert('Classroom Updated! 🎉', `${name.trim()} settings saved successfully.`);
@@ -138,12 +216,13 @@ export default function EditClassModal({
           ageRange: { min: parsedMin, max: parsedMax },
           roomNumber: roomNumber.trim() || 'Room TBD',
           maxCapacity: cap,
+          leadTeacherId: selectedMemberId || undefined,
           leadTeacherName: leadTeacherName.trim() || 'TBD',
           leadTeacherPhone: leadTeacherPhone.trim(),
           schedule: {
             dayOfWeek: dayOfWeek.trim() || 'Sunday',
-            startTime: startTime.trim() || '09:30',
-            endTime: endTime.trim() || '11:30',
+            startTime: startTime.trim() || '09:30 AM',
+            endTime: endTime.trim() || '11:30 AM',
           },
         });
         Alert.alert('Classroom Created! 🎉', `${name.trim()} has been added to Sunday School classes.`);
@@ -320,25 +399,80 @@ export default function EditClassModal({
               </View>
             </View>
 
-            {/* Lead Teacher Name & Phone */}
+            {/* Lead Teacher Name & Phone with Church Member Lookup */}
             <View style={styles.fieldGroup}>
               <View style={styles.labelRow}>
                 <User size={12} color="#34D399" />
-                <Text style={styles.label}>Lead Teacher Name</Text>
+                <Text style={styles.label}>Lead Teacher (Search Church Members)</Text>
+                {selectedMemberId && (
+                  <View style={styles.linkedMemberBadge}>
+                    <CheckCircle size={10} color="#34D399" />
+                    <Text style={styles.linkedMemberBadgeText}>Linked</Text>
+                  </View>
+                )}
               </View>
-              <TextInput
-                style={styles.input}
-                value={leadTeacherName}
-                onChangeText={setLeadTeacherName}
-                placeholder="e.g. Bro. Sunil Babu"
-                placeholderTextColor="#6B7280"
-              />
+
+              <View style={styles.teacherSearchInputWrap}>
+                <TextInput
+                  style={[styles.input, { paddingRight: 36 }]}
+                  value={leadTeacherName}
+                  onChangeText={handleSearchTeacher}
+                  placeholder="Type name to search existing church members..."
+                  placeholderTextColor="#6B7280"
+                />
+                <View style={styles.searchIconSlot}>
+                  {searchingMembers ? (
+                    <ActivityIndicator size="small" color="#FBBF24" />
+                  ) : (
+                    <Search size={14} color="#6B7280" />
+                  )}
+                </View>
+              </View>
+
+              {/* Autocomplete Member Results Dropdown */}
+              {showMemberDropdown && (
+                <View style={styles.memberDropdown}>
+                  {memberResults.length === 0 ? (
+                    <View style={styles.memberEmptyItem}>
+                      <Text style={styles.memberEmptyText}>
+                        {searchingMembers ? 'Searching members...' : 'No matching church members found'}
+                      </Text>
+                    </View>
+                  ) : (
+                    memberResults.map(m => {
+                      const mName = (m.name || `${m.firstName || ''} ${m.lastName || ''}`).trim();
+                      const mPhone = m.phone || m.mobileNumber || m.phoneNumber || 'No phone';
+                      return (
+                        <TouchableOpacity
+                          key={m.id}
+                          style={styles.memberResultRow}
+                          onPress={() => handleSelectMember(m)}
+                          activeOpacity={0.7}
+                        >
+                          <View style={styles.memberAvatarMini}>
+                            <Text style={styles.memberAvatarMiniText}>
+                              {mName.charAt(0).toUpperCase()}
+                            </Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.memberNameText} numberOfLines={1}>{mName}</Text>
+                            <Text style={styles.memberPhoneText}>{mPhone}</Text>
+                          </View>
+                          <View style={styles.selectMemberPill}>
+                            <Text style={styles.selectMemberPillText}>Select</Text>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                </View>
+              )}
             </View>
 
             <View style={styles.fieldGroup}>
               <View style={styles.labelRow}>
                 <Phone size={12} color="#34D399" />
-                <Text style={styles.label}>Teacher Phone / WhatsApp</Text>
+                <Text style={styles.label}>Teacher Phone / WhatsApp (Auto-filled)</Text>
               </View>
               <TextInput
                 style={styles.input}
@@ -373,20 +507,21 @@ export default function EditClassModal({
               </View>
             </View>
 
-            {/* Schedule Times */}
+            {/* Schedule Times with Interactive Clock Pickers */}
             <View style={styles.row}>
               <View style={[styles.fieldGroup, { flex: 1 }]}>
                 <View style={styles.labelRow}>
                   <Clock size={12} color="#60A5FA" />
                   <Text style={styles.label}>Start Time</Text>
                 </View>
-                <TextInput
-                  style={styles.input}
-                  value={startTime}
-                  onChangeText={setStartTime}
-                  placeholder="09:30"
-                  placeholderTextColor="#6B7280"
-                />
+                <TouchableOpacity
+                  style={styles.timePickerButton}
+                  onPress={() => setTimePickerTarget('start')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.timePickerButtonText}>{startTime}</Text>
+                  <Clock size={14} color="#FBBF24" />
+                </TouchableOpacity>
               </View>
 
               <View style={[styles.fieldGroup, { flex: 1 }]}>
@@ -394,16 +529,25 @@ export default function EditClassModal({
                   <Clock size={12} color="#60A5FA" />
                   <Text style={styles.label}>End Time</Text>
                 </View>
-                <TextInput
-                  style={styles.input}
-                  value={endTime}
-                  onChangeText={setEndTime}
-                  placeholder="11:30"
-                  placeholderTextColor="#6B7280"
-                />
+                <TouchableOpacity
+                  style={styles.timePickerButton}
+                  onPress={() => setTimePickerTarget('end')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.timePickerButtonText}>{endTime}</Text>
+                  <Clock size={14} color="#FBBF24" />
+                </TouchableOpacity>
               </View>
             </View>
           </ScrollView>
+
+          {/* Time Picker Modal */}
+          <DateTimePickerModal
+            isVisible={!!timePickerTarget}
+            mode="time"
+            onConfirm={handleConfirmTime}
+            onCancel={() => setTimePickerTarget(null)}
+          />
 
           {/* Action Row */}
           <View style={styles.footerRow}>
@@ -600,5 +744,108 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     color: '#000000',
+  },
+  // Teacher Search & Dropdown Styles
+  linkedMemberBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(52, 211, 153, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 6,
+  },
+  linkedMemberBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#34D399',
+  },
+  teacherSearchInputWrap: {
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  searchIconSlot: {
+    position: 'absolute',
+    right: 12,
+  },
+  memberDropdown: {
+    backgroundColor: '#1E293B',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+    marginTop: 4,
+    maxHeight: 180,
+    overflow: 'hidden',
+  },
+  memberEmptyItem: {
+    padding: 12,
+    alignItems: 'center',
+  },
+  memberEmptyText: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontStyle: 'italic',
+  },
+  memberResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: '#27354A',
+    gap: 10,
+  },
+  memberAvatarMini: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#3B82F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  memberAvatarMiniText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  memberNameText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  memberPhoneText: {
+    fontSize: 10.5,
+    color: '#94A3B8',
+    marginTop: 1,
+  },
+  selectMemberPill: {
+    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  selectMemberPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FBBF24',
+  },
+  // Time Picker Button Styles
+  timePickerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#09090B',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#27272A',
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  timePickerButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FBBF24',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
 });

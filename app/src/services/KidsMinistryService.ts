@@ -803,6 +803,7 @@ class KidsMinistryService {
       ageRange: { min: number; max: number };
       roomNumber: string;
       maxCapacity: number;
+      leadTeacherId?: string;
       leadTeacherName: string;
       leadTeacherPhone?: string;
       schedule: { dayOfWeek: string; startTime: string; endTime: string };
@@ -825,7 +826,7 @@ class KidsMinistryService {
       roomNumber: data.roomNumber.trim() || 'Room TBD',
       maxCapacity: Number(data.maxCapacity) || 25,
       currentEnrolledCount: 0,
-      leadTeacherId: '',
+      leadTeacherId: data.leadTeacherId || '',
       leadTeacherName: data.leadTeacherName.trim() || 'TBD',
       leadTeacherPhone: (data.leadTeacherPhone || '').trim(),
       schedule: {
