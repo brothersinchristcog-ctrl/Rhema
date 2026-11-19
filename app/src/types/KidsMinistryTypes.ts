@@ -338,7 +338,48 @@ export interface KidsMemoryVerse {
   verseTelugu: string;
   theme: string;
   audioPronunciationUrl?: string;
-  scrambleWords: string[];
+  scrambleWords?: string[];
+  isPublished?: boolean;
+  createdAt?: any;
+  updatedAt?: any;
+}
+
+export interface KidsActivityItem {
+  id: string;
+  title: string;
+  titleTelugu: string;
+  category: 'activity' | 'coloring' | 'craft' | 'game';
+  scriptureRef?: string;
+  description: string;
+  descriptionTelugu?: string;
+  instructions: string;
+  instructionsTelugu?: string;
+  suppliesNeeded?: string[];
+  pdfDownloadUrl?: string;
+  imageTemplateUrl?: string;
+  coverEmoji: string;
+  ageGroup?: string;
+  isPublished?: boolean;
+  createdAt?: any;
+  updatedAt?: any;
+}
+
+export interface KidsDailyPromise {
+  id: string;
+  dayNumber?: number;
+  title: string;
+  titleTelugu: string;
+  scriptureRef: string;
+  scriptureRefTelugu?: string;
+  promiseEnglish: string;
+  promiseTelugu: string;
+  declaration: string;
+  declarationTelugu: string;
+  coverEmoji: string;
+  theme?: string;
+  isPublished?: boolean;
+  createdAt?: any;
+  updatedAt?: any;
 }
 
 // ─── PHASE 6: 52-WEEK BILINGUAL CURRICULUM TYPES ───────────────

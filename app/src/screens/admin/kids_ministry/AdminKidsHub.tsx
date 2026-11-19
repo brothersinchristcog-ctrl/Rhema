@@ -56,6 +56,7 @@ import ClassRosterModal from './components/ClassRosterModal';
 import PromotionManagerModal from './components/PromotionManagerModal';
 import AdminTeachersModal from './components/AdminTeachersModal';
 import AdminContentManagerModal from './components/AdminContentManagerModal';
+import AdminKidsContentCenter from './AdminKidsContentCenter';
 import AdminCurriculumModal from './components/AdminCurriculumModal';
 import AdminAICopilotModal from './components/AdminAICopilotModal';
 import AdminVBSManagerModal from './components/AdminVBSManagerModal';
@@ -82,8 +83,8 @@ export default function AdminKidsHub({ navigation }: any) {
     }
   };
 
-  // Tabs: 'overview' | 'children' | 'classes' | 'curriculum'
-  const [activeTab, setActiveTab] = useState<'overview' | 'children' | 'classes' | 'curriculum'>('overview');
+  // Tabs: 'overview' | 'children' | 'classes' | 'curriculum' | 'content_center'
+  const [activeTab, setActiveTab] = useState<'overview' | 'children' | 'classes' | 'curriculum' | 'content_center'>('overview');
   const [children, setChildren] = useState<ChildRecord[]>([]);
   const [classes, setClasses] = useState<KidsClassRecord[]>([]);
   const [teachers, setTeachers] = useState<KidsTeacherRecord[]>([]);
@@ -333,6 +334,15 @@ export default function AdminKidsHub({ navigation }: any) {
               Curriculum
             </Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabPill, activeTab === 'content_center' && styles.tabPillActive]}
+            onPress={() => setActiveTab('content_center')}
+          >
+            <Text style={[styles.tabPillText, activeTab === 'content_center' && styles.tabPillTextActive]}>
+              Bible LMS
+            </Text>
+          </TouchableOpacity>
         </ScrollView>
       </View>
 
@@ -523,7 +533,13 @@ export default function AdminKidsHub({ navigation }: any) {
                   {/* Grid 4: Bible Learning Center CMS */}
                   <TouchableOpacity
                     style={styles.portalGridCard}
-                    onPress={() => setShowContentManagerModal(true)}
+                    onPress={() => {
+                      if (adminTabCtx?.setTabByName) {
+                        adminTabCtx.setTabByName('Bible LMS');
+                      } else {
+                        setActiveTab('content_center');
+                      }
+                    }}
                     activeOpacity={0.82}
                   >
                     <View style={styles.portalCardHeader}>
@@ -982,6 +998,15 @@ export default function AdminKidsHub({ navigation }: any) {
                 </Text>
               </View>
             </View>
+          )}
+          {/* ==================================================== */}
+          {/* TAB 5: BIBLE LEARNING CENTER (FULL-PAGE EMBEDDED)    */}
+          {/* ==================================================== */}
+          {activeTab === 'content_center' && (
+            <AdminKidsContentCenter
+              navigation={navigation}
+              onBack={() => setActiveTab('overview')}
+            />
           )}
         </ScrollView>
       )}

@@ -11,6 +11,8 @@ import {
   KidsQuiz,
   KidsWorshipSong,
   KidsMemoryVerse,
+  KidsActivityItem,
+  KidsDailyPromise,
   KidsCurriculumLesson,
   CurriculumQuarter,
   KidsVBSEventRecord,
@@ -3214,6 +3216,317 @@ class KidsMinistryService {
   async deleteSong(churchId: string, docId: string): Promise<void> {
     const cId = churchId || RHEMA_CHURCH_ID;
     await this.getSongsCollection(cId).doc(docId).delete();
+  }
+
+  // ==========================================
+  // MEMORY VERSES, ACTIVITIES & DAILY PROMISES
+  // ==========================================
+  private getMemoryVersesCollection(churchId: string) {
+    return this.getDb().collection(RHEMA_ROOT_COLLECTION).doc(churchId || RHEMA_CHURCH_ID).collection('kids_memory_verses');
+  }
+
+  async getOrInitMemoryVerses(churchId?: string): Promise<KidsMemoryVerse[]> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const colRef = this.getMemoryVersesCollection(cId);
+    const snap = await colRef.get();
+    if (!snap.empty) {
+      return snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+    }
+    const now = firestore.FieldValue.serverTimestamp();
+    const defaults: Omit<KidsMemoryVerse, 'id'>[] = [
+      {
+        weekNumber: 1,
+        scriptureRef: 'Genesis 1:1',
+        scriptureRefTelugu: 'ఆదికాండము 1:1',
+        verseEnglish: 'In the beginning God created the heavens and the earth.',
+        verseTelugu: 'ఆదియందు దేవుడు భూమ్యాకాశములను సృజించెను.',
+        theme: 'God the Creator',
+        isPublished: true,
+        scrambleWords: ['In', 'the', 'beginning', 'God', 'created', 'the', 'heavens', 'and', 'the', 'earth'],
+        createdAt: now,
+      },
+      {
+        weekNumber: 2,
+        scriptureRef: 'Psalm 23:1',
+        scriptureRefTelugu: 'కీర్తనలు 23:1',
+        verseEnglish: 'The LORD is my shepherd; I shall not want.',
+        verseTelugu: 'యెహోవా నా కాపరి నాకు లేమి కలుగదు.',
+        theme: 'The Good Shepherd',
+        isPublished: true,
+        scrambleWords: ['The', 'LORD', 'is', 'my', 'shepherd', 'I', 'shall', 'not', 'want'],
+        createdAt: now,
+      },
+      {
+        weekNumber: 3,
+        scriptureRef: 'Philippians 4:13',
+        scriptureRefTelugu: 'ఫిలిప్పీయులకు 4:13',
+        verseEnglish: 'I can do all things through Christ who strengthens me.',
+        verseTelugu: 'నన్ను బలపరచువానియందే నేను సమస్తమును చేయగలను.',
+        theme: 'Strength in Christ',
+        isPublished: true,
+        scrambleWords: ['I', 'can', 'do', 'all', 'things', 'through', 'Christ', 'who', 'strengthens', 'me'],
+        createdAt: now,
+      },
+    ];
+    const results: KidsMemoryVerse[] = [];
+    for (const v of defaults) {
+      const doc = await colRef.add(sanitizeForFirestore(v));
+      results.push({ id: doc.id, ...v });
+    }
+    return results;
+  }
+
+  subscribeToMemoryVerses(churchId: string, callback: (verses: KidsMemoryVerse[]) => void): () => void {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getMemoryVersesCollection(cId).onSnapshot(
+      async snap => {
+        if (!snap || snap.empty) {
+          const seeded = await this.getOrInitMemoryVerses(cId);
+          callback(seeded);
+          return;
+        }
+        callback(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+      },
+      () => callback([])
+    );
+  }
+
+  async createMemoryVerse(churchId: string, verse: Partial<KidsMemoryVerse>): Promise<string> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const now = firestore.FieldValue.serverTimestamp();
+    const docRef = await this.getMemoryVersesCollection(cId).add(
+      sanitizeForFirestore({ ...verse, isPublished: verse.isPublished ?? true, createdAt: now, updatedAt: now })
+    );
+    return docRef.id;
+  }
+
+  async updateMemoryVerse(churchId: string, docId: string, updates: Partial<KidsMemoryVerse>): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    await this.getMemoryVersesCollection(cId).doc(docId).update(
+      sanitizeForFirestore({ ...updates, updatedAt: firestore.FieldValue.serverTimestamp() })
+    );
+  }
+
+  async deleteMemoryVerse(churchId: string, docId: string): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    await this.getMemoryVersesCollection(cId).doc(docId).delete();
+  }
+
+  private getActivitiesCollection(churchId: string) {
+    return this.getDb().collection(RHEMA_ROOT_COLLECTION).doc(churchId || RHEMA_CHURCH_ID).collection('kids_activities');
+  }
+
+  async getOrInitActivities(churchId?: string): Promise<KidsActivityItem[]> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const colRef = this.getActivitiesCollection(cId);
+    const snap = await colRef.get();
+    if (!snap.empty) {
+      return snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+    }
+    const now = firestore.FieldValue.serverTimestamp();
+    const defaults: Omit<KidsActivityItem, 'id'>[] = [
+      {
+        title: "Noah's Rainbow Craft",
+        titleTelugu: 'నోవహు ఇంద్రధనుస్సు క్రాఫ్ట్',
+        category: 'craft',
+        scriptureRef: 'Genesis 9:13',
+        description: 'Create a vibrant paper-plate covenant rainbow to remember God keeps every promise.',
+        descriptionTelugu: 'దేవుడు తన వాగ్దానాలను నెరవేర్చునని జ్ఞాపకముంచుకొనుటకు రంగురంగుల ఇంద్రధనుస్సు క్రాఫ్ట్.',
+        instructions: '1. Cut paper plate in half.\n2. Glue cotton balls for clouds.\n3. Glue rainbow color ribbons (Red, Orange, Yellow, Green, Blue, Violet).\n4. Write Genesis 9:13 on the cloud.',
+        suppliesNeeded: ['Paper plates', 'Cotton balls', 'Colored ribbons', 'Glue stick', 'Markers'],
+        coverEmoji: '🌈',
+        ageGroup: 'Beginners (Ages 3-5)',
+        isPublished: true,
+        createdAt: now,
+      },
+      {
+        title: 'David vs Goliath Armor Match',
+        titleTelugu: 'దావీదు వర్సెస్ గొల్యాతు ఆట',
+        category: 'activity',
+        scriptureRef: '1 Samuel 17',
+        description: 'Interactive foam beanbag target toss testing courage, faith, and aiming at Goliath target.',
+        descriptionTelugu: 'విశ్వాసంతో గొల్యాతు లక్ష్యాన్ని కొట్టే సులభమైన ఆట.',
+        instructions: '1. Place giant cardboard outline.\n2. Mark 5 throwing circles.\n3. Each kid gets 5 beanbags (smooth stones).\n4. Shout "The battle is the Lord\'s!" and toss.',
+        suppliesNeeded: ['Cardboard poster', '5 Beanbags', 'Tape for line'],
+        coverEmoji: '🎯',
+        ageGroup: 'Primary (Ages 6-8)',
+        isPublished: true,
+        createdAt: now,
+      },
+      {
+        title: 'Creation Garden Coloring Sheet',
+        titleTelugu: 'సృష్టి తోట కలరింగ్ షీట్',
+        category: 'coloring',
+        scriptureRef: 'Genesis 1:1-31',
+        description: 'Delightful outline illustration of Eden garden animals, birds, and flowers.',
+        descriptionTelugu: 'ఏదెను తోట జంతువులు మరియు పూల అందమైన కలరింగ్ పేజీ.',
+        instructions: 'Color the sky blue, grass green, and the animals with your favorite bright colors.',
+        suppliesNeeded: ['Crayons', 'Coloring page printouts'],
+        coverEmoji: '🎨',
+        ageGroup: 'All Ages',
+        isPublished: true,
+        createdAt: now,
+      },
+      {
+        title: 'Daniel in Lions Den Coloring Page',
+        titleTelugu: 'సింహాల బోనులో దానియేలు కలరింగ్',
+        category: 'coloring',
+        scriptureRef: 'Daniel 6',
+        description: 'Coloring sheet of God sending an angel to shut the lions mouths while Daniel prays.',
+        descriptionTelugu: 'దానియేలును కాపాడిన దేవుని దూత మరియు సింహముల కలరింగ్ చిత్రము.',
+        instructions: 'Color Daniel peacefully kneeling, with golden light around the guarding angel.',
+        suppliesNeeded: ['Color pencils or markers'],
+        coverEmoji: '🦁',
+        ageGroup: 'Beginners & Primary',
+        isPublished: true,
+        createdAt: now,
+      },
+    ];
+    const results: KidsActivityItem[] = [];
+    for (const a of defaults) {
+      const doc = await colRef.add(sanitizeForFirestore(a));
+      results.push({ id: doc.id, ...a });
+    }
+    return results;
+  }
+
+  subscribeToActivities(churchId: string, callback: (activities: KidsActivityItem[]) => void): () => void {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getActivitiesCollection(cId).onSnapshot(
+      async snap => {
+        if (!snap || snap.empty) {
+          const seeded = await this.getOrInitActivities(cId);
+          callback(seeded);
+          return;
+        }
+        callback(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+      },
+      () => callback([])
+    );
+  }
+
+  async createActivity(churchId: string, activity: Partial<KidsActivityItem>): Promise<string> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const now = firestore.FieldValue.serverTimestamp();
+    const docRef = await this.getActivitiesCollection(cId).add(
+      sanitizeForFirestore({ ...activity, isPublished: activity.isPublished ?? true, createdAt: now, updatedAt: now })
+    );
+    return docRef.id;
+  }
+
+  async updateActivity(churchId: string, docId: string, updates: Partial<KidsActivityItem>): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    await this.getActivitiesCollection(cId).doc(docId).update(
+      sanitizeForFirestore({ ...updates, updatedAt: firestore.FieldValue.serverTimestamp() })
+    );
+  }
+
+  async deleteActivity(churchId: string, docId: string): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    await this.getActivitiesCollection(cId).doc(docId).delete();
+  }
+
+  private getPromisesCollection(churchId: string) {
+    return this.getDb().collection(RHEMA_ROOT_COLLECTION).doc(churchId || RHEMA_CHURCH_ID).collection('kids_daily_promises');
+  }
+
+  async getOrInitDailyPromises(churchId?: string): Promise<KidsDailyPromise[]> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const colRef = this.getPromisesCollection(cId);
+    const snap = await colRef.get();
+    if (!snap.empty) {
+      return snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+    }
+    const now = firestore.FieldValue.serverTimestamp();
+    const defaults: Omit<KidsDailyPromise, 'id'>[] = [
+      {
+        dayNumber: 1,
+        title: 'You Are God’s Masterpiece',
+        titleTelugu: 'నీవు దేవుని అద్భుతమైన సృష్టి',
+        scriptureRef: 'Ephesians 2:10',
+        scriptureRefTelugu: 'ఎఫెసీ 2:10',
+        promiseEnglish: 'For we are God’s handiwork, created in Christ Jesus to do good works.',
+        promiseTelugu: 'మరియు వాటియందు మనము నడుచుకొనవలెనని దేవుడు ముందుగా సిద్ధపరచిన సత్కార్యములు చేయుటకు మనము క్రీస్తుయేసునందు సృష్టింపబడినవారమై ఆయన చేసిన పనియై యున్నాము.',
+        declaration: 'I am wonderfully made by God with purpose!',
+        declarationTelugu: 'దేవుడు నన్ను ఒక గొప్ప ఉద్దేశ్యంతో అద్భుతముగా సృజించెను!',
+        coverEmoji: '✨',
+        theme: 'Identity',
+        isPublished: true,
+        createdAt: now,
+      },
+      {
+        dayNumber: 2,
+        title: 'God Will Never Leave You',
+        titleTelugu: 'దేవుడు నిన్ను ఎన్నడూ విడువడు',
+        scriptureRef: 'Joshua 1:9',
+        scriptureRefTelugu: 'యెహోషువ 1:9',
+        promiseEnglish: 'Do not be afraid; do not be discouraged, for the LORD your God will be with you wherever you go.',
+        promiseTelugu: 'నిబ్బరము కలిగి ధైర్యముగా నుండుము, దిగులుపడకుము భయపడకుము, నీవు నడుచు మార్గమంతటిలో నీ దేవుడైన యెహోవా నీకు తోడైయుండును.',
+        declaration: 'Jesus is with me everywhere I go today!',
+        declarationTelugu: 'నేను ఎక్కడికి వెళ్లినా యేసయ్య నాతోనే ఉన్నారు!',
+        coverEmoji: '🛡️',
+        theme: 'Courage',
+        isPublished: true,
+        createdAt: now,
+      },
+      {
+        dayNumber: 3,
+        title: 'Cast All Your Cares On Him',
+        titleTelugu: 'ఆయన మిమ్మును గూర్చి చింతించుచున్నాడు',
+        scriptureRef: '1 Peter 5:7',
+        scriptureRefTelugu: '1 పేతురు 5:7',
+        promiseEnglish: 'Cast all your anxiety on him because he cares for you.',
+        promiseTelugu: 'ఆయన మిమ్మునుగూర్చి చింతించుచున్నాడు గనుక మీ చింత యావత్తు ఆయనమీద వేయుడి.',
+        declaration: 'I give all my worries to Jesus and walk in peace.',
+        declarationTelugu: 'నా భయాలన్నింటినీ యేసు చేతిలో పెట్టి సంతోషముగా ఉంటాను.',
+        coverEmoji: '🕊️',
+        theme: 'Peace',
+        isPublished: true,
+        createdAt: now,
+      },
+    ];
+    const results: KidsDailyPromise[] = [];
+    for (const p of defaults) {
+      const doc = await colRef.add(sanitizeForFirestore(p));
+      results.push({ id: doc.id, ...p });
+    }
+    return results;
+  }
+
+  subscribeToDailyPromises(churchId: string, callback: (promises: KidsDailyPromise[]) => void): () => void {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getPromisesCollection(cId).onSnapshot(
+      async snap => {
+        if (!snap || snap.empty) {
+          const seeded = await this.getOrInitDailyPromises(cId);
+          callback(seeded);
+          return;
+        }
+        callback(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+      },
+      () => callback([])
+    );
+  }
+
+  async createDailyPromise(churchId: string, promise: Partial<KidsDailyPromise>): Promise<string> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const now = firestore.FieldValue.serverTimestamp();
+    const docRef = await this.getPromisesCollection(cId).add(
+      sanitizeForFirestore({ ...promise, isPublished: promise.isPublished ?? true, createdAt: now, updatedAt: now })
+    );
+    return docRef.id;
+  }
+
+  async updateDailyPromise(churchId: string, docId: string, updates: Partial<KidsDailyPromise>): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    await this.getPromisesCollection(cId).doc(docId).update(
+      sanitizeForFirestore({ ...updates, updatedAt: firestore.FieldValue.serverTimestamp() })
+    );
+  }
+
+  async deleteDailyPromise(churchId: string, docId: string): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    await this.getPromisesCollection(cId).doc(docId).delete();
   }
 
   // ─── PHASE 9: KIDS EVENTS, VBS & REWARDS ───────────────────────
