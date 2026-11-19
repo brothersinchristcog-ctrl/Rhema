@@ -356,6 +356,43 @@ class KidsMinistryService {
       updatedAt: now,
     };
 
+    // If this registration originated from Rhema Kids directly, ensure the child is also
+    // mirrored into `Rhema Church/{churchId}/members` so the Members tab reflects it seamlessly!
+    let linkedMemberContactId = data.memberContactId;
+    if (!linkedMemberContactId && data.familyId) {
+      try {
+        const memberRef = await firestore()
+          .collection(RHEMA_ROOT_COLLECTION)
+          .doc(cId)
+          .collection('members')
+          .add(
+            sanitizeForFirestore({
+              firstName: data.firstName.trim(),
+              lastName: (data.lastName || '').trim(),
+              name: fullName,
+              displayName: fullName,
+              relation: data.gender === 'female' ? 'Daughter' : 'Son',
+              gender: data.gender === 'female' ? 'Female' : 'Male',
+              dob: data.dob,
+              anniversaryDate: '',
+              email: data.parentEmail || '',
+              phone: '',
+              referencePhone: (data.parentPhone || '').replace(/\D/g, '').slice(-10),
+              isKidMember: true,
+              accountId: data.familyId,
+              profilePhoto: data.photoUrl || '',
+              createdAt: firestore.FieldValue.serverTimestamp(),
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            })
+          );
+        linkedMemberContactId = memberRef.id;
+        (newRecord as any).memberContactId = linkedMemberContactId;
+        (newRecord as any).isSyncedFromMember = true;
+      } catch (memSyncErr) {
+        console.warn('[KidsMinistryService] Error mirroring child to members:', memSyncErr);
+      }
+    }
+
     const docRef = await collectionRef.add(sanitizeForFirestore(newRecord));
     return {
       id: docRef.id,
