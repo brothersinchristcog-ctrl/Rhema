@@ -43,17 +43,128 @@ import {
   Layers,
   Send,
   Trash2,
+  Plus,
+  Bell,
+  Users,
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 import VolunteerService from '../../services/VolunteerService';
-import { VolunteerApplication, VolunteerStatus, VolunteerType } from '../../types/volunteer';
+import {
+  VolunteerApplication,
+  VolunteerStatus,
+  VolunteerType,
+  GeneralVolunteerPost,
+  COMMON_MINISTRIES,
+} from '../../types/volunteer';
 import { formatDateMonthYear, formatTimeTo12Hour } from '../../utils/DateUtils';
 import { CustomAlert } from '../../components/CustomAlert';
 
 const { width } = Dimensions.get('window');
+
+const MINISTRY_METAS: Record<string, { emoji: string; short: string }> = {
+  worship: { emoji: '🎵', short: 'Worship' },
+  media_tech: { emoji: '🎥', short: 'Media & Tech' },
+  ushers: { emoji: '🤝', short: 'Ushers' },
+  children: { emoji: '👶', short: 'Kids' },
+  hospitality: { emoji: '☕', short: 'Hospitality' },
+  prayer: { emoji: '🙏', short: 'Prayer' },
+  setup: { emoji: '🛠️', short: 'Setup' },
+  transport: { emoji: '🚗', short: 'Transport' },
+};
+
+const SKILL_CATEGORIES = [
+  { id: 'worship', name: 'Worship', emoji: '🎵' },
+  { id: 'media', name: 'Tech & Media', emoji: '🎥' },
+  { id: 'operations', name: 'Hospitality', emoji: '🤝' },
+  { id: 'ministry', name: 'Teaching & Care', emoji: '📖' },
+];
+
+const SKILLS_BY_CATEGORY: Record<string, string[]> = {
+  worship: [
+    'Worship Leader',
+    'Vocalist / Singer',
+    'Acoustic Guitar',
+    'Electric Guitar',
+    'Keyboard / Piano',
+    'Drums / Percussion',
+    'Choir / Harmonies',
+  ],
+  media: [
+    'Sound Engineer',
+    'Live Stream Broadcast',
+    'Video Camera Operator',
+    'Media & Lyrics Projection',
+    'Graphic Design & Media',
+    'Video Editor',
+    'Lighting Technician',
+  ],
+  operations: [
+    'Usher & Welcome',
+    'Food & Hospitality',
+    'Stage Setup & Logistics',
+    'Driver / Transportation',
+    'First Aid / Medical Care',
+    'Event Coordination',
+  ],
+  ministry: [
+    'Sunday School Teacher',
+    'Children Ministry Helper',
+    'Youth Ministry Leader',
+    'Intercessory Prayer Leader',
+    'Outreach / Visitation',
+    'Pastoral Care & Counseling',
+  ],
+};
+
+const SCHEDULE_PRESET_CARDS = [
+  {
+    id: 'sun_morning',
+    emoji: '☀️',
+    title: 'Sunday Morning',
+    sub: '8:30 AM – 12:30 PM',
+    value: 'Sundays · 8:30 AM – 12:30 PM',
+  },
+  {
+    id: 'sun_evening',
+    emoji: '🌙',
+    title: 'Sunday Evening',
+    sub: '6:00 PM – 8:30 PM',
+    value: 'Sundays · 6:00 PM – 8:30 PM',
+  },
+  {
+    id: 'midweek',
+    emoji: '🙏',
+    title: 'Midweek Service',
+    sub: 'Fridays · 6:30 PM',
+    value: 'Fridays · 6:30 PM – 8:30 PM',
+  },
+  {
+    id: 'weekends',
+    emoji: '📅',
+    title: 'Weekend Team',
+    sub: 'Sat & Sun Services',
+    value: 'Weekends (Sat & Sun)',
+  },
+  {
+    id: 'weekly',
+    emoji: '🔄',
+    title: 'Weekly Commitment',
+    sub: '2–4 hrs / week',
+    value: 'Weekly (2–4 hours/week)',
+  },
+  {
+    id: 'flexible',
+    emoji: '✨',
+    title: 'Flexible / On-Call',
+    sub: 'Serve as needed',
+    value: 'Flexible / On-Call',
+  },
+];
+
+const SLOTS_PRESETS = ['0', '2', '5', '10', '15', '20'];
 
 type TabType = 'general' | 'event';
 type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
@@ -80,6 +191,8 @@ export default function AdminVolunteerManagement({ navigation, route, routeParam
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [applications, setApplications] = useState<VolunteerApplication[]>([]);
+  const [volunteerPosts, setVolunteerPosts] = useState<GeneralVolunteerPost[]>([]);
+  const [selectedPostFilterId, setSelectedPostFilterId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -91,6 +204,20 @@ export default function AdminVolunteerManagement({ navigation, route, routeParam
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
+
+  // General Volunteer Post Full-Screen Editor State
+  const [showPostModal, setShowPostModal] = useState(false);
+  const [editingPost, setEditingPost] = useState<GeneralVolunteerPost | null>(null);
+  const [postTitle, setPostTitle] = useState('');
+  const [postDescription, setPostDescription] = useState('');
+  const [postMinistries, setPostMinistries] = useState<string[]>([]);
+  const [postSkills, setPostSkills] = useState<string[]>([]);
+  const [postSkillCategory, setPostSkillCategory] = useState<string>('worship');
+  const [customPostSkill, setCustomPostSkill] = useState('');
+  const [postSchedule, setPostSchedule] = useState('');
+  const [postSlotsNeeded, setPostSlotsNeeded] = useState('');
+  const [notifyMembersOnPost, setNotifyMembersOnPost] = useState(true);
+  const [postSaving, setPostSaving] = useState(false);
 
   // Form states for approval/assignment
   const [assignedRole, setAssignedRole] = useState('');
@@ -139,9 +266,209 @@ export default function AdminVolunteerManagement({ navigation, route, routeParam
 
   useEffect(() => {
     setLoading(true);
-    const unsub = fetchApplications();
-    return () => unsub();
+    const unsubApps = fetchApplications();
+    const unsubPosts = VolunteerService.subscribeVolunteerPosts(
+      churchId,
+      (posts) => setVolunteerPosts(posts),
+      () => {}
+    );
+    return () => {
+      unsubApps();
+      unsubPosts();
+    };
   }, [churchId, targetAppId]);
+
+  const handleOpenCreatePost = () => {
+    setEditingPost(null);
+    setPostTitle('');
+    setPostDescription('');
+    setPostMinistries([]);
+    setPostSkills([]);
+    setPostSkillCategory('worship');
+    setCustomPostSkill('');
+    setPostSchedule('Sundays · 8:30 AM – 12:30 PM');
+    setPostSlotsNeeded('');
+    setNotifyMembersOnPost(true);
+    setShowPostModal(true);
+  };
+
+  const handleOpenEditPost = (post: GeneralVolunteerPost) => {
+    setEditingPost(post);
+    setPostTitle(post.title || '');
+    setPostDescription(post.description || '');
+    setPostMinistries(Array.isArray(post.ministries) ? post.ministries : []);
+    setPostSkills(Array.isArray(post.recommendedSkills) ? post.recommendedSkills : []);
+    setPostSkillCategory('worship');
+    setCustomPostSkill('');
+    setPostSchedule(post.scheduleSummary || '');
+    setPostSlotsNeeded(post.slotsNeeded && post.slotsNeeded > 0 ? String(post.slotsNeeded) : '');
+    setNotifyMembersOnPost(false);
+    setShowPostModal(true);
+  };
+
+  const handleTogglePostMinistry = (label: string) => {
+    setPostMinistries((prev) =>
+      prev.includes(label) ? prev.filter((m) => m !== label) : [...prev, label]
+    );
+  };
+
+  const handleTogglePostSkill = (skill: string) => {
+    setPostSkills((prev) =>
+      prev.includes(skill) ? prev.filter((s) => s !== skill) : [...prev, skill]
+    );
+  };
+
+  const handleAddCustomPostSkill = () => {
+    const clean = customPostSkill.trim();
+    if (!clean) return;
+    if (!postSkills.includes(clean)) {
+      setPostSkills((prev) => [...prev, clean]);
+    }
+    setCustomPostSkill('');
+  };
+
+  const displayedPostSkills = useMemo(() => {
+    return SKILLS_BY_CATEGORY[postSkillCategory] || SKILLS_BY_CATEGORY.worship;
+  }, [postSkillCategory]);
+
+  const handleSaveVolunteerPost = async () => {
+    if (!postTitle.trim()) {
+      setAlertConfig({
+        visible: true,
+        title: 'Title Required',
+        message: 'Please enter a title for the General Volunteer Call.',
+        type: 'info',
+      });
+      return;
+    }
+    if (postMinistries.length === 0) {
+      setAlertConfig({
+        visible: true,
+        title: 'Select Ministry Area',
+        message: 'Please choose at least one ministry area for this volunteer call.',
+        type: 'info',
+      });
+      return;
+    }
+
+    try {
+      setPostSaving(true);
+      const parsedSlots = parseInt(postSlotsNeeded.replace(/\D/g, ''), 10);
+      const slotsNeeded = !isNaN(parsedSlots) && parsedSlots > 0 ? parsedSlots : 0;
+
+      if (editingPost) {
+        await VolunteerService.updateVolunteerPost(churchId, editingPost.id, {
+          title: postTitle.trim(),
+          description: postDescription.trim(),
+          ministries: postMinistries,
+          recommendedSkills: postSkills,
+          scheduleSummary: postSchedule.trim(),
+          slotsNeeded,
+        });
+        setShowPostModal(false);
+        setAlertConfig({
+          visible: true,
+          title: 'Volunteer Call Updated',
+          message: `"${postTitle.trim()}" has been updated.`,
+          type: 'success',
+        });
+      } else {
+        await VolunteerService.createVolunteerPost(
+          churchId,
+          {
+            id: user?.uid || 'admin',
+            name: member?.name || user?.displayName || 'Church Admin',
+          },
+          {
+            title: postTitle.trim(),
+            description: postDescription.trim(),
+            ministries: postMinistries,
+            recommendedSkills: postSkills,
+            scheduleSummary: postSchedule.trim(),
+            slotsNeeded,
+            notifyMembers: notifyMembersOnPost,
+          }
+        );
+        setShowPostModal(false);
+        setAlertConfig({
+          visible: true,
+          title: 'Volunteer Call Published!',
+          message: notifyMembersOnPost
+            ? `"${postTitle.trim()}" is now live for members and a push notification has been sent.`
+            : `"${postTitle.trim()}" is now live for members in Church Volunteering.`,
+          type: 'success',
+        });
+      }
+    } catch (err: any) {
+      setAlertConfig({
+        visible: true,
+        title: 'Save Failed',
+        message: err.message || 'Could not save volunteer post.',
+        type: 'error',
+      });
+    } finally {
+      setPostSaving(false);
+    }
+  };
+
+  const handleTogglePostStatus = async (post: GeneralVolunteerPost) => {
+    const nextStatus = post.status === 'open' ? 'closed' : 'open';
+    try {
+      setActionLoading(true);
+      await VolunteerService.toggleVolunteerPostStatus(churchId, post.id, nextStatus);
+      setAlertConfig({
+        visible: true,
+        title: nextStatus === 'open' ? 'Volunteer Call Reopened' : 'Volunteer Call Closed',
+        message: `"${post.title}" is now ${nextStatus === 'open' ? 'open for applications' : 'closed'}.`,
+        type: 'info',
+      });
+    } catch (err: any) {
+      setAlertConfig({
+        visible: true,
+        title: 'Action Failed',
+        message: err.message || 'Could not update volunteer post status.',
+        type: 'error',
+      });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeleteVolunteerPost = (post: GeneralVolunteerPost) => {
+    Alert.alert(
+      'Delete Volunteer Call?',
+      `Are you sure you want to delete "${post.title}"? Existing applications will remain intact.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setActionLoading(true);
+              await VolunteerService.deleteVolunteerPost(churchId, post.id);
+              if (selectedPostFilterId === post.id) setSelectedPostFilterId(null);
+              setAlertConfig({
+                visible: true,
+                title: 'Volunteer Call Deleted',
+                message: `"${post.title}" has been removed.`,
+                type: 'info',
+              });
+            } catch (err: any) {
+              setAlertConfig({
+                visible: true,
+                title: 'Delete Failed',
+                message: err.message || 'Could not delete volunteer post.',
+                type: 'error',
+              });
+            } finally {
+              setActionLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   // Statistics
   const stats = useMemo(() => {
@@ -211,6 +538,9 @@ export default function AdminVolunteerManagement({ navigation, route, routeParam
   const filteredApps = useMemo(() => {
     return applications.filter((app) => {
       if (app.volunteerType !== activeSegment) return false;
+      if (activeSegment === 'general' && selectedPostFilterId && app.postId !== selectedPostFilterId) {
+        return false;
+      }
       if (statusFilter !== 'all' && app.status !== statusFilter) return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -218,14 +548,15 @@ export default function AdminVolunteerManagement({ navigation, route, routeParam
         const phoneMatch = (app.memberPhone || '').includes(q);
         const roleMatch = (app.preferredRole || app.assignedRole || '').toLowerCase().includes(q);
         const eventMatch = (app.eventTitle || '').toLowerCase().includes(q);
+        const postMatch = (app.postTitle || '').toLowerCase().includes(q);
         const ministryMatch = (app.preferredMinistries || []).some((m) => m.toLowerCase().includes(q));
-        if (!nameMatch && !phoneMatch && !roleMatch && !eventMatch && !ministryMatch) {
+        if (!nameMatch && !phoneMatch && !roleMatch && !eventMatch && !postMatch && !ministryMatch) {
           return false;
         }
       }
       return true;
     });
-  }, [applications, activeSegment, statusFilter, searchQuery]);
+  }, [applications, activeSegment, selectedPostFilterId, statusFilter, searchQuery]);
 
   const getInitials = (name?: string) => {
     if (!name) return 'V';
@@ -457,6 +788,829 @@ export default function AdminVolunteerManagement({ navigation, route, routeParam
     }
   };
 
+  if (showPostModal) {
+    const cardWidth = (width - 80) / 2;
+    return (
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={[styles.container, { backgroundColor: isDark ? '#09090B' : '#f0f2f7' }]}
+      >
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+
+        {/* ── FULL-SCREEN EDITOR HEADER ── */}
+        <View
+          style={[
+            styles.hero,
+            {
+              backgroundColor: isDark ? '#000000' : '#FFFFFF',
+              borderBottomWidth: 1,
+              borderBottomColor: isDark ? '#27272A' : '#E2E8F0',
+            },
+          ]}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+            <TouchableOpacity
+              onPress={() => setShowPostModal(false)}
+              style={[
+                styles.circularBackBtn,
+                {
+                  borderRadius: 20,
+                  backgroundColor: isDark ? '#18181B' : '#F8FAFC',
+                  borderWidth: 1,
+                  borderColor: isDark ? '#27272A' : '#E2E8F0',
+                },
+              ]}
+              activeOpacity={0.75}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.3} />
+            </TouchableOpacity>
+
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 }}>
+              <Text
+                style={{
+                  color: isDark ? '#FFFFFF' : '#1a2d5a',
+                  textAlign: 'center',
+                  fontSize: 18,
+                  fontWeight: '800',
+                  fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+                  letterSpacing: -0.3,
+                }}
+                numberOfLines={1}
+              >
+                {editingPost ? 'Edit Volunteer Call' : 'Post Volunteer Call'}
+              </Text>
+            </View>
+
+            <View style={{ width: 40, height: 40 }} />
+          </View>
+        </View>
+
+        {/* ── FULL-SCREEN SCROLLABLE FORM ── */}
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ padding: 16, paddingBottom: 130 }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* SECTION 1: CALL TITLE & OVERVIEW */}
+          <View
+            style={{
+              backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+              borderColor: isDark ? '#27272A' : '#E2E8F0',
+              borderWidth: 1,
+              borderRadius: 16,
+              padding: 16,
+              marginBottom: 14,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 15,
+                fontWeight: '800',
+                color: isDark ? '#FFFFFF' : '#1a2d5a',
+                fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+              }}
+            >
+              Volunteer Call Overview
+            </Text>
+            <Text style={{ fontSize: 12, color: isDark ? '#A1A1AA' : '#64748B', marginTop: 2, marginBottom: 12 }}>
+              Give your general volunteer post a clear title and message for members
+            </Text>
+
+            <Text style={styles.fieldLabel}>VOLUNTEER CALL TITLE *</Text>
+            <TextInput
+              style={[
+                styles.modalInput,
+                {
+                  color: isDark ? '#FFFFFF' : '#0F172A',
+                  backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                  borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                  paddingVertical: 11,
+                  borderRadius: 10,
+                },
+              ]}
+              value={postTitle}
+              onChangeText={setPostTitle}
+              placeholder="e.g. Sunday Morning Ushers & Welcome Team"
+              placeholderTextColor="#94A3B8"
+            />
+
+            <Text style={[styles.fieldLabel, { marginTop: 14 }]}>DESCRIPTION / INVITATION MESSAGE</Text>
+            <TextInput
+              style={[
+                styles.modalInput,
+                {
+                  color: isDark ? '#FFFFFF' : '#0F172A',
+                  backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                  borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                  height: 86,
+                  textAlignVertical: 'top',
+                  paddingVertical: 10,
+                  borderRadius: 10,
+                },
+              ]}
+              value={postDescription}
+              onChangeText={setPostDescription}
+              placeholder="Describe how members can help and what this ministry team does..."
+              placeholderTextColor="#94A3B8"
+              multiline
+            />
+
+            <Text style={[styles.fieldLabel, { marginTop: 14 }]}>VOLUNTEERS NEEDED (SLOTS)</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4, marginBottom: 8 }}>
+              {SLOTS_PRESETS.map((slotVal) => {
+                const isUnlimited = slotVal === '0';
+                const isSelected = isUnlimited
+                  ? !postSlotsNeeded || postSlotsNeeded === '0'
+                  : postSlotsNeeded === slotVal;
+                return (
+                  <TouchableOpacity
+                    key={slotVal}
+                    onPress={() => setPostSlotsNeeded(isUnlimited ? '' : slotVal)}
+                    activeOpacity={0.8}
+                    style={{
+                      paddingHorizontal: 14,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      borderWidth: 1.5,
+                      backgroundColor: isSelected
+                        ? isDark
+                          ? 'rgba(5, 150, 105, 0.22)'
+                          : '#ECFDF5'
+                        : isDark
+                        ? '#27272A'
+                        : '#F8FAFC',
+                      borderColor: isSelected ? '#059669' : isDark ? '#3F3F46' : '#E2E8F0',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 12.5,
+                        fontWeight: isSelected ? '800' : '600',
+                        color: isSelected
+                          ? isDark
+                            ? '#6EE7B7'
+                            : '#047857'
+                          : isDark
+                          ? '#D4D4D8'
+                          : '#475569',
+                      }}
+                    >
+                      {isUnlimited ? 'Open / Any' : `${slotVal} Needed`}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <TextInput
+              style={[
+                styles.modalInput,
+                {
+                  color: isDark ? '#FFFFFF' : '#0F172A',
+                  backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                  borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                  paddingVertical: 10,
+                  borderRadius: 10,
+                },
+              ]}
+              value={postSlotsNeeded}
+              onChangeText={setPostSlotsNeeded}
+              placeholder="Or enter custom number of volunteers (leave blank for unlimited)"
+              placeholderTextColor="#94A3B8"
+              keyboardType="number-pad"
+            />
+          </View>
+
+          {/* SECTION 2: MINISTRY AREAS (2-COLUMN MODERN GRID CARDS) */}
+          <View
+            style={{
+              backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+              borderColor: isDark ? '#27272A' : '#E2E8F0',
+              borderWidth: 1,
+              borderRadius: 16,
+              padding: 16,
+              marginBottom: 14,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 15,
+                fontWeight: '800',
+                color: isDark ? '#FFFFFF' : '#1a2d5a',
+                fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+              }}
+            >
+              Where Should Members Serve? *
+            </Text>
+            <Text style={{ fontSize: 12, color: isDark ? '#A1A1AA' : '#64748B', marginTop: 2, marginBottom: 12 }}>
+              Select one or more ministry areas for this volunteer call:
+            </Text>
+
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10 }}>
+              {COMMON_MINISTRIES.map((min) => {
+                const isSelected = postMinistries.includes(min.label);
+                const meta = MINISTRY_METAS[min.id] || { emoji: '✨', short: 'Ministry' };
+                const parts = min.label.split('·');
+                const engTitle = parts[0]?.trim() || min.label;
+                const telTitle = parts[1]?.trim() || '';
+
+                return (
+                  <TouchableOpacity
+                    key={min.id}
+                    activeOpacity={0.8}
+                    onPress={() => handleTogglePostMinistry(min.label)}
+                    style={{
+                      width: cardWidth,
+                      borderRadius: 14,
+                      padding: 12,
+                      borderWidth: 1.5,
+                      backgroundColor: isSelected
+                        ? isDark
+                          ? 'rgba(5, 150, 105, 0.22)'
+                          : '#ECFDF5'
+                        : isDark
+                        ? '#1C1C20'
+                        : '#F8FAFC',
+                      borderColor: isSelected ? '#059669' : isDark ? '#2E2E33' : '#E2E8F0',
+                    }}
+                  >
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginBottom: 8,
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: 10,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backgroundColor: isSelected
+                            ? isDark
+                              ? 'rgba(5, 150, 105, 0.35)'
+                              : '#D1FAE5'
+                            : isDark
+                            ? '#27272A'
+                            : '#EDEAE3',
+                        }}
+                      >
+                        <Text style={{ fontSize: 17 }}>{meta.emoji}</Text>
+                      </View>
+                      <View
+                        style={{
+                          width: 22,
+                          height: 22,
+                          borderRadius: 11,
+                          borderWidth: 1.5,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backgroundColor: isSelected ? '#059669' : 'transparent',
+                          borderColor: isSelected ? '#059669' : isDark ? '#3F3F46' : '#CBD5E1',
+                        }}
+                      >
+                        {isSelected && <Check size={12} color="#FFFFFF" strokeWidth={3} />}
+                      </View>
+                    </View>
+
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        fontWeight: '800',
+                        lineHeight: 17,
+                        color: isSelected
+                          ? isDark
+                            ? '#6EE7B7'
+                            : '#047857'
+                          : isDark
+                          ? '#FFFFFF'
+                          : '#0F172A',
+                      }}
+                      numberOfLines={2}
+                    >
+                      {engTitle}
+                    </Text>
+                    {!!telTitle && (
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontWeight: '600',
+                          marginTop: 2,
+                          color: isSelected
+                            ? isDark
+                              ? '#A7F3D0'
+                              : '#059669'
+                            : isDark
+                            ? '#A1A1AA'
+                            : '#64748B',
+                        }}
+                        numberOfLines={1}
+                      >
+                        {telTitle}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* SECTION 3: SKILLS & TALENTS NEEDED (CATEGORY TABS + 2-COLUMN GRID) */}
+          <View
+            style={{
+              backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+              borderColor: isDark ? '#27272A' : '#E2E8F0',
+              borderWidth: 1,
+              borderRadius: 16,
+              padding: 16,
+              marginBottom: 14,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 15,
+                fontWeight: '800',
+                color: isDark ? '#FFFFFF' : '#1a2d5a',
+                fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+              }}
+            >
+              Recommended Skills & Talents (Optional)
+            </Text>
+            <Text style={{ fontSize: 12, color: isDark ? '#A1A1AA' : '#64748B', marginTop: 2 }}>
+              Choose any skills or talents helpful for this volunteer call:
+            </Text>
+
+            {/* Selected Skills Summary Tray */}
+            {postSkills.length > 0 && (
+              <View
+                style={{
+                  marginTop: 12,
+                  padding: 12,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  backgroundColor: isDark ? 'rgba(5, 150, 105, 0.14)' : '#ECFDF5',
+                  borderColor: isDark ? 'rgba(16, 185, 129, 0.3)' : '#A7F3D0',
+                }}
+              >
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: 8,
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <CheckCircle2 size={13} color="#059669" />
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontWeight: '800',
+                        color: isDark ? '#6EE7B7' : '#047857',
+                      }}
+                    >
+                      Selected Skills ({postSkills.length})
+                    </Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setPostSkills([])}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#94A3B8' : '#64748B' }}>
+                      Clear all
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  {postSkills.map((sk, idx) => (
+                    <TouchableOpacity
+                      key={idx}
+                      onPress={() => handleTogglePostSkill(sk)}
+                      activeOpacity={0.75}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        backgroundColor: '#059669',
+                        paddingHorizontal: 10,
+                        paddingVertical: 5,
+                        borderRadius: 999,
+                      }}
+                    >
+                      <Text style={{ fontSize: 11.5, fontWeight: '700', color: '#FFFFFF' }}>{sk}</Text>
+                      <X size={11} color="#FFFFFF" strokeWidth={2.6} style={{ marginLeft: 4 }} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* Category Filter Horizontal Pills */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 8, paddingVertical: 12 }}
+            >
+              {SKILL_CATEGORIES.map((cat) => {
+                const isActive = postSkillCategory === cat.id;
+                return (
+                  <TouchableOpacity
+                    key={cat.id}
+                    onPress={() => setPostSkillCategory(cat.id)}
+                    activeOpacity={0.8}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      borderRadius: 999,
+                      borderWidth: 1.5,
+                      backgroundColor: isActive
+                        ? isDark
+                          ? 'rgba(5, 150, 105, 0.25)'
+                          : '#ECFDF5'
+                        : isDark
+                        ? '#27272A'
+                        : '#F1F5F9',
+                      borderColor: isActive ? '#059669' : isDark ? '#3F3F46' : '#E2E8F0',
+                    }}
+                  >
+                    <Text style={{ fontSize: 13, marginRight: 5 }}>{cat.emoji}</Text>
+                    <Text
+                      style={{
+                        fontSize: 12.5,
+                        fontWeight: isActive ? '800' : '600',
+                        color: isActive
+                          ? isDark
+                            ? '#6EE7B7'
+                            : '#047857'
+                          : isDark
+                          ? '#D4D4D8'
+                          : '#475569',
+                      }}
+                    >
+                      {cat.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            {/* 2-Column Balanced Skill Grid */}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10 }}>
+              {displayedPostSkills.map((sk, idx) => {
+                const isSelected = postSkills.includes(sk);
+                return (
+                  <TouchableOpacity
+                    key={idx}
+                    activeOpacity={0.8}
+                    onPress={() => handleTogglePostSkill(sk)}
+                    style={{
+                      width: cardWidth,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 8,
+                      paddingVertical: 11,
+                      paddingHorizontal: 11,
+                      borderRadius: 12,
+                      borderWidth: 1.5,
+                      backgroundColor: isSelected
+                        ? isDark
+                          ? 'rgba(5, 150, 105, 0.22)'
+                          : '#ECFDF5'
+                        : isDark
+                        ? '#1C1C20'
+                        : '#F8FAFC',
+                      borderColor: isSelected ? '#059669' : isDark ? '#2E2E33' : '#E2E8F0',
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 20,
+                        height: 20,
+                        borderRadius: 6,
+                        borderWidth: 1.5,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: isSelected ? '#059669' : 'transparent',
+                        borderColor: isSelected ? '#059669' : isDark ? '#3F3F46' : '#CBD5E1',
+                      }}
+                    >
+                      {isSelected && <Check size={11} color="#FFFFFF" strokeWidth={3} />}
+                    </View>
+                    <Text
+                      style={{
+                        flex: 1,
+                        fontSize: 12.5,
+                        fontWeight: isSelected ? '800' : '600',
+                        color: isSelected
+                          ? isDark
+                            ? '#6EE7B7'
+                            : '#047857'
+                          : isDark
+                          ? '#E4E4E7'
+                          : '#1E293B',
+                      }}
+                      numberOfLines={2}
+                    >
+                      {sk}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Custom Skill Adder Row */}
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                marginTop: 12,
+                borderRadius: 12,
+                borderWidth: 1,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                backgroundColor: isDark ? '#1C1C20' : '#F8FAFC',
+                borderColor: isDark ? '#2E2E33' : '#E2E8F0',
+              }}
+            >
+              <TextInput
+                style={{
+                  flex: 1,
+                  fontSize: 13,
+                  color: isDark ? '#FFFFFF' : '#0F172A',
+                  paddingVertical: 6,
+                }}
+                placeholder="Add another skill or talent..."
+                placeholderTextColor="#94A3B8"
+                value={customPostSkill}
+                onChangeText={setCustomPostSkill}
+                onSubmitEditing={handleAddCustomPostSkill}
+                returnKeyType="done"
+              />
+              <TouchableOpacity
+                onPress={handleAddCustomPostSkill}
+                disabled={!customPostSkill.trim()}
+                activeOpacity={0.8}
+                style={{
+                  backgroundColor: '#059669',
+                  paddingHorizontal: 14,
+                  paddingVertical: 7,
+                  borderRadius: 8,
+                  opacity: customPostSkill.trim() ? 1 : 0.45,
+                }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: '800', color: '#FFFFFF' }}>+ Add</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* SECTION 4: SCHEDULE & TIME COMMITMENT (2-COLUMN PRESET CARDS + CUSTOM INPUT) */}
+          <View
+            style={{
+              backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+              borderColor: isDark ? '#27272A' : '#E2E8F0',
+              borderWidth: 1,
+              borderRadius: 16,
+              padding: 16,
+              marginBottom: 14,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 15,
+                fontWeight: '800',
+                color: isDark ? '#FFFFFF' : '#1a2d5a',
+                fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+              }}
+            >
+              Schedule & Time Commitment
+            </Text>
+            <Text style={{ fontSize: 12, color: isDark ? '#A1A1AA' : '#64748B', marginTop: 2, marginBottom: 12 }}>
+              Tap a preset below or enter custom days and hours:
+            </Text>
+
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10, marginBottom: 12 }}>
+              {SCHEDULE_PRESET_CARDS.map((card) => {
+                const isSelected = postSchedule === card.value;
+                return (
+                  <TouchableOpacity
+                    key={card.id}
+                    activeOpacity={0.8}
+                    onPress={() => setPostSchedule(card.value)}
+                    style={{
+                      width: cardWidth,
+                      borderRadius: 12,
+                      padding: 12,
+                      borderWidth: 1.5,
+                      backgroundColor: isSelected
+                        ? isDark
+                          ? 'rgba(5, 150, 105, 0.22)'
+                          : '#ECFDF5'
+                        : isDark
+                        ? '#1C1C20'
+                        : '#F8FAFC',
+                      borderColor: isSelected ? '#059669' : isDark ? '#2E2E33' : '#E2E8F0',
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <Text style={{ fontSize: 17 }}>{card.emoji}</Text>
+                      {isSelected && <CheckCircle2 size={15} color="#059669" />}
+                    </View>
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        fontWeight: '800',
+                        marginTop: 6,
+                        color: isSelected
+                          ? isDark
+                            ? '#6EE7B7'
+                            : '#047857'
+                          : isDark
+                          ? '#FFFFFF'
+                          : '#0F172A',
+                      }}
+                    >
+                      {card.title}
+                    </Text>
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: '600',
+                        marginTop: 2,
+                        color: isSelected
+                          ? isDark
+                            ? '#A7F3D0'
+                            : '#059669'
+                          : isDark
+                          ? '#A1A1AA'
+                          : '#64748B',
+                      }}
+                    >
+                      {card.sub}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={styles.fieldLabel}>CUSTOM SCHEDULE / TIMING SUMMARY</Text>
+            <TextInput
+              style={[
+                styles.modalInput,
+                {
+                  color: isDark ? '#FFFFFF' : '#0F172A',
+                  backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                  borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                  paddingVertical: 11,
+                  borderRadius: 10,
+                },
+              ]}
+              value={postSchedule}
+              onChangeText={setPostSchedule}
+              placeholder="e.g. Sundays · 8:30 AM – 12:30 PM"
+              placeholderTextColor="#94A3B8"
+            />
+          </View>
+
+          {/* SECTION 5: PUSH NOTIFICATION TOGGLE */}
+          {!editingPost && (
+            <TouchableOpacity
+              onPress={() => setNotifyMembersOnPost((prev) => !prev)}
+              activeOpacity={0.85}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                padding: 16,
+                borderRadius: 16,
+                borderWidth: 1.5,
+                backgroundColor: notifyMembersOnPost
+                  ? isDark
+                    ? 'rgba(5, 150, 105, 0.16)'
+                    : '#ECFDF5'
+                  : isDark
+                  ? '#18181B'
+                  : '#FFFFFF',
+                borderColor: notifyMembersOnPost ? '#059669' : isDark ? '#27272A' : '#E2E8F0',
+              }}
+            >
+              <View
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: 7,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: notifyMembersOnPost ? '#059669' : 'transparent',
+                  borderWidth: 1.5,
+                  borderColor: notifyMembersOnPost ? '#059669' : isDark ? '#71717A' : '#94A3B8',
+                }}
+              >
+                {notifyMembersOnPost && <Check size={14} color="#FFFFFF" strokeWidth={3} />}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: '800',
+                    color: isDark ? '#FFFFFF' : '#0F172A',
+                  }}
+                >
+                  Send Push Notification to All Members
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 12,
+                    color: isDark ? '#A1A1AA' : '#64748B',
+                    marginTop: 2,
+                  }}
+                >
+                  Instantly notifies church members so they can tap and apply
+                </Text>
+              </View>
+              <Bell size={18} color={notifyMembersOnPost ? '#059669' : '#94A3B8'} />
+            </TouchableOpacity>
+          )}
+        </ScrollView>
+
+        {/* ── FIXED BOTTOM ACTION BAR ── */}
+        <View
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            paddingHorizontal: 16,
+            paddingTop: 12,
+            paddingBottom: Platform.OS === 'ios' ? 28 : 16,
+            backgroundColor: isDark ? '#09090B' : '#FFFFFF',
+            borderTopWidth: 1,
+            borderTopColor: isDark ? '#27272A' : '#E2E8F0',
+            flexDirection: 'row',
+            gap: 10,
+          }}
+        >
+          <TouchableOpacity
+            onPress={() => setShowPostModal(false)}
+            disabled={postSaving}
+            activeOpacity={0.8}
+            style={{
+              flex: 1,
+              paddingVertical: 14,
+              borderRadius: 999,
+              borderWidth: 1.5,
+              borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Text style={{ fontSize: 14, fontWeight: '700', color: isDark ? '#E4E4E7' : '#475569' }}>
+              Cancel
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={handleSaveVolunteerPost}
+            disabled={postSaving}
+            activeOpacity={0.85}
+            style={{
+              flex: 2,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              paddingVertical: 14,
+              borderRadius: 999,
+              backgroundColor: '#059669',
+              opacity: postSaving ? 0.65 : 1,
+            }}
+          >
+            {postSaving ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <>
+                <Send size={15} color="#FFFFFF" />
+                <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>
+                  {editingPost ? 'Save Changes' : 'Publish Volunteer Call'}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        <CustomAlert
+          visible={alertConfig.visible}
+          title={alertConfig.title}
+          message={alertConfig.message}
+          type={alertConfig.type}
+          onClose={() => setAlertConfig((prev) => ({ ...prev, visible: false }))}
+        />
+      </KeyboardAvoidingView>
+    );
+  }
+
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#09090B' : '#f0f2f7' }]}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
@@ -503,7 +1657,7 @@ export default function AdminVolunteerManagement({ navigation, route, routeParam
             </Text>
           </View>
 
-          {/* Spacer to keep title centered (Refresh button removed as requested) */}
+          {/* Spacer to keep title centered */}
           <View style={{ width: 40, height: 40 }} />
         </View>
       </View>
@@ -581,7 +1735,10 @@ export default function AdminVolunteerManagement({ navigation, route, routeParam
                 { backgroundColor: isDark ? '#065F46' : '#059669' },
               ],
             ]}
-            onPress={() => setActiveSegment('event')}
+            onPress={() => {
+              setSelectedPostFilterId(null);
+              setActiveSegment('event');
+            }}
             activeOpacity={0.8}
           >
             <Text
@@ -804,12 +1961,375 @@ export default function AdminVolunteerManagement({ navigation, route, routeParam
         ) : null}
       </View>
 
-      {/* ── APPLICATIONS LIST ── */}
+      {/* ── APPLICATIONS LIST & VOLUNTEER CALL POSTS ── */}
       <ScrollView
         style={styles.listContainer}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchApplications()} />}
       >
+        {activeSegment === 'general' && (
+          <View style={{ marginBottom: 16 }}>
+            {/* Primary CTA: Post General Volunteer Application Post to Members */}
+            <TouchableOpacity
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                paddingVertical: 14,
+                paddingHorizontal: 18,
+                borderRadius: 999,
+                backgroundColor: isDark ? '#FFFFFF' : '#1a2d5a',
+                marginBottom: volunteerPosts.length > 0 ? 14 : 4,
+              }}
+              onPress={handleOpenCreatePost}
+              activeOpacity={0.85}
+            >
+              <HeartHandshake size={18} color={isDark ? '#09090B' : '#FFFFFF'} />
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontWeight: '800',
+                  color: isDark ? '#09090B' : '#FFFFFF',
+                  fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+                }}
+              >
+                Post General Volunteer Call to Members
+              </Text>
+            </TouchableOpacity>
+
+            {/* Published General Volunteer Calls Section */}
+            {volunteerPosts.length > 0 && (
+              <View>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: 8,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 15,
+                      fontWeight: '800',
+                      color: isDark ? '#FFFFFF' : '#1a2d5a',
+                      fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+                    }}
+                  >
+                    Published Volunteer Calls ({volunteerPosts.length})
+                  </Text>
+                  {selectedPostFilterId && (
+                    <TouchableOpacity onPress={() => setSelectedPostFilterId(null)}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#059669' }}>
+                        Show All Applications
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                <View style={{ gap: 10 }}>
+                  {volunteerPosts.map((post) => {
+                    const isOpen = post.status !== 'closed';
+                    const isSelectedFilter = selectedPostFilterId === post.id;
+                    const postApplicantCount = applications.filter(
+                      (a) => a.volunteerType === 'general' && a.postId === post.id
+                    ).length;
+                    const ministryShortList = (post.ministries || []).map(
+                      (m) => m.split('·')[0]?.trim() || m
+                    );
+
+                    return (
+                      <TouchableOpacity
+                        key={post.id}
+                        activeOpacity={0.85}
+                        onPress={() =>
+                          setSelectedPostFilterId(isSelectedFilter ? null : post.id)
+                        }
+                        style={{
+                          backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                          borderRadius: 14,
+                          padding: 14,
+                          borderWidth: isSelectedFilter ? 1.5 : 1,
+                          borderColor: isSelectedFilter
+                            ? '#059669'
+                            : isDark
+                            ? '#27272A'
+                            : '#E2E8F0',
+                        }}
+                      >
+                        {/* Top Row: Title + Status Badge */}
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'flex-start',
+                            justifyContent: 'space-between',
+                            gap: 10,
+                          }}
+                        >
+                          <View style={{ flex: 1 }}>
+                            <Text
+                              style={{
+                                fontSize: 15.5,
+                                fontWeight: '800',
+                                color: isDark ? '#FFFFFF' : '#1a2d5a',
+                              }}
+                              numberOfLines={2}
+                            >
+                              {post.title}
+                            </Text>
+                            {ministryShortList.length > 0 && (
+                              <Text
+                                style={{
+                                  fontSize: 12.5,
+                                  fontWeight: '700',
+                                  color: isDark ? '#60A5FA' : '#2563EB',
+                                  marginTop: 2,
+                                }}
+                                numberOfLines={2}
+                              >
+                                {ministryShortList.join(' • ')}
+                              </Text>
+                            )}
+                          </View>
+
+                          <View
+                            style={{
+                              paddingHorizontal: 9,
+                              paddingVertical: 4,
+                              borderRadius: 6,
+                              backgroundColor: isOpen
+                                ? isDark
+                                  ? 'rgba(16, 185, 129, 0.16)'
+                                  : '#DCFCE7'
+                                : isDark
+                                ? 'rgba(245, 158, 11, 0.16)'
+                                : '#FEF3C7',
+                              borderWidth: 1,
+                              borderColor: isOpen
+                                ? isDark
+                                  ? 'rgba(16, 185, 129, 0.35)'
+                                  : '#BBF7D0'
+                                : isDark
+                                ? 'rgba(245, 158, 11, 0.35)'
+                                : '#FDE68A',
+                            }}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 10,
+                                fontWeight: '800',
+                                color: isOpen
+                                  ? isDark
+                                    ? '#34D399'
+                                    : '#15803D'
+                                  : isDark
+                                  ? '#FBBF24'
+                                  : '#B45309',
+                              }}
+                            >
+                              {isOpen ? 'OPEN' : 'CLOSED'}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* Description */}
+                        {!!post.description && (
+                          <Text
+                            style={{
+                              fontSize: 12.5,
+                              color: isDark ? '#D4D4D8' : '#475569',
+                              marginTop: 6,
+                              lineHeight: 18,
+                            }}
+                            numberOfLines={2}
+                          >
+                            {post.description}
+                          </Text>
+                        )}
+
+                        {/* Schedule & Applicants Meta Row */}
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            flexWrap: 'wrap',
+                            alignItems: 'center',
+                            gap: 12,
+                            marginTop: 8,
+                          }}
+                        >
+                          {!!post.scheduleSummary && (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                              <Clock size={12.5} color={isDark ? '#A1A1AA' : '#64748B'} />
+                              <Text
+                                style={{
+                                  fontSize: 12,
+                                  color: isDark ? '#A1A1AA' : '#64748B',
+                                  fontWeight: '600',
+                                }}
+                              >
+                                {post.scheduleSummary}
+                              </Text>
+                            </View>
+                          )}
+
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                            <Users size={12.5} color={isDark ? '#34D399' : '#059669'} />
+                            <Text
+                              style={{
+                                fontSize: 12,
+                                color: isDark ? '#34D399' : '#059669',
+                                fontWeight: '700',
+                              }}
+                            >
+                              {postApplicantCount} Applicant{postApplicantCount === 1 ? '' : 's'}
+                              {post.slotsNeeded && post.slotsNeeded > 0
+                                ? ` / ${post.slotsNeeded} Needed`
+                                : ''}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* Action Buttons Row (Edit, Close/Reopen, Delete) */}
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            marginTop: 12,
+                            paddingTop: 10,
+                            borderTopWidth: 1,
+                            borderTopColor: isDark ? '#27272A' : '#F1F5F9',
+                          }}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <TouchableOpacity
+                              onPress={(e) => {
+                                e.stopPropagation?.();
+                                handleOpenEditPost(post);
+                              }}
+                              activeOpacity={0.75}
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                gap: 5,
+                                paddingHorizontal: 12,
+                                paddingVertical: 6.5,
+                                borderRadius: 8,
+                                backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                                borderWidth: 1,
+                                borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                              }}
+                            >
+                              <Edit2 size={12.5} color={isDark ? '#E4E4E7' : '#334155'} />
+                              <Text
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: '700',
+                                  color: isDark ? '#E4E4E7' : '#334155',
+                                }}
+                              >
+                                Edit
+                              </Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              onPress={(e) => {
+                                e.stopPropagation?.();
+                                handleTogglePostStatus(post);
+                              }}
+                              activeOpacity={0.75}
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                gap: 5,
+                                paddingHorizontal: 12,
+                                paddingVertical: 6.5,
+                                borderRadius: 8,
+                                backgroundColor: isOpen
+                                  ? isDark
+                                    ? 'rgba(245, 158, 11, 0.12)'
+                                    : '#FFFBEB'
+                                  : isDark
+                                  ? 'rgba(16, 185, 129, 0.12)'
+                                  : '#ECFDF5',
+                                borderWidth: 1,
+                                borderColor: isOpen
+                                  ? isDark
+                                    ? 'rgba(245, 158, 11, 0.35)'
+                                    : '#FDE68A'
+                                  : isDark
+                                  ? 'rgba(16, 185, 129, 0.35)'
+                                  : '#A7F3D0',
+                              }}
+                            >
+                              {isOpen ? (
+                                <XCircle size={12.5} color={isDark ? '#FBBF24' : '#D97706'} />
+                              ) : (
+                                <CheckCircle2 size={12.5} color={isDark ? '#34D399' : '#059669'} />
+                              )}
+                              <Text
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: '700',
+                                  color: isOpen
+                                    ? isDark
+                                      ? '#FBBF24'
+                                      : '#D97706'
+                                    : isDark
+                                    ? '#34D399'
+                                    : '#059669',
+                                }}
+                              >
+                                {isOpen ? 'Close' : 'Reopen'}
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+
+                          <TouchableOpacity
+                            onPress={(e) => {
+                              e.stopPropagation?.();
+                              handleDeleteVolunteerPost(post);
+                            }}
+                            activeOpacity={0.75}
+                            style={{
+                              width: 32,
+                              height: 32,
+                              borderRadius: 8,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2',
+                              borderWidth: 1,
+                              borderColor: isDark ? 'rgba(239, 68, 68, 0.3)' : '#FECACA',
+                            }}
+                          >
+                            <Trash2 size={13.5} color={isDark ? '#F87171' : '#DC2626'} />
+                          </TouchableOpacity>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <Text
+                  style={{
+                    fontSize: 15,
+                    fontWeight: '800',
+                    color: isDark ? '#FFFFFF' : '#1a2d5a',
+                    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+                    marginTop: 18,
+                    marginBottom: 4,
+                  }}
+                >
+                  {selectedPostFilterId
+                    ? `Applications for Selected Call (${filteredApps.length})`
+                    : `Volunteer Applications (${filteredApps.length})`}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
         {loading ? (
           <View style={{ paddingVertical: 50, alignItems: 'center' }}>
             <ActivityIndicator size="large" color="#059669" />
@@ -1041,7 +2561,7 @@ export default function AdminVolunteerManagement({ navigation, route, routeParam
                                 ]}
                               >
                                 <Text style={[styles.roleTxt, { color: isDark ? '#60A5FA' : '#1a2d5a' }]}>
-                                  GENERAL CHURCH
+                                  {app.postTitle ? app.postTitle : 'GENERAL CHURCH'}
                                 </Text>
                               </View>
                               <Text style={{ fontSize: 11, color: isDark ? '#71717A' : '#94A3B8' }}>

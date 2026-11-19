@@ -1,3 +1,4 @@
+import './globalConfig.js';
 import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import * as functionsCompat from 'firebase-functions/v1';
@@ -8,6 +9,7 @@ import { getStorage } from 'firebase-admin/storage';
 import { SalesforceBackend } from './services/SalesforceBackend.js';
 import { sendWhatsAppTemplateInternal } from './whatsapp.js';
 import { generateCelebrationImage } from './imageGenerator.js';
+import { checkChurchYouTubeLive } from './notifications.js';
 import { randomUUID } from 'crypto';
 // Initialize Firebase Admin once at top level
 initializeApp();
@@ -862,10 +864,47 @@ async function handleBroadcastPushDispatch(data, churchIdParam, messageIdParam) 
         console.log(`🛑 Skipping broadcast push for silent document: ${messageIdParam}`);
         return;
     }
-    const title = data.title || 'Church Update';
-    const body = data.content || '';
     const type = data.type || 'general';
+    const body = data.content || '';
+    let title = (data.title || 'Church Update').trim();
+    // Strip bracketed date prefix (e.g. [17-11-2026] or [17 Nov 2026])
+    title = title.replace(/\[\s*[^\]]*\d{4}[^\]]*\]\s*/g, '');
+    title = title.replace(/\[\s*\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\s*\]\s*/g, '');
+    // Strip calendar emojis (📅, 🗓️, 📆) which mobile OS fonts (e.g. Android Noto Emoji) permanently render with "July 17"
+    title = title.replace(/[📅🗓️📆]/gu, '').trim();
     const churchId = churchIdParam || data.targetChurchId || DEFAULT_CHURCH_ID;
+    // Atomic coordination with onVolunteerPostCreated so volunteer_post_new is sent once and never skipped
+    if (type === 'volunteer_post_new' && data.postId) {
+        try {
+            const db = getDb();
+            const postRef = db
+                .collection('Rhema Church')
+                .doc(churchId)
+                .collection('volunteer_posts')
+                .doc(String(data.postId));
+            const nowMs = Date.now();
+            const claimed = await db.runTransaction(async (tx) => {
+                const snap = await tx.get(postRef);
+                if (!snap.exists)
+                    return true;
+                const pData = snap.data() || {};
+                if (pData.postNotificationSent === true ||
+                    (typeof pData.postPushClaimAt === 'number' && nowMs - pData.postPushClaimAt < 120000)) {
+                    return false;
+                }
+                tx.update(postRef, {
+                    postNotificationSent: true,
+                    postNotificationSentAt: FieldValue.serverTimestamp(),
+                });
+                return true;
+            });
+            if (!claimed) {
+                console.log(`🛑 [BroadcastPush] volunteer_post_new already claimed/sent for post ${data.postId}`);
+                return;
+            }
+        }
+        catch (_) { }
+    }
     console.log(`🔔 handleBroadcastPushDispatch fired for: [${title}] type: [${type}] church: [${churchId}]`);
     const isTargetAdmin = data.targetRole === 'admin' || data.type === 'baptism_request_admin' || data.type === 'prayer_request_admin';
     try {
@@ -891,6 +930,12 @@ async function handleBroadcastPushDispatch(data, churchIdParam, messageIdParam) 
                 if (mData.fcmToken && typeof mData.fcmToken === 'string' && mData.fcmToken.trim().length > 0) {
                     tokenSet.add(mData.fcmToken.trim());
                 }
+                if (Array.isArray(mData.fcmTokens)) {
+                    mData.fcmTokens.forEach((tk) => {
+                        if (typeof tk === 'string' && tk.trim().length > 10)
+                            tokenSet.add(tk.trim());
+                    });
+                }
             });
         }
         catch (err) {
@@ -915,6 +960,12 @@ async function handleBroadcastPushDispatch(data, churchIdParam, messageIdParam) 
                 }
                 if (mData.fcmToken && typeof mData.fcmToken === 'string' && mData.fcmToken.trim().length > 0) {
                     tokenSet.add(mData.fcmToken.trim());
+                }
+                if (Array.isArray(mData.fcmTokens)) {
+                    mData.fcmTokens.forEach((tk) => {
+                        if (typeof tk === 'string' && tk.trim().length > 10)
+                            tokenSet.add(tk.trim());
+                    });
                 }
             });
         }
@@ -956,15 +1007,16 @@ async function handleBroadcastPushDispatch(data, churchIdParam, messageIdParam) 
             }
         }
         else {
-            // General member broadcasts check
+            // General member broadcasts check across all users belonging to this church
             try {
-                let query = db.collection('users');
-                if (churchId) {
-                    query = query.where('primaryChurchId', '==', churchId);
-                }
-                const snapshotUsers = await query.get();
+                const snapshotUsers = await db.collection('users').get();
                 snapshotUsers.forEach((doc) => {
                     const uData = doc.data();
+                    if (!uData)
+                        return;
+                    const uChurch = uData.primaryChurchId || uData.churchId || 'rhema';
+                    if (churchId && uChurch !== churchId)
+                        return;
                     if (data.targetPhone) {
                         const rawDigits = String(data.targetPhone).replace(/\D/g, '').slice(-10);
                         const userDigits = String(uData.phone || uData.mobile || '').replace(/\D/g, '').slice(-10);
@@ -973,6 +1025,12 @@ async function handleBroadcastPushDispatch(data, churchIdParam, messageIdParam) 
                     }
                     if (uData.fcmToken && typeof uData.fcmToken === 'string' && uData.fcmToken.trim().length > 0) {
                         tokenSet.add(uData.fcmToken.trim());
+                    }
+                    if (Array.isArray(uData.fcmTokens)) {
+                        uData.fcmTokens.forEach((tk) => {
+                            if (typeof tk === 'string' && tk.trim().length > 10)
+                                tokenSet.add(tk.trim());
+                        });
                     }
                 });
             }
@@ -986,6 +1044,7 @@ async function handleBroadcastPushDispatch(data, churchIdParam, messageIdParam) 
             title,
             body: plainBody.length > 200 ? plainBody.substring(0, 197) + '...' : plainBody,
             ...(data.eventId ? { eventId: String(data.eventId) } : {}),
+            ...(data.postId ? { postId: String(data.postId) } : {}),
             ...(data.prayerId ? { prayerId: String(data.prayerId) } : {}),
             ...(data.requestId ? { requestId: String(data.requestId) } : {}),
             ...(data.targetTab ? { targetTab: String(data.targetTab) } : {}),
@@ -997,6 +1056,8 @@ async function handleBroadcastPushDispatch(data, churchIdParam, messageIdParam) 
             ...(data.screen ? { screen: String(data.screen) } : { screen: 'AdminRoot' }),
             ...(churchId ? { churchId: String(churchId) } : {}),
             ...(data.date ? { date: String(data.date) } : {}),
+            ...(data.endDate ? { endDate: String(data.endDate) } : {}),
+            ...(data.startTime ? { startTime: String(data.startTime) } : {}),
             click_action: 'FLUTTER_NOTIFICATION_CLICK',
         };
         const isPromise = type === 'promise' || type === 'daily_verse';
@@ -1211,185 +1272,185 @@ async function fetchPage(url) {
 }
 /**
  * ⏰ YOUTUBE LIVE CHECK SCHEDULER
- * Runs every 5 minutes to check if YouTube channel is live
+ * Delegates to the shared transactional `checkChurchYouTubeLive` helper so concurrent
+ * schedulers NEVER dispatch duplicate notifications for the same live session.
  */
 export const checkYouTubeLive = onSchedule('*/5 * * * *', async (event) => {
     try {
         console.log('⏰ Checking YouTube Live status...');
         const db = getDb();
         const churchRef = db.collection('Rhema Church').doc('rhema');
-        const churchSnap = await churchRef.get();
-        const cData = churchSnap.exists ? churchSnap.data() : {};
-        const url = cData?.socialLinks?.youtube?.trim() || 'https://www.youtube.com/@Brothersinchristfellowship/live';
-        const html = await fetchPage(url).catch(() => '');
-        // Check if the stream is live
-        const isLive = html.includes('"isLive":true') || html.includes('LIVE_STREAM') || html.includes('"style":"LIVE"');
-        // Try to find the videoId
-        let videoId = '';
-        const match = html.match(/"liveStreamability".*?"videoId":"([^"]+)"/) || html.match(/"videoRenderer".*?"videoId":"([^"]+)"/);
-        if (match && match[1]) {
-            videoId = match[1];
-        }
-        const liveUrl = videoId ? `https://www.youtube.com/watch?v=${videoId}` : url;
-        const prevState = cData?.youtubeLiveState || { isLive: false };
-        // Save new state directly on Rhema Church/rhema (NO extra documents)
-        await churchRef.set({
-            youtubeLiveState: {
-                isLive,
-                url: liveUrl,
-                videoId: videoId || '',
-                lastChecked: FieldValue.serverTimestamp()
-            }
-        }, { merge: true });
-        // State transition: was offline, now live!
-        if (isLive && !prevState?.isLive) {
-            console.log('🚨 YouTube Live Stream detected! Sending notifications...');
-            const pushTitle = '🔴 We Are LIVE Now!';
-            const pushBody = "Join us for a time of worship, prayer and God's Word. Our live service is now streaming on YouTube. Be blessed!";
-            const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-            // 1. Add to existing broadcasts collection
-            const docRef = await churchRef.collection('broadcasts').add({
-                title: pushTitle,
-                content: pushBody,
-                date: dateStr,
-                type: 'youtube_live',
-                url: liveUrl,
-                videoId: videoId || '',
-                silent: true,
-                createdAt: FieldValue.serverTimestamp()
-            });
-            // 2. Send topic push to all church members with "Join Live Now" category
-            await getMsg().send({
-                data: {
-                    type: 'youtube_live',
-                    url: liveUrl,
-                    videoId: videoId || '',
-                    churchId: 'rhema',
-                    title: pushTitle,
-                    pushTitle: pushTitle,
-                    pushBody: pushBody,
-                    id: docRef.id
-                },
-                topic: 'church_rhema',
-                android: {
-                    priority: 'high'
-                },
-                apns: {
-                    headers: { 'apns-priority': '10' },
-                    payload: {
-                        aps: {
-                            alert: {
-                                title: pushTitle,
-                                body: pushBody,
-                            },
-                            sound: 'default',
-                            badge: 1,
-                            category: 'youtube_live',
-                        }
-                    }
-                }
-            }).catch((e) => console.error('Error sending topic push:', e));
+        const churchDoc = await churchRef.get();
+        if (churchDoc.exists) {
+            await checkChurchYouTubeLive(churchDoc, 'rhema', db);
         }
     }
     catch (error) {
         console.error('Error in checkYouTubeLive scheduler:', error);
     }
 });
+function hasAdminRoleFlag(data) {
+    if (!data)
+        return false;
+    const role = String(data.userType || data.role || '').toLowerCase();
+    return (Boolean(data.isAdmin) ||
+        Boolean(data.isSuperAdmin) ||
+        role.includes('admin') ||
+        role.includes('pastor') ||
+        role.includes('super'));
+}
+async function assertChurchAdminAccess(db, uid, token, churchId) {
+    if (token?.superadmin === true || token?.super_admin === true)
+        return;
+    if (token?.admin === true && (!token?.churchId || token.churchId === churchId))
+        return;
+    const platformAdminSnap = await db.collection('platform_admins').doc(uid).get();
+    if (platformAdminSnap.exists && platformAdminSnap.data()?.superadmin === true)
+        return;
+    const memberRefs = [
+        db.collection('Rhema Church').doc(churchId).collection('members').doc(uid),
+        db.collection('churches').doc(churchId).collection('members').doc(uid),
+    ];
+    for (const mRef of memberRefs) {
+        const mSnap = await mRef.get();
+        if (mSnap.exists && hasAdminRoleFlag(mSnap.data()))
+            return;
+    }
+    const churchRefs = [
+        db.collection('Rhema Church').doc(churchId),
+        db.collection('churches').doc(churchId),
+    ];
+    for (const cRef of churchRefs) {
+        const cSnap = await cRef.get();
+        if (cSnap.exists) {
+            const cData = cSnap.data() || {};
+            const adminList = Array.isArray(cData.adminUids) ? cData.adminUids : [];
+            if (cData.adminUid === uid ||
+                cData.createdBy === uid ||
+                cData.pastorUid === uid ||
+                cData.ownerUid === uid ||
+                adminList.includes(uid)) {
+                return;
+            }
+        }
+    }
+    const userSnap = await db.collection('users').doc(uid).get();
+    if (userSnap.exists) {
+        const uData = userSnap.data() || {};
+        const role = String(uData.userType || uData.role || '').toLowerCase();
+        const isSuper = Boolean(uData.isSuperAdmin) || role.includes('super');
+        const userChurch = uData.primaryChurchId || uData.churchId;
+        if (isSuper || (hasAdminRoleFlag(uData) && (!userChurch || userChurch === churchId))) {
+            return;
+        }
+    }
+    throw new HttpsError('permission-denied', 'Admin permission is required for the target church.');
+}
+function validateYouTubeLiveUrl(rawUrl) {
+    const defaultUrl = 'https://www.youtube.com/@RhemaGlobalMinistries/streams';
+    if (rawUrl === undefined || rawUrl === null || rawUrl === '')
+        return defaultUrl;
+    if (typeof rawUrl !== 'string') {
+        throw new HttpsError('invalid-argument', 'Invalid YouTube URL.');
+    }
+    let parsed;
+    try {
+        parsed = new URL(rawUrl.trim());
+    }
+    catch {
+        throw new HttpsError('invalid-argument', 'Malformed YouTube URL.');
+    }
+    const allowedHosts = new Set([
+        'youtube.com',
+        'www.youtube.com',
+        'm.youtube.com',
+        'youtu.be',
+        'studio.youtube.com',
+    ]);
+    if (parsed.protocol !== 'https:' || !allowedHosts.has(parsed.hostname.toLowerCase())) {
+        throw new HttpsError('invalid-argument', 'url must be an HTTPS YouTube URL.');
+    }
+    return parsed.toString();
+}
 export const triggerTestYouTubeLive = onCall({ invoker: 'public' }, async (request) => {
     try {
-        const liveUrl = request.data?.url || 'https://www.youtube.com/@Brothersinchristfellowship/live';
+        if (!request.auth?.uid) {
+            throw new HttpsError('unauthenticated', 'Authentication is required.');
+        }
+        const rawChurchId = typeof request.data?.churchId === 'string' && request.data.churchId.trim()
+            ? request.data.churchId.trim()
+            : DEFAULT_CHURCH_ID;
+        if (!/^[a-zA-Z0-9_-]{1,64}$/.test(rawChurchId)) {
+            throw new HttpsError('invalid-argument', 'Invalid churchId.');
+        }
+        const churchId = rawChurchId;
         const db = getDb();
-        // Save to Firestore first
+        await assertChurchAdminAccess(db, request.auth.uid, request.auth.token, churchId);
+        const liveUrl = validateYouTubeLiveUrl(request.data?.url);
+        const rawVideoId = request.data?.videoId;
+        let videoId = '';
+        if (rawVideoId !== undefined && rawVideoId !== null && rawVideoId !== '') {
+            if (typeof rawVideoId !== 'string' || !/^[a-zA-Z0-9_-]{11}$/.test(rawVideoId.trim())) {
+                throw new HttpsError('invalid-argument', 'videoId must be a valid 11-character YouTube ID.');
+            }
+            videoId = rawVideoId.trim();
+        }
+        const pushTitle = '🔴 We Are LIVE Now!';
+        const pushBody = "Join us for a time of worship, prayer and God's Word. Our live service is now streaming on YouTube. Be blessed!";
         const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-        const docRef = await db.collection('churches').doc(DEFAULT_CHURCH_ID).collection('broadcasts').add({
-            title: '🔴 We Are LIVE Now!',
-            content: "Join us for a time of worship, prayer and God's Word. Our live service is now streaming on YouTube. Be blessed!",
+        const docId = videoId ? `youtube_live_${videoId}` : `youtube_live_test_${Date.now()}`;
+        await db
+            .collection('Rhema Church')
+            .doc(churchId)
+            .collection('broadcasts')
+            .doc(docId)
+            .set({
+            title: pushTitle,
+            content: pushBody,
             date: dateStr,
             type: 'youtube_live',
             url: liveUrl,
+            videoId,
             silent: true,
-            createdAt: FieldValue.serverTimestamp()
-        });
-        // Send topic push to all church members with "Join Live Now" category
+            createdAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        // Send ONE single topic push (data-only on Android so NotificationService renders
+        // the notification directly with the "📺 Join Live Now" action button).
         await getMsg().send({
             data: {
                 type: 'youtube_live',
                 url: liveUrl,
-                videoId: '',
-                churchId: DEFAULT_CHURCH_ID,
-                title: 'Brothers in Christ Fellowship Live Stream',
-                pushTitle: '🔴 We Are LIVE Now!',
-                pushBody: "Join us for a time of worship, prayer and God's Word. Our live service is now streaming on YouTube. Be blessed!",
-                id: docRef.id
+                videoId,
+                churchId,
+                title: pushTitle,
+                pushTitle,
+                pushBody,
+                id: docId,
             },
-            topic: `church_${DEFAULT_CHURCH_ID}`,
+            topic: `church_${churchId}`,
             android: {
-                priority: 'high'
+                priority: 'high',
             },
             apns: {
                 headers: { 'apns-priority': '10' },
                 payload: {
                     aps: {
                         alert: {
-                            title: '🔴 We Are LIVE Now!',
-                            body: "Join us for a time of worship, prayer and God's Word. Our live service is now streaming on YouTube. Be blessed!",
+                            title: pushTitle,
+                            body: pushBody,
                         },
                         sound: 'default',
                         badge: 1,
                         category: 'youtube_live',
-                    }
-                }
-            }
-        }).catch((e) => console.error('Error sending test topic push:', e));
-        const snapshotUsers = await db.collection('users').get();
-        const tokenSet = new Set();
-        snapshotUsers.forEach((doc) => {
-            const uData = doc.data();
-            if (uData.fcmToken)
-                tokenSet.add(uData.fcmToken);
-        });
-        const tokens = Array.from(tokenSet);
-        if (tokens.length === 0) {
-            return { success: false, message: 'No registered user tokens found' };
-        }
-        const message = {
-            notification: {
-                title: '🚨 We are Live on YouTube!',
-                body: 'Join the Brothers in Christ Fellowship live stream now! 🎥🙏'
-            },
-            data: {
-                type: 'youtube_live',
-                url: liveUrl,
-                videoId: '',
-                churchId: DEFAULT_CHURCH_ID,
-                title: 'Brothers in Christ Fellowship Live Stream',
-                id: docRef.id
-            },
-            android: {
-                priority: 'high',
-                notification: {
-                    sound: 'default',
-                    priority: 'max',
-                    channelId: 'church_alerts'
-                }
-            },
-            apns: {
-                headers: {
-                    'apns-priority': '10'
+                    },
                 },
-                payload: {
-                    aps: {
-                        sound: 'default',
-                        badge: 1
-                    }
-                }
             },
-            tokens: tokens
-        };
-        const response = await getMsg().sendEachForMulticast(message);
-        return { success: true, sent: response.successCount, failed: response.failureCount, broadcastId: docRef.id };
+        });
+        return { success: true, broadcastId: docId };
     }
     catch (error) {
+        if (error instanceof HttpsError)
+            throw error;
         console.error('triggerTestYouTubeLive Error:', error);
         throw new HttpsError('internal', error.message);
     }
@@ -1627,7 +1688,7 @@ const testBaptismsV1 = functionsCompat.https.onRequest(async (req, res) => {
         res.status(500).send(error.message);
     }
 });
-export { publishScheduledSermons, triggerPublishScheduledSermonsHttp, triggerDailyVersePushHttp, sendDailyVersePushScheduled, monitorMeetingLive, pushMeetingLive, onBaptismRequestCreatedAdmin, onBaptismRequestCreatedAdminLegacy, onPrayerRequestCreatedAdmin, onPrayerRequestCreatedAdminLegacy, onPrayerRequestProcessedMember, onPrayerRequestProcessedMemberLegacy, pushPrayerRequestApproved, pushCareCellAnnouncement, pushCareCellMeeting, pushCareCellPrayerRequest, pushCareCellVisit, onTestimonyCreatedAdmin, onTestimonyCreatedAdminLegacy, onTestimonyUpdatedWorkflow, onTestimonyUpdatedWorkflowLegacy, onVolunteerApplicationCreated, onVolunteerApplicationCreatedLegacy, onVolunteerApplicationUpdated, onVolunteerApplicationUpdatedLegacy, onEventUpdatedForVolunteers, onEventUpdatedForVolunteersLegacy, scheduledVolunteerReminders, triggerVolunteerPushTestHttp, } from './notifications.js';
+export { publishScheduledSermons, triggerPublishScheduledSermonsHttp, triggerDailyVersePushHttp, sendDailyVersePushScheduled, monitorMeetingLive, pushMeetingLive, onBaptismRequestCreatedAdmin, onBaptismRequestCreatedAdminLegacy, onPrayerRequestCreatedAdmin, onPrayerRequestCreatedAdminLegacy, onPrayerRequestProcessedMember, onPrayerRequestProcessedMemberLegacy, pushPrayerRequestApproved, pushCareCellAnnouncement, pushCareCellMeeting, pushCareCellPrayerRequest, pushCareCellVisit, onCareCellVisitResponseUpdated, onTestimonyCreatedAdmin, onTestimonyCreatedAdminLegacy, onTestimonyUpdatedWorkflow, onTestimonyUpdatedWorkflowLegacy, onVolunteerApplicationCreated, onVolunteerApplicationCreatedLegacy, onVolunteerApplicationUpdated, onVolunteerApplicationUpdatedLegacy, onEventUpdatedForVolunteers, onEventUpdatedForVolunteersLegacy, scheduledVolunteerReminders, triggerVolunteerPushTestHttp, onJobApplicationCreated, onJobApplicationUpdated, onJobOpportunityCreated, onJobOpportunityUpdated, onRegistrationRequestCreated, onRegistrationRequestUpdated, onVolunteerPostCreated, onVolunteerPostUpdated, } from './notifications.js';
 export { onServiceAssignmentQueueDispatched, onServiceAssignmentResponded, checkServiceAssignmentTimeoutsCron, sendServiceRosterRemindersCron, triggerCheckRosterTimeoutsHttp, dispatchServiceAssignmentNotificationHttp, onServiceRehearsalCreated, onServicePlanPublished, bookResponsibilitySlotHttp, declineResponsibilitySlotHttp, } from './rosterNotifications.js';
 export { guestInviteLanding } from './guestInvite.js';
 export { startMatrimonyRegistration, saveMatrimonyDraft, submitMatrimonyProfile, resetMatrimonyProfile, getMatrimonyStatus, uploadMatrimonyPhoto, } from './matrimony/registration.js';

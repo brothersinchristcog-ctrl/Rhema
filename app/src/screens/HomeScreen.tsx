@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -71,7 +71,9 @@ import {
   CalendarCheck,
   ArrowUpRight,
   ArrowRight,
-  User
+  User,
+  Radio,
+  Maximize2
 } from 'lucide-react-native';
 import ViewShot from 'react-native-view-shot';
 import * as MediaLibrary from 'expo-media-library';
@@ -81,8 +83,9 @@ import * as Clipboard from 'expo-clipboard';
 import RNShare from 'react-native-share';
 
 import firestore from '@react-native-firebase/firestore';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, useIsFocused } from '@react-navigation/native';
 import HexagonDate from '../components/HexagonDate';
+import RhemaYouTubePlayer from '../components/RhemaYouTubePlayer';
 import { useAuth } from '../context/AuthContext';
 import { useChurch } from '../context/ChurchContext';
 import { useTheme } from '../context/ThemeContext';
@@ -97,6 +100,14 @@ import { SupportedLanguage } from '../locales';
 import { CustomAlert } from '../components/CustomAlert';
 import { RHEMA_LOGO_PATH, RHEMA_LOGO_VIEWBOX } from './auth/rhemaLogoPath';
 import ServiceRosterService from '../services/ServiceRosterService';
+import {
+  RHEMA_YOUTUBE_CHANNEL_URL,
+  RHEMA_YOUTUBE_STREAMS_URL,
+  RHEMA_YOUTUBE_CHANNEL_ID,
+  resolveRhemaYoutubeUrl,
+  findActiveLiveStream,
+  checkVideoLiveStatus,
+} from '../services/YouTubeService';
 import { MemberServiceDuty } from '../types/serviceRoster';
 import Svg, { Path, Circle, Ellipse, Rect, Polygon, Defs, LinearGradient as SvgLinearGradient, RadialGradient as SvgRadialGradient, Stop, Text as SvgText, Mask, G } from 'react-native-svg';
 
@@ -2523,6 +2534,183 @@ export default function HomeScreen() {
   const [todayPeriod, setTodayPeriod] = useState<string>(getCurrentPeriod());
   // Phase 8: Member Service Duty & Roster Notification Banner
   const [upcomingDuty, setUpcomingDuty] = useState<MemberServiceDuty | null>(null);
+  const isHomeFocused = useIsFocused();
+  const [homeLiveVideoId, setHomeLiveVideoId] = useState<string | null>(null);
+  const [homeLiveTitle, setHomeLiveTitle] = useState<string>('');
+  const [homeIsLive, setHomeIsLive] = useState<boolean>(false);
+
+  const refreshHomeLiveStream = useCallback(async () => {
+    try {
+      const targetChurchId = activeChurch?.id || 'rhema';
+      const churchDoc = await firestore()
+        .collection('Rhema Church')
+        .doc(targetChurchId)
+        .get();
+
+      let churchData: any = null;
+      const expectedChannelId = targetChurchId === 'rhema' ? RHEMA_YOUTUBE_CHANNEL_ID : undefined;
+      if (churchDoc.exists) {
+        churchData = churchDoc.data();
+        const lData = churchData?.youtubeLiveState;
+        const liveVid = lData?.videoId;
+        if (lData?.isLive && liveVid) {
+          const vCheck = await checkVideoLiveStatus(liveVid, expectedChannelId);
+          if (!vCheck.channelMismatch && (vCheck.status === 'live' || vCheck.isLiveNow)) {
+            setHomeLiveVideoId(liveVid);
+            setHomeLiveTitle(lData.title || vCheck.title || 'Live Worship Service');
+            setHomeIsLive(true);
+            return;
+          }
+        }
+      }
+
+      const targetUrl = resolveRhemaYoutubeUrl(
+        churchData?.socialLinks?.youtube ||
+          churchData?.youtubeChannelUrl ||
+          churchData?.youtubeLiveUrl ||
+          activeChurch?.socialLinks?.youtube
+      );
+      const liveResult = await findActiveLiveStream(targetUrl, expectedChannelId);
+      if (liveResult.status === 'live' && liveResult.isLiveNow && liveResult.videoId) {
+        setHomeLiveVideoId(liveResult.videoId);
+        setHomeLiveTitle(liveResult.title || 'Live Worship Service');
+        setHomeIsLive(true);
+        return;
+      }
+
+      setHomeIsLive(false);
+      setHomeLiveVideoId(null);
+    } catch {
+      // Keep current live state silently on transient network errors
+    }
+  }, [activeChurch?.id, activeChurch?.socialLinks?.youtube]);
+
+  useEffect(() => {
+    const targetChurchId = activeChurch?.id || 'rhema';
+    const expectedChannelId = targetChurchId === 'rhema' ? RHEMA_YOUTUBE_CHANNEL_ID : undefined;
+    const unsubChurch = firestore()
+      .collection('Rhema Church')
+      .doc(targetChurchId)
+      .onSnapshot(
+        async (snapshot) => {
+          if (!snapshot.exists) return;
+          const lData = snapshot.data()?.youtubeLiveState;
+          const liveVid = lData?.videoId;
+          if (lData?.isLive && liveVid) {
+            const vCheck = await checkVideoLiveStatus(liveVid, expectedChannelId);
+            if (!vCheck.channelMismatch && (vCheck.status === 'live' || vCheck.isLiveNow)) {
+              setHomeLiveVideoId(liveVid);
+              setHomeLiveTitle(lData.title || vCheck.title || 'Live Worship Service');
+              setHomeIsLive(true);
+            } else if (vCheck.channelMismatch || vCheck.status === 'completed' || vCheck.hasEnded) {
+              setHomeIsLive(false);
+              setHomeLiveVideoId(null);
+            }
+          } else if (lData && !lData.isLive) {
+            setHomeIsLive(false);
+            setHomeLiveVideoId(null);
+          }
+        },
+        () => {}
+      );
+
+    refreshHomeLiveStream();
+    const pollTimer = setInterval(refreshHomeLiveStream, 60000);
+    return () => {
+      unsubChurch();
+      clearInterval(pollTimer);
+    };
+  }, [activeChurch?.id, refreshHomeLiveStream]);
+
+  const renderInlineLiveYouTubeCard = () => {
+    if (!homeIsLive || !homeLiveVideoId) return null;
+    const playerHeight = Math.round(Math.max(screenWidth - 48, 220) * (9 / 16));
+    const yUrl = resolveRhemaYoutubeUrl(activeChurch?.socialLinks?.youtube);
+    const openInAppLive = () =>
+      navigation.navigate('YouTubeLive', {
+        channelUrl: yUrl,
+        videoId: homeLiveVideoId,
+        title: homeLiveTitle || 'Rhema Ministry Live',
+      });
+
+    return (
+      <View
+        style={[
+          styles.inlineLiveYoutubeOuter,
+          { borderColor: screenTheme.bentoYoutubeBorder },
+        ]}
+      >
+        <LinearGradient
+          colors={screenTheme.bentoYoutubeGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.inlineLiveYoutubeCard}
+        >
+          <View style={styles.inlineLiveHeaderRow}>
+            <View style={styles.inlineLiveHeaderLeft}>
+              <Image
+                source={require('../../assets/3d_youtube.png')}
+                style={{ width: 28, height: 24, marginRight: 8 }}
+                resizeMode="contain"
+              />
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <View style={styles.bentoLiveBadgeWrap}>
+                    <View style={styles.bentoLiveDot} />
+                    <Text style={styles.bentoLiveTag}>LIVE NOW</Text>
+                  </View>
+                  <Text
+                    style={[styles.inlineLiveChannelTxt, { color: screenTheme.bentoYoutubeSub }]}
+                    numberOfLines={1}
+                  >
+                    Rhema Ministry Live
+                  </Text>
+                </View>
+                <Text
+                  style={[styles.inlineLiveTitleTxt, { color: screenTheme.bentoYoutubeText }]}
+                  numberOfLines={1}
+                >
+                  {homeLiveTitle || 'Live Worship Service'}
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={styles.inlineLiveExpandBtn}
+              activeOpacity={0.85}
+              onPress={openInAppLive}
+            >
+              <Maximize2 size={13} color="#FFFFFF" />
+              <Text style={styles.inlineLiveExpandTxt}>Full View</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={[styles.inlineLivePlayerWrap, { height: playerHeight }]}>
+            {isHomeFocused ? (
+              <RhemaYouTubePlayer
+                height={playerHeight}
+                play={isHomeFocused}
+                autoPlay={true}
+                isLive={true}
+                videoId={homeLiveVideoId}
+                title={homeLiveTitle || 'Rhema Ministry Live'}
+                showExternalButton={false}
+              />
+            ) : (
+              <TouchableOpacity
+                style={styles.inlineLivePausedBox}
+                activeOpacity={0.85}
+                onPress={openInAppLive}
+              >
+                <Radio size={24} color="#EF4444" />
+                <Text style={styles.inlineLivePausedTxt}>Tap to Watch Live In-App</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </LinearGradient>
+      </View>
+    );
+  };
 
   useEffect(() => {
     const cId = activeChurch?.id || 'rhema';
@@ -2720,6 +2908,8 @@ export default function HomeScreen() {
           }
         }
       }).catch(() => {});
+
+      refreshHomeLiveStream();
 
       const curPeriod = getCurrentPeriod();
       VerseNotificationService.getVerseForDate(new Date(), curPeriod, true).then(v => {
@@ -2983,6 +3173,12 @@ export default function HomeScreen() {
     },
     // Row 3: Community & Multimedia
     {
+      id: 'kids_ministry',
+      title: 'Rhema Kids',
+      icon: require('../../assets/gallery_3d_family.png'),
+      onPress: () => navigation.navigate('KidsMinistry'),
+    },
+    {
       id: 'members',
       title: t('home.quickMembers') || 'Members',
       icon: require('../../assets/3d_members_family.png'),
@@ -3011,17 +3207,13 @@ export default function HomeScreen() {
       title: t('home.quickYoutubeLive') || 'YouTube Live',
       icon: require('../../assets/3d_youtube.png'),
       onPress: () => {
-        const yUrl = activeChurch?.socialLinks?.youtube?.trim();
-        if (yUrl) {
-          navigation.navigate('YouTubeLive', { channelUrl: yUrl });
-        } else {
-          setAlertConfig({
-            visible: true,
-            title: 'Link Not Configured',
-            message: 'No YouTube Live link has been configured for this church. Please go to Church Settings and set the YouTube Live link.',
-            type: 'info'
-          });
-        }
+        const yUrl = resolveRhemaYoutubeUrl(activeChurch?.socialLinks?.youtube);
+        navigation.navigate('YouTubeLive', {
+          channelUrl: yUrl,
+          streamsUrl: RHEMA_YOUTUBE_STREAMS_URL,
+          videoId: homeIsLive ? homeLiveVideoId || undefined : undefined,
+          title: homeIsLive ? homeLiveTitle || undefined : undefined,
+        });
       },
     },
     {
@@ -3210,6 +3402,9 @@ export default function HomeScreen() {
           setLatestSermons(cachedLatestSermons);
         }
       }).catch(() => {});
+
+      // 7. Refresh YouTube Live stream state for inline Home playback
+      refreshHomeLiveStream();
 
     } catch (error) {
       console.error('Error fetching home data:', error);
@@ -4582,6 +4777,21 @@ export default function HomeScreen() {
                                 )}
                               </View>
                             )}
+                            {item.id === 'youtube' && homeIsLive && homeLiveVideoId && (
+                              <View
+                                style={{
+                                  position: 'absolute',
+                                  top: 5,
+                                  right: 5,
+                                  width: 10,
+                                  height: 10,
+                                  borderRadius: 5,
+                                  backgroundColor: '#EF4444',
+                                  borderWidth: 1.5,
+                                  borderColor: screenTheme.isDark ? '#121212' : '#FFFFFF',
+                                }}
+                              />
+                            )}
                           </View>
                           <Text
                             style={[styles.grid4Label, { color: screenTheme.text }]}
@@ -4596,6 +4806,7 @@ export default function HomeScreen() {
                     </View>
                   );
                 })}
+                {homeIsLive && homeLiveVideoId ? renderInlineLiveYouTubeCard() : null}
               </View>
             ) : (
               /* ── Bento Grid: Asymmetric Floating Cards ── */
@@ -5066,6 +5277,9 @@ export default function HomeScreen() {
               </LinearGradient>
             </TouchableOpacity>
 
+            {/* ── LIVE YOUTUBE PLAYER DIRECTLY IN BENTO HOME SECTION WHEN LIVE ── */}
+            {homeIsLive && homeLiveVideoId ? renderInlineLiveYouTubeCard() : null}
+
             {/* ── EXPANDABLE BENTO SECTION (Rows 6, 7 & 8) ── */}
             {showAllBento && (
               <>
@@ -5074,11 +5288,11 @@ export default function HomeScreen() {
               style={styles.bentoRow6}
               onLayout={(e) => setOnlineMeetingsY(e.nativeEvent.layout.y)}
             >
-              {/* Left Column: Online Meetings & Members (Height 70 each, matching Sermon Notes) */}
-              <View style={styles.bentoRow6LeftCol}>
+              {/* When inline live video is already active above, lay out Meetings & Members side-by-side */}
+              <View style={homeIsLive && homeLiveVideoId ? styles.bentoRow6Horizontal : styles.bentoRow6LeftCol}>
                 {/* 1. Online Meetings */}
                 <TouchableOpacity
-                  style={styles.clayMeetingsTouch}
+                  style={[styles.clayMeetingsTouch, homeIsLive && homeLiveVideoId && { flex: 1 }]}
                   activeOpacity={0.85}
                   onPress={() => navigation.navigate('OnlineMeetings')}
                 >
@@ -5120,7 +5334,7 @@ export default function HomeScreen() {
 
                 {/* 2. Members */}
                 <TouchableOpacity
-                  style={styles.clayMembersTouch}
+                  style={[styles.clayMembersTouch, homeIsLive && homeLiveVideoId && { flex: 1 }]}
                   activeOpacity={0.85}
                   onPress={handleOpenMembers}
                 >
@@ -5161,22 +5375,17 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               </View>
 
-              {/* Right Column: Big YouTube Card (same height as Sermons Card) */}
+              {/* Right Column: Big YouTube Card (shown when stream is not already playing inline above) */}
+              {!(homeIsLive && homeLiveVideoId) && (
               <TouchableOpacity
                 style={styles.clayYoutubeBigTouch}
                 activeOpacity={0.88}
                 onPress={() => {
-                  const yUrl = activeChurch?.socialLinks?.youtube?.trim();
-                  if (yUrl) {
-                    navigation.navigate('YouTubeLive', { channelUrl: yUrl });
-                  } else {
-                    setAlertConfig({
-                      visible: true,
-                      title: 'Link Not Configured',
-                      message: 'No YouTube Live link has been configured for this church. Please go to Church Settings and set the YouTube Live link.',
-                      type: 'info'
-                    });
-                  }
+                  const yUrl = resolveRhemaYoutubeUrl(activeChurch?.socialLinks?.youtube);
+                  navigation.navigate('YouTubeLive', {
+                    channelUrl: yUrl,
+                    streamsUrl: RHEMA_YOUTUBE_STREAMS_URL,
+                  });
                 }}
               >
                 <LinearGradient
@@ -5212,15 +5421,16 @@ export default function HomeScreen() {
                       style={[styles.claySermonsSub, { color: screenTheme.bentoYoutubeSub, marginTop: 2 }]}
                       numberOfLines={2}
                     >
-                      Watch live broadcasts & sermons
+                      Rhema Ministry Live
                     </Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 }}>
                       <Play size={11} color="#FFFFFF" fill="#FFFFFF" />
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF' }}>Watch live</Text>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF' }}>Watch in app</Text>
                     </View>
                   </View>
                 </LinearGradient>
               </TouchableOpacity>
+              )}
             </View>
 
             {/* ── ROW 7: Service Roster Banner Card (matches 4-in-a-Row Quick Access items) ── */}
@@ -8877,5 +9087,77 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     flex: 1,
+  },
+  bentoRow6Horizontal: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 9,
+  },
+  inlineLiveYoutubeOuter: {
+    marginTop: 10,
+    borderRadius: 22,
+    borderWidth: 1.5,
+    overflow: 'hidden',
+    elevation: 4,
+    shadowColor: '#380B0B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  inlineLiveYoutubeCard: {
+    padding: 12,
+  },
+  inlineLiveHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    gap: 8,
+  },
+  inlineLiveHeaderLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  inlineLiveChannelTxt: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  inlineLiveTitleTxt: {
+    fontSize: 14,
+    fontWeight: '800',
+    marginTop: 3,
+  },
+  inlineLiveExpandBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  inlineLiveExpandTxt: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  inlineLivePlayerWrap: {
+    width: '100%',
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#000000',
+  },
+  inlineLivePausedBox: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#09090B',
+    gap: 8,
+  },
+  inlineLivePausedTxt: {
+    color: '#FFFFFF',
+    fontSize: 12.5,
+    fontWeight: '700',
   },
 });

@@ -1,8 +1,18 @@
 import { Platform, PermissionsAndroid, Linking, Alert } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { messaging, firestore, auth } from './firebaseConfig';
 
+const LAST_LIVE_NOTIF_STORAGE_KEY = '@last_yt_live_notif';
+const LIVE_NOTIF_SAME_VIDEO_COOLDOWN_MS = 4 * 60 * 60 * 1000;
+const LIVE_NOTIF_FALLBACK_COOLDOWN_MS = 15 * 60 * 1000;
+
 class NotificationService {
+  private notificationHandlerConfigured = false;
+  private lastLiveNotifKey = '';
+  private lastLiveNotifAt = 0;
+  private recentSystemNotifs = new Map<string, number>();
+
   messaging() {
     return messaging();
   }
@@ -53,19 +63,80 @@ class NotificationService {
       console.log('📤 Fetching user global church association to save token for UID:', user.uid);
       const FirestoreService = require('./FirestoreService').default;
       const globalUser = await FirestoreService.getGlobalUser(user.uid);
+      const targetChurchId =
+        globalUser?.primaryChurchId ||
+        (await FirestoreService.getChurchId().catch(() => null)) ||
+        'rhema';
 
-      if (globalUser?.primaryChurchId) {
-        // Save to church members subcollection
-        await firestore().collection('Rhema Church').doc(globalUser.primaryChurchId).collection('members').doc(user.uid).set({
-          fcmToken: token,
-          lastTokenUpdate: firestore.FieldValue.serverTimestamp(),
-          platform: Platform.OS,
-        }, { merge: true });
+      // Save token to root users document, and update any EXISTING matching member doc(s) in members/
+      // (using update on existing docs only, so it never creates a duplicate nameless stub doc)
+      const membersCol = firestore().collection('Rhema Church').doc(targetChurchId).collection('members');
+      const tokenUpdatePayload = {
+        fcmToken: token,
+        fcmTokens: firestore.FieldValue.arrayUnion(token),
+        lastTokenUpdate: firestore.FieldValue.serverTimestamp(),
+        platform: Platform.OS,
+      };
 
-        console.log('✨ Token saved successfully to member profile!');
-      } else {
-        console.log('⚠️ Token not saved: User does not belong to a church yet.');
+      const matchedMemberRefs = new Map<string, any>();
+
+      const directRef = membersCol.doc(user.uid);
+      const directSnap = await directRef.get().catch(() => null);
+      const directExists =
+        directSnap &&
+        (typeof (directSnap as any).exists === 'function'
+          ? (directSnap as any).exists()
+          : Boolean(directSnap.exists));
+      if (directExists) {
+        matchedMemberRefs.set(directRef.path, directRef);
       }
+
+      try {
+        const authUidSnap = await membersCol.where('authUid', '==', user.uid).get();
+        authUidSnap.forEach((d: any) => matchedMemberRefs.set(d.ref.path, d.ref));
+      } catch (_) {}
+
+      const rawPhone = String(user.phoneNumber || globalUser?.phone || '').trim();
+      const digits10 = rawPhone.replace(/\D/g, '').slice(-10);
+      if (digits10.length === 10) {
+        const phoneCandidates = Array.from(new Set([rawPhone, `+91${digits10}`, digits10].filter(Boolean)));
+        for (const pVal of phoneCandidates) {
+          try {
+            const pDocRef = membersCol.doc(pVal);
+            const pDocSnap = await pDocRef.get().catch(() => null);
+            const pDocExists =
+              pDocSnap &&
+              (typeof (pDocSnap as any).exists === 'function'
+                ? (pDocSnap as any).exists()
+                : Boolean(pDocSnap.exists));
+            if (pDocExists) {
+              matchedMemberRefs.set(pDocRef.path, pDocRef);
+            }
+          } catch (_) {}
+          try {
+            const pQuerySnap = await membersCol.where('phone', '==', pVal).get();
+            pQuerySnap.forEach((d: any) => matchedMemberRefs.set(d.ref.path, d.ref));
+          } catch (_) {}
+        }
+      }
+
+      await Promise.allSettled([
+        ...Array.from(matchedMemberRefs.values()).map((ref) =>
+          ref.set(tokenUpdatePayload, { merge: true })
+        ),
+        firestore()
+          .collection('users')
+          .doc(user.uid)
+          .set(
+            {
+              ...tokenUpdatePayload,
+              primaryChurchId: targetChurchId,
+            },
+            { merge: true }
+          ),
+      ]);
+
+      console.log('✨ Token saved successfully to member profile!');
     } catch (err) {
       console.error('❌ Firestore Token Save Error:', err);
     }
@@ -73,6 +144,19 @@ class NotificationService {
 
   async setupCategoriesAndChannels() {
     try {
+      if (!this.notificationHandlerConfigured) {
+        Notifications.setNotificationHandler({
+          handleNotification: async () => ({
+            shouldShowAlert: true,
+            shouldPlaySound: true,
+            shouldSetBadge: false,
+            shouldShowBanner: true,
+            shouldShowList: true,
+          }),
+        });
+        this.notificationHandlerConfigured = true;
+      }
+
       if (Platform.OS === 'android') {
         await Notifications.setNotificationChannelAsync('church_alerts', {
           name: 'Church Live & Updates',
@@ -111,7 +195,7 @@ class NotificationService {
     }
   }
 
-  async displayLiveNotification(data: any, title?: string, body?: string) {
+  async displayLiveNotification(data: any, title?: string, body?: string): Promise<boolean> {
     try {
       await this.setupCategoriesAndChannels();
       const pushTitle = title || data?.pushTitle || data?.title || '🔴 We Are LIVE Now!';
@@ -121,7 +205,41 @@ class NotificationService {
       const videoId = (data && data.videoId) || '';
       const churchId = (data && data.churchId) || 'rhema';
 
+      const dedupKey = videoId || liveUrl || 'active';
+      const cooldownMs = videoId ? LIVE_NOTIF_SAME_VIDEO_COOLDOWN_MS : LIVE_NOTIF_FALLBACK_COOLDOWN_MS;
+      const now = Date.now();
+
+      if (this.lastLiveNotifKey === dedupKey && now - this.lastLiveNotifAt < cooldownMs) {
+        console.log('ℹ️ [NotificationService] Suppressed duplicate YouTube Live notification (in-memory):', dedupKey);
+        return false;
+      }
+
+      try {
+        const storedRaw = await AsyncStorage.getItem(LAST_LIVE_NOTIF_STORAGE_KEY);
+        if (storedRaw) {
+          const parsed = JSON.parse(storedRaw);
+          if (parsed?.key === dedupKey && now - Number(parsed?.timestamp || 0) < cooldownMs) {
+            this.lastLiveNotifKey = dedupKey;
+            this.lastLiveNotifAt = Number(parsed.timestamp);
+            console.log('ℹ️ [NotificationService] Suppressed duplicate YouTube Live notification (storage):', dedupKey);
+            return false;
+          }
+        }
+      } catch {
+        // Non-fatal storage read error
+      }
+
+      this.lastLiveNotifKey = dedupKey;
+      this.lastLiveNotifAt = now;
+      AsyncStorage.setItem(
+        LAST_LIVE_NOTIF_STORAGE_KEY,
+        JSON.stringify({ key: dedupKey, timestamp: now })
+      ).catch(() => {});
+
+      const identifier = videoId ? `youtube_live_${videoId}` : 'youtube_live_active';
+
       await Notifications.scheduleNotificationAsync({
+        identifier,
         content: {
           title: pushTitle,
           body: pushBody,
@@ -135,12 +253,72 @@ class NotificationService {
           categoryIdentifier: 'youtube_live',
           sound: 'default',
           color: '#E02424',
+          autoDismiss: true,
         },
         trigger: Platform.OS === 'android' ? { channelId: 'church_alerts' } : null,
       });
       console.log('✅ [NotificationService] Posted YouTube Live notification with "Join Live Now" button to device notification panel');
+      return true;
     } catch (err) {
       console.error('❌ [NotificationService] Failed to post live notification to panel:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Posts a high-priority system tray notification banner (with sound & vibration on 'church_alerts')
+   * when the app is in the foreground or via real-time broadcast listener, with strict deduplication.
+   */
+  async displaySystemPushNotification(
+    title: string,
+    body: string,
+    data?: Record<string, any>
+  ): Promise<boolean> {
+    try {
+      await this.setupCategoriesAndChannels();
+      const cleanTitle = (title || 'Rhema Church Update').trim();
+      const cleanBody = (body || '').trim();
+      if (!cleanTitle && !cleanBody) return false;
+
+      const rawId = String(
+        data?.postId ||
+          data?.opportunityId ||
+          data?.applicationId ||
+          data?.requestId ||
+          data?.eventId ||
+          data?.referenceId ||
+          data?.id ||
+          ''
+      )
+        .replace(/^vol_post_/, '')
+        .trim();
+      const dedupKey = `${data?.type || 'general'}|${rawId}|${cleanTitle}`;
+      const now = Date.now();
+      const prevAt = this.recentSystemNotifs.get(dedupKey) || 0;
+      if (now - prevAt < 20000) {
+        return false;
+      }
+      this.recentSystemNotifs.set(dedupKey, now);
+
+      const identifier = rawId
+        ? `rhema_push_${data?.type || 'notif'}_${rawId}`
+        : `rhema_push_${now}`;
+
+      await Notifications.scheduleNotificationAsync({
+        identifier,
+        content: {
+          title: cleanTitle,
+          body: cleanBody,
+          data: data || {},
+          sound: 'default',
+          autoDismiss: true,
+        },
+        trigger: Platform.OS === 'android' ? { channelId: 'church_alerts' } : null,
+      });
+      return true;
+    } catch (err) {
+      console.warn('⚠️ [NotificationService] displaySystemPushNotification notice:', err);
+      return false;
     }
   }
 
@@ -402,6 +580,77 @@ class NotificationService {
             nav.navigate('EventDetails', { eventId, id: eventId });
           } else {
             nav.navigate('Volunteer');
+          }
+          break;
+        }
+        case 'volunteer_post_new': {
+          const rawPostId = String(rawData.postId || rawData.referenceId || id || '').replace(/^vol_post_/, '');
+          console.log('🤝 [NotificationService] Routing to General Volunteer Call Post:', { postId: rawPostId });
+          nav.navigate('Volunteer', { postId: rawPostId });
+          break;
+        }
+        case 'job_opportunity_new': {
+          const oppId = rawData.opportunityId || rawData.referenceId || id;
+          console.log('💼 [NotificationService] Routing to Ministry Opportunity:', { oppId });
+          if (oppId) {
+            nav.navigate('OpportunityDetailScreen', { opportunityId: oppId });
+          } else {
+            nav.navigate('JobCircle', { skipSplash: true });
+          }
+          break;
+        }
+        case 'job_application_admin': {
+          const appId = rawData.applicationId || rawData.referenceId || id;
+          console.log('💼 [NotificationService] Routing Admin to Job Circle Applications:', { appId });
+          nav.navigate('AdminRoot', {
+            targetTab: 'Job Circle',
+            applicationId: appId,
+            timestamp: Date.now(),
+          });
+          break;
+        }
+        case 'job_application_member': {
+          const appId = rawData.applicationId || rawData.referenceId || id;
+          const oppId = rawData.opportunityId;
+          console.log('💼 [NotificationService] Routing Member to Application Details:', { appId, oppId });
+          if (oppId) {
+            nav.navigate('OpportunityDetailScreen', {
+              opportunityId: oppId,
+              applicationId: appId,
+              timestamp: Date.now(),
+            });
+          } else {
+            nav.navigate('JobCircle', {
+              skipSplash: true,
+              initialTab: 'applications',
+              applicationId: appId,
+              timestamp: Date.now(),
+            });
+          }
+          break;
+        }
+        case 'registration_request_admin': {
+          const reqId = rawData.requestId || rawData.referenceId || id;
+          console.log('🆕 [NotificationService] Routing Admin to Registration Approvals:', { reqId });
+          nav.navigate('AdminRoot', {
+            targetTab: 'Approvals',
+            requestId: reqId,
+            timestamp: Date.now(),
+          });
+          break;
+        }
+        case 'registration_approved':
+        case 'registration_rejected': {
+          const routeNames = nav.getState?.()?.routeNames || [];
+          if (routeNames.includes('ApprovalPending')) {
+            nav.navigate('ApprovalPending', {
+              requestId: rawData.requestId || rawData.referenceId || id,
+              churchId: rawData.churchId,
+            });
+          } else if (routeNames.includes('Updates')) {
+            nav.navigate('Updates', { highlightId: id, highlightType: type });
+          } else if (routeNames.includes('Tabs')) {
+            nav.navigate('Tabs');
           }
           break;
         }

@@ -937,17 +937,17 @@ const styles = createAdminThemedStyles({
     justifyContent: 'center',
   },
   monthItemBtnSelected: {
-    backgroundColor: '#1A2D5A',
-    borderColor: '#1A2D5A',
-    shadowColor: '#1A2D5A',
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
+    shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 2.5,
   },
   monthItemBtnCurrent: {
-    borderColor: '#2563EB',
-    backgroundColor: '#EFF6FF',
+    borderColor: '#0F172A',
+    backgroundColor: '#F8FAFC',
   },
   monthItemTxt: {
     fontSize: 13.5,
@@ -959,7 +959,7 @@ const styles = createAdminThemedStyles({
     fontWeight: '800',
   },
   monthItemTxtCurrent: {
-    color: '#2563EB',
+    color: '#0F172A',
     fontWeight: '800',
   },
   modalFooter: {

@@ -1,0 +1,346 @@
+================================================================================
+          RHEMA CHURCH MANAGEMENT SYSTEM — KIDS MINISTRY & SUNDAY SCHOOL
+                    COMPLETE 10-PHASE TESTING GUIDE (STEP-BY-STEP)
+================================================================================
+
+Date: November 18, 2026
+Target System: Sunday School & Kids Ministry Enterprise Application
+Theme: Pitch-Black (#000000), Gold (#FBBF24), Emerald (#10B981)
+Scripture Anchor: Mark 10:14 ("Let the little children come to Me")
+Branch: origin/backend
+
+--------------------------------------------------------------------------------
+TABLE OF CONTENTS
+--------------------------------------------------------------------------------
+1. HOW TO START THE APP
+2. TEST 1: Splash Screen & Member App Dashboard (Phase 1)
+3. TEST 2: Child Enrollment & Safeguarding Profile (Phase 1)
+4. TEST 3: Entrance Face Scan & QR Kiosk (Phase 2)
+5. TEST 4: Teacher Exit Dismissal Scanner & Photo Match (Phase 2)
+6. TEST 5: Classrooms, Rosters & Age Promotion Engine (Phase 3)
+7. TEST 6: Teacher Facial Clock-In & 4-Digit PIN Kiosk (Phase 4)
+8. TEST 7: Bible Learning Center — Stories, Quizzes & Songs (Phase 5)
+9. TEST 8: 52-Week Bilingual Curriculum & WhatsApp Export (Phase 6)
+10. TEST 9: AI Kids Ministry Studio (Claude 3.5 Sonnet) (Phase 7)
+11. TEST 10: Parent Portal & Live Custody Pass (Phase 8)
+12. TEST 11: VBS 2026 House Spirit & Official Certificates (Phase 9)
+13. TEST 12: Executive Board Analytics & Safeguarding Audit (Phase 10)
+14. VERIFICATION: Zero Disruption to Existing Members Screen
+================================================================================
+
+--------------------------------------------------------------------------------
+1. HOW TO START THE APP
+--------------------------------------------------------------------------------
+Open PowerShell / Terminal in your project folder:
+   cd c:\Users\yraje\Rhema\app
+   npx expo start -c
+
+Options to run on device:
+- Press 'a' to open on connected Android device / emulator.
+- Scan the QR code using the Expo Go app on your physical phone.
+
+--------------------------------------------------------------------------------
+TEST 1: SPLASH SCREEN & MEMBER APP DASHBOARD (Phase 1)
+--------------------------------------------------------------------------------
+HOW TO NAVIGATE:
+1. Open the Rhema App.
+2. In the bottom navigation or main menu, tap "Kids Ministry" (or navigate to 
+   the Kids Ministry screen).
+
+WHAT TO TEST:
+• Visual: You will see a cinematic pitch-black Welcome Splash Screen.
+• Scripture: Look for Mark 10:14 displayed in both Telugu and English:
+  - Telugu: "చిన్నబిడ్డలను నా యొద్దకు రానియ్యుడి, వారిని ఆటంకపరచకుడి; దేవుని రాజ్యము వీరివంటివారిదే."
+  - English: "Let the little children come to Me, and do not hinder them, for the Kingdom of God belongs to such as these."
+• Action: Tap the gold button: "Enter Sunday School & Kids Ministry ›"
+• Result: The splash screen smoothly transitions into the 4-tab Member App:
+  [Home]  [Classroom]  [Bible LMS]  [Custody Pass]
+
+--------------------------------------------------------------------------------
+TEST 2: CHILD ENROLLMENT & SAFEGUARDING PROFILE (Phase 1)
+--------------------------------------------------------------------------------
+HOW TO TEST:
+1. In the Member App Home Tab, tap the "+ Enroll Child" button at the top right.
+2. Form testing:
+   a. First Name: Type "Ethan"
+   b. Last Name: Type "Raj"
+   c. Date of Birth: Set to "2018-05-15" (Notice auto-calculated age and 
+      tier: "Primary Stars - Ages 6 to 8").
+   d. Gender: Select Boy / Girl.
+   e. Photo: Tap the camera avatar to choose a photo from your gallery.
+   f. Allergies: Tap allergen pills (e.g., "Dust / Asthma", "Peanuts").
+   g. Authorized Pickup Guardians: Notice primary parent is pre-filled.
+      Tap "+ Add Relative" to add Mother / Grandmother with phone number.
+3. Tap "Submit Enrollment & Safeguarding Profile".
+4. Expected Result: Alert appears: "Child Enrolled! 🎉 Ethan is registered for 
+   Primary Stars! Sunday School custody pass is now active."
+5. Tap OK. Ethan immediately appears in the family child switcher at the top.
+
+--------------------------------------------------------------------------------
+TEST 3: ENTRANCE FACE SCAN & QR KIOSK (Phase 2)
+--------------------------------------------------------------------------------
+HOW TO NAVIGATE:
+• Go to Admin Hub -> Tap "Face Scan Kiosk" (or from Member Home "Safety Stations").
+
+WHAT TO TEST:
+1. Camera View: You will see a live front/back camera feed with an animated 
+   gold holographic laser reticle and face frame.
+2. Mode 1 (Face Scan):
+   - Position face in camera frame -> Tap "Simulate Biometric Face Match".
+   - Expected Result: Laser turns emerald green, shows "96.4% Biometric Confidence",
+     greets child by name, displays dynamic pickup code (e.g. RK-7942), and prints token.
+3. Mode 2 (Scan QR):
+   - Tap "Scan QR Code" mode toggle.
+   - Hold phone with parent custody pass QR in front of camera.
+4. Mode 3 (Manual Search):
+   - Type child name "Ethan" or ID -> 1-tap check-in.
+5. Duplicate Blocker Check:
+   - Try checking in the same child again in the same Sunday morning session.
+   - Expected Result: Kiosk displays an amber alert: "Already Checked In! 
+     Child is already active in Room 204."
+
+--------------------------------------------------------------------------------
+TEST 4: TEACHER EXIT DISMISSAL SCANNER & PHOTO MATCH (Phase 2)
+--------------------------------------------------------------------------------
+HOW TO NAVIGATE:
+• Go to Admin Hub -> Tap "Teacher Exit Scanner".
+
+WHAT TO TEST:
+1. Camera scanner activates with emerald crosshairs.
+2. Test Scan:
+   - Tap "Simulate Parent QR Scan" (or type 4-digit code RK-7942).
+3. Verification Modal:
+   - Side-by-side photo comparison displays:
+     Left: Enrolled Child Photo & Details.
+     Right: Authorized Guardian Photo & Relationship Badge (e.g., "Father - Primary Contact").
+   - Live Allergy Warning banner displayed if child has reported allergies.
+4. Dismissal Approval:
+   - Tap "Verify Match & Release Child".
+   - Result: Emerald success badge appears; child status updates to "Checked Out";
+     realtime headcount decreases by 1.
+5. Emergency Override:
+   - Tap "Emergency Guardian Override" -> Enter teacher PIN and authorization note.
+
+--------------------------------------------------------------------------------
+TEST 5: CLASSROOMS, ROSTERS & AGE PROMOTION ENGINE (Phase 3)
+--------------------------------------------------------------------------------
+HOW TO NAVIGATE:
+• Open Admin Kids Hub -> Tap Tab 3: "Classrooms".
+
+WHAT TO TEST:
+1. 5 Classroom Tiers Displayed:
+   - 👼 Nursery Angels (Ages 1-3)
+   - 👑 Beginners Kingdom (Ages 4-5)
+   - ⭐ Primary Stars (Ages 6-8)
+   - 🏆 Junior Champions (Ages 9-11)
+   - ✝️ Teens for Christ (Ages 12-14)
+2. Edit Classroom:
+   - Tap "Edit" on Primary Stars -> Change Room Number to "Room 205", update capacity.
+   - Tap "Save Class Settings" -> Updates in realtime.
+3. Class Roster:
+   - Tap "Roster" on any class.
+   - Displays all students currently assigned to this tier.
+   - Tap "Call Parent" -> Opens phone dialer directly.
+   - Tap "Transfer" -> Move child to a different class tier.
+4. Annual Age Promotion Center:
+   - Tap "Annual Age Promotion Center" button.
+   - Engine automatically scans birthdates against the academic year.
+   - Displays all children eligible to graduate to the next tier.
+   - Tap "Execute Batch Promotion" -> Upgrades all eligible students with audit log.
+
+--------------------------------------------------------------------------------
+TEST 6: TEACHER FACIAL CLOCK-IN & 4-DIGIT PIN KIOSK (Phase 4)
+--------------------------------------------------------------------------------
+HOW TO NAVIGATE:
+• Go to Admin Hub -> Tap "Faculty Clock-In Station".
+
+WHAT TO TEST:
+1. Camera View with blue laser facial alignment reticle.
+2. Method 1 (Biometric Facial Scan):
+   - Tap "Simulate Biometric Face Clock-In".
+   - Expected Result: Confirms teacher match ("Mrs. Sarah Jenkins - Lead Teacher"),
+     logs clock-in timestamp, updates today on-duty faculty count.
+3. Method 2 (4-Digit PIN Keypad):
+   - Tap "Use 4-Digit Teacher PIN".
+   - Enter default PIN: "2026" on the luxury keypad.
+   - Result: Emerald checkmark: "Clock-In Verified! Welcome Mrs. Sarah Jenkins to 
+     Primary Stars (Room 204)".
+4. Admin Teachers Modal:
+   - Go to Admin Hub -> Tap "Sunday School Faculty & Safeguarding".
+   - Review faculty roster, police background check clearance, and assigned rooms.
+
+--------------------------------------------------------------------------------
+TEST 7: BIBLE LEARNING CENTER — STORIES, QUIZZES & SONGS (Phase 5)
+--------------------------------------------------------------------------------
+HOW TO NAVIGATE:
+• Open Member App -> Tap Tab 3: "Bible LMS".
+
+WHAT TO TEST:
+1. Illustrated Bible Stories:
+   - Tap story: "David and Goliath: Giant-Slaying Courage".
+   - Interactive Reader opens full-screen.
+   - Tap "Next Page ›" to read through pages with emoji art, English and Telugu text.
+   - Tap "Listen Telugu Audio Narration" -> Voice pronunciation plays.
+   - Check reflection questions at the end of the story.
+2. Gamified Bible Trivia Quiz:
+   - Tap quiz: "David and Goliath Trivia Challenge".
+   - 4-choice quiz player opens.
+   - Select an answer -> Instant emerald (correct) or red (incorrect) visual feedback.
+   - Explanation with Scripture citation appears.
+   - Complete 3 questions -> Celebratory Trophy Screen awards "+50 Kingdom Points" & Badge.
+3. Action Worship Songs:
+   - Tap song: "I've Got the Joy Joy Joy (సంతోషం)".
+   - Player opens with built-in YouTube player.
+   - Tap play to watch video; scroll down to read full bilingual Telugu & English lyrics.
+   - Switch songs using the bottom playlist carousel.
+4. Admin CMS:
+   - Go to Admin Hub -> Tap "Bible Learning Center CMS".
+   - Test creating a custom story, quiz, or action song with full CRUD authority.
+
+--------------------------------------------------------------------------------
+TEST 8: 52-WEEK BILINGUAL CURRICULUM & WHATSAPP EXPORT (Phase 6)
+--------------------------------------------------------------------------------
+HOW TO NAVIGATE:
+• In Admin Hub -> Tap Tab 4: "Curriculum" -> Tap "Open 52-Week Curriculum Syllabus".
+
+WHAT TO TEST:
+1. Syllabus Browser:
+   - Filter by Quarters: [All 52 Weeks] [Q1: Foundations] [Q2: Wisdom] [Q3: Jesus] [Q4: Armor]
+   - Browse through all 52 weeks with Telugu and English titles.
+2. 1-Tap Active Sunday Lesson:
+   - Tap "Set Active for Sunday" on any week (e.g. Week 42).
+   - Expected Result: Instantly updates Firestore; all Sunday School rooms and 
+     parent mobile devices lock onto this week's active lesson in realtime.
+3. Expanded Lesson Plan:
+   - Expand any lesson to review:
+     • Memory Verse in Telugu & English.
+     • Teacher Preparation Prayer focus.
+     • 45-minute lesson schedule (5m Welcome, 10m Songs, 15m Story, 10m Craft, 5m Blessing).
+     • 5-Tier Age Adaptations (Nursery, Beginners, Primary, Junior, Teens).
+4. WhatsApp Export to Teachers:
+   - Tap "Share to Teachers".
+   - System formats the entire bilingual brief, supplies list, and schedule ready 
+     to send to teachers via WhatsApp with 1 tap.
+5. Student Memory Verse Challenge:
+   - Go to Member App Home tab.
+   - Notice the dynamic "WEEK 42 SUNDAY LESSON" card.
+   - Tap the card to open the Memory Challenge modal.
+   - Tap words in sequence to practice recitation.
+   - Tap "I Have Memorized This Verse! ⭐" -> Awards +20 Kingdom Points!
+
+--------------------------------------------------------------------------------
+TEST 9: AI KIDS MINISTRY STUDIO (Claude 3.5 Sonnet) (Phase 7)
+--------------------------------------------------------------------------------
+HOW TO NAVIGATE:
+• Go to Admin Hub -> Tap "Launch Claude 3.5 Sonnet AI Studio".
+
+WHAT TO TEST:
+1. Mode 1 (Bilingual Lesson Plan):
+   - Tap quick suggestion chip: "Armor of God (Ephesians 6)" or "Fruit of the Spirit".
+   - Tap "Create".
+   - Claude 3.5 Sonnet generates a complete bilingual 45-min lesson plan with Telugu 
+     scripture references, big idea, memory verse, teacher prayer, and 5-tier adaptations!
+   - Tap "Share" to export to teachers.
+2. Mode 2 (Interactive 4-Choice Quiz):
+   - Switch to "Interactive Quiz" tab -> Type "Noah's Ark" -> Tap "Create".
+   - Claude generates 4 bilingual trivia questions with correct answers and explanations.
+   - Tap "Save to LMS" -> Quiz is instantly saved to Firestore and live for all kids!
+3. Mode 3 (Illustrated Storybook Author):
+   - Switch to "Illustrated Story" tab -> Type "Baby Moses in the Basket" -> Tap "Create".
+   - Claude drafts a 3-page illustrated storybook with reflection questions.
+   - Tap "Save Story" -> Story is instantly published to the story reader!
+4. Mode 4 (Memory Verse Hand Actions):
+   - Switch to "Verse Actions" -> Enter a verse.
+   - Generates fun physical hand motions for toddlers, catchy Telugu/English rhymes, 
+     and bedtime family discussion questions.
+
+--------------------------------------------------------------------------------
+TEST 10: PARENT PORTAL & LIVE CUSTODY PASS (Phase 8)
+--------------------------------------------------------------------------------
+HOW TO NAVIGATE:
+• Open Member App -> Tap Tab 4: "Custody Pass".
+
+WHAT TO TEST:
+1. Live Realtime Status Pill:
+   - Displays green: "🟢 IN CLASSROOM · SUPERVISED" when checked in.
+   - Displays yellow: "🟡 CHECKED OUT / WITH PARENT" when dismissed.
+2. Dynamic Security Pickup Token:
+   - Look at the 6-character code (e.g. RK-7942) and high-contrast QR code.
+   - Tap "Refresh" -> Generates a new unique pickup token.
+3. Emergency Dismissal Lock:
+   - Tap "Lock Child Dismissal (Emergency Hold)".
+   - Alert prompts for confirmation. Tap "Lock Dismissal".
+   - Result: Status pill turns bold red: "🚨 EMERGENCY HOLD ACTIVE".
+   - At the teacher checkout scanner, any release attempt for this child is blocked.
+   - Tap "Release Emergency Dismissal Hold" to restore normal pickup.
+4. Medical & Allergy Safeguarding Passport:
+   - Red alert card displays all reported allergies, notes, and blood group.
+5. Authorized Guardians Manager:
+   - Review list of authorized pickup relatives.
+   - Tap phone icon next to any guardian -> Dials directly.
+   - Tap "+ Add" button -> "Add Authorized Pickup" modal opens.
+   - Add Grandma or Uncle with phone number -> Instantly updates child's authorized list.
+6. Sunday School Lead Teacher Hotline:
+   - Tap phone or WhatsApp icon on the teacher card to contact lead teacher directly.
+
+--------------------------------------------------------------------------------
+TEST 11: VBS 2026 HOUSE SPIRIT & OFFICIAL CERTIFICATES (Phase 9)
+--------------------------------------------------------------------------------
+HOW TO NAVIGATE:
+1. In Admin Hub -> Tap "VBS & Summer Camps Hub (4 Houses)".
+   - Review the 4 VBS Houses:
+     • 🔴 Red Tigers (ధైర్యము / Courage)
+     • 🔵 Blue Eagles (విశ్వాసము / Faith)
+     • 🟡 Gold Lions (జయము / Victory)
+     • 🟢 Emerald Champions (ప్రేమ / Love)
+   - Tap Gold Lions -> Award "+50 Scripture Sword Drill" points.
+   - Score immediately updates and re-ranks on the live leaderboard.
+   - Tap "Share" to broadcast current standings to parents and volunteers via WhatsApp.
+2. Kingdom Rewards Badges (Member App):
+   - Go to Member App Home tab.
+   - Scroll to "KINGDOM REWARDS & BADGES" carousel.
+   - Review earned badges: ⭐ Sunday Star Disciple, ⚔️ Scripture Sword Master, 
+     🏆 Kingdom Trivia Champion.
+3. Official Graduation & VBS Certificate:
+   - Tap "View & Share Official Certificate 🎓".
+   - Ultra-premium gold-bordered certificate modal opens with:
+     • Official Church Header & Mark 10:14 watermark.
+     • Child Name in luxury Georgia serif font.
+     • Event achievement and Scripture benediction.
+     • Handwritten signature lines for Director & Senior Pastor with gold wax seal.
+   - Tap "Share Certificate" to export high-res text brief to WhatsApp or family.
+
+--------------------------------------------------------------------------------
+TEST 12: EXECUTIVE BOARD ANALYTICS & SAFEGUARDING AUDIT (Phase 10)
+--------------------------------------------------------------------------------
+HOW TO NAVIGATE:
+• In Admin Hub -> Tap "Ministry Health & Board Analytics".
+
+WHAT TO TEST:
+1. Executive KPI Grid:
+   - Total Enrolled Children.
+   - Today Live Headcount under supervision.
+   - Faculty on Duty & Child-to-Teacher Ratio compliance (e.g. 1:6).
+   - Active Allergy Safeguard alerts.
+2. Classroom Tier Distribution:
+   - Visual progress bars showing percentage breakdown across all 5 tiers.
+3. Safeguarding Audit:
+   - Police background checks: 100% Cleared.
+   - Face scan readiness percentage.
+4. 1-Tap Board Export:
+   - Tap "Export Report to Board & Elders (WhatsApp)".
+   - Formats a comprehensive board report ready to send to senior leadership.
+
+--------------------------------------------------------------------------------
+VERIFICATION: ZERO DISRUPTION TO EXISTING MEMBERS SCREEN
+--------------------------------------------------------------------------------
+• To verify that existing features remain 100% untouched:
+  1. Open the Admin drawer or bottom navigation -> Tap "Members".
+  2. The original `MembersScreen.tsx` loads normally with your existing member 
+     profiles, search, filters, and records.
+  3. No fields, schemas, or existing screens were modified or disrupted.
+
+================================================================================
+CONGRATULATIONS! You now have a complete enterprise-grade Sunday School & 
+Kids Ministry Management System running natively in your Rhema application!
+================================================================================

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -23,13 +23,15 @@ import {
   Calendar,
   Clock,
   Play,
-  ChevronRight
+  ChevronRight,
+  ChevronDown
 } from 'lucide-react-native';
 import FirestoreService, { ScheduleEvent } from '../services/FirestoreService';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 
 const { width } = Dimensions.get('window');
+const PAST_EVENTS_PAGE_SIZE = 5;
 
 export default function EventsScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
@@ -38,8 +40,15 @@ export default function EventsScreen({ navigation }: any) {
   const [upcomingEvents, setUpcomingEvents] = useState<ScheduleEvent[]>([]);
   const [pastEvents, setPastEvents] = useState<ScheduleEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pastLoading, setPastLoading] = useState(false);
+  const [loadingMorePast, setLoadingMorePast] = useState(false);
+  const [hasMorePast, setHasMorePast] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<'thisWeek' | 'upcoming' | 'past'>('upcoming');
+
+  const pastCursorRef = useRef<any>(null);
+  const pastLoadedRef = useRef<boolean>(false);
+  const loadingMorePastRef = useRef<boolean>(false);
 
   const parseEventDateObj = (dateStr?: string | any): Date | null => {
     if (!dateStr) return null;
@@ -149,62 +158,92 @@ export default function EventsScreen({ navigation }: any) {
     }
   };
 
-  const processAndSetEvents = (allEvents: ScheduleEvent[]) => {
-    const upcoming: ScheduleEvent[] = [];
-    const past: ScheduleEvent[] = [];
-
-    const seenIds = new Set<string>();
-    (allEvents || []).forEach(ev => {
-      const id = ev.id || (ev as any).eventId || Math.random().toString();
-      if (seenIds.has(id)) return;
-      seenIds.add(id);
-
-      if (isEventPast(ev)) {
-        past.push(ev);
-      } else {
-        upcoming.push(ev);
-      }
-    });
-
-    // Upcoming: soonest first
-    upcoming.sort((a, b) => {
-      const da = parseEventDateObj(a.date || (a as any).startDate)?.getTime() || 0;
-      const db = parseEventDateObj(b.date || (b as any).startDate)?.getTime() || 0;
-      return da - db;
-    });
-
-    // Past: most recent first
-    past.sort((a, b) => {
-      const da = parseEventDateObj(a.endDate || a.date || (a as any).startDate)?.getTime() || 0;
-      const db = parseEventDateObj(b.endDate || b.date || (b as any).startDate)?.getTime() || 0;
-      return db - da;
-    });
-
-    setUpcomingEvents(upcoming);
-    setPastEvents(past);
-  };
-
-  const fetchEvents = async () => {
+  const fetchUpcomingEvents = useCallback(async () => {
     try {
-      const [upcomingRes, pastRes, allRes] = await Promise.all([
-        FirestoreService.getUpcomingEvents(30).catch(() => []),
-        FirestoreService.getPastEvents(30).catch(() => []),
-        FirestoreService.getEvents().catch(() => [])
-      ]);
+      const upcomingRes = await FirestoreService.getUpcomingEvents(50).catch(() => []);
+      const seenIds = new Set<string>();
+      const upcoming: ScheduleEvent[] = [];
 
-      const allMerged = [...(allRes || []), ...(upcomingRes || []), ...(pastRes || [])];
-      processAndSetEvents(allMerged);
+      (upcomingRes || []).forEach(ev => {
+        const id = ev.id || (ev as any).eventId || Math.random().toString();
+        if (seenIds.has(id)) return;
+        seenIds.add(id);
+        if (!isEventPast(ev)) {
+          upcoming.push(ev);
+        }
+      });
+
+      upcoming.sort((a, b) => {
+        const da = parseEventDateObj(a.date || (a as any).startDate)?.getTime() || 0;
+        const db = parseEventDateObj(b.date || (b as any).startDate)?.getTime() || 0;
+        return da - db;
+      });
+
+      setUpcomingEvents(upcoming);
     } catch (error) {
-      console.error('Error fetching events:', error);
+      console.error('Error fetching upcoming events:', error);
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
-  };
+  }, []);
+
+  const fetchPastEventsPage = useCallback(async (reset: boolean = false) => {
+    if (!reset) {
+      if (loadingMorePastRef.current || !pastCursorRef.current) return;
+      loadingMorePastRef.current = true;
+      setLoadingMorePast(true);
+    } else {
+      pastCursorRef.current = null;
+      setPastLoading(true);
+    }
+
+    try {
+      const cursor = reset ? null : pastCursorRef.current;
+      const result = await FirestoreService.getPastEventsPaginated(PAST_EVENTS_PAGE_SIZE, cursor);
+
+      pastCursorRef.current = result.lastDoc;
+      pastLoadedRef.current = true;
+      setHasMorePast(result.hasMore);
+
+      if (reset) {
+        setPastEvents(result.events);
+      } else {
+        setPastEvents(prev => {
+          const existingIds = new Set(prev.map(e => e.id));
+          const uniqueNext = result.events.filter(e => !existingIds.has(e.id));
+          return [...prev, ...uniqueNext];
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching paginated past events:', error);
+    } finally {
+      if (reset) {
+        setPastLoading(false);
+      } else {
+        loadingMorePastRef.current = false;
+        setLoadingMorePast(false);
+      }
+    }
+  }, []);
+
+  const handleShowMorePast = useCallback(() => {
+    if (loadingMorePastRef.current || !hasMorePast) return;
+    fetchPastEventsPage(false);
+  }, [fetchPastEventsPage, hasMorePast]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchEvents().finally(() => {
+    const refreshTask =
+      activeTab === 'past'
+        ? fetchPastEventsPage(true)
+        : fetchUpcomingEvents().then(() => {
+            if (pastLoadedRef.current) {
+              pastLoadedRef.current = false;
+              pastCursorRef.current = null;
+            }
+          });
+
+    refreshTask.finally(() => {
       setRefreshing(false);
     });
     // Hard failsafe so spinner never hangs indefinitely
@@ -213,9 +252,17 @@ export default function EventsScreen({ navigation }: any) {
     }, 3500);
   };
 
+  // Initial load: fetch ONLY upcoming events (no full collection scan)
   useEffect(() => {
-    fetchEvents();
-  }, []);
+    fetchUpcomingEvents();
+  }, [fetchUpcomingEvents]);
+
+  // Lazy load: fetch ONLY the first 5 past events when the user opens the Past Events tab
+  useEffect(() => {
+    if (activeTab === 'past' && !pastLoadedRef.current) {
+      fetchPastEventsPage(true);
+    }
+  }, [activeTab, fetchPastEventsPage]);
 
 
 
@@ -546,7 +593,14 @@ export default function EventsScreen({ navigation }: any) {
           />
         }
         ListEmptyComponent={
-          !loading ? (
+          activeTab === 'past' && pastLoading && !refreshing ? (
+            <View style={styles.emptyState}>
+              <ActivityIndicator size="large" color="#227FFF" />
+              <Text style={[styles.emptySub, { color: isDark ? '#94A3B8' : '#64748B', marginTop: 12 }]}>
+                {t('events.loading') || 'Loading events...'}
+              </Text>
+            </View>
+          ) : !loading ? (
             <View style={styles.emptyState}>
               <CalendarCheck size={56} color={isDark ? '#475569' : '#CBD5E1'} strokeWidth={1.5} />
               <Text style={[styles.emptyTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
@@ -557,6 +611,38 @@ export default function EventsScreen({ navigation }: any) {
                   ? (t('events.noThisWeek') || 'No events scheduled for this week.')
                   : (t('events.noUpcomingSub') || 'Check back later for newly scheduled church services and events.')}
               </Text>
+            </View>
+          ) : null
+        }
+        ListFooterComponent={
+          activeTab === 'past' && pastEvents.length > 0 && hasMorePast ? (
+            <View style={styles.showMoreContainer}>
+              <TouchableOpacity
+                style={[
+                  styles.showMoreBtn,
+                  isDark ? styles.showMoreBtnDark : styles.showMoreBtnLight,
+                  loadingMorePast && { opacity: 0.72 },
+                ]}
+                onPress={handleShowMorePast}
+                disabled={loadingMorePast}
+                activeOpacity={0.82}
+              >
+                {loadingMorePast ? (
+                  <>
+                    <ActivityIndicator size="small" color={isDark ? '#60A5FA' : '#227FFF'} />
+                    <Text style={[styles.showMoreTxt, isDark && styles.showMoreTxtDark]}>
+                      {t('common.loading') || 'Loading...'}
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <Text style={[styles.showMoreTxt, isDark && styles.showMoreTxtDark]}>
+                      {t('common.showMore') || 'Show More'}
+                    </Text>
+                    <ChevronDown size={16} color={isDark ? '#60A5FA' : '#227FFF'} strokeWidth={2.5} />
+                  </>
+                )}
+              </TouchableOpacity>
             </View>
           ) : null
         }
@@ -878,4 +964,51 @@ const styles = StyleSheet.create({
     emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, paddingBottom: 60 },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: '#0F172A', marginTop: 14 },
   emptySub: { fontSize: 14, color: '#94a3b8', textAlign: 'center', marginTop: 8 },
+
+  // Show More Pagination Button (Past Events)
+  showMoreContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 14,
+    paddingBottom: 20,
+    paddingHorizontal: 16,
+  },
+  showMoreBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 11,
+    paddingHorizontal: 26,
+    borderRadius: 24,
+    borderWidth: 1.2,
+    minWidth: 160,
+  },
+  showMoreBtnLight: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#93C5FD',
+    shadowColor: '#227FFF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  showMoreBtnDark: {
+    backgroundColor: '#18181B',
+    borderColor: 'rgba(96, 165, 250, 0.35)',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  showMoreTxt: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#227FFF',
+    letterSpacing: 0.2,
+  },
+  showMoreTxtDark: {
+    color: '#60A5FA',
+  },
 });

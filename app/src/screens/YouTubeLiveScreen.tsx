@@ -34,7 +34,14 @@ import firestore from '@react-native-firebase/firestore';
 import { useChurch } from '../context/ChurchContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useAdminTheme, createAdminThemedStyles } from '../utils/adminThemeHelper';
-import { findActiveLiveStream, getChannelId, checkVideoLiveStatus } from '../services/YouTubeService';
+import {
+  findActiveLiveStream,
+  getChannelId,
+  checkVideoLiveStatus,
+  resolveRhemaYoutubeUrl,
+  RHEMA_YOUTUBE_CHANNEL_URL,
+  RHEMA_YOUTUBE_CHANNEL_ID,
+} from '../services/YouTubeService';
 
 const { width } = Dimensions.get('window');
 const VIDEO_HEIGHT = Math.round(width * 0.5625); // Standard 16:9 ratio
@@ -65,12 +72,6 @@ function extractYoutubeVideoId(urlOrId?: string): string {
   const embedMatch = clean.match(/\/embed\/([\w-]{11})/);
   if (embedMatch) return embedMatch[1];
 
-  // Channel handle / streams URL fallback for testing ministry
-  const lower = clean.toLowerCase();
-  if (lower.includes('brother') || lower.includes('uc3j_2zp2biucweia_asvghw')) {
-    return 'vgzXs5QCjIA';
-  }
-
   return '';
 }
 
@@ -85,7 +86,7 @@ function formatCleanStreamTitle(rawTitle?: string, isLive?: boolean): string {
   s = s.replace(/^[|\s/-]+|[|\s/-]+$/g, '');
   // Clean repeated pipes into bullet separator
   s = s.replace(/\|{1,2}/g, ' • ');
-  // Strip hashtags like #brotherinchristfellowship
+  // Strip inline #hashtags
   s = s.replace(/#[\w-]+/g, '');
   // Strip standalone Live keyword from title string as status badge indicates it
   s = s.replace(/\bLive\b/gi, '').trim();
@@ -113,9 +114,12 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
   } = useAdminTheme();
 
   const churchId = route?.params?.churchId || activeChurch?.id || 'rhema';
-  const churchName = activeChurch?.name || 'Rhema Fellowship';
+  const churchName = activeChurch?.name || 'Rhema Global Ministries';
   const churchAvatar = (activeChurch as any)?.logoUrl || (activeChurch as any)?.photoUrl;
-  const configuredChannelUrl = activeChurch?.socialLinks?.youtube?.trim() || '';
+  const configuredChannelUrl = resolveRhemaYoutubeUrl(activeChurch?.socialLinks?.youtube);
+  const channelHomeUrl = route?.params?.channelUrl
+    ? resolveRhemaYoutubeUrl(route.params.channelUrl)
+    : configuredChannelUrl;
 
   // Input params
   const paramVideoId = extractYoutubeVideoId(route?.params?.videoId || route?.params?.url);
@@ -151,6 +155,14 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
     ).start();
   }, [pulseAnim]);
 
+  const resolveExpectedChannelId = useCallback(async () => {
+    const target = resolveRhemaYoutubeUrl(channelHomeUrl || configuredChannelUrl || RHEMA_YOUTUBE_CHANNEL_URL);
+    if (target.toLowerCase().includes('rhemaglobalministries') || (churchId || 'rhema') === 'rhema') {
+      return RHEMA_YOUTUBE_CHANNEL_ID;
+    }
+    return (await getChannelId(target)) || RHEMA_YOUTUBE_CHANNEL_ID;
+  }, [channelHomeUrl, configuredChannelUrl, churchId]);
+
   /**
    * Listen to real-time live status in Firestore for this church
    */
@@ -163,8 +175,15 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
           if (doc.exists) {
             const data = doc.data();
             const liveState = data?.youtubeLiveState;
+            const expectedChannelId = await resolveExpectedChannelId();
             if (liveState?.isLive && liveState.videoId) {
-              const vCheck = await checkVideoLiveStatus(liveState.videoId);
+              const vCheck = await checkVideoLiveStatus(liveState.videoId, expectedChannelId);
+              if (vCheck.channelMismatch) {
+                setIsLive(false);
+                setStreamStatus('none');
+                setActiveVideoId(null);
+                return;
+              }
               if (vCheck.status === 'live' || vCheck.isLiveNow) {
                 setIsLive(true);
                 setStreamStatus('live');
@@ -202,8 +221,9 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
                 mData.youtubeLive.broadcastId ||
                 extractYoutubeVideoId(mData.youtubeLive.watchUrl);
               if (liveVidId) {
-                const vCheck = await checkVideoLiveStatus(liveVidId);
-                if (vCheck.status === 'live' || vCheck.isLiveNow) {
+                const expectedChannelId = await resolveExpectedChannelId();
+                const vCheck = await checkVideoLiveStatus(liveVidId, expectedChannelId);
+                if (!vCheck.channelMismatch && (vCheck.status === 'live' || vCheck.isLiveNow)) {
                   setActiveVideoId(liveVidId);
                   setIsLive(true);
                   setStreamStatus('live');
@@ -220,7 +240,7 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
       unsubscribeChurch();
       unsubscribeMeetings();
     };
-  }, [churchId, paramVideoId]);
+  }, [churchId, paramVideoId, resolveExpectedChannelId]);
 
   const resolveLiveStream = useCallback(
     async (isManualRefresh = false) => {
@@ -228,29 +248,35 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
       else setLoading(true);
 
       try {
-        // Rule: Quick Access YouTube Live should ONLY play active streams.
-        // It must NOT play ended streams or recorded videos.
+        // Rule: Quick Access YouTube Live should ONLY play active streams
+        // strictly owned by the church's official YouTube channel.
+        const expectedChannelId = await resolveExpectedChannelId();
+        if (expectedChannelId) {
+          setResolvedChannelId(expectedChannelId);
+        }
 
-        // Step 1: Check if paramVideoId is currently live
+        // Step 1: Check if paramVideoId is currently live AND belongs to this church channel
         if (paramVideoId) {
-          const vCheck = await checkVideoLiveStatus(paramVideoId);
-          if (vCheck.status === 'live' || vCheck.isLiveNow) {
-            setActiveVideoId(paramVideoId);
-            setIsLive(true);
-            setStreamStatus('live');
-            if (paramTitle || vCheck.title) setStreamTitle(paramTitle || vCheck.title);
-            return;
-          } else if (vCheck.status === 'completed' || vCheck.hasEnded) {
-            // Live stream has ended: per rule, do NOT play recorded video in Quick Access YouTube Live
-            setActiveVideoId(null);
-            setIsLive(false);
-            setStreamStatus('completed');
-            if (paramTitle || vCheck.title) setStreamTitle(paramTitle || vCheck.title);
-            return;
+          const vCheck = await checkVideoLiveStatus(paramVideoId, expectedChannelId);
+          if (!vCheck.channelMismatch) {
+            if (vCheck.status === 'live' || vCheck.isLiveNow) {
+              setActiveVideoId(paramVideoId);
+              setIsLive(true);
+              setStreamStatus('live');
+              if (paramTitle || vCheck.title) setStreamTitle(paramTitle || vCheck.title);
+              return;
+            } else if (vCheck.status === 'completed' || vCheck.hasEnded) {
+              // Live stream has ended: per rule, do NOT play recorded video in Quick Access YouTube Live
+              setActiveVideoId(null);
+              setIsLive(false);
+              setStreamStatus('completed');
+              if (paramTitle || vCheck.title) setStreamTitle(paramTitle || vCheck.title);
+              return;
+            }
           }
         }
 
-        // Step 2: Check Firestore live broadcast state
+        // Step 2: Check Firestore live broadcast state (strictly verified against expectedChannelId)
         const targetChurchId = churchId || 'rhema';
         const churchDoc = await firestore()
           .collection('Rhema Church')
@@ -261,35 +287,37 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
         if (churchDoc.exists) {
           churchData = churchDoc.data();
           const lData = churchData?.youtubeLiveState;
-          const liveVid = lData?.videoId || lData?.lastNotifiedVideoId;
+          const liveVid = lData?.videoId;
           if (lData?.isLive && liveVid) {
-            const vCheck = await checkVideoLiveStatus(liveVid);
-            if (vCheck.status === 'live' || vCheck.isLiveNow) {
-              setActiveVideoId(liveVid);
-              setIsLive(true);
-              setStreamStatus('live');
-              if (lData.title || vCheck.title) setStreamTitle(lData.title || vCheck.title);
-              return;
-            } else if (vCheck.status === 'completed' || vCheck.hasEnded) {
-              setActiveVideoId(null);
-              setIsLive(false);
-              setStreamStatus('completed');
-              return;
+            const vCheck = await checkVideoLiveStatus(liveVid, expectedChannelId);
+            if (!vCheck.channelMismatch) {
+              if (vCheck.status === 'live' || vCheck.isLiveNow) {
+                setActiveVideoId(liveVid);
+                setIsLive(true);
+                setStreamStatus('live');
+                if (lData.title || vCheck.title) setStreamTitle(lData.title || vCheck.title);
+                return;
+              } else if (vCheck.status === 'completed' || vCheck.hasEnded) {
+                setActiveVideoId(null);
+                setIsLive(false);
+                setStreamStatus('completed');
+                return;
+              }
             }
           }
         }
 
-        // Step 3: Check channel handle or URL using YouTubeService
-        const targetUrl =
-          paramUrl ||
+        // Step 3: Check official church channel handle/URL using YouTubeService (never a raw watch paramUrl)
+        const targetChannelUrl = resolveRhemaYoutubeUrl(
           configuredChannelUrl ||
-          churchData?.youtubeLiveUrl ||
-          churchData?.youtubeChannelUrl ||
-          churchData?.socialLinks?.youtube ||
-          '@Brothersinchristfellowship';
+            churchData?.socialLinks?.youtube ||
+            churchData?.youtubeChannelUrl ||
+            churchData?.youtubeLiveUrl ||
+            RHEMA_YOUTUBE_CHANNEL_URL
+        );
 
-        if (targetUrl) {
-          const liveResult = await findActiveLiveStream(targetUrl);
+        if (targetChannelUrl) {
+          const liveResult = await findActiveLiveStream(targetChannelUrl, expectedChannelId);
           if (liveResult.status === 'live' && liveResult.isLiveNow && liveResult.videoId) {
             setActiveVideoId(liveResult.videoId);
             if (liveResult.title) setStreamTitle(liveResult.title);
@@ -304,11 +332,6 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
             setStreamStatus('completed');
             if (liveResult.title) setStreamTitle(liveResult.title);
             return;
-          }
-
-          const cId = await getChannelId(targetUrl);
-          if (cId) {
-            setResolvedChannelId(cId);
           }
         }
 
@@ -326,7 +349,7 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
         setRefreshing(false);
       }
     },
-    [churchId, configuredChannelUrl, paramTitle, paramUrl, paramVideoId]
+    [churchId, configuredChannelUrl, paramTitle, paramVideoId, resolveExpectedChannelId]
   );
 
   useEffect(() => {
@@ -343,7 +366,7 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
     try {
       const shareUrl = activeVideoId
         ? `https://youtu.be/${activeVideoId}`
-        : configuredChannelUrl || 'https://www.youtube.com';
+        : channelHomeUrl || RHEMA_YOUTUBE_CHANNEL_URL;
       await Share.share({
         title: streamTitle || `${churchName} Live`,
         message: `🔴 ${churchName} is streaming live on YouTube! Tap to watch worship with us: ${shareUrl}`,
@@ -770,20 +793,22 @@ const styles = createAdminThemedStyles({
     marginTop: 12,
   },
   offlineBox: {
-    height: VIDEO_HEIGHT + 20,
+    minHeight: VIDEO_HEIGHT + 20,
+    width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 24,
     borderRadius: 16,
   },
   offlineIconRing: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   offlineTitle: {
     fontSize: 16,
@@ -799,14 +824,15 @@ const styles = createAdminThemedStyles({
     fontWeight: '600',
   },
   offlineDesc: {
-    fontSize: 12,
+    fontSize: 12.5,
     lineHeight: 18,
     textAlign: 'center',
-    marginBottom: 16,
-    maxWidth: '92%',
+    marginBottom: 18,
+    paddingHorizontal: 4,
   },
   statusActionRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,

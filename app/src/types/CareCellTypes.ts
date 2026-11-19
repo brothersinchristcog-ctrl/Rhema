@@ -1,6 +1,70 @@
 export type CareCellStatus = 'Active' | 'Inactive' | 'Archived';
 export type MembershipStatus = 'Active' | 'Transferred' | 'Removed';
 export type MeetingStatus = 'Upcoming' | 'Completed' | 'Cancelled';
+
+/**
+ * Formats a raw care cell identifier (e.g. "Rhema_CareCell-001" or "Rhema_carecell_001")
+ * into a clean, professional label: "Cell #001".
+ */
+export function formatCareCellCode(code?: string): string {
+  if (!code) return '';
+  const match = code.match(/(\d+)/);
+  if (match) {
+    return `Cell #${match[1].padStart(3, '0')}`;
+  }
+  return code.replace(/_/g, ' ').trim();
+}
+
+export function formatCareCellDisplayName(name?: string, cellCode?: string): string {
+  if (!name) return 'Care Cell';
+  let clean = name.trim();
+  // Strip patterns like "Rhema_CareCell-001 (Boys Care Cell)" -> "Boys Care Cell"
+  const bracketMatch = clean.match(/\(([^)]+)\)/);
+  if (bracketMatch && bracketMatch[1]?.trim()) {
+    return bracketMatch[1].trim();
+  }
+  // Strip "Rhema_CareCell-001 · Boys Care Cell" -> "Boys Care Cell"
+  if (clean.includes('·')) {
+    const parts = clean.split('·');
+    if (parts[1]?.trim()) return parts[1].trim();
+  }
+  // Sanitize "Rhema_carecell_001" / "Rhema_CareCell-001" -> "Care Cell 001"
+  if (clean.toLowerCase().startsWith('rhema_carecell_') || clean.toLowerCase().startsWith('rhema_carecell-') || clean.toLowerCase().startsWith('rhema_carecell')) {
+    const match = clean.match(/(\d+)/);
+    return match ? `Care Cell ${match[1].padStart(3, '0')}` : 'Care Cell';
+  }
+  return clean.replace(/_/g, ' ');
+}
+
+/**
+ * Converts 24-hour military time string (e.g. "17:00" or "09:30") into 12-hour AM/PM format (e.g. "5:00 PM", "9:30 AM").
+ */
+export function formatTime12h(timeStr?: string): string {
+  if (!timeStr) return '';
+  const clean = timeStr.trim();
+  if (/am|pm/i.test(clean)) return clean;
+  const match = clean.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return clean;
+  let hours = parseInt(match[1], 10);
+  const minutes = match[2];
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12 || 12;
+  return `${hours}:${minutes} ${ampm}`;
+}
+
+/**
+ * Formats a single time or time range (e.g. "19:00 - 20:30" -> "7:00 PM – 8:30 PM").
+ */
+export function formatTimeRange12h(timeStr?: string): string {
+  if (!timeStr) return '';
+  if (timeStr.includes('-')) {
+    return timeStr
+      .split('-')
+      .map((t) => formatTime12h(t.trim()))
+      .join(' – ');
+  }
+  return formatTime12h(timeStr);
+}
 export type MeetingType = 
   | 'Bible Study' 
   | 'Prayer Meeting' 
@@ -24,6 +88,7 @@ export type MemberVisitResponseStatus = 'Pending' | 'Accepted' | 'Declined';
 
 export interface CareCellVisitMemberResponse {
   memberId: string;
+  memberCode?: string; // e.g. "Rhema-001"
   memberName: string;
   memberPhone?: string;
   memberPhoto?: string;
@@ -57,6 +122,12 @@ export interface CareCellVisit {
   pendingCount?: number;
   responses?: Record<string, CareCellVisitMemberResponse>;
   targetMemberIds?: string[];
+  assignedLeaderId?: string;
+  assignedLeaderName?: string;
+  assignedAdminIds?: string[];
+  routeStops?: VisitRoutePoint[];
+  completedAt?: any;
+  cancelledAt?: any;
 }
 
 export interface CareCell {
@@ -94,6 +165,7 @@ export interface CareCellMembership {
   cellCode?: string;
   cellName?: string;
   memberId: string;
+  memberCode?: string; // e.g. "Rhema-001"
   memberName: string;
   memberPhone?: string;
   memberPhoto?: string;
@@ -113,8 +185,16 @@ export interface CareCellMembership {
   updatedAt?: any;
 }
 
+export interface PreselectedVisitMember {
+  memberId: string;
+  memberName: string;
+  memberPhone?: string;
+  memberPhoto?: string;
+}
+
 export interface VisitRoutePoint {
   memberId: string;
+  memberCode?: string; // e.g. "Rhema-001"
   memberName: string;
   memberPhone?: string;
   address?: string;
@@ -122,6 +202,12 @@ export interface VisitRoutePoint {
   latitude: number;
   longitude: number;
   order: number;
+  accuracy?: string;
+  distanceFromPreviousKm?: number;
+  isApproximateDistance?: boolean;
+  consent?: boolean;
+  preferredTime?: string;
+  responseStatus?: MemberVisitResponseStatus;
 }
 
 export interface CareCellMeeting {
@@ -152,6 +238,7 @@ export interface CareCellAttendance {
   meetingId: string;
   cellId: string;
   memberId: string;
+  memberCode?: string; // e.g. "Rhema-001"
   memberName: string;
   memberPhone?: string;
   memberPhoto?: string;
@@ -168,6 +255,7 @@ export interface CareCellPrayerRequest {
   cellCode?: string;
   cellName?: string;
   memberId: string;
+  memberCode?: string; // e.g. "Rhema-001"
   memberName: string;
   memberPhone?: string;
   memberPhoto?: string;
@@ -188,6 +276,7 @@ export interface CareCellFollowup {
   cellCode?: string;
   cellName?: string;
   memberId: string;
+  memberCode?: string; // e.g. "Rhema-001"
   memberName: string;
   memberPhone?: string;
   memberPhoto?: string;

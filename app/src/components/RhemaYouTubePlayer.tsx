@@ -1,17 +1,11 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
-  ActivityIndicator,
-  TouchableOpacity,
-  Linking,
-  Platform,
   StyleProp,
   ViewStyle,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { ExternalLink } from 'lucide-react-native';
 
 interface RhemaYouTubePlayerProps {
   videoId: string;
@@ -28,7 +22,7 @@ interface RhemaYouTubePlayerProps {
 }
 
 export function cleanVideoId(urlOrId?: string): string {
-  if (!urlOrId || typeof urlOrId !== 'string') return 'vgzXs5QCjIA';
+  if (!urlOrId || typeof urlOrId !== 'string') return '';
   const clean = urlOrId.trim();
 
   // Pure 11-char ID
@@ -50,16 +44,10 @@ export function cleanVideoId(urlOrId?: string): string {
   const embedMatch = clean.match(/\/embed\/([\w-]{11})/);
   if (embedMatch) return embedMatch[1];
 
-  // Channel handle / streams URL fallback for testing ministry
-  const lower = clean.toLowerCase();
-  if (lower.includes('brother') || lower.includes('uc3j_2zp2biucweia_asvghw')) {
-    return 'vgzXs5QCjIA';
-  }
-
-  return clean || 'vgzXs5QCjIA';
+  return '';
 }
 
-const TRUSTED_ORIGIN = 'https://brothersinchrist.in';
+const TRUSTED_ORIGIN = 'https://rhema-global-ministries.web.app';
 const MODERN_USER_AGENT =
   'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.107 Mobile Safari/537.36';
 
@@ -74,24 +62,18 @@ export default function RhemaYouTubePlayer({
   onReady,
   onChangeState,
   style,
-  showExternalButton = true,
 }: RhemaYouTubePlayerProps) {
   const finalVideoId = useMemo(() => cleanVideoId(videoId), [videoId]);
   const [loading, setLoading] = useState(true);
   const webViewRef = useRef<WebView>(null);
 
-  const handleOpenInYouTubeApp = useCallback(() => {
-    const appUrl = `vnd.youtube://${finalVideoId}`;
-    const webUrl = `https://www.youtube.com/watch?v=${finalVideoId}`;
-    Linking.canOpenURL(appUrl)
-      .then((supported) => {
-        if (supported) {
-          return Linking.openURL(appUrl);
-        }
-        return Linking.openURL(webUrl);
-      })
-      .catch(() => Linking.openURL(webUrl));
-  }, [finalVideoId]);
+  useEffect(() => {
+    if (!finalVideoId || !webViewRef.current) return;
+    const func = play ? 'playVideo' : 'pauseVideo';
+    webViewRef.current.injectJavaScript(
+      `(function(){var f=document.querySelector('iframe');if(f&&f.contentWindow){f.contentWindow.postMessage(JSON.stringify({event:'command',func:'${func}',args:''}),'*');}})();true;`
+    );
+  }, [play, finalVideoId]);
 
   // Direct HTML5 embed with verified ministry domain origin and strict-origin referrer policy
   // This completely eliminates YouTube Error 152-4 (PLAYABILITY_ERROR_CODE_EMBEDDER_IDENTITY_DENIED)
@@ -119,6 +101,10 @@ export default function RhemaYouTubePlayer({
 </html>`;
   }, [finalVideoId, autoPlay]);
 
+  if (!finalVideoId) {
+    return <View style={[styles.container, { height }, style]} />;
+  }
+
   return (
     <View style={[styles.container, { height }, style]}>
       <View style={styles.playerWrapper}>
@@ -131,7 +117,7 @@ export default function RhemaYouTubePlayer({
           }}
           style={styles.webView}
           userAgent={MODERN_USER_AGENT}
-          originWhitelist={['*']}
+          originWhitelist={['https://*', 'about:blank']}
           allowsInlineMediaPlayback={true}
           mediaPlaybackRequiresUserAction={false}
           javaScriptEnabled={true}
@@ -140,6 +126,7 @@ export default function RhemaYouTubePlayer({
           mixedContentMode="always"
           scrollEnabled={false}
           bounces={false}
+          setSupportMultipleWindows={false}
           onLoadEnd={() => {
             setLoading(false);
             onReady?.();
@@ -147,21 +134,27 @@ export default function RhemaYouTubePlayer({
           onError={(e) => {
             console.warn('[RhemaYouTubePlayer] WebView direct error:', e.nativeEvent);
           }}
-          onShouldStartLoadWithRequest={() => true}
+          onShouldStartLoadWithRequest={(req) => {
+            const url = req?.url || '';
+            if (!url || url === 'about:blank') return true;
+            if (url.startsWith(TRUSTED_ORIGIN)) return true;
+            // Allow all YouTube media streams, asset CDNs, and Google Video endpoints
+            if (
+              url.includes('youtube.com') ||
+              url.includes('youtube-nocookie.com') ||
+              url.includes('googlevideo.com') ||
+              url.includes('ytimg.com') ||
+              url.includes('google.com') ||
+              url.includes('gstatic.com') ||
+              url.includes('doubleclick.net')
+            ) {
+              return true;
+            }
+            // Prevent navigating away to unrelated external websites
+            return false;
+          }}
         />
       </View>
-
-      {/* Floating external YouTube launcher button for immediate access */}
-      {showExternalButton && (
-        <TouchableOpacity
-          style={styles.floatingAppBtn}
-          onPress={handleOpenInYouTubeApp}
-          activeOpacity={0.85}
-        >
-          <ExternalLink size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
-          <Text style={styles.floatingAppBtnTxt}>YouTube App</Text>
-        </TouchableOpacity>
-      )}
     </View>
   );
 }
@@ -182,29 +175,6 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     backgroundColor: '#000000',
-  },
-  floatingAppBtn: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    backgroundColor: 'rgba(239, 68, 68, 0.88)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-    zIndex: 99,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    elevation: 4,
-  },
-  floatingAppBtnTxt: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.2,
   },
 });
 

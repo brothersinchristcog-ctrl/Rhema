@@ -1,3 +1,4 @@
+import './globalConfig.js';
 import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { onRequest } from 'firebase-functions/v2/https';
@@ -1071,19 +1072,34 @@ export const monitorMeetingLive = onSchedule({ schedule: '* * * * *', timeZone: 
     }
 });
 const YOUTUBE_DATA_API_KEY = 'AIzaSyBGkm7DNk_jpM-XKJI0JPk_vJlufS4Q7-Q';
-const ytChannelCache = {};
+const RHEMA_OFFICIAL_YOUTUBE_URL = 'https://www.youtube.com/@RhemaGlobalMinistries';
+const RHEMA_OFFICIAL_CHANNEL_ID = 'UCd7Ge98_3YHmo_Z3czAkUoQ';
+const ytChannelCache = {
+    [RHEMA_OFFICIAL_YOUTUBE_URL]: RHEMA_OFFICIAL_CHANNEL_ID,
+    'https://www.youtube.com/@rhemaglobalministries': RHEMA_OFFICIAL_CHANNEL_ID,
+    '@RhemaGlobalMinistries': RHEMA_OFFICIAL_CHANNEL_ID,
+    '@rhemaglobalministries': RHEMA_OFFICIAL_CHANNEL_ID,
+};
+const ytLastCheckMsByChannel = {};
 /**
  * Resolves the YouTube channel ID from a channel handle or URL.
  */
 async function resolveYouTubeChannelId(rawYtUrl) {
     const clean = rawYtUrl.trim();
+    const cleanLower = clean.toLowerCase();
     if (ytChannelCache[clean])
         return ytChannelCache[clean] || null;
+    if (ytChannelCache[cleanLower])
+        return ytChannelCache[cleanLower] || null;
+    if (cleanLower.includes('rhemaglobalministries')) {
+        ytChannelCache[clean] = RHEMA_OFFICIAL_CHANNEL_ID;
+        return RHEMA_OFFICIAL_CHANNEL_ID;
+    }
     if (clean.includes('/channel/')) {
         const parts = clean.split('/channel/')[1];
         if (parts) {
             const cid = parts.split('/')[0]?.split('?')[0];
-            if (cid) {
+            if (cid && /^UC[\w-]{22}$/.test(cid)) {
                 ytChannelCache[clean] = cid;
                 return cid;
             }
@@ -1100,34 +1116,83 @@ async function resolveYouTubeChannelId(rawYtUrl) {
         handle = clean.replace(/^@/, '');
     }
     if (handle) {
+        if (handle.toLowerCase() === 'rhemaglobalministries') {
+            ytChannelCache[clean] = RHEMA_OFFICIAL_CHANNEL_ID;
+            return RHEMA_OFFICIAL_CHANNEL_ID;
+        }
         try {
             const url = `https://www.googleapis.com/youtube/v3/channels?part=id&forHandle=${encodeURIComponent(handle)}&key=${YOUTUBE_DATA_API_KEY}`;
             const res = await fetch(url);
-            const data = await res.json();
-            if (data.items && data.items.length > 0) {
-                const cid = data.items[0]?.id;
-                if (cid) {
-                    ytChannelCache[clean] = cid;
-                    return cid;
+            if (res.ok) {
+                const data = await res.json();
+                if (data.items && data.items.length > 0) {
+                    const cid = data.items[0]?.id;
+                    if (cid && /^UC[\w-]{22}$/.test(cid)) {
+                        ytChannelCache[clean] = cid;
+                        return cid;
+                    }
                 }
             }
         }
         catch (_) { }
     }
-    if (clean.startsWith('UC') && clean.length > 20) {
+    if (/^UC[\w-]{22}$/.test(clean)) {
         ytChannelCache[clean] = clean;
         return clean;
     }
     return null;
 }
 /**
- * 🔴 Automatically check if church's YouTube channel is currently streaming live.
- * Uses the official YouTube Data API v3 (reliable in cloud datacenters) with scrape fallback.
- * When a stream starts, immediately dispatches push notification to topic church_{churchId}
- * and adds to broadcasts, saving live state directly on the church document (NO extra documents or subcollections).
+ * Authoritatively verifies via YouTube Data API v3 `videos.list` (1 quota unit)
+ * whether any candidate videoId BOTH strictly belongs to `expectedChannelId`
+ * AND is currently broadcasting live right now (started and not ended).
+ * Prevents sidebar/recommended/foreign videos from EVER triggering a live alert.
  */
+async function verifyVideosLiveForChannel(candidateIds, expectedChannelId) {
+    const uniqueIds = Array.from(new Set(candidateIds.filter((id) => typeof id === 'string' && /^[\w-]{11}$/.test(id)))).slice(0, 15);
+    if (uniqueIds.length === 0) {
+        return { ok: true, liveVideo: null };
+    }
+    try {
+        const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,liveStreamingDetails&id=${encodeURIComponent(uniqueIds.join(','))}&key=${YOUTUBE_DATA_API_KEY}`;
+        const res = await fetch(url);
+        if (!res.ok) {
+            console.warn(`[verifyVideosLiveForChannel] videos.list HTTP ${res.status}`);
+            return { ok: false, liveVideo: null };
+        }
+        const data = await res.json();
+        const items = Array.isArray(data.items) ? data.items : [];
+        for (const item of items) {
+            const ownerChannelId = item?.snippet?.channelId || '';
+            const liveBroadcastContent = item?.snippet?.liveBroadcastContent || '';
+            const liveDetails = item?.liveStreamingDetails || {};
+            const actualStartTime = liveDetails?.actualStartTime;
+            const actualEndTime = liveDetails?.actualEndTime;
+            if (ownerChannelId !== expectedChannelId) {
+                console.warn(`🚫 [YouTube Live Guard] Rejected foreign video ${item?.id} owned by ${ownerChannelId} ("${item?.snippet?.channelTitle}") — expected ${expectedChannelId}`);
+                continue;
+            }
+            if (liveBroadcastContent === 'live' && actualStartTime && !actualEndTime) {
+                return {
+                    ok: true,
+                    liveVideo: {
+                        videoId: item.id,
+                        title: item?.snippet?.title || '',
+                    },
+                };
+            }
+        }
+        return { ok: true, liveVideo: null };
+    }
+    catch (err) {
+        console.warn('[verifyVideosLiveForChannel] Error:', err?.message);
+        return { ok: false, liveVideo: null };
+    }
+}
 /**
- * Formats meaningful, uplifting, church-appropriate notification titles and messages for YouTube Live broadcasts.
+ * 🔴 Automatically check if church's YouTube channel is currently streaming live.
+ * Uses low-quota YouTube Data API v3 (`UULV` live playlist + channel RSS + `videos.list`, 2 quota units total,
+ * ZERO `search.list` calls) with strict channel ownership verification so foreign or ended videos can NEVER trigger alerts.
  */
 function formatLiveNotification(churchName, rawTitle) {
     return {
@@ -1135,127 +1200,225 @@ function formatLiveNotification(churchName, rawTitle) {
         pushBody: "Join us for a time of worship, prayer and God's Word. Our live service is now streaming on YouTube. Be blessed!",
     };
 }
-async function checkChurchYouTubeLive(churchDoc, churchId, db) {
+export async function checkChurchYouTubeLive(churchDoc, churchId, db) {
     if (!churchId || churchId === 'global')
         return;
     const cData = churchDoc.data() || {};
-    let rawYtUrl = cData.socialLinks?.youtube?.trim();
-    // Fix typos in raw URL
+    let rawYtUrl = cData.socialLinks?.youtube?.trim() || '';
+    // Fix typos in raw URL and discard legacy Brothers in Christ placeholder handles for Rhema
     rawYtUrl = rawYtUrl.replace(/https?:\/\/(www\w*)\.(?:yyoutube|youtube)\.com/i, 'https://www.youtube.com');
-    rawYtUrl = rawYtUrl.replace(/Brothersinchhristfellowship/gi, 'Brothersinchristfellowship');
-    // Single-church default fallback
-    if (!rawYtUrl && churchId === 'rhema') {
-        rawYtUrl = 'https://www.youtube.com/@Brothersinchristfellowship/live';
+    if (churchId === 'rhema' &&
+        (!rawYtUrl || /brothersinchrist/i.test(rawYtUrl) || /uc3j_2zp2biucweia_asvghw/i.test(rawYtUrl))) {
+        rawYtUrl = RHEMA_OFFICIAL_YOUTUBE_URL;
     }
     if (!rawYtUrl)
         return;
     try {
+        const channelId = await resolveYouTubeChannelId(rawYtUrl);
+        if (!channelId) {
+            console.warn(`[checkChurchYouTubeLive] Could not resolve channelId for ${churchId} (${rawYtUrl}); skipping.`);
+            return;
+        }
+        // Prevent back-to-back redundant checks within 35s in the same instance
+        const nowCheckMs = Date.now();
+        const lastLocalCheck = ytLastCheckMsByChannel[channelId] || 0;
+        if (nowCheckMs - lastLocalCheck < 35_000) {
+            return;
+        }
+        ytLastCheckMsByChannel[channelId] = nowCheckMs;
+        const prevState = cData.youtubeLiveState || { isLive: false };
         let isLive = false;
         let videoId = '';
         let streamTitle = '';
-        // ── Method 1: Official YouTube Data API v3 (100% reliable in Google Cloud) ──
-        const channelId = await resolveYouTubeChannelId(rawYtUrl);
-        if (channelId) {
+        // ── Method 1: Channel-Scoped Live Streams Playlist (UULV) + Channel RSS + videos.list (2 quota units, ZERO search.list) ──
+        const candidateIds = [];
+        if (prevState?.isLive && typeof prevState?.videoId === 'string' && /^[\w-]{11}$/.test(prevState.videoId)) {
+            candidateIds.push(prevState.videoId);
+        }
+        const channelSuffix = channelId.slice(2);
+        let uulvSucceeded = false;
+        // 1a. Live Streams Playlist (UULV...) — 1 quota unit
+        try {
+            const uulvUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&playlistId=UULV${channelSuffix}&maxResults=5&key=${YOUTUBE_DATA_API_KEY}`;
+            const uulvRes = await fetch(uulvUrl);
+            if (uulvRes.ok) {
+                uulvSucceeded = true;
+                const uulvData = await uulvRes.json();
+                for (const item of uulvData.items || []) {
+                    const vid = item?.contentDetails?.videoId;
+                    if (vid)
+                        candidateIds.push(vid);
+                }
+            }
+        }
+        catch (uulvErr) {
+            console.warn('[checkChurchYouTubeLive] UULV playlist notice:', uulvErr?.message);
+        }
+        // 1b. Channel Atom RSS Feed — 0 quota units (catches brand-new streams & uploads immediately)
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 5000);
+            const rssRes = await fetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`, {
+                signal: controller.signal,
+            }).catch(() => null);
+            clearTimeout(timeout);
+            if (rssRes && rssRes.ok) {
+                const xml = await rssRes.text();
+                const rssMatches = xml.matchAll(/<yt:videoId>([\w-]{11})<\/yt:videoId>/g);
+                let count = 0;
+                for (const m of rssMatches) {
+                    if (m[1])
+                        candidateIds.push(m[1]);
+                    count++;
+                    if (count >= 6)
+                        break;
+                }
+            }
+        }
+        catch (_) { }
+        // 1c. If UULV failed and RSS yielded nothing, check Uploads Playlist (UU...) — 1 quota unit
+        if (!uulvSucceeded && candidateIds.length === 0) {
             try {
-                const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&eventType=live&type=video&key=${YOUTUBE_DATA_API_KEY}`;
-                const apiRes = await fetch(searchUrl);
-                if (apiRes.ok) {
-                    const apiData = await apiRes.json();
-                    if (apiData.items && apiData.items.length > 0) {
-                        isLive = true;
-                        videoId = apiData.items[0].id?.videoId || '';
-                        streamTitle = apiData.items[0].snippet?.title || '';
-                        console.log(`🔴 [YouTube API] Live stream detected for church ${churchId}: ${videoId} - "${streamTitle}"`);
+                const uuUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&playlistId=UU${channelSuffix}&maxResults=5&key=${YOUTUBE_DATA_API_KEY}`;
+                const uuRes = await fetch(uuUrl);
+                if (uuRes.ok) {
+                    const uuData = await uuRes.json();
+                    for (const item of uuData.items || []) {
+                        const vid = item?.contentDetails?.videoId;
+                        if (vid)
+                            candidateIds.push(vid);
                     }
                 }
             }
-            catch (apiErr) {
-                console.warn('[checkChurchYouTubeLive] YouTube API query notice:', apiErr);
-            }
+            catch (_) { }
         }
-        // ── Method 2: Scrape Fallback (if API quota or network fails) ──
+        const verifiedCandidates = new Set(candidateIds);
+        const verification = await verifyVideosLiveForChannel(candidateIds, channelId);
+        if (verification.liveVideo) {
+            isLive = true;
+            videoId = verification.liveVideo.videoId;
+            streamTitle = verification.liveVideo.title;
+            console.log(`🔴 [YouTube Live Verified] Church ${churchId} (${channelId}) is LIVE: ${videoId} - "${streamTitle}"`);
+        }
+        // ── Method 2: Fast-Start Hardened `/channel/{id}/live` Check (ALWAYS gated by videos.list channel verification) ──
         if (!isLive) {
-            let liveCheckUrl = rawYtUrl;
-            if (liveCheckUrl.includes('@') && !liveCheckUrl.includes('/live') && !liveCheckUrl.includes('/streams')) {
-                liveCheckUrl = liveCheckUrl.endsWith('/') ? `${liveCheckUrl}live` : `${liveCheckUrl}/live`;
-            }
-            else if (liveCheckUrl.includes('/channel/') && !liveCheckUrl.includes('/live')) {
-                liveCheckUrl = liveCheckUrl.endsWith('/') ? `${liveCheckUrl}live` : `${liveCheckUrl}/live`;
-            }
             try {
                 const controller = new AbortController();
-                const timeout = setTimeout(() => controller.abort(), 6000);
-                const res = await fetch(liveCheckUrl, {
+                const timeout = setTimeout(() => controller.abort(), 5000);
+                const res = await fetch(`https://www.youtube.com/channel/${channelId}/live`, {
                     signal: controller.signal,
                     headers: {
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                         'Accept-Language': 'en-US,en;q=0.9',
                     },
+                    redirect: 'follow',
                 }).catch(() => null);
                 clearTimeout(timeout);
                 if (res && res.ok) {
                     const html = await res.text().catch(() => '');
-                    if ((html.includes('"isLive":true') ||
-                        html.includes('"style":"LIVE"') ||
-                        html.includes('LIVE_STREAM') ||
-                        html.includes('"status":"LIVE"')) &&
-                        !html.includes('"isUpcoming":true')) {
-                        isLive = true;
-                        const match = (res.url && res.url.match(/watch\?v=([\w-]{11})/)) ||
-                            html.match(/"videoId":"([\w-]{11})"/) ||
-                            html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([\w-]{11})">/) ||
-                            html.match(/"liveStreamability".*?"videoId":"([^"]+)"/) ||
-                            html.match(/"videoRenderer".*?"videoId":"([^"]+)"/);
-                        if (match && match[1])
-                            videoId = match[1];
-                        const titleMatch = html.match(/<title>([^<]+)<\/title>/) ||
-                            html.match(/"title":{"runs":\[{"text":"([^"]+)"}\]}/) ||
-                            html.match(/<meta name="title" content="([^"]+)"/);
-                        if (titleMatch && titleMatch[1]) {
-                            streamTitle = titleMatch[1].replace(/ - YouTube$/i, '').trim();
+                    // Strictly parse ONLY the primary player's `videoDetails` object (NEVER sidebar/related videos!)
+                    const isBotWall = html.includes('"status":"LOGIN_REQUIRED"');
+                    const vdMatch = !isBotWall
+                        ? html.match(/"videoDetails":\{"videoId":"([\w-]{11})"([\s\S]{0,2000})/)
+                        : null;
+                    if (vdMatch && vdMatch[1]) {
+                        const candidateId = vdMatch[1];
+                        const vdChunk = vdMatch[2] || '';
+                        const matchesOwner = vdChunk.includes(`"channelId":"${channelId}"`);
+                        const looksLiveInPlayer = vdChunk.includes('"isLive":true') && !vdChunk.includes('"isUpcoming":true');
+                        if (matchesOwner && looksLiveInPlayer && !verifiedCandidates.has(candidateId)) {
+                            // Mandatory final authoritative gate via YouTube Data API v3 `videos.list`
+                            const finalCheck = await verifyVideosLiveForChannel([candidateId], channelId);
+                            if (finalCheck.liveVideo) {
+                                isLive = true;
+                                videoId = finalCheck.liveVideo.videoId;
+                                streamTitle = finalCheck.liveVideo.title;
+                                console.log(`🔴 [YouTube /live Verified] Church ${churchId} (${channelId}) is LIVE: ${videoId} - "${streamTitle}"`);
+                            }
                         }
                     }
                 }
             }
             catch (_) { }
         }
-        const prevState = cData.youtubeLiveState || { isLive: false };
-        const liveWatchUrl = videoId ? `https://www.youtube.com/watch?v=${videoId}` : rawYtUrl;
-        if (isLive) {
-            // Clean up streamTitle if it matched YouTube promo junk
+        const liveWatchUrl = videoId
+            ? `https://www.youtube.com/watch?v=${videoId}`
+            : rawYtUrl;
+        if (isLive && videoId && /^[\w-]{11}$/.test(videoId)) {
+            // Clean up streamTitle if empty
             if (!streamTitle ||
                 streamTitle.includes('Want to watch this again later') ||
                 streamTitle.includes('Sign in to add this') ||
                 streamTitle.toLowerCase() === 'youtube') {
                 streamTitle = 'Join the live worship service now! 🎥🙏';
             }
-            // Check if we already notified for this stream:
-            // 1. Same videoId already notified
-            // 2. Or prevState was already marked as isLive (same ongoing live session)
-            // 3. Or last notification was sent less than 2 hours ago (strict cooldown)
-            const lastNotifiedMillis = prevState?.lastNotifiedAt?.toMillis?.() ||
-                (prevState?.lastNotifiedAt?._seconds ? prevState.lastNotifiedAt._seconds * 1000 : 0);
-            const isWithinCooldown = lastNotifiedMillis > 0 && Date.now() - lastNotifiedMillis < 2 * 60 * 60 * 1000;
-            const alreadyNotified = Boolean(prevState?.isLive) ||
-                isWithinCooldown ||
-                (Boolean(videoId) && prevState?.lastNotifiedVideoId === videoId);
-            const resolvedVideoId = videoId || prevState?.videoId || '';
-            // Save live state directly as a field on the church document (NO extra documents)
-            await churchDoc.ref.set({
-                youtubeLiveState: {
-                    isLive: true,
-                    url: liveWatchUrl,
-                    videoId: resolvedVideoId,
-                    title: streamTitle || prevState?.title || '',
-                    lastChecked: FieldValue.serverTimestamp(),
-                },
-            }, { merge: true }).catch(() => { });
-            // ONLY dispatch a push notification if NOT already notified AND we have a valid 11-char video ID
-            if (!alreadyNotified && resolvedVideoId && resolvedVideoId.length === 11) {
+            const resolvedVideoId = videoId;
+            // Atomic Firestore Transaction so concurrent schedulers (monitorMeetingLive + checkYouTubeLive)
+            // claim a short pending lease first and mark completion ONLY after push delivery succeeds.
+            const YT_CLAIM_TTL_MS = 2 * 60 * 1000;
+            let shouldSendPush = false;
+            if (resolvedVideoId && resolvedVideoId.length === 11) {
+                try {
+                    shouldSendPush = await db.runTransaction(async (tx) => {
+                        const freshSnap = await tx.get(churchDoc.ref);
+                        const freshData = freshSnap.exists ? freshSnap.data() || {} : {};
+                        const curState = freshData.youtubeLiveState || { isLive: false };
+                        const nowMs = Date.now();
+                        const lastNotifiedMillis = curState?.lastNotifiedAt?.toMillis?.() ||
+                            (curState?.lastNotifiedAt?._seconds ? curState.lastNotifiedAt._seconds * 1000 : 0);
+                        const isWithinSameVideoCooldown = lastNotifiedMillis > 0 && nowMs - lastNotifiedMillis < 4 * 60 * 60 * 1000;
+                        const isWithinGlobalCooldown = lastNotifiedMillis > 0 && nowMs - lastNotifiedMillis < 15 * 60 * 1000;
+                        const isSameVideoAsLastNotified = curState?.lastNotifiedVideoId === resolvedVideoId;
+                        const isOngoingLegacyStream = Boolean(curState?.isLive) &&
+                            !curState?.lastNotifiedVideoId &&
+                            curState?.videoId === resolvedVideoId;
+                        const hasActivePendingClaim = curState?.pendingNotifyVideoId === resolvedVideoId &&
+                            typeof curState?.pendingNotifyAt === 'number' &&
+                            nowMs - curState.pendingNotifyAt < YT_CLAIM_TTL_MS;
+                        const alreadyNotified = hasActivePendingClaim ||
+                            isWithinGlobalCooldown ||
+                            (isSameVideoAsLastNotified && (Boolean(curState?.isLive) || isWithinSameVideoCooldown)) ||
+                            isOngoingLegacyStream;
+                        const nextState = {
+                            isLive: true,
+                            url: liveWatchUrl,
+                            videoId: resolvedVideoId,
+                            channelId,
+                            title: streamTitle || curState?.title || '',
+                            lastChecked: FieldValue.serverTimestamp(),
+                        };
+                        if (!alreadyNotified) {
+                            nextState.pendingNotifyVideoId = resolvedVideoId;
+                            nextState.pendingNotifyAt = nowMs;
+                        }
+                        tx.set(churchDoc.ref, { youtubeLiveState: nextState }, { merge: true });
+                        return !alreadyNotified;
+                    });
+                }
+                catch (txErr) {
+                    console.warn('[checkChurchYouTubeLive] Transaction check error:', txErr);
+                    shouldSendPush = false;
+                }
+            }
+            else {
+                await churchDoc.ref
+                    .set({
+                    youtubeLiveState: {
+                        isLive: true,
+                        url: liveWatchUrl,
+                        videoId: resolvedVideoId,
+                        title: streamTitle || prevState?.title || '',
+                        lastChecked: FieldValue.serverTimestamp(),
+                    },
+                }, { merge: true })
+                    .catch(() => { });
+            }
+            if (shouldSendPush) {
                 const churchName = cData.name || 'Rhema Global Ministries';
                 const { pushTitle, pushBody } = formatLiveNotification(churchName, streamTitle);
-                console.log(`🚨 Auto YouTube Live detected for church ${churchId} (${churchName})! Sending push...`);
-                // 1. Send push to topic church_${churchId} with interactive "Join Live Now" action category
+                console.log(`🚨 Auto YouTube Live detected for church ${churchId} (${churchName})! Sending single push for ${resolvedVideoId}...`);
+                // 1. Send data-only push to Android (rendered cleanly via NotificationService.displayLiveNotification
+                // with "📺 Join Live Now" action button) and categorized alert to iOS APNs.
                 const topicMessage = {
                     data: {
                         type: 'youtube_live',
@@ -1285,36 +1448,62 @@ async function checkChurchYouTubeLive(churchDoc, churchId, db) {
                         },
                     },
                 };
-                await getMessaging()
-                    .send(topicMessage)
-                    .catch((e) => console.error('Error sending YouTube Live topic push:', e));
-                // 2. Add to existing broadcasts subcollection
+                // 1. Always persist deterministically in broadcasts subcollection (youtube_live_{videoId})
+                // so the Updates screen ALWAYS shows the live alert immediately with zero duplicates.
                 const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-                await churchDoc.ref.collection('broadcasts').add({
+                await churchDoc.ref
+                    .collection('broadcasts')
+                    .doc(`youtube_live_${resolvedVideoId}`)
+                    .set({
                     title: pushTitle,
                     content: pushBody,
                     date: dateStr,
                     type: 'youtube_live',
                     url: liveWatchUrl,
                     videoId: resolvedVideoId,
+                    channelId,
                     silent: true,
                     createdAt: FieldValue.serverTimestamp(),
-                }).catch(() => { });
-                // 3. Mark lastNotifiedVideoId in youtubeLiveState
-                await churchDoc.ref.set({
-                    youtubeLiveState: {
-                        lastNotifiedVideoId: resolvedVideoId,
-                        lastNotifiedAt: FieldValue.serverTimestamp(),
-                    },
-                }, { merge: true }).catch(() => { });
+                }, { merge: true })
+                    .catch((bErr) => {
+                    console.error('Error writing YouTube Live broadcast for Updates screen:', bErr);
+                });
+                // 2. Send topic push to all church members
+                try {
+                    await getMessaging().send(topicMessage);
+                    // Record completion only after FCM topic delivery succeeded
+                    await churchDoc.ref
+                        .update({
+                        'youtubeLiveState.lastNotifiedVideoId': resolvedVideoId,
+                        'youtubeLiveState.lastNotifiedAt': FieldValue.serverTimestamp(),
+                        'youtubeLiveState.pendingNotifyVideoId': FieldValue.delete(),
+                        'youtubeLiveState.pendingNotifyAt': FieldValue.delete(),
+                    })
+                        .catch(() => { });
+                }
+                catch (sendErr) {
+                    console.error('Error sending YouTube Live topic push; releasing pending claim for retry:', sendErr);
+                    await churchDoc.ref
+                        .update({
+                        'youtubeLiveState.pendingNotifyVideoId': FieldValue.delete(),
+                        'youtubeLiveState.pendingNotifyAt': FieldValue.delete(),
+                    })
+                        .catch(() => { });
+                }
             }
         }
         else {
-            // Offline: reset isLive on church document if previously live
+            // Offline: reset isLive and clear stale video fields on church document if previously live
             if (prevState?.isLive) {
                 await churchDoc.ref.set({
                     youtubeLiveState: {
                         isLive: false,
+                        videoId: '',
+                        url: '',
+                        title: '',
+                        channelId,
+                        pendingNotifyVideoId: FieldValue.delete(),
+                        pendingNotifyAt: FieldValue.delete(),
                         lastChecked: FieldValue.serverTimestamp(),
                     },
                 }, { merge: true }).catch(() => { });
@@ -1621,23 +1810,38 @@ export async function sendDailyQuizNotificationInternal(force = false) {
             return { success: false, sentCount: 0, message: `Scheduled for ${targetTime}` };
         }
     }
-    // ── ATOMIC EARLY IDEMPOTENCY GUARD ─────────────────────────────────────────
-    // Write lastBroadcastDate NOW — before any network I/O — so that any other
-    // concurrent scheduler invocation (automatedDailyQuiz / periodicDailyQuizSafetyNet
-    // / monitorMeetingLive) that reads Firestore will see today's date and exit early.
-    try {
-        const earlyLockPayload = { lastBroadcastDate: dStr, lastBroadcastAt: FieldValue.serverTimestamp() };
-        if (scheduleDocRef) {
-            await scheduleDocRef.set(earlyLockPayload, { merge: true });
+    // ── ATOMIC FIRESTORE TRANSACTION IDEMPOTENCY LOCK ──────────────────────────
+    // Because automatedDailyQuiz, periodicDailyQuizSafetyNet, and monitorMeetingLive
+    // can all fire at 06:00:00 IST simultaneously, use a true Firestore transaction
+    // so strictly ONE invocation acquires today's broadcast lock.
+    const lockRef = scheduleDocRef ||
+        db.collection('Rhema Church').doc('rhema').collection('settings').doc('daily_quiz_schedule');
+    if (!force) {
+        try {
+            const acquired = await db.runTransaction(async (tx) => {
+                const snap = await tx.get(lockRef);
+                const cur = snap.exists ? snap.data() || {} : {};
+                if (cur.lastBroadcastDate === dStr) {
+                    return false;
+                }
+                tx.set(lockRef, { lastBroadcastDate: dStr, lastBroadcastAt: FieldValue.serverTimestamp() }, { merge: true });
+                return true;
+            });
+            if (!acquired) {
+                console.log(`ℹ️ [DailyQuiz] Transaction lock already claimed for ${dStr}; skipping duplicate run.`);
+                return { success: true, sentCount: 0, message: 'Already sent today' };
+            }
+            await db
+                .collection('settings')
+                .doc('daily_quiz_schedule')
+                .set({ lastBroadcastDate: dStr, lastBroadcastAt: FieldValue.serverTimestamp() }, { merge: true })
+                .catch(() => { });
+            console.log(`🔒 [DailyQuiz] Atomic transaction lock acquired for ${dStr}. Proceeding with delivery...`);
         }
-        else {
-            await db.collection('Rhema Church').doc('rhema').collection('settings').doc('daily_quiz_schedule').set(earlyLockPayload, { merge: true });
+        catch (lockErr) {
+            console.warn('[DailyQuiz] Transaction lock error; aborting to avoid duplicate delivery:', lockErr);
+            return { success: false, sentCount: 0, message: 'Lock error' };
         }
-        await db.collection('settings').doc('daily_quiz_schedule').set(earlyLockPayload, { merge: true });
-        console.log(`🔒 [DailyQuiz] Idempotency lock acquired for ${dStr}. Proceeding with delivery...`);
-    }
-    catch (lockErr) {
-        console.warn('[DailyQuiz] Could not acquire idempotency lock; continuing anyway:', lockErr);
     }
     const dParts = dStr.split('-');
     const displayDateStr = dParts.length === 3 ? `${dParts[2]}-${dParts[1]}-${dParts[0]}` : dStr;
@@ -1711,15 +1915,18 @@ export async function sendDailyQuizNotificationInternal(force = false) {
         }
         console.log(`✅ [DailyQuiz] Multicast push sent: ${multicastSuccess} success, ${multicastFailed} failed.`);
     }
-    // 5. Log in broadcasts/notifications for Rhema Church
+    // 5. Persist ONE deterministic broadcast entry per day (doc ID = daily_quiz_YYYY-MM-DD)
+    // Do NOT also write a duplicate doc into `notifications` because UpdatesScreen merges both collections!
     try {
         const churchesSnap = await db.collection('Rhema Church').get();
         for (const cDoc of churchesSnap.docs) {
             const churchId = cDoc.id;
             if (churchId === 'global')
                 continue;
-            // Add to broadcasts collection (silent — no secondary push)
-            await cDoc.ref.collection('broadcasts').add({
+            await cDoc.ref
+                .collection('broadcasts')
+                .doc(quizId)
+                .set({
                 title: pushTitle,
                 content: pushBody,
                 type: 'quiz',
@@ -1730,20 +1937,8 @@ export async function sendDailyQuizNotificationInternal(force = false) {
                 churchId: churchId,
                 silent: true,
                 createdAt: FieldValue.serverTimestamp(),
-            }).catch(() => { });
-            // Add to notifications collection
-            await cDoc.ref.collection('notifications').add({
-                title: pushTitle,
-                body: pushBody,
-                type: 'quiz',
-                quizId: quizId,
-                id: quizId,
-                relatedId: quizId,
-                screen: 'BibleQuizDetail',
-                churchId: churchId,
-                read: false,
-                createdAt: FieldValue.serverTimestamp(),
-            }).catch(() => { });
+            }, { merge: true })
+                .catch(() => { });
         }
     }
     catch (churchErr) {
@@ -2376,44 +2571,122 @@ export const pushCareCellAnnouncement = onDocumentCreated({ document: 'Rhema Chu
     const messaging = getMessaging();
     const notifTitle = scope === 'All_Cells' ? `📢 Church Notice: ${title}` : `📢 ${cellName}: ${title}`;
     const notifBody = message.length > 120 ? `${message.substring(0, 117)}...` : message;
-    const payload = {
-        notification: {
-            title: notifTitle,
-            body: notifBody,
-        },
-        data: {
-            type: 'care_cell_announcement',
-            title: notifTitle,
-            body: notifBody,
-            announcementId: String(announcementId),
-            churchId: String(churchId),
-            cellId: String(data.cellId || ''),
-            scope: String(scope),
-            click_action: 'FLUTTER_NOTIFICATION_CLICK',
-        },
-        android: {
-            priority: 'high',
+    if (scope === 'All_Cells') {
+        const payload = {
             notification: {
-                sound: 'default',
-                channelId: 'church_alerts',
+                title: notifTitle,
+                body: notifBody,
             },
-        },
-        apns: {
-            payload: {
-                aps: {
+            data: {
+                type: 'care_cell_announcement',
+                title: notifTitle,
+                body: notifBody,
+                announcementId: String(announcementId),
+                churchId: String(churchId),
+                cellId: String(data.cellId || ''),
+                scope: 'All_Cells',
+                click_action: 'FLUTTER_NOTIFICATION_CLICK',
+            },
+            android: {
+                priority: 'high',
+                notification: {
                     sound: 'default',
-                    badge: 1,
+                    channelId: 'church_alerts',
                 },
             },
-        },
-        topic: `church_${churchId}`,
-    };
-    try {
-        await messaging.send(payload);
-        console.log(`Successfully sent care cell announcement push for ${announcementId}`);
+            apns: {
+                payload: {
+                    aps: {
+                        sound: 'default',
+                        badge: 1,
+                    },
+                },
+            },
+            topic: `church_${churchId}`,
+        };
+        try {
+            await messaging.send(payload);
+            console.log(`Successfully sent church-wide care cell announcement push for ${announcementId}`);
+        }
+        catch (err) {
+            console.error('Error sending church-wide care cell announcement notification:', err);
+        }
     }
-    catch (err) {
-        console.error('Error sending care cell announcement notification:', err);
+    else {
+        // Cell-scoped announcement: send push strictly to active members of this specific Care Cell
+        if (!data.cellId)
+            return;
+        try {
+            const membershipsSnap = await db
+                .collection('Rhema Church')
+                .doc(churchId)
+                .collection('careCellMemberships')
+                .where('cellId', '==', data.cellId)
+                .where('membershipStatus', '==', 'Active')
+                .get();
+            const memberIds = membershipsSnap.docs.map((d) => d.data().memberId).filter(Boolean);
+            if (memberIds.length === 0) {
+                console.log(`No active members found in care cell ${data.cellId} for announcement push.`);
+                return;
+            }
+            const tokens = [];
+            for (const mId of memberIds) {
+                try {
+                    const memDoc = await db
+                        .collection('Rhema Church')
+                        .doc(churchId)
+                        .collection('members')
+                        .doc(mId)
+                        .get();
+                    if (memDoc.exists) {
+                        const token = memDoc.data()?.fcmToken;
+                        if (token && typeof token === 'string' && !tokens.includes(token)) {
+                            tokens.push(token);
+                        }
+                    }
+                }
+                catch (_) { }
+            }
+            if (tokens.length > 0) {
+                const messagePayload = {
+                    notification: {
+                        title: notifTitle,
+                        body: notifBody,
+                    },
+                    data: {
+                        type: 'care_cell_announcement',
+                        title: notifTitle,
+                        body: notifBody,
+                        announcementId: String(announcementId),
+                        churchId: String(churchId),
+                        cellId: String(data.cellId || ''),
+                        scope: 'Cell',
+                        click_action: 'FLUTTER_NOTIFICATION_CLICK',
+                    },
+                    android: {
+                        priority: 'high',
+                        notification: {
+                            sound: 'default',
+                            channelId: 'church_alerts',
+                        },
+                    },
+                    apns: {
+                        payload: {
+                            aps: {
+                                sound: 'default',
+                                badge: 1,
+                            },
+                        },
+                    },
+                    tokens,
+                };
+                const response = await messaging.sendEachForMulticast(messagePayload);
+                console.log(`Successfully sent Care Cell announcement push to ${response.successCount}/${tokens.length} members for ${announcementId}`);
+            }
+        }
+        catch (err) {
+            console.error('Error sending care cell announcement notification:', err);
+        }
     }
 });
 /**
@@ -2678,7 +2951,10 @@ export const pushCareCellVisit = onDocumentCreated({ document: 'Rhema Church/{ch
             .where('cellId', '==', cellId)
             .where('membershipStatus', '==', 'Active')
             .get();
-        const memberIds = membershipsSnap.docs.map((d) => d.data().memberId).filter(Boolean);
+        let memberIds = membershipsSnap.docs.map((d) => d.data().memberId).filter(Boolean);
+        if (Array.isArray(data.targetMemberIds) && data.targetMemberIds.length > 0) {
+            memberIds = memberIds.filter((id) => data.targetMemberIds.includes(id));
+        }
         if (memberIds.length === 0) {
             console.log(`No active members found in care cell ${cellId} for visit push.`);
             return;
@@ -2747,6 +3023,136 @@ export const pushCareCellVisit = onDocumentCreated({ document: 'Rhema Church/{ch
     }
     catch (err) {
         console.error('Error dispatching Care Cell visit push notification:', err);
+    }
+});
+/**
+ * 🏡 CARE CELL VISIT RESPONSE UPDATED PUSH
+ * Sends push notification strictly to the respective Care Cell Leader / Admin when a member
+ * responds with acceptance/decline or submits their preferred visiting time.
+ */
+export const onCareCellVisitResponseUpdated = onDocumentUpdated({ document: 'Rhema Church/{churchId}/careCellVisits/{visitId}', region: 'asia-south1' }, async (event) => {
+    const beforeSnap = event.data?.before;
+    const afterSnap = event.data?.after;
+    if (!beforeSnap || !afterSnap)
+        return;
+    const churchId = event.params.churchId;
+    const visitId = event.params.visitId;
+    const beforeData = beforeSnap.data();
+    const afterData = afterSnap.data();
+    const beforeResponses = beforeData?.responses || {};
+    const afterResponses = afterData?.responses || {};
+    // Identify which member's response or preferredTime changed
+    const changedMemberIds = [];
+    for (const [mId, afterResp] of Object.entries(afterResponses)) {
+        const beforeResp = beforeResponses[mId];
+        const statusChanged = afterResp.response !== beforeResp?.response &&
+            (afterResp.response === 'Accepted' || afterResp.response === 'Declined');
+        const timeChanged = afterResp.preferredTime &&
+            afterResp.preferredTime !== beforeResp?.preferredTime;
+        if (statusChanged || timeChanged) {
+            changedMemberIds.push(mId);
+        }
+    }
+    if (changedMemberIds.length === 0)
+        return;
+    const db = getFirestore();
+    const messaging = getMessaging();
+    try {
+        // 1. Fetch Care Cell record to get leader information
+        const cellId = afterData.cellId;
+        if (!cellId)
+            return;
+        const cellDoc = await db
+            .collection('Rhema Church')
+            .doc(churchId)
+            .collection('careCells')
+            .doc(cellId)
+            .get();
+        const cellData = cellDoc.exists ? cellDoc.data() : null;
+        const targetLeaderIds = new Set();
+        if (cellData?.leaderId)
+            targetLeaderIds.add(cellData.leaderId);
+        if (cellData?.assistantLeaderId)
+            targetLeaderIds.add(cellData.assistantLeaderId);
+        if (afterData.assignedLeaderId)
+            targetLeaderIds.add(afterData.assignedLeaderId);
+        if (targetLeaderIds.size === 0 && afterData.createdBy) {
+            targetLeaderIds.add(afterData.createdBy);
+        }
+        // 2. Collect FCM tokens strictly for this specific Care Cell's leader(s)
+        const leaderTokens = [];
+        for (const leaderId of targetLeaderIds) {
+            try {
+                const leaderDoc = await db
+                    .collection('Rhema Church')
+                    .doc(churchId)
+                    .collection('members')
+                    .doc(leaderId)
+                    .get();
+                if (leaderDoc.exists) {
+                    const token = leaderDoc.data()?.fcmToken;
+                    if (token && typeof token === 'string' && !leaderTokens.includes(token)) {
+                        leaderTokens.push(token);
+                    }
+                }
+            }
+            catch (_) { }
+        }
+        if (leaderTokens.length === 0) {
+            console.log(`No valid FCM tokens found for Care Cell leader(s) of cell ${cellId}`);
+            return;
+        }
+        // 3. Dispatch targeted push notification to the leader(s)
+        for (const memberId of changedMemberIds) {
+            // Exclude leader if the leader responded for themselves
+            if (targetLeaderIds.has(memberId) && leaderTokens.length === 1)
+                continue;
+            const resp = afterResponses[memberId];
+            const memberName = resp.memberName || 'Cell Member';
+            const actionWord = resp.response === 'Accepted' ? 'accepted' : 'declined';
+            const timeNote = resp.preferredTime ? ` (Preferred: ${resp.preferredTime})` : '';
+            const notifTitle = `🏡 Care Cell Visit: ${memberName}`;
+            const notifBody = `${memberName} ${actionWord} the visit on ${afterData.visitDate}${timeNote}.`;
+            const messagePayload = {
+                notification: {
+                    title: notifTitle,
+                    body: notifBody,
+                },
+                data: {
+                    type: 'care_cell_visit_response',
+                    title: notifTitle,
+                    body: notifBody,
+                    visitId: String(visitId),
+                    cellId: String(cellId),
+                    churchId: String(churchId),
+                    memberId: String(memberId),
+                    response: String(resp.response || ''),
+                    preferredTime: String(resp.preferredTime || ''),
+                    click_action: 'FLUTTER_NOTIFICATION_CLICK',
+                },
+                android: {
+                    priority: 'high',
+                    notification: {
+                        sound: 'default',
+                        channelId: 'church_alerts',
+                    },
+                },
+                apns: {
+                    payload: {
+                        aps: {
+                            sound: 'default',
+                            badge: 1,
+                        },
+                    },
+                },
+                tokens: leaderTokens,
+            };
+            const res = await messaging.sendEachForMulticast(messagePayload);
+            console.log(`Successfully sent visit response push for ${memberId} to ${res.successCount} leader device(s)`);
+        }
+    }
+    catch (err) {
+        console.error('Error dispatching Care Cell visit response notification to leader:', err);
     }
 });
 /**
@@ -3242,6 +3648,14 @@ async function resolveVolunteerMemberTokens(db, churchId, memberId, memberPhone,
             }
             catch (_) { }
         }
+        // 4b. Check members collection by `uid` field in case doc ID differs from Auth UID
+        if (tokenSet.size === 0) {
+            try {
+                const uidSnap = await db.collection('Rhema Church').doc(cid).collection('members').where('uid', '==', memberId).limit(3).get();
+                uidSnap.forEach((d) => extractFromDoc(d));
+            }
+            catch (_) { }
+        }
     }
     // 5. Query members by phone if no token found yet
     if (tokenSet.size === 0 && memberPhone) {
@@ -3531,9 +3945,11 @@ async function sendHighPriorityTopicPush(messaging, topic, title, body, data, ch
             },
         });
         console.log(`📡 Broadcasted high-priority volunteer push to topic: ${topic}`);
+        return true;
     }
     catch (topicErr) {
         console.warn(`[VolunteerPush] Topic broadcast failed for ${topic}:`, topicErr);
+        return false;
     }
 }
 function computeVolunteerAssignmentKey(data) {
@@ -3582,11 +3998,14 @@ async function writeVolunteerInAppNotifications(db, churchId, docId, payload, ta
             .set(docData, { merge: true }));
     }
     const results = await Promise.allSettled(writes);
+    let allSucceeded = true;
     for (const res of results) {
         if (res.status === 'rejected') {
+            allSucceeded = false;
             console.error('Error writing volunteer in-app notification document:', res.reason);
         }
     }
+    return allSucceeded;
 }
 /**
  * 🤝 HELPER: Notify Authorized Church Admins of a New Volunteer Application
@@ -3625,7 +4044,7 @@ async function handleVolunteerApplicationAdminCreatedPush(appData, churchId, app
     const eventName = (appData.eventTitle || 'Church Event').trim();
     // 2. Notification title and body according to specification
     const title = isEventVolunteer
-        ? '📅 New Event Volunteer Application!'
+        ? '🤝 New Event Volunteer Application!'
         : '📋 New Volunteer Application!';
     const body = isEventVolunteer
         ? `${memberName} has applied to volunteer for ${eventName}. Please review the application.`
@@ -4196,6 +4615,936 @@ export const triggerVolunteerPushTestHttp = onRequest({ cors: true, region: 'asi
     catch (err) {
         console.error('Error in triggerVolunteerPushTestHttp:', err);
         res.status(500).json({ success: false, error: err?.message || String(err) });
+    }
+});
+// ─────────────────────────────────────────────────────────────
+// 💼 JOB CIRCLE & MINISTRY RECRUITMENT CLOUD TRIGGERS
+// ─────────────────────────────────────────────────────────────
+const JOB_CIRCLE_CLAIM_TTL_MS = 2 * 60 * 1000;
+async function claimJobCircleNotificationLease(db, docRef, claimAtField, shouldSkip, claimFields = {}) {
+    if (!docRef)
+        return false;
+    const nowMs = Date.now();
+    return db.runTransaction(async (tx) => {
+        const fresh = await tx.get(docRef);
+        if (!fresh.exists)
+            return false;
+        const freshData = fresh.data() || {};
+        if (shouldSkip(freshData, nowMs))
+            return false;
+        tx.update(docRef, {
+            ...claimFields,
+            [claimAtField]: nowMs,
+        });
+        return true;
+    });
+}
+async function releaseJobCircleNotificationLease(docRef, fieldsToDelete) {
+    if (!docRef || fieldsToDelete.length === 0)
+        return;
+    const payload = {};
+    for (const field of fieldsToDelete) {
+        payload[field] = FieldValue.delete();
+    }
+    await docRef.update(payload).catch(() => { });
+}
+/**
+ * Shared Helper: Broadcast high-priority push & deterministic in-app notification
+ * when a Ministry Opportunity is published (`status === 'approved'`).
+ * Uses a recoverable pending lease transaction and marks `approvedNotificationSent`
+ * only after delivery succeeds.
+ */
+async function handleJobOpportunityPublishedPush(data, churchId, opportunityId, snapRef) {
+    if (!data || data.status !== 'approved')
+        return;
+    const cid = churchId || 'rhema';
+    const db = getFirestore();
+    const messaging = getMessaging();
+    // Atomic recoverable lease so Create + Edit/Update or concurrent retries never double-notify
+    if (snapRef) {
+        const shouldSend = await claimJobCircleNotificationLease(db, snapRef, 'approvedNotificationClaimAt', (freshData, nowMs) => freshData.status !== 'approved' ||
+            freshData.approvedNotificationSent === true ||
+            (typeof freshData.approvedNotificationClaimAt === 'number' &&
+                nowMs - freshData.approvedNotificationClaimAt < JOB_CIRCLE_CLAIM_TTL_MS));
+        if (!shouldSend) {
+            console.log(`🛑 [JobCircle] Skipping duplicate opportunity push for: ${opportunityId}`);
+            return;
+        }
+    }
+    else if (data.approvedNotificationSent === true) {
+        return;
+    }
+    try {
+        const oppTitle = data.title || 'Ministry Volunteer';
+        const categoryText = data.categoryName ? ` in ${data.categoryName}` : '';
+        const title = '💼 New Ministry Opportunity Open!';
+        const body = `Rhema Church is inviting members to serve in "${oppTitle}"${categoryText}. Tap to view details and submit your calling!`;
+        const tokenSet = new Set();
+        const addTokens = (docData) => {
+            if (!docData)
+                return;
+            if (Array.isArray(docData.fcmTokens)) {
+                docData.fcmTokens.forEach((tk) => {
+                    if (typeof tk === 'string' && tk.trim().length > 10)
+                        tokenSet.add(tk.trim());
+                });
+            }
+            if (typeof docData.fcmToken === 'string' && docData.fcmToken.trim().length > 10) {
+                tokenSet.add(docData.fcmToken.trim());
+            }
+        };
+        try {
+            const membersSnap = await db.collection('Rhema Church').doc(cid).collection('members').get();
+            membersSnap.forEach((mDoc) => addTokens(mDoc.data()));
+        }
+        catch (e) {
+            console.warn('[JobCircle] Could not read Rhema Church members tokens:', e);
+        }
+        try {
+            const altMembersSnap = await db.collection('churches').doc(cid).collection('members').get();
+            altMembersSnap.forEach((mDoc) => addTokens(mDoc.data()));
+        }
+        catch (_) { }
+        try {
+            const usersSnap = await db.collection('users').get();
+            usersSnap.forEach((uDoc) => {
+                const uData = uDoc.data();
+                if (!uData)
+                    return;
+                const uChurch = uData.primaryChurchId || uData.churchId || 'rhema';
+                if (uChurch === cid) {
+                    addTokens(uData);
+                }
+            });
+        }
+        catch (_) { }
+        const memberTokens = Array.from(tokenSet);
+        const pushData = {
+            type: 'job_opportunity_new',
+            churchId: cid,
+            opportunityId,
+            targetTab: 'Job Circle',
+            screen: 'OpportunityDetailScreen',
+            click_action: 'FLUTTER_NOTIFICATION_CLICK',
+        };
+        let pushDelivered = false;
+        if (memberTokens.length > 0) {
+            const pushRes = await sendHighPriorityPush(messaging, memberTokens, title, body, pushData, 'church_alerts');
+            pushDelivered = pushRes.successCount > 0;
+        }
+        else {
+            pushDelivered = await sendHighPriorityTopicPush(messaging, `church_${cid}`, title, body, pushData, 'church_alerts');
+        }
+        // Persist deterministically in church notifications for Updates screen visibility (no duplicates)
+        await db
+            .collection('Rhema Church')
+            .doc(cid)
+            .collection('notifications')
+            .doc(`job_opp_${opportunityId}`)
+            .set({
+            type: 'job_opportunity_new',
+            churchId: cid,
+            title,
+            body,
+            content: body,
+            opportunityId,
+            opportunityTitle: oppTitle,
+            categoryName: data.categoryName || '',
+            referenceId: opportunityId,
+            referenceType: 'job_circle_opportunity',
+            createdAt: FieldValue.serverTimestamp(),
+            read: false,
+        }, { merge: true });
+        if (!pushDelivered) {
+            throw new Error(`[JobCircle] Opportunity FCM push failed for ${opportunityId}`);
+        }
+        if (snapRef) {
+            await snapRef.update({
+                approvedNotificationSent: true,
+                approvedNotificationSentAt: FieldValue.serverTimestamp(),
+                approvedNotificationClaimAt: FieldValue.delete(),
+            });
+        }
+        console.log(`✅ [JobCircle] Broadcasted new opportunity "${oppTitle}" to ${memberTokens.length} member device(s).`);
+    }
+    catch (err) {
+        await releaseJobCircleNotificationLease(snapRef, ['approvedNotificationClaimAt']);
+        console.error('[JobCircle] Error broadcasting new opportunity push:', err);
+        throw err;
+    }
+}
+/**
+ * Trigger: When a member submits a new Ministry Application
+ * Notifies Church Admins so they can review the candidate and their attached CV.
+ */
+export const onJobApplicationCreated = onDocumentCreated({ document: 'Rhema Church/{churchId}/job_circle_applications/{applicationId}', region: 'asia-south1' }, async (event) => {
+    const snap = event.data;
+    if (!snap)
+        return;
+    const data = snap.data();
+    const churchId = event.params.churchId || 'rhema';
+    const applicationId = event.params.applicationId;
+    const db = getFirestore();
+    const messaging = getMessaging();
+    // Atomic recoverable lease; propagate transaction errors rather than bypassing deduplication
+    const shouldSend = await claimJobCircleNotificationLease(db, snap.ref, 'adminPushClaimAt', (freshData, nowMs) => freshData.adminPushSent === true ||
+        (typeof freshData.adminPushClaimAt === 'number' &&
+            nowMs - freshData.adminPushClaimAt < JOB_CIRCLE_CLAIM_TTL_MS));
+    if (!shouldSend) {
+        console.log(`🛑 [JobCircle] Skipping duplicate admin push for application: ${applicationId}`);
+        return;
+    }
+    try {
+        const applicantName = data.memberName || 'A church member';
+        const roleTitle = data.opportunityTitle || 'Ministry Position';
+        const title = '💼 New Ministry Application!';
+        const body = `${applicantName} has applied for "${roleTitle}". Please review their calling and attached CV.`;
+        const { tokens: adminTokens, adminUids } = await resolveVolunteerAdminTokens(db, churchId);
+        const pushData = {
+            type: 'job_application_admin',
+            churchId,
+            applicationId,
+            opportunityId: data.opportunityId || '',
+            targetTab: 'Job Circle',
+            screen: 'AdminRoot',
+            click_action: 'FLUTTER_NOTIFICATION_CLICK',
+        };
+        let pushDelivered = false;
+        if (adminTokens.length > 0) {
+            const pushRes = await sendHighPriorityPush(messaging, adminTokens, title, body, pushData, 'church_alerts');
+            pushDelivered = pushRes.successCount > 0;
+        }
+        else {
+            pushDelivered = await sendHighPriorityTopicPush(messaging, `church_${churchId}_admin`, title, body, pushData, 'church_alerts');
+        }
+        // Persist deterministic in-app notification for admins (targetRole: 'admin' restricts from non-admins)
+        const inAppDelivered = await writeVolunteerInAppNotifications(db, churchId, `job_admin_${applicationId}`, {
+            type: 'job_application_admin',
+            targetRole: 'admin',
+            recipientRole: 'admin',
+            title,
+            body,
+            content: body,
+            memberName: applicantName,
+            applicationId,
+            opportunityId: data.opportunityId || '',
+            opportunityTitle: roleTitle,
+            applicantName,
+            referenceType: 'job_circle_application',
+            referenceId: applicationId,
+        }, adminUids);
+        if (!pushDelivered || !inAppDelivered) {
+            throw new Error(`[JobCircle] Incomplete admin notification delivery for application ${applicationId}`);
+        }
+        await snap.ref.update({
+            adminPushSent: true,
+            adminPushSentAt: FieldValue.serverTimestamp(),
+            adminPushClaimAt: FieldValue.delete(),
+        });
+        console.log(`✅ [JobCircle] Notified admins for new application: ${applicationId}`);
+    }
+    catch (err) {
+        await releaseJobCircleNotificationLease(snap.ref, ['adminPushClaimAt']);
+        console.error('[JobCircle] Error handling onJobApplicationCreated push:', err);
+        throw err;
+    }
+});
+/**
+ * Trigger: When an Admin updates an Application Status (Under Review, Meeting Scheduled, Selected, Shortlisted, Rejected)
+ * Sends instant push notification & personal in-app notification strictly to the applicant member.
+ */
+export const onJobApplicationUpdated = onDocumentUpdated({ document: 'Rhema Church/{churchId}/job_circle_applications/{applicationId}', region: 'asia-south1' }, async (event) => {
+    const change = event.data;
+    if (!change)
+        return;
+    const before = change.before.data();
+    const after = change.after.data();
+    const churchId = event.params.churchId || 'rhema';
+    const applicationId = event.params.applicationId;
+    if (!before || !after)
+        return;
+    if (before.status === after.status)
+        return; // Only notify on status transitions
+    const status = String(after.status || '').trim();
+    if (!status || status === 'withdrawn' || status === 'submitted')
+        return;
+    if (after.lastNotifiedStatus === status)
+        return;
+    const memberId = after.memberId || '';
+    const roleTitle = after.opportunityTitle || 'Ministry Position';
+    let title = '💼 Ministry Application Update';
+    let body = `Your application for "${roleTitle}" has been updated to ${status.replace(/_/g, ' ').toUpperCase()}.`;
+    if (status === 'under_review') {
+        title = '🔍 Application Under Review';
+        body = `Your application for "${roleTitle}" is now prayerfully under review by church ministry leaders.`;
+    }
+    else if (status === 'meeting_scheduled') {
+        title = '📅 Ministry Interview / Meeting Scheduled!';
+        const dateStr = after.meetingDate ? ` on ${after.meetingDate}` : '';
+        const timeStr = after.meetingTime ? ` at ${after.meetingTime}` : '';
+        const locStr = after.meetingLocation ? ` (${after.meetingLocation})` : '';
+        body = `A ministry interview has been scheduled for your application for "${roleTitle}"${dateStr}${timeStr}${locStr}. Tap to view full details.`;
+    }
+    else if (status === 'selected') {
+        title = '🎉 Congratulations! You have been Selected!';
+        body = `Congratulations! You have been selected to serve in "${roleTitle}". Welcome to the ministry team!`;
+    }
+    else if (status === 'shortlisted') {
+        title = '⭐ Application Shortlisted!';
+        body = `Your application for "${roleTitle}" has been shortlisted by church ministry leaders.`;
+    }
+    else if (status === 'rejected') {
+        title = '📋 Ministry Application Update';
+        const reasonStr = after.adminNotes ? ` Note: ${after.adminNotes}` : '';
+        body = `Thank you for your heart to serve. Your application for "${roleTitle}" has not been selected at this time.${reasonStr}`;
+    }
+    const db = getFirestore();
+    const messaging = getMessaging();
+    // Atomic lease check: verify the live doc still has this exact status, hasn't been notified,
+    // and isn't actively claimed by another concurrent invocation for the same status.
+    const shouldSend = await claimJobCircleNotificationLease(db, change.after.ref, 'statusNotifyClaimAt', (freshData, nowMs) => freshData.status !== status ||
+        freshData.lastNotifiedStatus === status ||
+        (freshData.statusNotifyClaimStatus === status &&
+            typeof freshData.statusNotifyClaimAt === 'number' &&
+            nowMs - freshData.statusNotifyClaimAt < JOB_CIRCLE_CLAIM_TTL_MS), { statusNotifyClaimStatus: status });
+    if (!shouldSend) {
+        console.log(`🛑 [JobCircle] Skipping stale or duplicate member status push for ${applicationId} -> ${status}`);
+        return;
+    }
+    try {
+        const tokens = await resolveVolunteerMemberTokens(db, churchId, memberId, after.memberPhone, after.memberEmail, after.memberName, after.memberFcmToken || after.fcmToken);
+        let pushDelivered = tokens.length === 0;
+        if (tokens.length > 0) {
+            const pushRes = await sendHighPriorityPush(messaging, tokens, title, body, {
+                type: 'job_application_member',
+                churchId,
+                applicationId,
+                opportunityId: after.opportunityId || '',
+                status,
+                screen: after.opportunityId ? 'OpportunityDetailScreen' : 'JobCircle',
+                click_action: 'FLUTTER_NOTIFICATION_CLICK',
+            }, 'church_alerts');
+            pushDelivered = pushRes.successCount > 0;
+        }
+        // Target strictly to applicant member so other church members do NOT see this personal update
+        const inAppDelivered = await writeVolunteerInAppNotifications(db, churchId, `job_status_${applicationId}_${status}`, {
+            type: 'job_application_member',
+            recipientId: memberId,
+            recipientRole: 'member',
+            targetMemberId: memberId,
+            targetPhone: after.memberPhone || '',
+            title,
+            body,
+            content: body,
+            applicationId,
+            opportunityId: after.opportunityId || '',
+            opportunityTitle: roleTitle,
+            status,
+            referenceType: 'job_circle_application',
+            referenceId: applicationId,
+        }, memberId);
+        if (!pushDelivered || !inAppDelivered) {
+            throw new Error(`[JobCircle] Incomplete member status delivery for ${applicationId} -> ${status}`);
+        }
+        await db.runTransaction(async (tx) => {
+            const fresh = await tx.get(change.after.ref);
+            if (!fresh.exists)
+                return;
+            const freshData = fresh.data() || {};
+            const updatePayload = {};
+            if (freshData.status === status) {
+                updatePayload.lastNotifiedStatus = status;
+                updatePayload.lastNotifiedStatusAt = FieldValue.serverTimestamp();
+            }
+            if (freshData.statusNotifyClaimStatus === status) {
+                updatePayload.statusNotifyClaimStatus = FieldValue.delete();
+                updatePayload.statusNotifyClaimAt = FieldValue.delete();
+            }
+            if (Object.keys(updatePayload).length > 0) {
+                tx.update(change.after.ref, updatePayload);
+            }
+        });
+        console.log(`✅ [JobCircle] Notified member ${memberId} of status update: ${status}`);
+    }
+    catch (err) {
+        await db
+            .runTransaction(async (tx) => {
+            const fresh = await tx.get(change.after.ref);
+            if (!fresh.exists)
+                return;
+            const freshData = fresh.data() || {};
+            if (freshData.statusNotifyClaimStatus === status) {
+                tx.update(change.after.ref, {
+                    statusNotifyClaimStatus: FieldValue.delete(),
+                    statusNotifyClaimAt: FieldValue.delete(),
+                });
+            }
+        })
+            .catch(() => { });
+        console.error('[JobCircle] Error handling onJobApplicationUpdated push:', err);
+        throw err;
+    }
+});
+/**
+ * Trigger: When a new Ministry Opportunity is created as published (`status == 'approved'`)
+ * Automatically broadcasts a high-priority push notification to all church members!
+ */
+export const onJobOpportunityCreated = onDocumentCreated({ document: 'Rhema Church/{churchId}/job_circle_opportunities/{opportunityId}', region: 'asia-south1' }, async (event) => {
+    const snap = event.data;
+    if (!snap)
+        return;
+    const data = snap.data();
+    const churchId = event.params.churchId;
+    const opportunityId = event.params.opportunityId;
+    if (data.status !== 'approved') {
+        console.log(`[JobCircle] Opportunity ${opportunityId} created with status '${data.status}', skipping member broadcast.`);
+        return;
+    }
+    await handleJobOpportunityPublishedPush(data, churchId, opportunityId, snap.ref);
+});
+/**
+ * Trigger: When an existing Draft / Pending Ministry Opportunity is published (`status` transitions to 'approved')
+ * Automatically broadcasts a high-priority push notification to all church members!
+ */
+export const onJobOpportunityUpdated = onDocumentUpdated({ document: 'Rhema Church/{churchId}/job_circle_opportunities/{opportunityId}', region: 'asia-south1' }, async (event) => {
+    const change = event.data;
+    if (!change)
+        return;
+    const before = change.before.data();
+    const after = change.after.data();
+    const churchId = event.params.churchId;
+    const opportunityId = event.params.opportunityId;
+    if (!after)
+        return;
+    if (before?.status !== 'approved' && after.status === 'approved') {
+        await handleJobOpportunityPublishedPush(after, churchId, opportunityId, change.after.ref);
+    }
+});
+// ─────────────────────────────────────────────────────────────
+// 🛡️ NEW MEMBER REGISTRATION – ADMIN APPROVAL NOTIFICATIONS
+// ─────────────────────────────────────────────────────────────
+function isStrictAdminRole(record) {
+    if (!record)
+        return false;
+    const role = String(record.userType || record.role || '').toLowerCase();
+    return (Boolean(record.isAdmin) ||
+        Boolean(record.isSuperAdmin) ||
+        Boolean(record.superadmin) ||
+        role.includes('admin') ||
+        role.includes('pastor') ||
+        role.includes('super'));
+}
+async function resolveChurchRegistrationAdminTokens(db, churchId) {
+    const tokenSet = new Set();
+    const adminUidSet = new Set();
+    const cid = churchId || 'rhema';
+    const collectTokens = (docData) => {
+        if (!docData)
+            return;
+        if (typeof docData.fcmToken === 'string' && docData.fcmToken.trim().length > 10) {
+            tokenSet.add(docData.fcmToken.trim());
+        }
+        if (Array.isArray(docData.fcmTokens)) {
+            docData.fcmTokens.forEach((tk) => {
+                if (typeof tk === 'string' && tk.trim().length > 10)
+                    tokenSet.add(tk.trim());
+            });
+        }
+    };
+    for (const colName of ['Rhema Church', 'churches']) {
+        try {
+            const mSnap = await db.collection(colName).doc(cid).collection('members').get();
+            mSnap.forEach((doc) => {
+                const data = doc.data() || {};
+                if (isStrictAdminRole(data)) {
+                    adminUidSet.add(doc.id);
+                    collectTokens(data);
+                }
+            });
+        }
+        catch (_) { }
+        try {
+            const cSnap = await db.collection(colName).doc(cid).get();
+            if (cSnap.exists) {
+                const cData = cSnap.data() || {};
+                const ownerUids = [
+                    cData.adminUid,
+                    cData.createdBy,
+                    cData.pastorUid,
+                    cData.ownerUid,
+                    ...(Array.isArray(cData.adminUids) ? cData.adminUids : []),
+                ].filter(Boolean);
+                ownerUids.forEach((uid) => adminUidSet.add(String(uid)));
+            }
+        }
+        catch (_) { }
+    }
+    try {
+        const pSnap = await db.collection('platform_admins').get();
+        pSnap.forEach((doc) => {
+            const data = doc.data() || {};
+            if (isStrictAdminRole(data)) {
+                adminUidSet.add(doc.id);
+                collectTokens(data);
+            }
+        });
+    }
+    catch (_) { }
+    for (const uid of Array.from(adminUidSet)) {
+        try {
+            const uSnap = await db.collection('users').doc(uid).get();
+            if (uSnap.exists)
+                collectTokens(uSnap.data());
+        }
+        catch (_) { }
+        try {
+            const mSnap = await db.collection('Rhema Church').doc(cid).collection('members').doc(uid).get();
+            if (mSnap.exists)
+                collectTokens(mSnap.data());
+        }
+        catch (_) { }
+    }
+    try {
+        const usersSnap = await db.collection('users').get();
+        usersSnap.forEach((doc) => {
+            const uData = doc.data() || {};
+            const userChurch = uData.primaryChurchId || uData.churchId;
+            const role = String(uData.userType || uData.role || '').toLowerCase();
+            const isPlatformSuper = Boolean(uData.isSuperAdmin) || role.includes('super');
+            if (isStrictAdminRole(uData) && (isPlatformSuper || !userChurch || userChurch === cid)) {
+                adminUidSet.add(doc.id);
+                collectTokens(uData);
+            }
+        });
+    }
+    catch (_) { }
+    return {
+        tokens: Array.from(tokenSet),
+        adminUids: Array.from(adminUidSet),
+    };
+}
+async function resolveRegistrationApplicantTokens(db, churchId, requestId, reqData) {
+    const tokenSet = new Set();
+    const cid = churchId || 'rhema';
+    const collectTokens = (docData) => {
+        if (!docData)
+            return;
+        if (typeof docData.fcmToken === 'string' && docData.fcmToken.trim().length > 10) {
+            tokenSet.add(docData.fcmToken.trim());
+        }
+        if (Array.isArray(docData.fcmTokens)) {
+            docData.fcmTokens.forEach((tk) => {
+                if (typeof tk === 'string' && tk.trim().length > 10)
+                    tokenSet.add(tk.trim());
+            });
+        }
+    };
+    collectTokens(reqData);
+    const candidateIds = Array.from(new Set([reqData.authUid, reqData.memberId, requestId].map((v) => String(v || '').trim()).filter(Boolean)));
+    for (const uid of candidateIds) {
+        try {
+            const uSnap = await db.collection('users').doc(uid).get();
+            if (uSnap.exists)
+                collectTokens(uSnap.data());
+        }
+        catch (_) { }
+        try {
+            const mSnap = await db.collection('Rhema Church').doc(cid).collection('members').doc(uid).get();
+            if (mSnap.exists)
+                collectTokens(mSnap.data());
+        }
+        catch (_) { }
+    }
+    if (tokenSet.size === 0 && reqData.phone) {
+        const rawDigits = String(reqData.phone).replace(/\D/g, '');
+        const last10 = rawDigits.slice(-10);
+        const phoneVariants = Array.from(new Set([String(reqData.phone).trim(), last10 ? `+91${last10}` : '', last10].filter(Boolean)));
+        for (const p of phoneVariants) {
+            try {
+                const uSnap = await db.collection('users').where('phone', '==', p).get();
+                uSnap.forEach((d) => collectTokens(d.data()));
+            }
+            catch (_) { }
+        }
+    }
+    return Array.from(tokenSet);
+}
+async function resolveChurchDisplayName(db, churchId) {
+    try {
+        const cSnap = await db.collection('Rhema Church').doc(churchId || 'rhema').get();
+        if (cSnap.exists) {
+            const cName = cSnap.data()?.name;
+            if (typeof cName === 'string' && cName.trim())
+                return cName.trim();
+        }
+    }
+    catch (_) { }
+    return 'Rhema Global Ministries';
+}
+async function handleRegistrationAdminPendingPush(data, churchId, requestId, snapRef) {
+    if (!data || (data.status && data.status !== 'pending'))
+        return;
+    const cid = churchId || 'rhema';
+    const db = getFirestore();
+    const messaging = getMessaging();
+    const shouldSend = await claimJobCircleNotificationLease(db, snapRef, 'adminPushClaimAt', (freshData, nowMs) => (freshData.status && freshData.status !== 'pending') ||
+        freshData.adminPushSent === true ||
+        (typeof freshData.adminPushClaimAt === 'number' &&
+            nowMs - freshData.adminPushClaimAt < JOB_CIRCLE_CLAIM_TTL_MS));
+    if (!shouldSend) {
+        console.log(`🛑 [RegistrationApproval] Skipping duplicate admin push for request: ${requestId}`);
+        return;
+    }
+    try {
+        const applicantName = String(data.fullName || `${data.firstName || ''} ${data.lastName || ''}`.trim() || data.phone || 'A new member').trim();
+        const city = String(data.city || data.village || '').trim();
+        const locationSuffix = city ? ` from ${city}` : '';
+        const title = '🆕 New Member Registration Request';
+        const body = `${applicantName}${locationSuffix} has registered and is requesting admin approval.`;
+        const { tokens: adminTokens, adminUids } = await resolveChurchRegistrationAdminTokens(db, cid);
+        const pushData = {
+            type: 'registration_request_admin',
+            churchId: cid,
+            requestId,
+            memberName: applicantName,
+            targetTab: 'Approvals',
+            screen: 'AdminRoot',
+            click_action: 'FLUTTER_NOTIFICATION_CLICK',
+        };
+        const pushDelivered = adminTokens.length > 0
+            ? (await sendHighPriorityPush(messaging, adminTokens, title, body, pushData, 'church_alerts')).successCount > 0
+            : await sendHighPriorityTopicPush(messaging, `church_${cid}_admin`, title, body, pushData, 'church_alerts');
+        const inAppDelivered = await writeVolunteerInAppNotifications(db, cid, `reg_admin_${requestId}`, {
+            type: 'registration_request_admin',
+            targetRole: 'admin',
+            recipientRole: 'admin',
+            title,
+            body,
+            content: body,
+            memberName: applicantName,
+            applicantName,
+            memberPhone: data.phone || '',
+            requestId,
+            referenceId: requestId,
+            referenceType: 'registration_request',
+        }, adminUids);
+        if (!pushDelivered || !inAppDelivered) {
+            throw new Error(`[RegistrationApproval] Incomplete admin alert delivery for request ${requestId}`);
+        }
+        await snapRef.update({
+            adminPushSent: true,
+            adminPushSentAt: FieldValue.serverTimestamp(),
+            adminPushClaimAt: FieldValue.delete(),
+        });
+        console.log(`✅ [RegistrationApproval] Notified admins of new registration: ${applicantName} (${requestId})`);
+    }
+    catch (err) {
+        await releaseJobCircleNotificationLease(snapRef, ['adminPushClaimAt']);
+        console.error('[RegistrationApproval] Error notifying admins of new registration:', err);
+        throw err;
+    }
+}
+async function handleRegistrationStatusMemberPush(after, churchId, requestId, snapRef) {
+    const status = String(after.status || '').trim();
+    if (status !== 'approved' && status !== 'rejected')
+        return;
+    const cid = churchId || 'rhema';
+    const db = getFirestore();
+    const messaging = getMessaging();
+    const shouldSend = await claimJobCircleNotificationLease(db, snapRef, 'statusNotifyClaimAt', (freshData, nowMs) => freshData.status !== status ||
+        freshData.lastNotifiedStatus === status ||
+        (freshData.statusNotifyClaimStatus === status &&
+            typeof freshData.statusNotifyClaimAt === 'number' &&
+            nowMs - freshData.statusNotifyClaimAt < JOB_CIRCLE_CLAIM_TTL_MS), { statusNotifyClaimStatus: status });
+    if (!shouldSend) {
+        console.log(`🛑 [RegistrationApproval] Skipping stale/duplicate ${status} notification for: ${requestId}`);
+        return;
+    }
+    try {
+        const churchName = await resolveChurchDisplayName(db, cid);
+        const applicantName = String(after.fullName || `${after.firstName || ''} ${after.lastName || ''}`.trim() || 'Member').trim();
+        const isApproved = status === 'approved';
+        const rejectionReason = String(after.rejectionReason || '').trim();
+        const title = isApproved ? '🎉 Registration Approved!' : '📋 Registration Not Approved';
+        const body = isApproved
+            ? `Welcome, ${applicantName}! Your membership registration with ${churchName} has been approved. Tap to sign in and get started.`
+            : `${applicantName}, your membership registration with ${churchName} was rejected.${rejectionReason ? ` Reason: ${rejectionReason}` : ''}`;
+        const notifType = isApproved ? 'registration_approved' : 'registration_rejected';
+        const memberTokens = await resolveRegistrationApplicantTokens(db, cid, requestId, after);
+        let pushDelivered = memberTokens.length === 0;
+        if (memberTokens.length > 0) {
+            const pushRes = await sendHighPriorityPush(messaging, memberTokens, title, body, {
+                type: notifType,
+                churchId: cid,
+                requestId,
+                status,
+                screen: 'ApprovalPending',
+                click_action: 'FLUTTER_NOTIFICATION_CLICK',
+            }, 'church_alerts');
+            pushDelivered = pushRes.successCount > 0;
+        }
+        let inAppDelivered = true;
+        const targetMemberId = String(after.authUid || requestId || '').trim();
+        if (isApproved && targetMemberId) {
+            inAppDelivered = await writeVolunteerInAppNotifications(db, cid, `reg_status_${requestId}_${status}`, {
+                type: notifType,
+                recipientId: targetMemberId,
+                recipientRole: 'member',
+                targetMemberId,
+                targetPhone: after.phone || '',
+                title,
+                body,
+                content: body,
+                requestId,
+                status,
+                referenceType: 'registration_request',
+                referenceId: requestId,
+            }, targetMemberId);
+        }
+        if (!pushDelivered || !inAppDelivered) {
+            throw new Error(`[RegistrationApproval] Incomplete ${status} notification delivery for ${requestId}`);
+        }
+        await db.runTransaction(async (tx) => {
+            const fresh = await tx.get(snapRef);
+            if (!fresh.exists)
+                return;
+            const freshData = fresh.data() || {};
+            const updatePayload = {};
+            if (freshData.status === status) {
+                updatePayload.lastNotifiedStatus = status;
+                updatePayload.lastNotifiedStatusAt = FieldValue.serverTimestamp();
+            }
+            if (freshData.statusNotifyClaimStatus === status) {
+                updatePayload.statusNotifyClaimStatus = FieldValue.delete();
+                updatePayload.statusNotifyClaimAt = FieldValue.delete();
+            }
+            if (Object.keys(updatePayload).length > 0) {
+                tx.update(snapRef, updatePayload);
+            }
+        });
+        console.log(`✅ [RegistrationApproval] Sent ${status} notification to ${applicantName} (${memberTokens.length} device(s)).`);
+    }
+    catch (err) {
+        await db
+            .runTransaction(async (tx) => {
+            const fresh = await tx.get(snapRef);
+            if (!fresh.exists)
+                return;
+            const freshData = fresh.data() || {};
+            if (freshData.statusNotifyClaimStatus === status) {
+                tx.update(snapRef, {
+                    statusNotifyClaimStatus: FieldValue.delete(),
+                    statusNotifyClaimAt: FieldValue.delete(),
+                });
+            }
+        })
+            .catch(() => { });
+        console.error(`[RegistrationApproval] Error sending ${status} member notification:`, err);
+        throw err;
+    }
+}
+/**
+ * Trigger: When a new member registration request is created
+ * Notifies church Admins requesting approval.
+ */
+export const onRegistrationRequestCreated = onDocumentCreated({ document: 'Rhema Church/{churchId}/registration_requests/{requestId}', region: 'asia-south1' }, async (event) => {
+    const snap = event.data;
+    if (!snap)
+        return;
+    const data = snap.data() || {};
+    const churchId = event.params.churchId || 'rhema';
+    const requestId = event.params.requestId;
+    await handleRegistrationAdminPendingPush(data, churchId, requestId, snap.ref);
+});
+/**
+ * Trigger: When a registration request status changes
+ * - Returning to `pending` notifies church Admins.
+ * - Transitioning to `approved` or `rejected` notifies the specific registering member.
+ */
+export const onRegistrationRequestUpdated = onDocumentUpdated({ document: 'Rhema Church/{churchId}/registration_requests/{requestId}', region: 'asia-south1' }, async (event) => {
+    const change = event.data;
+    if (!change)
+        return;
+    const before = change.before.data() || {};
+    const after = change.after.data() || {};
+    const churchId = event.params.churchId || 'rhema';
+    const requestId = event.params.requestId;
+    if (before.status === after.status)
+        return;
+    if (after.status === 'pending') {
+        await handleRegistrationAdminPendingPush(after, churchId, requestId, change.after.ref);
+        return;
+    }
+    if (after.status === 'approved' || after.status === 'rejected') {
+        await handleRegistrationStatusMemberPush(after, churchId, requestId, change.after.ref);
+    }
+});
+// ─────────────────────────────────────────────────────────────
+// 📢 GENERAL VOLUNTEER CALL POSTS – MEMBER PUSH NOTIFICATIONS
+// ─────────────────────────────────────────────────────────────
+async function handleVolunteerPostPublishedPush(data, churchId, postId, snapRef) {
+    if (!data)
+        return;
+    if (data.notifyMembers === false) {
+        console.log(`🛑 [VolunteerPost] notifyMembers is false for ${postId}, skipping push.`);
+        return;
+    }
+    const db = getFirestore();
+    const messaging = getMessaging();
+    const cid = churchId || 'rhema';
+    if (snapRef) {
+        const shouldSend = await claimJobCircleNotificationLease(db, snapRef, 'postPushClaimAt', (freshData, nowMs) => freshData.postNotificationSent === true ||
+            (typeof freshData.postPushClaimAt === 'number' &&
+                nowMs - freshData.postPushClaimAt < JOB_CIRCLE_CLAIM_TTL_MS));
+        if (!shouldSend) {
+            console.log(`🛑 [VolunteerPost] Skipping duplicate push for volunteer post: ${postId}`);
+            return;
+        }
+    }
+    else if (data.postNotificationSent === true) {
+        return;
+    }
+    try {
+        const postTitle = (data.title || 'Church Volunteer Call').trim();
+        const ministries = Array.isArray(data.ministries) ? data.ministries : [];
+        const ministryLabels = ministries
+            .map((m) => String(m || '').split('·')[0]?.trim() || String(m || '').trim())
+            .filter(Boolean);
+        const minPart = ministryLabels.length > 0 ? ` (${ministryLabels.slice(0, 2).join(', ')})` : '';
+        const title = `🤝 Volunteer Call: ${postTitle}`;
+        const body = (data.description || '').trim() ||
+            `We are inviting church members to serve in "${postTitle}"${minPart}. Tap to apply and serve!`;
+        const tokenSet = new Set();
+        const addTokens = (docData) => {
+            if (!docData)
+                return;
+            if (Array.isArray(docData.fcmTokens)) {
+                docData.fcmTokens.forEach((tk) => {
+                    if (typeof tk === 'string' && tk.trim().length > 10)
+                        tokenSet.add(tk.trim());
+                });
+            }
+            if (typeof docData.fcmToken === 'string' && docData.fcmToken.trim().length > 10) {
+                tokenSet.add(docData.fcmToken.trim());
+            }
+        };
+        try {
+            const membersSnap = await db.collection('Rhema Church').doc(cid).collection('members').get();
+            membersSnap.forEach((mDoc) => addTokens(mDoc.data()));
+        }
+        catch (e) {
+            console.warn('[VolunteerPost] Could not read Rhema Church members tokens:', e);
+        }
+        try {
+            const altMembersSnap = await db.collection('churches').doc(cid).collection('members').get();
+            altMembersSnap.forEach((mDoc) => addTokens(mDoc.data()));
+        }
+        catch (_) { }
+        try {
+            const usersSnap = await db.collection('users').get();
+            usersSnap.forEach((uDoc) => {
+                const uData = uDoc.data();
+                if (!uData)
+                    return;
+                const uChurch = uData.primaryChurchId || uData.churchId || 'rhema';
+                if (uChurch === cid) {
+                    addTokens(uData);
+                }
+            });
+        }
+        catch (_) { }
+        const memberTokens = Array.from(tokenSet);
+        const pushData = {
+            type: 'volunteer_post_new',
+            churchId: cid,
+            postId,
+            postTitle,
+            screen: 'Volunteer',
+            click_action: 'FLUTTER_NOTIFICATION_CLICK',
+        };
+        let pushDelivered = false;
+        if (memberTokens.length > 0) {
+            const pushRes = await sendHighPriorityPush(messaging, memberTokens, title, body, pushData, 'church_alerts');
+            pushDelivered = pushRes.successCount > 0;
+        }
+        else {
+            pushDelivered = await sendHighPriorityTopicPush(messaging, `church_${cid}`, title, body, pushData, 'church_alerts');
+        }
+        const docId = `vol_post_${postId}`;
+        const inAppPayload = {
+            type: 'volunteer_post_new',
+            churchId: cid,
+            targetChurchId: cid,
+            title,
+            body,
+            content: body,
+            postId,
+            postTitle,
+            referenceId: postId,
+            referenceType: 'general_volunteer_post',
+            screen: 'Volunteer',
+            read: false,
+            createdAt: FieldValue.serverTimestamp(),
+        };
+        await Promise.all([
+            db
+                .collection('Rhema Church')
+                .doc(cid)
+                .collection('notifications')
+                .doc(docId)
+                .set(inAppPayload, { merge: true }),
+            db
+                .collection('Rhema Church')
+                .doc(cid)
+                .collection('broadcasts')
+                .doc(docId)
+                .set({ ...inAppPayload, silent: true }, { merge: true }),
+        ]);
+        if (!pushDelivered) {
+            throw new Error(`[VolunteerPost] Member FCM push failed for ${postId}`);
+        }
+        if (snapRef) {
+            await snapRef.update({
+                postNotificationSent: true,
+                postNotificationSentAt: FieldValue.serverTimestamp(),
+                postPushClaimAt: FieldValue.delete(),
+            });
+        }
+        console.log(`✅ [VolunteerPost] Broadcasted volunteer call "${postTitle}" to ${memberTokens.length} member device(s).`);
+    }
+    catch (err) {
+        await releaseJobCircleNotificationLease(snapRef, ['postPushClaimAt']);
+        console.error('[VolunteerPost] Error broadcasting volunteer post push:', err);
+        throw err;
+    }
+}
+/**
+ * Trigger: When an Admin publishes a new General Volunteer Call Post (`status == 'open'`)
+ */
+export const onVolunteerPostCreated = onDocumentCreated({ document: 'Rhema Church/{churchId}/volunteer_posts/{postId}', region: 'asia-south1' }, async (event) => {
+    const snap = event.data;
+    if (!snap)
+        return;
+    const data = snap.data() || {};
+    const churchId = event.params.churchId || 'rhema';
+    const postId = event.params.postId;
+    if (data.status && data.status !== 'open')
+        return;
+    await handleVolunteerPostPublishedPush(data, churchId, postId, snap.ref);
+});
+/**
+ * Trigger: When a closed General Volunteer Call Post is reopened (`status` transitions to `'open'`)
+ */
+export const onVolunteerPostUpdated = onDocumentUpdated({ document: 'Rhema Church/{churchId}/volunteer_posts/{postId}', region: 'asia-south1' }, async (event) => {
+    const change = event.data;
+    if (!change)
+        return;
+    const before = change.before.data() || {};
+    const after = change.after.data() || {};
+    const churchId = event.params.churchId || 'rhema';
+    const postId = event.params.postId;
+    if (before.status !== 'open' && after.status === 'open') {
+        await handleVolunteerPostPublishedPush(after, churchId, postId, change.after.ref);
     }
 });
 //# sourceMappingURL=notifications.js.map

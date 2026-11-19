@@ -54,6 +54,11 @@ import GivingScreen from '../screens/GivingScreen';
 import GivingHistoryScreen from '../screens/GivingHistoryScreen';
 import BaptismRequestScreen from '../screens/BaptismRequestScreen';
 import VolunteerScreen from '../screens/VolunteerScreen';
+import JobCircleScreen from '../screens/job_circle/JobCircleScreen';
+import OpportunityDetailScreen from '../screens/job_circle/OpportunityDetailScreen';
+import AdminJobCircleDashboard from '../screens/admin/job_circle/AdminJobCircleDashboard';
+import AdminOpportunityEditor from '../screens/admin/job_circle/AdminOpportunityEditor';
+import AdminMinistryTeamsScreen from '../screens/admin/job_circle/AdminMinistryTeamsScreen';
 import SermonsScreen from '../screens/SermonsScreen';
 import SongsScreen from '../screens/SongsScreen';
 import EventDetailsScreen from '../screens/EventDetailsScreen';
@@ -71,6 +76,10 @@ import AppearanceScreen from '../screens/AppearanceScreen';
 import ContactUsScreen from '../screens/ContactUsScreen';
 import AttendanceScreen from '../screens/AttendanceScreen';
 import CareCellScreen from '../screens/care_cells/CareCellScreen';
+import KidsMinistryScreen from '../screens/kids_ministry/KidsMinistryScreen';
+import KidsFaceScanKiosk from '../screens/kids_ministry/KidsFaceScanKiosk';
+import KidsCheckOutScanner from '../screens/kids_ministry/KidsCheckOutScanner';
+import KidsTeacherKiosk from '../screens/kids_ministry/KidsTeacherKiosk';
 import EventAttendeesScreen from '../screens/admin/EventAttendeesScreen';
 import AdminRegistrationApprovals from '../screens/admin/AdminRegistrationApprovals';
 import AdminMatrimonyProfileDetailScreen from '../screens/admin/AdminMatrimonyProfileDetailScreen';
@@ -267,7 +276,10 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
             setPublicPrayerCount(snapshot.docs.length);
           }
         }, (error) => {
-          console.error("Prayer listener error", error);
+          // Gracefully suppress permission denied / listener warning if user is not authorized or during auth transition
+          if (__DEV__) {
+            console.warn("Prayer listener:", error?.message || error);
+          }
         });
       return () => unsubscribe();
     }, [activeChurch?.id]);
@@ -928,7 +940,11 @@ function Navigation() {
       const { navigationRef } = require('../../App');
       let retries = 0;
       const tryNav = () => {
-        if (navigationRef && navigationRef.isReady()) {
+        if (
+          navigationRef &&
+          navigationRef.isReady() &&
+          navigationRef.getRootState()?.routeNames?.includes('Tabs')
+        ) {
           const type = data.type || (data.screen === 'BibleQuizDetail' ? 'quiz' : undefined);
           const quizTargetId = data.quizId || data.relatedId || data.id;
 
@@ -1055,34 +1071,95 @@ function Navigation() {
               title,
               churchId: targetChurchId,
             });
+          } else if (type === 'job_application_admin') {
+            if (isAdmin && viewMode !== 'admin') {
+              setViewMode('admin');
+            }
+            NotificationService.handleNotificationNavigation({ data }, navigationRef);
           } else {
             NotificationService.handleNotificationNavigation({ data }, navigationRef);
           }
         } else if (retries < 25) {
           retries++;
           setTimeout(tryNav, 200);
+        } else {
+          setPendingNotification({ data });
         }
       };
       tryNav();
     };
 
+    const LAST_HANDLED_EXPO_NOTIF_KEY = '@rhema_last_handled_expo_notif';
+    const LAST_HANDLED_FCM_NOTIF_KEY = '@rhema_last_handled_fcm_notif';
+
+    const buildExpoResponseKey = (response: any) => {
+      const notifId = response?.notification?.request?.identifier || '';
+      const notifDate = String(response?.notification?.date || '');
+      const actionId = response?.actionIdentifier || '';
+      const d = (response?.notification?.request?.content?.data || {}) as any;
+      return `${notifId}::${notifDate}::${actionId}::${d.type || ''}::${d.videoId || d.id || ''}`;
+    };
+
+    const buildFcmMessageKey = (remoteMessage: any) => {
+      if (!remoteMessage) return '';
+      if (remoteMessage.messageId) return String(remoteMessage.messageId);
+      const d = remoteMessage.data || {};
+      return `${remoteMessage.sentTime || ''}::${d.type || ''}::${d.videoId || d.id || ''}`;
+    };
+
     const subscription = Notifications.addNotificationResponseReceivedListener(response => {
+      const responseKey = buildExpoResponseKey(response);
+      AsyncStorage.setItem(LAST_HANDLED_EXPO_NOTIF_KEY, responseKey).catch(() => {});
+      // Clear cached native response immediately so JS reloads/refreshes never replay this tap
+      (Notifications as any).clearLastNotificationResponseAsync?.().catch(() => {});
+
       const data = response.notification?.request?.content?.data;
       handleExpoNotificationPayload(data);
     });
 
     // Cold-start: app was fully closed when user tapped the notification.
-    Notifications.getLastNotificationResponseAsync().then(response => {
-      if (!response) return;
-      const data = response.notification?.request?.content?.data;
-      handleExpoNotificationPayload(data);
-    }).catch(() => {});
+    // Deduplicate via AsyncStorage + clear native cache so refreshing/reloading the app NEVER replays an old notification!
+    Notifications.getLastNotificationResponseAsync()
+      .then(async response => {
+        if (!response) return;
+        const responseKey = buildExpoResponseKey(response);
+        const data = (response.notification?.request?.content?.data || {}) as any;
+
+        // Always clear native cached response immediately so subsequent refreshes stay clean
+        (Notifications as any).clearLastNotificationResponseAsync?.().catch(() => {});
+
+        const lastHandled = await AsyncStorage.getItem(LAST_HANDLED_EXPO_NOTIF_KEY).catch(() => null);
+        if (lastHandled && lastHandled === responseKey) {
+          return; // Already handled in an earlier session/reload
+        }
+        await AsyncStorage.setItem(LAST_HANDLED_EXPO_NOTIF_KEY, responseKey).catch(() => {});
+
+        // Guard against stale YouTube Live notifications cached from hours earlier
+        if (data?.type === 'youtube_live') {
+          const rawDate = Number(response.notification?.date || 0);
+          const deliveredMs = rawDate > 1e12 ? rawDate : rawDate * 1000;
+          if (deliveredMs > 0 && Date.now() - deliveredMs > 60 * 60 * 1000) {
+            return;
+          }
+        }
+
+        handleExpoNotificationPayload(data);
+      })
+      .catch(() => {});
 
     // 1. When app is in background and user clicks notification
     const unsubscribeOnOpen = NotificationService.messaging().onNotificationOpenedApp(remoteMessage => {
       if (!remoteMessage) return;
+      const fcmKey = buildFcmMessageKey(remoteMessage);
+      if (fcmKey) {
+        AsyncStorage.setItem(LAST_HANDLED_FCM_NOTIF_KEY, fcmKey).catch(() => {});
+      }
       const { navigationRef } = require('../../App');
-      if (navigationRef && navigationRef.isReady()) {
+      if (
+        navigationRef &&
+        navigationRef.isReady() &&
+        navigationRef.getRootState()?.routeNames?.includes('Tabs')
+      ) {
         const type = remoteMessage?.data?.type;
         const isAdminNotification = 
           type === 'invoice' || 
@@ -1094,6 +1171,7 @@ function Navigation() {
           type === 'prayer' ||
           type === 'testimony_admin' ||
           type === 'volunteer_application_admin' ||
+          type === 'job_application_admin' ||
           type === 'admin_roster_alert';
 
         if (isAdminNotification && isAdmin && viewMode !== 'admin') {
@@ -1106,10 +1184,31 @@ function Navigation() {
     });
 
     // 2. When app is closed and user clicks notification
-    NotificationService.messaging().getInitialNotification().then(remoteMessage => {
+    NotificationService.messaging().getInitialNotification().then(async remoteMessage => {
       if (remoteMessage) {
+        const fcmKey = buildFcmMessageKey(remoteMessage);
+        if (fcmKey) {
+          const lastHandledFcm = await AsyncStorage.getItem(LAST_HANDLED_FCM_NOTIF_KEY).catch(() => null);
+          if (lastHandledFcm && lastHandledFcm === fcmKey) {
+            return; // Already handled — prevent replay on reload/refresh
+          }
+          await AsyncStorage.setItem(LAST_HANDLED_FCM_NOTIF_KEY, fcmKey).catch(() => {});
+        }
+
+        // Guard against stale YouTube Live initial notification older than 1 hour
+        if (remoteMessage?.data?.type === 'youtube_live') {
+          const sentMs = Number(remoteMessage.sentTime || 0);
+          if (sentMs > 0 && Date.now() - sentMs > 60 * 60 * 1000) {
+            return;
+          }
+        }
+
         const { navigationRef } = require('../../App');
-        if (navigationRef && navigationRef.isReady()) {
+        if (
+          navigationRef &&
+          navigationRef.isReady() &&
+          navigationRef.getRootState()?.routeNames?.includes('Tabs')
+        ) {
           const type = remoteMessage?.data?.type;
           const isAdminNotification = 
             type === 'invoice' || 
@@ -1121,6 +1220,7 @@ function Navigation() {
             type === 'prayer' ||
             type === 'testimony_admin' ||
             type === 'volunteer_application_admin' ||
+            type === 'job_application_admin' ||
             type === 'admin_roster_alert';
 
           if (isAdminNotification && isAdmin && viewMode !== 'admin') {
@@ -1279,11 +1379,15 @@ function Navigation() {
   }, [user?.uid, user?.isAnonymous, member?.phone, activeChurch?.id]);
 
   useEffect(() => {
-    if (user && !loading && pendingNotification) {
+    if (user && !loading && !showSplash && pendingNotification) {
       let retryCount = 0;
       const tryNavigate = () => {
         const { navigationRef } = require('../../App');
-        if (navigationRef && navigationRef.isReady()) {
+        if (
+          navigationRef &&
+          navigationRef.isReady() &&
+          navigationRef.getRootState()?.routeNames?.includes('Tabs')
+        ) {
           const type = pendingNotification?.data?.type;
           
           const isAdminNotification = 
@@ -1296,6 +1400,7 @@ function Navigation() {
             type === 'prayer' ||
             type === 'testimony_admin' ||
             type === 'volunteer_application_admin' ||
+            type === 'job_application_admin' ||
             type === 'admin_roster_alert';
 
           if (isAdminNotification && isAdmin && viewMode !== 'admin') {
@@ -1317,10 +1422,14 @@ function Navigation() {
       
       tryNavigate();
     }
-  }, [user, loading, pendingNotification, viewMode]);
+  }, [user, loading, showSplash, pendingNotification, viewMode]);
 
   useEffect(() => {
     if (user && !loading) {
+      let unsubLiveNotifs: (() => void) | null = null;
+      const listenerStartMs = Date.now();
+      let initialSnapshotHandled = false;
+
       const initNotifications = async () => {
         const hasPermission = await NotificationService.requestUserPermission();
         if (hasPermission) {
@@ -1336,10 +1445,67 @@ function Navigation() {
 
         const targetChurchId = (await FirestoreService.getChurchId()) || 'rhema';
         await NotificationService.subscribeToChurchTopic(targetChurchId);
+
+        try {
+          const firestoreMod = require('@react-native-firebase/firestore').default;
+          unsubLiveNotifs = firestoreMod()
+            .collection('Rhema Church')
+            .doc(targetChurchId)
+            .collection('notifications')
+            .limit(15)
+            .onSnapshot(
+              (snap: any) => {
+                if (!initialSnapshotHandled) {
+                  initialSnapshotHandled = true;
+                  return;
+                }
+                if (!snap || typeof snap.docChanges !== 'function') return;
+                snap.docChanges().forEach((change: any) => {
+                  if (change.type !== 'added') return;
+                  const d = change.doc.data() || {};
+                  const createdMs = d.createdAt?.toMillis
+                    ? d.createdAt.toMillis()
+                    : Date.now();
+                  // Only trigger for brand-new notifications created after listener started
+                  if (createdMs < listenerStartMs - 10000) return;
+
+                  // Filter out admin-only alerts for regular members
+                  if ((d.targetRole === 'admin' || d.recipientRole === 'admin') && !isAdmin) {
+                    return;
+                  }
+                  // Filter out member-targeted alerts meant for a different member
+                  const targetMember = String(d.targetMemberId || d.recipientId || '').trim();
+                  if (targetMember && targetMember !== user.uid) {
+                    const userPhone10 = String(user.phoneNumber || member?.phone || '')
+                      .replace(/\D/g, '')
+                      .slice(-10);
+                    const targetPhone10 = String(d.targetPhone || '')
+                      .replace(/\D/g, '')
+                      .slice(-10);
+                    if (!userPhone10 || userPhone10 !== targetPhone10) {
+                      return;
+                    }
+                  }
+
+                  const nTitle = d.title || 'Church Update';
+                  const nBody = d.body || d.content || '';
+                  NotificationService.displaySystemPushNotification(nTitle, nBody, {
+                    ...d,
+                    id: change.doc.id,
+                  }).catch(() => {});
+                });
+              },
+              () => {}
+            );
+        } catch (_) {}
       };
       initNotifications();
+
+      return () => {
+        if (unsubLiveNotifs) unsubLiveNotifs();
+      };
     }
-  }, [user, loading]);
+  }, [user, loading, isAdmin, member?.phone]);
 
   // Ensure splash screen always dismisses after a fixed duration and never resets on user state updates
   useEffect(() => {
@@ -1461,6 +1627,11 @@ function Navigation() {
             <Stack.Screen name="AttendanceScreen" component={renderPremium(AttendanceScreen)} />
             <Stack.Screen name="CareCell" component={renderPremium(CareCellScreen)} />
             <Stack.Screen name="CareCellScreen" component={renderPremium(CareCellScreen)} />
+            <Stack.Screen name="KidsMinistry" component={renderPremium(KidsMinistryScreen)} />
+            <Stack.Screen name="RhemaKids" component={renderPremium(KidsMinistryScreen)} />
+            <Stack.Screen name="KidsFaceScanKiosk" component={renderPremium(KidsFaceScanKiosk)} />
+            <Stack.Screen name="KidsCheckOutScanner" component={renderPremium(KidsCheckOutScanner)} />
+            <Stack.Screen name="KidsTeacherKiosk" component={renderPremium(KidsTeacherKiosk)} />
             <Stack.Screen name="DailyVideo" component={renderPremium(DailyVideoScreen)} />
             <Stack.Screen name="SermonVideo" component={renderPremium(SermonVideoScreen)} />
             <Stack.Screen name="Events" component={renderPremium(EventsScreen)} />
@@ -1469,6 +1640,12 @@ function Navigation() {
             <Stack.Screen name="BaptismRequest" component={renderPremium(BaptismRequestScreen)} />
             <Stack.Screen name="Volunteer" component={renderPremium(VolunteerScreen)} />
             <Stack.Screen name="VolunteerScreen" component={renderPremium(VolunteerScreen)} />
+            <Stack.Screen name="JobCircle" component={renderPremium(JobCircleScreen)} />
+            <Stack.Screen name="JobCircleScreen" component={renderPremium(JobCircleScreen)} />
+            <Stack.Screen name="OpportunityDetailScreen" component={renderPremium(OpportunityDetailScreen)} />
+            <Stack.Screen name="AdminJobCircleDashboard" component={renderPremium(AdminJobCircleDashboard)} />
+            <Stack.Screen name="AdminOpportunityEditor" component={renderPremium(AdminOpportunityEditor)} />
+            <Stack.Screen name="AdminMinistryTeamsScreen" component={renderPremium(AdminMinistryTeamsScreen)} />
             <Stack.Screen name="Sermons" component={renderPremium(SermonsScreen)} />
             <Stack.Screen name="Songs" component={renderPremium(SongsScreen)} />
             <Stack.Screen name="EventDetails" component={renderPremium(EventDetailsScreen)} />

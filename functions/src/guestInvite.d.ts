@@ -1,3 +1,4 @@
+import './globalConfig.js';
 /**
  * Serves the smart web landing & deep-link bridge page for `/invite`.
  * Strictly read-only: opening this link multiple times never creates duplicate records.

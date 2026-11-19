@@ -1,9 +1,10 @@
+import './globalConfig.js';
 /**
  * 🔔 SEND MEETING NOTIFICATION
  * Triggered when a new online meeting is scheduled in Firestore.
  * Sends a notification to the church's topic with strict atomic deduplication to prevent 5x duplicates.
  */
-export declare const pushMeetingLive: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+export declare const pushMeetingLive: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
     churchId: string;
     meetingId: string;
 }>>;
@@ -12,15 +13,15 @@ export declare const pushMeetingLive: import("firebase-functions/core").CloudFun
  * Deployed under old names in Firebase (alertMeetingPush, sendMeetingNotification, sendMeetingPush, meetingPushV1).
  * Replaced with no-ops here so when deployed they will NEVER send duplicate notifications.
  */
-export declare const alertMeetingPush: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+export declare const alertMeetingPush: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
     churchId: string;
     meetingId: string;
 }>>;
-export declare const sendMeetingNotification: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+export declare const sendMeetingNotification: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
     churchId: string;
     meetingId: string;
 }>>;
-export declare const sendMeetingPush: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+export declare const sendMeetingPush: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
     churchId: string;
     meetingId: string;
 }>>;
@@ -29,14 +30,14 @@ export declare const sendMeetingPush: import("firebase-functions/core").CloudFun
  * Triggered automatically whenever a member submits a prayer request in Firestore.
  * Always notifies church admins ONLY, clearly showing which specific member submitted it.
  */
-export declare const onPrayerRequestCreatedAdmin: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+export declare const onPrayerRequestCreatedAdmin: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
     churchId: string;
     prayerId: string;
 }>>;
 /**
  * 🙏 MANDATORY NOTIFICATION: ADMIN NOTIFIED OF EVERY PRAYER REQUEST (Legacy churches collection)
  */
-export declare const onPrayerRequestCreatedAdminLegacy: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+export declare const onPrayerRequestCreatedAdminLegacy: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
     churchId: string;
     prayerId: string;
 }>>;
@@ -45,14 +46,14 @@ export declare const onPrayerRequestCreatedAdminLegacy: import("firebase-functio
  * Triggered automatically whenever a member submits a baptism request in Firestore.
  * Always notifies church admins ONLY, clearly showing which member submitted it.
  */
-export declare const onBaptismRequestCreatedAdmin: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+export declare const onBaptismRequestCreatedAdmin: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
     churchId: string;
     requestId: string;
 }>>;
 /**
  * 💧 MANDATORY NOTIFICATION: ADMIN NOTIFIED OF EVERY BAPTISM REQUEST (Legacy churches collection)
  */
-export declare const onBaptismRequestCreatedAdminLegacy: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+export declare const onBaptismRequestCreatedAdminLegacy: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
     churchId: string;
     requestId: string;
 }>>;
@@ -61,14 +62,14 @@ export declare const onBaptismRequestCreatedAdminLegacy: import("firebase-functi
  * Triggered when a prayer request is approved or processed (isAnswered becomes true).
  * Notifies ONLY the specific member who submitted it. NEVER broadcasts to community topic.
  */
-export declare const onPrayerRequestProcessedMember: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+export declare const onPrayerRequestProcessedMember: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
     churchId: string;
     prayerId: string;
 }>>;
 /**
  * 🙏 NOTIFY MEMBER OF APPROVED / PROCESSED PRAYER REQUEST (Legacy churches collection)
  */
-export declare const onPrayerRequestProcessedMemberLegacy: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+export declare const onPrayerRequestProcessedMemberLegacy: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
     churchId: string;
     prayerId: string;
 }>>;
@@ -76,7 +77,7 @@ export declare const onPrayerRequestProcessedMemberLegacy: import("firebase-func
  * Deprecated alias to maintain backwards compatibility if referenced elsewhere.
  * Topic broadcast intentionally removed.
  */
-export declare const pushPrayerRequestApproved: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+export declare const pushPrayerRequestApproved: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
     churchId: string;
     prayerId: string;
 }>>;
@@ -98,18 +99,19 @@ export declare function checkAndPublishScheduledSermons(sermonsRef: any, churchI
  */
 export declare const publishScheduledSermons: import("firebase-functions/v2/scheduler").ScheduleFunction;
 export declare const monitorMeetingLive: import("firebase-functions/v2/scheduler").ScheduleFunction;
+export declare function checkChurchYouTubeLive(churchDoc: any, churchId: string, db: any): Promise<void>;
 /**
  * 🏛️ NOTIFY SUPER ADMINS OF NEW CHURCH REGISTRATION
  * Triggered automatically when a new church document is created in Firestore.
  */
-export declare const pushNewChurchRegistered: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+export declare const pushNewChurchRegistered: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
     churchId: string;
 }>>;
-export declare const pushBibleQuizCreated: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+export declare const pushBibleQuizCreated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
     churchId: string;
     quizId: string;
 }>>;
-export declare const pushBibleQuizUpdated: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+export declare const pushBibleQuizUpdated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
     churchId: string;
     quizId: string;
 }>>;
@@ -214,7 +216,7 @@ export declare const triggerDailyVersePushHttp: import("firebase-functions/v2/ht
  * 📢 CARE CELL ANNOUNCEMENT PUSH
  * Sends push notification when an announcement is posted in a Care Cell or Church-wide.
  */
-export declare const pushCareCellAnnouncement: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+export declare const pushCareCellAnnouncement: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
     churchId: string;
     announcementId: string;
 }>>;
@@ -222,7 +224,7 @@ export declare const pushCareCellAnnouncement: import("firebase-functions/core")
  * 🤝 CARE CELL GATHERING / MEETING PUSH
  * Sends push notification when a new Care Cell meeting is scheduled.
  */
-export declare const pushCareCellMeeting: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+export declare const pushCareCellMeeting: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
     churchId: string;
     meetingId: string;
 }>>;
@@ -230,7 +232,7 @@ export declare const pushCareCellMeeting: import("firebase-functions/core").Clou
  * 🙏 CARE CELL PRAYER REQUEST ADMIN PUSH
  * Alerts leaders and admins when a care cell member posts a prayer need.
  */
-export declare const pushCareCellPrayerRequest: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+export declare const pushCareCellPrayerRequest: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
     churchId: string;
     requestId: string;
 }>>;
@@ -238,62 +240,71 @@ export declare const pushCareCellPrayerRequest: import("firebase-functions/core"
  * 🏡 CARE CELL VISIT NOTIFICATION PUSH
  * Sends push notification strictly to members of the selected Care Cell when a visit is scheduled.
  */
-export declare const pushCareCellVisit: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+export declare const pushCareCellVisit: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    visitId: string;
+}>>;
+/**
+ * 🏡 CARE CELL VISIT RESPONSE UPDATED PUSH
+ * Sends push notification strictly to the respective Care Cell Leader / Admin when a member
+ * responds with acceptance/decline or submits their preferred visiting time.
+ */
+export declare const onCareCellVisitResponseUpdated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
     churchId: string;
     visitId: string;
 }>>;
 /**
  * ✨ TRIGGER 1: Member Submits Testimony (Notifies Authorized Admins)
  */
-export declare const onTestimonyCreatedAdmin: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+export declare const onTestimonyCreatedAdmin: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
     churchId: string;
     testimonyId: string;
 }>>;
-export declare const onTestimonyCreatedAdminLegacy: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+export declare const onTestimonyCreatedAdminLegacy: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
     churchId: string;
     testimonyId: string;
 }>>;
 /**
  * 🔄 TRIGGER 2: Admin Workflow Update (Member Approval/Rejection Notice or Publication Broadcast)
  */
-export declare const onTestimonyUpdatedWorkflow: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+export declare const onTestimonyUpdatedWorkflow: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
     churchId: string;
     testimonyId: string;
 }>>;
-export declare const onTestimonyUpdatedWorkflowLegacy: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+export declare const onTestimonyUpdatedWorkflowLegacy: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
     churchId: string;
     testimonyId: string;
 }>>;
 /**
  * 🤝 TRIGGER 1: Member Submits Volunteer Application (Admin Notified)
  */
-export declare const onVolunteerApplicationCreated: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+export declare const onVolunteerApplicationCreated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
     churchId: string;
     applicationId: string;
 }>>;
-export declare const onVolunteerApplicationCreatedLegacy: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+export declare const onVolunteerApplicationCreatedLegacy: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
     churchId: string;
     applicationId: string;
 }>>;
 /**
  * 🤝 TRIGGER 2, 3, 4: Status Transition & Volunteer Role Assignment (Member Notified)
  */
-export declare const onVolunteerApplicationUpdated: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+export declare const onVolunteerApplicationUpdated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
     churchId: string;
     applicationId: string;
 }>>;
-export declare const onVolunteerApplicationUpdatedLegacy: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+export declare const onVolunteerApplicationUpdatedLegacy: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
     churchId: string;
     applicationId: string;
 }>>;
 /**
  * 📅 TRIGGER 5: Event Details or Cancellation (Affected Approved Volunteers Notified)
  */
-export declare const onEventUpdatedForVolunteers: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+export declare const onEventUpdatedForVolunteers: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
     churchId: string;
     eventId: string;
 }>>;
-export declare const onEventUpdatedForVolunteersLegacy: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+export declare const onEventUpdatedForVolunteersLegacy: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
     churchId: string;
     eventId: string;
 }>>;
@@ -310,4 +321,67 @@ export declare const scheduledVolunteerReminders: import("firebase-functions/v2/
  *   memberId: string (required for member_test)
  */
 export declare const triggerVolunteerPushTestHttp: import("firebase-functions/v2/https").HttpsFunction;
+/**
+ * Trigger: When a member submits a new Ministry Application
+ * Notifies Church Admins so they can review the candidate and their attached CV.
+ */
+export declare const onJobApplicationCreated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    applicationId: string;
+}>>;
+/**
+ * Trigger: When an Admin updates an Application Status (Under Review, Meeting Scheduled, Selected, Shortlisted, Rejected)
+ * Sends instant push notification & personal in-app notification strictly to the applicant member.
+ */
+export declare const onJobApplicationUpdated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+    churchId: string;
+    applicationId: string;
+}>>;
+/**
+ * Trigger: When a new Ministry Opportunity is created as published (`status == 'approved'`)
+ * Automatically broadcasts a high-priority push notification to all church members!
+ */
+export declare const onJobOpportunityCreated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    opportunityId: string;
+}>>;
+/**
+ * Trigger: When an existing Draft / Pending Ministry Opportunity is published (`status` transitions to 'approved')
+ * Automatically broadcasts a high-priority push notification to all church members!
+ */
+export declare const onJobOpportunityUpdated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+    churchId: string;
+    opportunityId: string;
+}>>;
+/**
+ * Trigger: When a new member registration request is created
+ * Notifies church Admins requesting approval.
+ */
+export declare const onRegistrationRequestCreated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    requestId: string;
+}>>;
+/**
+ * Trigger: When a registration request status changes
+ * - Returning to `pending` notifies church Admins.
+ * - Transitioning to `approved` or `rejected` notifies the specific registering member.
+ */
+export declare const onRegistrationRequestUpdated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+    churchId: string;
+    requestId: string;
+}>>;
+/**
+ * Trigger: When an Admin publishes a new General Volunteer Call Post (`status == 'open'`)
+ */
+export declare const onVolunteerPostCreated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    postId: string;
+}>>;
+/**
+ * Trigger: When a closed General Volunteer Call Post is reopened (`status` transitions to `'open'`)
+ */
+export declare const onVolunteerPostUpdated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+    churchId: string;
+    postId: string;
+}>>;
 //# sourceMappingURL=notifications.d.ts.map

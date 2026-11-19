@@ -1,0 +1,100 @@
+================================================================================
+                    RHEMA / WECHRISTIAN APP: MONTHLY COST GUIDE
+================================================================================
+
+1. MONTHLY COST SUMMARY
+--------------------------------------------------------------------------------
+• Up to 500 Active Members:    ₹0.00 / month (100% Free on Google Free Tier)
+• 500 to 1,500 Active Members:  ₹15 to ₹40 / month (~$0.20 - $0.50 USD)
+• 3,000 Active Daily Members:   ₹30 to ₹80 / month (~$1.00 USD)
+• 5,000+ Heavy Daily Usage:     ₹100 to ₹250 / month (~$1.50 - $3.00 USD)
+
+
+2. DATABASE OPERATIONS (READS, WRITES, DELETES) & THEIR COSTS
+--------------------------------------------------------------------------------
+Google Firebase charges based on three simple operations:
+
+A. READS (Viewing Data on Screen)
+• What it is: Opening any screen that loads church data from the cloud.
+• Examples:
+  - Member opens app and reads 1 Daily Promise:  --> 1 Read
+  - Member views 4 Church Events on the screen:  --> 4 Reads
+  - Pastor views 25 members in Admin Dashboard:  --> 25 Reads
+  - Member views 10 Prayer requests:             --> 10 Reads
+• Google Free Allowance: 50,000 READS FREE EVERY DAY.
+• Cost if exceeded: ~₹5.00 per 100,000 extra reads.
+
+B. WRITES (Creating or Editing Data)
+• What it is: Saving new data or editing existing data.
+• Examples:
+  - Pastor creates a new Promise, Sermon, or Event: --> 1 Write
+  - A new member registers their profile:           --> 1 Write
+  - A member updates their phone number or address: --> 1 Write
+  - A member taps "Pray" on a prayer request:       --> 1 Write
+  - A member records an online tithe/donation:      --> 1 Write
+• Google Free Allowance: 20,000 WRITES FREE EVERY DAY.
+• Cost if exceeded: ~₹15.00 per 100,000 extra writes.
+
+C. DELETES (Removing Data)
+• What it is: Permanently deleting an item.
+• Examples:
+  - Deleting an expired event or announcement:     --> 1 Delete
+  - Removing an invalid member profile:            --> 1 Delete
+• Google Free Allowance: 20,000 DELETES FREE EVERY DAY.
+
+
+3. FEATURE-BY-FEATURE MONTHLY COST TABLE
+--------------------------------------------------------------------------------
+Feature                             Provider            Monthly Cost
+--------------------------------------------------------------------------------
+Video & Song Streaming              YouTube API         ₹0.00 (Google pays bandwidth)
+Push Notifications (Unlimited)      Firebase FCM        ₹0.00 (100% Free)
+Daily Promises & Scripture Feed     Firestore           ₹0.00 (Under free tier)
+Member Directory & Attendance       Firestore           ₹0.00 (Under free tier)
+Prayer Wall & Moderation            Firestore           ₹0.00 (Under free tier)
+Care Cells & Service Roster         Firestore           ₹0.00 (Under free tier)
+Donation Receipts                   Local Phone Device  ₹0.00 (Saved to phone gallery)
+AI Sermon Assistant / Thumbnails    Groq SDK            ₹0.00 (Free tier limits)
+--------------------------------------------------------------------------------
+
+
+4. DATABASE BACKUP & RECOVERY COSTS
+--------------------------------------------------------------------------------
+Service                             Provider            Cost
+--------------------------------------------------------------------------------
+Automated Daily Backups             Google Cloud        ~₹1 to ₹3 / month
+Point-in-Time Recovery (7 Days)     Google Cloud        ~₹2 to ₹5 / month
+Restoring / Recovering Data         Google Cloud        ~₹5 to ₹10 (one-time fee)
+--------------------------------------------------------------------------------
+TOTAL BACKUP PROTECTION COST:       LESS THAN ₹10 INR PER MONTH.
+
+
+5. PAYMENT GATEWAY (DIGITAL GIVING / TITHES)
+--------------------------------------------------------------------------------
+Provider: Razorpay
+• Monthly Fee:     ₹0.00 (No fixed monthly charge or rental)
+• Setup Fee:       ₹0.00
+• Transaction Fee: Standard ~2% per successful donation (deducted automatically).
+
+
+6. APP STORE PUBLISHING ACCOUNTS (NOT MONTHLY)
+--------------------------------------------------------------------------------
+Platform                Fee                 Billing Type
+--------------------------------------------------------------------------------
+Google Play Store       $25 (~₹2,100 INR)   One-Time Lifetime Fee (Never recurring)
+Apple App Store (iOS)   $99 (~₹8,300 INR)   Annual Fee (~₹690/month equivalent)
+
+
+7. FINAL TOTAL ESTIMATED MONTHLY BILL
+--------------------------------------------------------------------------------
+For a church of 3,000 active members:
+• Firebase Database Usage:   ~₹25 / month
+• Cloud Image Storage:       ~₹20 / month
+• Automated Daily Backups:   ~₹5 / month
+• Video/Streaming Bandwidth: ₹0 / month
+--------------------------------------------------------------------------------
+TOTAL ESTIMATED MONTHLY BILL: ~₹50 to ₹80 INR / month (~$1.00 USD / month).
+
+================================================================================
+Generated for: Rhema Church
+================================================================================

@@ -38,6 +38,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useAdminTheme, createAdminThemedStyles } from '../utils/adminThemeHelper';
 import { useLanguage } from '../context/LanguageContext';
 import FirestoreService from '../services/FirestoreService';
+import KidsMinistryService from '../services/KidsMinistryService';
 
 const { width } = Dimensions.get('window');
 
@@ -245,6 +246,14 @@ export default function MembersScreen({ navigation }: any) {
         await FirestoreService.addFamilyMember(churchId!, targetAccountId, memberData);
         setSuccessMessage(t('members.memberAddedSuccess'));
       }
+
+      // Automatically sync to Rhema Kids if this family member is a child
+      if (isKidMember) {
+        KidsMinistryService.syncMemberChildrenToKidsMinistry(churchId!, targetAccountId).catch(e => {
+          console.warn('[MembersScreen] Sync to Rhema Kids error:', e);
+        });
+      }
+
       setShowSuccess(true);
       setShowAddModal(false);
       setEditingMemberId(null);

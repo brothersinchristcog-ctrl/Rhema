@@ -28,6 +28,8 @@ import {
   ChevronLeft,
 } from 'lucide-react-native';
 import FirestoreService, { RegistrationRequest } from '../../services/FirestoreService';
+import NotificationService from '../../services/NotificationService';
+import { firestore, messaging } from '../../services/firebaseConfig';
 import { useChurch } from '../../context/ChurchContext';
 import { useAuth } from '../../context/AuthContext';
 import { RHEMA_CHURCH_ID } from '../../constants/ChurchConfig';
@@ -156,6 +158,46 @@ export default function ApprovalPendingScreen({ route, navigation }: any) {
       if (unsubscribe) unsubscribe();
     };
   }, [phoneNumber, storedData.phone, targetChurchId]);
+
+  // 4. Keep applicant FCM token synced on registration_requests while awaiting approval
+  useEffect(() => {
+    const rawPhone = phoneNumber || storedData.phone || user?.phoneNumber || '';
+    const docId = rawPhone.replace(/\D/g, '').slice(-10);
+    if (!docId || request?.status === 'approved') return;
+
+    let active = true;
+    const syncApplicantFcmToken = async (explicitToken?: string) => {
+      try {
+        if (!explicitToken) {
+          await NotificationService.requestUserPermission().catch(() => false);
+        }
+        const token = explicitToken || (await messaging().getToken().catch(() => null));
+        if (!active || !token) return;
+        await firestore()
+          .collection('Rhema Church')
+          .doc(targetChurchId)
+          .collection('registration_requests')
+          .doc(docId)
+          .set(
+            {
+              fcmToken: token,
+              ...(user?.uid ? { authUid: user.uid } : {}),
+            },
+            { merge: true }
+          );
+      } catch (_) {}
+    };
+
+    syncApplicantFcmToken();
+    const unsubTokenRefresh = messaging().onTokenRefresh((newToken) => {
+      syncApplicantFcmToken(newToken);
+    });
+
+    return () => {
+      active = false;
+      unsubTokenRefresh();
+    };
+  }, [phoneNumber, storedData.phone, targetChurchId, user?.phoneNumber, user?.uid, request?.status]);
 
   const handleManualCheck = async () => {
     const targetPhone = phoneNumber || storedData.phone;

@@ -29,12 +29,13 @@ import {
 } from 'lucide-react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import firestore from '@react-native-firebase/firestore';
 import CareCellService from '../../../../services/CareCellService';
 import MemberLookupModal from '../components/MemberLookupModal';
 import CareCellMapModal from '../components/CareCellMapModal';
 import { formatDateDisplay } from '../../../../utils/DateUtils';
 import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
-import { CareCell, CareCellMembership } from '../../../../types/CareCellTypes';
+import { CareCell, CareCellMembership, formatCareCellCode, formatCareCellDisplayName } from '../../../../types/CareCellTypes';
 
 interface CareCellMembersTabProps {
   cells: CareCell[];
@@ -76,6 +77,31 @@ export default function CareCellMembersTab({
     try {
       const churchId = await CareCellService.getChurchId();
       const list = await CareCellService.getActiveCellMemberships(churchId, activeCellId);
+      
+      // Enrich with memberCode from member collection if missing on membership record
+      const missingCodeMemberIds = list.filter((m) => !m.memberCode).map((m) => m.memberId);
+      if (missingCodeMemberIds.length > 0) {
+        try {
+          const membersSnap = await firestore()
+            .collection('Rhema Church')
+            .doc(churchId || 'rhema')
+            .collection('members')
+            .get();
+          const codeMap = new Map<string, string>();
+          membersSnap.docs.forEach((d) => {
+            const data = d.data();
+            if (data?.memberCode) {
+              codeMap.set(d.id, data.memberCode);
+            }
+          });
+          list.forEach((m) => {
+            if (!m.memberCode && codeMap.has(m.memberId)) {
+              m.memberCode = codeMap.get(m.memberId);
+            }
+          });
+        } catch (_) {}
+      }
+
       setMemberships(list);
     } catch (e) {
       console.error('Error loading cell memberships:', e);
@@ -95,7 +121,8 @@ export default function CareCellMembersTab({
     return memberships.filter((m) => {
       const matchName = (m.memberName || '').toLowerCase().includes(q);
       const matchPhone = (m.memberPhone || '').includes(q);
-      return matchName || matchPhone;
+      const matchCode = (m.memberCode || '').toLowerCase().includes(q);
+      return matchName || matchPhone || matchCode;
     });
   }, [memberships, searchQuery]);
 
@@ -204,7 +231,14 @@ export default function CareCellMembersTab({
         )}
 
         <View style={styles.memberInfo}>
-          <Text style={styles.memberName}>{item.memberName}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+            <Text style={styles.memberName}>{item.memberName}</Text>
+            {item.memberCode ? (
+              <View style={[styles.memberCodeBadge, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1', borderWidth: 1 }]}>
+                <Text style={[styles.memberCodeBadgeTxt, { color: isDark ? '#E4E4E7' : '#334155' }]}>{item.memberCode}</Text>
+              </View>
+            ) : null}
+          </View>
           {item.memberPhone ? (
             <View style={styles.phoneRow}>
               <Phone size={11} color="#64748B" style={{ marginRight: 4 }} />
@@ -277,7 +311,15 @@ export default function CareCellMembersTab({
                 key={c.id}
                 style={[
                   styles.cellChip,
-                  isSelected && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                  isSelected
+                    ? {
+                        backgroundColor: primaryBtnBg,
+                        borderColor: primaryBtnBg,
+                      }
+                    : {
+                        backgroundColor: secondaryBtnBg,
+                        borderColor: secondaryBtnBorder,
+                      },
                 ]}
                 onPress={() => onSelectCellId(c.id)}
                 activeOpacity={0.75}
@@ -285,10 +327,13 @@ export default function CareCellMembersTab({
                 <Text
                   style={[
                     styles.cellChipTxt,
-                    isSelected && { color: primaryBtnText, fontWeight: '800' },
+                    {
+                      color: isSelected ? primaryBtnText : secondaryBtnText,
+                      fontWeight: isSelected ? '800' : '600',
+                    },
                   ]}
                 >
-                  {c.cellCode} ({c.name})
+                  {formatCareCellDisplayName(c.name, c.cellCode)}
                 </Text>
               </TouchableOpacity>
             );
@@ -300,13 +345,14 @@ export default function CareCellMembersTab({
       {activeCell && (
         <View style={[styles.rosterBanner, { backgroundColor: cardSurface, borderColor }]}>
           <View style={{ flex: 1, marginRight: 8 }}>
-            <Text style={[styles.rosterBannerTitle, { color: primaryText }]}>
-              {activeCell.cellCode} · {activeCell.name}
+            <Text style={[styles.rosterBannerTitle, { color: primaryText }]} numberOfLines={1}>
+              {formatCareCellDisplayName(activeCell.name, activeCell.cellCode)}
             </Text>
-            <Text style={[styles.rosterBannerSub, { color: secondaryText }]}>
+            <Text style={[styles.rosterBannerSub, { color: secondaryText }]} numberOfLines={1}>
               Leader: <Text style={{ fontWeight: '700', color: primaryText }}>{activeCell.leaderName}</Text> · {memberships.length} of {activeCell.maximumMembers} members
             </Text>
           </View>
+
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <TouchableOpacity
               style={[styles.mapBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
@@ -326,7 +372,14 @@ export default function CareCellMembersTab({
               <Download size={15} color={secondaryBtnText} />
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.addMembersBtn, { backgroundColor: primaryBtnBg }]}
+              style={[
+                styles.addMembersBtn,
+                {
+                  backgroundColor: primaryBtnBg,
+                  borderColor: primaryBtnBg,
+                  borderWidth: 1,
+                },
+              ]}
               onPress={() => setAddMembersModalVisible(true)}
               activeOpacity={0.85}
             >
@@ -379,7 +432,7 @@ export default function CareCellMembersTab({
       {/* Member Lookup Modal for Adding Members (Multi-select) */}
       <MemberLookupModal
         visible={addMembersModalVisible}
-        title={`Add Members to ${activeCell?.cellCode || 'Cell'}`}
+        title={`Add Members to ${formatCareCellDisplayName(activeCell?.name, activeCell?.cellCode)}`}
         mode="multiple"
         currentCellId={activeCell?.id}
         currentCellName={activeCell?.cellCode}
@@ -466,6 +519,16 @@ const styles = createAdminThemedStyles({
   cellChipTxtActive: {
     color: '#FFFFFF',
   },
+  cellChipCodeBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 5,
+  },
+  cellChipCodeBadgeTxt: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
   rosterBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -485,9 +548,20 @@ const styles = createAdminThemedStyles({
     elevation: 1,
   },
   rosterBannerTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '800',
     color: '#0F172A',
+  },
+  rosterBannerCodePill: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  rosterBannerCodePillTxt: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   rosterBannerSub: {
     fontSize: 12,
@@ -597,6 +671,17 @@ const styles = createAdminThemedStyles({
     fontSize: 14.5,
     fontWeight: '700',
     color: '#0F172A',
+  },
+  memberCodeBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  memberCodeBadgeTxt: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   phoneRow: {
     flexDirection: 'row',

@@ -54,7 +54,14 @@ import * as Clipboard from 'expo-clipboard';
 import RNShare from 'react-native-share';
 import ViewShot from 'react-native-view-shot';
 
-import { findEventVideo, findActiveLiveStream, getChannelId, checkVideoLiveStatus } from '../services/YouTubeService';
+import {
+  findEventVideo,
+  findActiveLiveStream,
+  getChannelId,
+  checkVideoLiveStatus,
+  resolveRhemaYoutubeUrl,
+  RHEMA_YOUTUBE_CHANNEL_ID,
+} from '../services/YouTubeService';
 import { useAuth } from '../context/AuthContext';
 import { useChurch } from '../context/ChurchContext';
 import EventRsvpPollCard from '../components/EventRsvpPollCard';
@@ -239,10 +246,6 @@ function extractYoutubeVideoId(urlOrId?: string): string {
   if (shortMatch) return shortMatch[1];
   const embedMatch = clean.match(/\/embed\/([\w-]{11})/);
   if (embedMatch) return embedMatch[1];
-  const lower = clean.toLowerCase();
-  if (lower.includes('brother') || lower.includes('uc3j_2zp2biucweia_asvghw')) {
-    return 'vgzXs5QCjIA';
-  }
   return '';
 }
 
@@ -408,7 +411,10 @@ export default function EventDetailsScreen({ route, navigation }: any) {
     }
   }, [event.id, status, isStreamEnded, manualYoutubeId, churchYoutubeHandle, activeChurch?.id]);
 
-  const churchYoutubeUrl = activeChurch?.socialLinks?.youtube || (churchYoutubeHandle ? `https://www.youtube.com/${churchYoutubeHandle}` : '');
+  const churchYoutubeUrl = resolveRhemaYoutubeUrl(
+    activeChurch?.socialLinks?.youtube ||
+      (churchYoutubeHandle ? `https://www.youtube.com/${churchYoutubeHandle}` : '')
+  );
 
   // Resolve live stream video ID / recording status
   useEffect(() => {
@@ -442,6 +448,8 @@ export default function EventDetailsScreen({ route, navigation }: any) {
       return;
     }
 
+    const expectedChannelId = churchId === 'rhema' ? RHEMA_YOUTUBE_CHANNEL_ID : undefined;
+
     // 2. Real-time listener for church youtubeLiveState (broadcast from pastor/admin)
     const unsubChurch = firestore()
       .collection('Rhema Church')
@@ -451,10 +459,14 @@ export default function EventDetailsScreen({ route, navigation }: any) {
           if (!isMounted) return;
           if (doc.exists) {
             const lData = doc.data()?.youtubeLiveState;
-            const liveVid = lData?.videoId || lData?.lastNotifiedVideoId || lData?.latestVideoId;
+            const liveVid = lData?.videoId;
             if (lData?.isLive && liveVid) {
-              const vCheck = await checkVideoLiveStatus(liveVid);
+              const vCheck = await checkVideoLiveStatus(liveVid, expectedChannelId);
               if (!isMounted) return;
+              if (vCheck.channelMismatch) {
+                setIsStreamLiveNow(false);
+                return;
+              }
               if (vCheck.status === 'live' || vCheck.isLiveNow) {
                 setLiveStreamVideoId(liveVid);
                 setIsStreamLiveNow(true);
@@ -473,16 +485,17 @@ export default function EventDetailsScreen({ route, navigation }: any) {
       );
 
     // 3. Resolve channel or live URL via YouTubeService
-    const targetUrl =
+    const targetUrl = resolveRhemaYoutubeUrl(
       event.liveUrl ||
-      event.livestreamUrl ||
-      event.youtubeUrl ||
-      churchYoutubeUrl ||
-      '@Brothersinchristfellowship';
+        event.livestreamUrl ||
+        event.youtubeUrl ||
+        churchYoutubeUrl ||
+        'https://www.youtube.com/@RhemaGlobalMinistries'
+    );
 
     if (targetUrl) {
       setLiveStreamLoading(true);
-      findActiveLiveStream(targetUrl)
+      findActiveLiveStream(targetUrl, expectedChannelId)
         .then((res) => {
           if (!isMounted) return;
           if (res.status === 'live' && res.isLiveNow && res.videoId) {
@@ -519,7 +532,7 @@ export default function EventDetailsScreen({ route, navigation }: any) {
   }, [event.id, event.liveUrl, event.livestreamUrl, event.youtubeId, status, activeChurch?.id, churchYoutubeUrl]);
 
   const handleCheckLiveStreamAgain = useCallback(() => {
-    const targetUrl = event.liveUrl || event.livestreamUrl || event.youtubeUrl || churchYoutubeUrl || '@Brothersinchristfellowship';
+    const targetUrl = event.liveUrl || event.livestreamUrl || event.youtubeUrl || churchYoutubeUrl || 'https://www.youtube.com/@RhemaGlobalMinistries';
     if (!targetUrl) return;
     setLiveStreamLoading(true);
     findActiveLiveStream(targetUrl)
@@ -553,7 +566,7 @@ export default function EventDetailsScreen({ route, navigation }: any) {
       event.livestreamUrl ||
       (manualYoutubeId ? `https://www.youtube.com/watch?v=${manualYoutubeId}` : '') ||
       churchYoutubeUrl ||
-      '@Brothersinchristfellowship';
+      'https://www.youtube.com/@RhemaGlobalMinistries';
 
     if (rawTarget.includes('zoom.us')) {
       openZoomMeeting({
@@ -1614,16 +1627,14 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                   <Text style={[styles.lockedSub, { color: colors.textSecondary }]}>
                     The video recording for this service has not been uploaded to the church channel yet.
                   </Text>
-                  {churchYoutubeUrl ? (
-                    <TouchableOpacity
-                      style={[styles.liveWaitingBtn, { marginTop: 14 }]}
-                      onPress={() => Linking.openURL(churchYoutubeUrl)}
-                      activeOpacity={0.8}
-                    >
-                      <ExternalLink size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
-                      <Text style={styles.liveWaitingBtnTxt}>Browse Church Channel</Text>
-                    </TouchableOpacity>
-                  ) : null}
+                  <TouchableOpacity
+                    style={[styles.liveWaitingBtn, { marginTop: 14 }]}
+                    onPress={() => navigation.navigate('Sermons')}
+                    activeOpacity={0.8}
+                  >
+                    <Video size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.liveWaitingBtnTxt}>Browse Sermons</Text>
+                  </TouchableOpacity>
                 </View>
               )
             ) : (
@@ -1646,16 +1657,14 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                     <RefreshCw size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
                     <Text style={styles.liveWaitingBtnTxt}>Check Again</Text>
                   </TouchableOpacity>
-                  {churchYoutubeUrl ? (
-                    <TouchableOpacity
-                      style={[styles.liveWaitingBtn, styles.liveWaitingBtnSecondary]}
-                      onPress={() => Linking.openURL(churchYoutubeUrl)}
-                      activeOpacity={0.8}
-                    >
-                      <ExternalLink size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
-                      <Text style={styles.liveWaitingBtnTxt}>YouTube Channel</Text>
-                    </TouchableOpacity>
-                  ) : null}
+                  <TouchableOpacity
+                    style={[styles.liveWaitingBtn, styles.liveWaitingBtnSecondary]}
+                    onPress={handleJoinLiveStream}
+                    activeOpacity={0.8}
+                  >
+                    <Radio size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.liveWaitingBtnTxt}>Open Live Player</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             )}

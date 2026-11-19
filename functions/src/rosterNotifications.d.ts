@@ -1,3 +1,4 @@
+import './globalConfig.js';
 /**
  * 🔍 HELPER: Resolves valid FCM tokens for a member or candidate across:
  * 1. Rhema Church/{churchId}/members/{candidateId} (fcmToken, fcmTokens, and auth user pointer)
@@ -35,7 +36,7 @@ export declare function sendCandidateAssignmentPush(params: {
  * Fired whenever an assignment queue document is created or updated in Firestore.
  * Sends targeted push notifications to the active candidate with Accept/Decline options.
  */
-export declare const onServiceAssignmentQueueDispatched: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").DocumentSnapshot> | undefined, {
+export declare const onServiceAssignmentQueueDispatched: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").DocumentSnapshot> | undefined, {
     churchId: string;
     serviceId: string;
     roleId: string;
@@ -45,7 +46,7 @@ export declare const onServiceAssignmentQueueDispatched: import("firebase-functi
  * Fired when an assignment queue is updated. If the active candidate declined or timed out,
  * this function automatically cascades the request to Candidate 2, Candidate 3, etc.
  */
-export declare const onServiceAssignmentResponded: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+export declare const onServiceAssignmentResponded: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
     churchId: string;
     serviceId: string;
     roleId: string;
@@ -76,7 +77,7 @@ export declare const dispatchServiceAssignmentNotificationHttp: import("firebase
  * Fired when a rehearsal is scheduled for a worship service.
  * Alerts all invited team members and assigned band musicians via FCM.
  */
-export declare const onServiceRehearsalCreated: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+export declare const onServiceRehearsalCreated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
     churchId: string;
     serviceId: string;
     rehearsalId: string;
@@ -115,7 +116,7 @@ export declare function autoDispatchPublishedServiceResponsibilities(params: {
  * 🚀 ON SERVICE PLAN PUBLISHED:
  * Automatically runs First-Come, First-Served auto-assignment broadcast to all eligible members!
  */
-export declare const onServicePlanPublished: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").DocumentSnapshot> | undefined, {
+export declare const onServicePlanPublished: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").DocumentSnapshot> | undefined, {
     churchId: string;
     serviceId: string;
 }>>;

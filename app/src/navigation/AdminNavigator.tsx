@@ -86,10 +86,12 @@ import AdminBaptism from '../screens/admin/AdminBaptism';
 import ChurchService from '../services/ChurchService';
 import AdminDailyVersesManager from '../screens/admin/AdminDailyVersesManager';
 import AdminCareCellsHub from '../screens/admin/care_cells/AdminCareCellsHub';
+import AdminKidsHub from '../screens/admin/kids_ministry/AdminKidsHub';
 import AdminServicePlanner from '../screens/admin/AdminServicePlanner';
 import AdminTestimonies from '../screens/admin/AdminTestimonies';
 import AdminVolunteerManagement from '../screens/admin/AdminVolunteerManagement';
 import AdminMatrimonyScreen from '../screens/admin/AdminMatrimonyScreen';
+import AdminJobCircleDashboard from '../screens/admin/job_circle/AdminJobCircleDashboard';
 import CareCellService from '../services/CareCellService';
 import { RHEMA_CHURCH_ID } from '../constants/ChurchConfig';
 
@@ -189,6 +191,8 @@ export default function AdminNavigator({ navigation, route }: any) {
         (lower.includes('baptism') && t.name === 'Baptism') ||
         (lower.includes('testimon') && t.name === 'Testimonies') ||
         (lower.includes('volunteer') && t.name === 'Volunteer Management') ||
+        (lower.includes('job') && t.name === 'Job Circle') ||
+        ((lower.includes('approv') || lower.includes('registrat')) && t.name === 'Approvals') ||
         ((lower.includes('roster') || lower.includes('service')) && t.name === 'Service Roster')
       );
       if (idx !== -1 && idx !== activeTab) {
@@ -257,15 +261,14 @@ export default function AdminNavigator({ navigation, route }: any) {
       const prevTab = tabHistory[tabHistory.length - 1];
       setTabHistory(prev => prev.slice(0, -1));
       setActiveTab(prevTab);
-    } else {
-      // Optional: Navigate to home/member view if history is empty?
-      // setViewMode('member');
+    } else if (activeTab !== 0) {
+      setActiveTab(0);
     }
   };
 
   useEffect(() => {
     const backAction = () => {
-      if (tabHistory.length > 0) {
+      if (tabHistory.length > 0 || activeTab !== 0) {
         handleBack();
         return true; // Prevent default behavior
       }
@@ -278,7 +281,7 @@ export default function AdminNavigator({ navigation, route }: any) {
     );
 
     return () => backHandler.remove();
-  }, [tabHistory]);
+  }, [tabHistory, activeTab]);
 
   const tabs = [
     { name: 'Dashboard', icon: DotGridIcon, component: AdminDashboard },
@@ -298,7 +301,9 @@ export default function AdminNavigator({ navigation, route }: any) {
     { name: 'Testimonies', icon: Sparkles, component: AdminTestimonies },
     { name: 'Attendance', icon: ClipboardCheck, component: AdminAttendance },
     ...(isSuperAdminUser || hasCareCellAccess ? [{ name: 'Care Cells', icon: HeartHandshake, component: AdminCareCellsHub }] : []),
+    { name: 'Kids Ministry', icon: Crown, component: AdminKidsHub },
     { name: 'Service Roster', icon: CalendarDays, component: AdminServicePlanner },
+    { name: 'Job Circle', icon: Briefcase, component: AdminJobCircleDashboard },
     { name: 'Volunteer Management', icon: HeartHandshake, component: AdminVolunteerManagement },
     { name: 'Members', icon: Users, component: AdminMembers },
     { name: 'Approvals', icon: UserCheck, component: AdminRegistrationApprovals },
