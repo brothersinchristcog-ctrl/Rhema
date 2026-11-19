@@ -1,0 +1,27 @@
+{
+  "rules": {
+    "matrimony_presence": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "matrimony_inbox": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "$roomId": {
+          ".write": "auth != null && (auth.uid === $uid || root.child('matrimony_chats').child($roomId).child('participants').child(auth.uid).val() === true)"
+        }
+      }
+    },
+    "matrimony_chats": {
+      "$roomId": {
+        ".read": "auth != null && data.child('participants').child(auth.uid).val() === true",
+        ".write": "auth != null && data.child('participants').child(auth.uid).val() === true",
+        "messages": {
+          ".indexOn": ["createdAt"]
+        }
+      }
+    }
+  }
+}

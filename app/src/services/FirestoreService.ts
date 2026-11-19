@@ -65,6 +65,7 @@ export interface AppMember {
   mailingState?: string;
   mailingStreet?: string;
   dob?: string;
+  motherTongue?: string;
   baptismDate?: string;
   anniversaryDate?: string;
   primarySkill?: string;

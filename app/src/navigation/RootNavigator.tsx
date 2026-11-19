@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
-import { Home, Heart, BookOpen, HandCoins, User, ShieldCheck, Users as UsersSwitch } from 'lucide-react-native';
+import { Home, Heart, BookOpen, HandCoins, User, ShieldCheck, Users as UsersSwitch, HeartHandshake } from 'lucide-react-native';
+import Svg, { Path as SvgPath, Circle as SvgCircle, Defs as SvgDefs, LinearGradient as SvgLinearGradient, Stop as SvgStop } from 'react-native-svg';
 import { ActivityIndicator, View, Text, StyleSheet, Alert, Platform, TouchableOpacity, AppState, Image, Animated, PanResponder, Dimensions, Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import firestore from '@react-native-firebase/firestore';
@@ -15,6 +16,8 @@ import { ChurchProvider, useChurch } from '../context/ChurchContext';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { LanguageProvider, useLanguage } from '../context/LanguageContext';
 import { QuizLanguageProvider } from '../context/QuizLanguageContext';
+import { ProfileDrawerProvider, useProfileDrawer } from '../context/ProfileDrawerContext';
+import ProfileDrawerOverlay from '../components/ProfileDrawerOverlay';
 import Theme from '../theme/Theme';
 import AdminNavigator from './AdminNavigator'; 
 import AdminBaptism from '../screens/admin/AdminBaptism';
@@ -70,6 +73,7 @@ import AttendanceScreen from '../screens/AttendanceScreen';
 import CareCellScreen from '../screens/care_cells/CareCellScreen';
 import EventAttendeesScreen from '../screens/admin/EventAttendeesScreen';
 import AdminRegistrationApprovals from '../screens/admin/AdminRegistrationApprovals';
+import AdminMatrimonyProfileDetailScreen from '../screens/admin/AdminMatrimonyProfileDetailScreen';
 import PastorEventDetail from '../screens/admin/pastor_events/PastorEventDetail';
 import CreatePastorEvent from '../screens/admin/pastor_events/CreatePastorEvent';
 import PastorEventRoutePlanner from '../screens/admin/pastor_events/PastorEventRoutePlanner';
@@ -83,6 +87,7 @@ import MyServiceScreen from '../screens/MyServiceScreen';
 import MemberGalleryNavigator from '../screens/gallery/MemberGalleryNavigator';
 import TestimoniesScreen from '../screens/TestimoniesScreen';
 import TestimonyDetailScreen from '../screens/TestimonyDetailScreen';
+import MatrimonyNavigator from '../modules/matrimony/navigation/MatrimonyNavigator';
 
 // Bible Quiz Screens
 import BibleQuizHomeScreen from '../screens/quiz/BibleQuizHomeScreen';
@@ -127,12 +132,83 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
   </TouchableOpacity>
 );
 
+  const MatrimonySlantedCardBg = () => {
+    const [size, setSize] = useState({ w: 0, h: 0 });
+    const w = size.w;
+    const h = size.h;
+    const pathD = w > 0 && h > 0
+      ? `M 14 0 L ${w + 6} 0 L ${w + 6} ${h} L 22 ${h} Q 13 ${h} 11 ${h - 9} L 2 10 Q 0 0 10 0 Z`
+      : '';
+
+    return (
+      <View
+        pointerEvents="none"
+        onLayout={(e) => {
+          const { width: lw, height: lh } = e.nativeEvent.layout;
+          if (Math.abs(lw - size.w) > 0.5 || Math.abs(lh - size.h) > 0.5) {
+            setSize({ w: lw, h: lh });
+          }
+        }}
+        style={StyleSheet.absoluteFill}
+      >
+        <LinearGradient
+          colors={['#EA580C', '#C2410C']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={{ position: 'absolute', top: 0, bottom: 0, left: 16, right: -6 }}
+        />
+        {w > 0 && h > 0 ? (
+          <Svg
+            width={w + 6}
+            height={h}
+            viewBox={`0 0 ${w + 6} ${h}`}
+            style={{ position: 'absolute', top: 0, left: 0 }}
+          >
+            <SvgDefs>
+              <SvgLinearGradient id="matrimonyOrangeGrad" x1="0" y1="0" x2="1" y2="1">
+                <SvgStop offset="0%" stopColor="#EA580C" />
+                <SvgStop offset="100%" stopColor="#C2410C" />
+              </SvgLinearGradient>
+            </SvgDefs>
+            <SvgPath d={pathD} fill="url(#matrimonyOrangeGrad)" />
+          </Svg>
+        ) : null}
+      </View>
+    );
+  };
+
+  const MatrimonyCoupleHeartIcon = ({ size = 20, color = '#FFFFFF' }: { size?: number; color?: string }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <SvgPath
+        d="M12 20.5C12 20.5 3.5 15.2 3.5 9.2C3.5 6.3 5.8 4 8.6 4C10.3 4 11.4 4.9 12 5.9C12.6 4.9 13.7 4 15.4 4C18.2 4 20.5 6.3 20.5 9.2C20.5 15.2 12 20.5 12 20.5Z"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <SvgCircle cx="9.6" cy="10.2" r="1.45" stroke={color} strokeWidth={1.45} />
+      <SvgCircle cx="14.4" cy="10.2" r="1.45" stroke={color} strokeWidth={1.45} />
+      <SvgPath
+        d="M7.4 14.3C7.7 12.9 8.6 12.3 9.6 12.3C10.6 12.3 11.4 12.9 11.7 14.1"
+        stroke={color}
+        strokeWidth={1.45}
+        strokeLinecap="round"
+      />
+      <SvgPath
+        d="M12.3 14.1C12.6 12.9 13.4 12.3 14.4 12.3C15.4 12.3 16.3 12.9 16.6 14.3"
+        stroke={color}
+        strokeWidth={1.45}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+
   const TABS = [
-    { key: 'Home',       navKey: 'nav.home',       defaultLabel: 'Home',       Icon: Home,          bg: '#1a2d5a', fg: '#1a2d5a' },
-    { key: 'Promise',    navKey: 'nav.promise',    defaultLabel: 'Promise',    Icon: BookOpen,      bg: '#0F766E', fg: '#0F766E' },
-    { key: 'Bible',      navKey: 'nav.bible',      defaultLabel: 'Bible',      Icon: Book,          bg: '#B45309', fg: '#B45309' },
-    { key: 'Prayer',     navKey: 'nav.prayer',     defaultLabel: 'Prayer',     Icon: Heart,         bg: '#0284C7', fg: '#0284C7' },
-    { key: 'Profile',    navKey: 'nav.profile',    defaultLabel: 'Profile',    Icon: UserIcon,      bg: '#27272A', fg: '#27272A' },
+    { key: 'Home',       navKey: 'nav.home',       defaultLabel: 'Home',            Icon: Home,           bg: '#1a2d5a', fg: '#1a2d5a' },
+    { key: 'Promise',    navKey: 'nav.promise',    defaultLabel: 'Promise',         Icon: Book,           bg: '#0F766E', fg: '#0F766E' },
+    { key: 'Bible',      navKey: 'nav.bible',      defaultLabel: 'Bible',           Icon: BookOpen,       bg: '#B45309', fg: '#B45309' },
+    { key: 'Prayer',     navKey: 'nav.prayer',     defaultLabel: 'Prayer',          Icon: Heart,          bg: '#0284C7', fg: '#0284C7' },
+    { key: 'Matrimony',  navKey: 'nav.matrimony',  defaultLabel: 'Rhema Matrimony', Icon: HeartHandshake, bg: '#EA580C', fg: '#EA580C' },
   ] as const;
 
   const getTabConfig = (routeName: string, t?: (k: string) => string) => {
@@ -140,7 +216,7 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
       return {
         key: 'Promise',
         label: t ? t('nav.promise') : 'Promise',
-        Icon: BookOpen,
+        Icon: Book,
         bg: '#0F766E',
         fg: '#0F766E',
       };
@@ -222,7 +298,7 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
             backgroundColor: isDark ? '#09090B' : '#FFFFFF',
             borderTopColor: isDark ? '#1F242D' : '#E2E8F0',
             paddingBottom: deviceBottomInset,
-            height: 56 + deviceBottomInset,
+            height: 52 + deviceBottomInset,
           }
         ]}>
           <View style={styles.capsuleTabsRow}>
@@ -256,6 +332,36 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
               const activeBg = isDark ? '#1F242D' : (colors.tabBarActiveBg || '#0F766E');
               const activeFg = isDark ? '#FFFFFF' : (colors.tabBarActiveFg || '#FFFFFF');
               const inactiveFg = isDark ? '#94A3B8' : (colors.tabBarInactiveFg || '#64748B');
+
+              if (config.key === 'Matrimony') {
+                return (
+                  <TouchableOpacity
+                    key={index}
+                    accessibilityRole="button"
+                    accessibilityState={isFocused ? { selected: true } : {}}
+                    accessibilityLabel={options.tabBarAccessibilityLabel}
+                    testID={options.tabBarTestID}
+                    onPress={onPress}
+                    style={styles.capsuleMatrimonySlot}
+                    activeOpacity={0.85}
+                  >
+                    <View style={styles.capsuleMatrimonyCard}>
+                      <MatrimonySlantedCardBg />
+                      <View style={styles.matrimonyCornerIconWrap}>
+                        <MatrimonyCoupleHeartIcon size={17} color="#FFFFFF" />
+                      </View>
+                      <Text
+                        style={styles.matrimonyCardLabel}
+                        numberOfLines={2}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.75}
+                      >
+                        {'Rhema\nMatrimony'}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              }
 
               return (
                 <TouchableOpacity
@@ -360,6 +466,36 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
               }
             }
           };
+
+          if (config.key === 'Matrimony') {
+            return (
+              <TouchableOpacity
+                key={index}
+                accessibilityRole="button"
+                accessibilityState={isFocused ? { selected: true } : {}}
+                accessibilityLabel={options.tabBarAccessibilityLabel}
+                testID={options.tabBarTestID}
+                onPress={onPress}
+                style={styles.pillMatrimonySlot}
+                activeOpacity={0.88}
+              >
+                <View style={styles.pillMatrimonyCard}>
+                  <MatrimonySlantedCardBg />
+                  <View style={styles.matrimonyCornerIconWrap}>
+                    <MatrimonyCoupleHeartIcon size={17} color="#FFFFFF" />
+                  </View>
+                  <Text
+                    style={styles.matrimonyCardLabel}
+                    numberOfLines={2}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.75}
+                  >
+                    {'Rhema\nMatrimony'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          }
 
           return (
             <TouchableOpacity
@@ -575,11 +711,12 @@ const LockedFeatureScreen = ({ navigation }: any) => {
   );
 };
 
-function TabNavigator() {
+function TabNavigatorContent() {
   const { user, signOut, member, viewMode, setViewMode } = useAuth();
   const { activeChurch } = useChurch();
   const { language, t } = useLanguage();
   const { colors } = useTheme();
+  const profileDrawer = useProfileDrawer();
 
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
@@ -637,8 +774,17 @@ function TabNavigator() {
         listeners={{ tabPress: handleFeatureInteraction }}
       />
       <Tab.Screen 
-        name="Profile" 
-        component={ProfileScreen} 
+        name="Matrimony" 
+        component={MatrimonyNavigator} 
+        listeners={{
+          tabPress: (e: any) => {
+            handleFeatureInteraction(e);
+            if (!e.defaultPrevented) {
+              e.preventDefault();
+              navigation.navigate('Matrimony');
+            }
+          },
+        }}
       />
     </Tab.Navigator>
 
@@ -648,7 +794,23 @@ function TabNavigator() {
         navigation.navigate('AdminRoot');
       }} />
     )}
+
+    {profileDrawer && (
+      <ProfileDrawerOverlay
+        visible={profileDrawer.isOpen}
+        onClose={profileDrawer.closeDrawer}
+        navigation={navigation}
+      />
+    )}
     </>
+  );
+}
+
+function TabNavigator() {
+  return (
+    <ProfileDrawerProvider>
+      <TabNavigatorContent />
+    </ProfileDrawerProvider>
   );
 }
 
@@ -1332,6 +1494,8 @@ function Navigation() {
             <Stack.Screen name="Gallery" component={renderPremium(MemberGalleryNavigator)} />
             <Stack.Screen name="Testimonies" component={renderPremium(TestimoniesScreen)} />
             <Stack.Screen name="TestimonyDetail" component={renderPremium(TestimonyDetailScreen)} />
+            <Stack.Screen name="Matrimony" component={renderPremium(MatrimonyNavigator)} />
+            <Stack.Screen name="Profile" component={renderPremium(ProfileScreen)} />
             <Stack.Screen name="VerseOfTheDay" component={renderPremium(VerseOfTheDayScreen)} />
             <Stack.Screen name="BibleQuizHome" component={BibleQuizHomeScreen} />
             <Stack.Screen name="ChurchQuizzes" component={ChurchQuizzesScreen} />
@@ -1350,6 +1514,7 @@ function Navigation() {
             <Stack.Screen name="AIAssistant" component={renderPremium(AIAssistantModal)} options={{ presentation: 'modal' }} />
             <Stack.Screen name="EventAttendees" component={EventAttendeesScreen} />
             <Stack.Screen name="AdminRegistrationApprovals" component={AdminRegistrationApprovals} />
+            <Stack.Screen name="AdminMatrimonyProfileDetail" component={AdminMatrimonyProfileDetailScreen} />
           </>
         ) : (
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />
@@ -1384,6 +1549,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     borderTopWidth: 1,
+    overflow: 'hidden',
     elevation: 25,
     zIndex: 9999,
     shadowColor: '#000',
@@ -1393,7 +1559,7 @@ const styles = StyleSheet.create({
   },
   capsuleTabsRow: {
     flexDirection: 'row',
-    height: 56,
+    height: 52,
     alignItems: 'center',
     justifyContent: 'space-around',
     width: '100%',
@@ -1402,20 +1568,20 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    height: 56,
+    height: 52,
   },
   activeCapsulePill: {
-    minWidth: 56,
-    height: 48,
-    borderRadius: 24,
+    minWidth: 54,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 3,
     paddingHorizontal: 4,
   },
   inactiveCapsuleWrapper: {
-    minWidth: 56,
-    height: 48,
+    minWidth: 54,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 3,
@@ -1447,21 +1613,78 @@ const styles = StyleSheet.create({
     backgroundColor: '#EF4444',
     borderWidth: 1.5,
   },
+  capsuleMatrimonySlot: {
+    flex: 1.38,
+    height: 52,
+    justifyContent: 'flex-end',
+    alignItems: 'stretch',
+    paddingLeft: 2,
+    marginRight: -2,
+    overflow: 'hidden',
+  },
+  capsuleMatrimonyCard: {
+    height: 48,
+    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingLeft: 9,
+    paddingRight: 6,
+    paddingVertical: 4,
+    overflow: 'visible',
+  },
+  pillMatrimonySlot: {
+    flex: 1.38,
+    height: 54,
+    justifyContent: 'center',
+    alignItems: 'stretch',
+    paddingLeft: 2,
+    marginRight: -2,
+    overflow: 'hidden',
+  },
+  pillMatrimonyCard: {
+    flex: 1,
+    position: 'relative',
+    borderTopRightRadius: 27,
+    borderBottomRightRadius: 27,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingLeft: 10,
+    paddingRight: 8,
+    paddingVertical: 4,
+  },
+  matrimonyCornerIconWrap: {
+    alignSelf: 'flex-start',
+    marginTop: 3,
+    marginRight: 4,
+  },
+  matrimonyCardLabel: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 9.5,
+    lineHeight: 11,
+    fontWeight: '800',
+    textAlign: 'left',
+  },
   tabBarContainer: {
     flexDirection: 'row',
-    height: 62,
+    height: 54,
     position: 'absolute',
     bottom: Platform.OS === 'ios' ? 34 : 20,
     left: 16,
     right: 16,
-    borderRadius: 36,
+    borderRadius: 27,
+    overflow: 'hidden',
     elevation: 25,
     zIndex: 9999,
     shadowColor: '#000',
     shadowOpacity: 0.2,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 5 },
-    paddingHorizontal: 8,
+    paddingLeft: 8,
+    paddingRight: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1469,13 +1692,13 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    height: 65,
+    height: 54,
   },
   activeCircle: {
     backgroundColor: '#ffffff',
-    width: 55,
-    height: 55,
-    borderRadius: 27.5, 
+    width: 46,
+    height: 46,
+    borderRadius: 23, 
     justifyContent: 'center',
     alignItems: 'center',
   },

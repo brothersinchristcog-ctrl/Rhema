@@ -1799,3 +1799,55 @@ export {
 } from './rosterNotifications.js';
 
 export { guestInviteLanding } from './guestInvite.js';
+
+export {
+  startMatrimonyRegistration,
+  saveMatrimonyDraft,
+  submitMatrimonyProfile,
+  resetMatrimonyProfile,
+  getMatrimonyStatus,
+  uploadMatrimonyPhoto,
+} from './matrimony/registration.js';
+
+export {
+  getMatrimonyAdminDashboard,
+  getMatrimonyPendingProfiles,
+  getMatrimonyAdminProfileDetail,
+  approveMatrimonyProfile,
+  rejectMatrimonyProfile,
+  requestMatrimonyCorrection,
+  suspendMatrimonyProfile,
+  removeMatrimonyProfileForAbuse,
+  deleteMatrimonyProfile,
+  inactivateMatrimonyProfile,
+  activateMatrimonyProfile,
+  resolveMatrimonyReport,
+} from './matrimony/admin.js';
+
+export {
+  onMatrimonyProfileDeleted,
+  onMatrimonyAdminProfileDeleted,
+} from './matrimony/triggers.js';
+
+export {
+  getMatrimonyMatches,
+  toggleMatrimonyShortlist,
+  recordMatrimonyProfileView,
+  dismissMatrimonyMatch,
+  restoreMatrimonyMatches,
+  sendMatrimonyInterest,
+  getMatrimonyInterestsHub,
+  respondMatrimonyInterest,
+  reportMatrimonyProfile,
+} from './matrimony/matches.js';
+
+export {
+  ensureMatrimonyChatRoom,
+  getMatrimonyChatContacts,
+  notifyMatrimonyChatMessage,
+} from './matrimony/chat.js';
+
+export {
+  createMatrimonyUpgradeOrder,
+  verifyMatrimonyUpgradePayment,
+} from './matrimony/membership.js';

@@ -1,4 +1,4 @@
-import React, { useContext, useMemo, useRef, useLayoutEffect } from 'react';
+import React, { useContext, useMemo, useRef, useLayoutEffect, useState, useEffect, useCallback } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -10,16 +10,23 @@ import {
   Platform, 
   Image 
 } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { 
   LogOut, 
   Smartphone, 
-  Shield
+  Shield,
+  HeartHandshake,
+  ChevronRight,
+  Users,
+  CheckCircle2,
+  Clock,
 } from 'lucide-react-native';
 import { useChurch } from '../../context/ChurchContext';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme, FONT_STYLE_OPTIONS } from '../../context/ThemeContext';
+import { AdminMatrimonyCounts, matrimonyApi } from '../../modules/matrimony';
 
 // ── Tab 3D Asset Icons (Matches Home Screen Quick Access 3D Style) ──
 const TAB_3D_ASSETS: Record<string, { icon: any }> = {
@@ -102,7 +109,8 @@ const EXCLUDED_TAB_NAMES = [
   'New Promise', 
   'New Sermon', 
   'New Event', 
-  'New Online Meeting'
+  'New Online Meeting',
+  'Rhema Matrimony'
 ];
 
 export default function AdminDashboard({ navigation, allTabs = [] }: any) {
@@ -153,6 +161,41 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
 
   // Track all rendered tab names so no tab is EVER missed
   const renderedTabNames = new Set<string>();
+
+  const isFocused = useIsFocused();
+  const [matrimonyCounts, setMatrimonyCounts] = useState<AdminMatrimonyCounts | null>(null);
+
+  const loadMatrimonyCounts = useCallback(async () => {
+    try {
+      const res = await matrimonyApi.getAdminDashboard();
+      if (res?.counts) {
+        setMatrimonyCounts(res.counts);
+      }
+    } catch (err: any) {
+      console.warn('AdminDashboard matrimony counts error:', err?.code, err?.message);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadMatrimonyCounts();
+  }, [loadMatrimonyCounts]);
+
+  useEffect(() => {
+    if (isFocused) {
+      loadMatrimonyCounts();
+    }
+  }, [isFocused, loadMatrimonyCounts]);
+
+  const matrimonyTabIndex = useMemo(
+    () => allTabs.findIndex((t: any) => t.name === 'Rhema Matrimony'),
+    [allTabs]
+  );
+
+  const handleOpenMatrimony = () => {
+    if (matrimonyTabIndex !== -1) {
+      setActiveTab(matrimonyTabIndex);
+    }
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: screenBg }]}>
@@ -284,6 +327,110 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
 
         {/* ── Main Structured Sections: Completely BELOW the Orange Gradient (Home Screen Quick Access 3D Grid Style) ── */}
         <View style={[styles.sectionsContainer, { paddingHorizontal: horizontalPadding }]}>
+          {matrimonyTabIndex !== -1 && (
+            <TouchableOpacity
+              style={[
+                styles.matrimonyBannerCard,
+                {
+                  backgroundColor: cardBg,
+                  borderColor: isDark ? '#3F3F46' : '#FBCFE8',
+                },
+              ]}
+              onPress={handleOpenMatrimony}
+              activeOpacity={0.86}
+            >
+              <View style={styles.matrimonyBannerTop}>
+                <View style={styles.matrimonyIconCircle}>
+                  <HeartHandshake size={22} color="#E05A5A" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={[
+                      styles.matrimonyBannerTitle,
+                      { color: primaryText, fontFamily: appFontFamily, fontSize: scaleFont(16) },
+                    ]}
+                  >
+                    Rhema Matrimony
+                  </Text>
+                  <Text
+                    style={[
+                      styles.matrimonyBannerSub,
+                      { color: secondaryText, fontFamily: appFontFamily, fontSize: scaleFont(12) },
+                    ]}
+                  >
+                    Review & verify member profiles
+                  </Text>
+                </View>
+                <ChevronRight size={20} color={secondaryText} />
+              </View>
+
+              <View
+                style={[
+                  styles.matrimonyStatsRow,
+                  { borderTopColor: isDark ? '#27272A' : '#F1F5F9' },
+                ]}
+              >
+                <View style={styles.matrimonyStatItem}>
+                  <View style={styles.matrimonyStatLabelRow}>
+                    <Users size={13} color="#2563EB" />
+                    <Text style={[styles.matrimonyStatLabel, { color: secondaryText, fontFamily: appFontFamily }]}>
+                      Profiles
+                    </Text>
+                  </View>
+                  <Text style={[styles.matrimonyStatVal, { color: primaryText, fontFamily: appFontFamily }]}>
+                    {matrimonyCounts?.total ?? '—'}
+                  </Text>
+                </View>
+
+                <View style={[styles.matrimonyStatDivider, { backgroundColor: isDark ? '#27272A' : '#E2E8F0' }]} />
+
+                <View style={styles.matrimonyStatItem}>
+                  <View style={styles.matrimonyStatLabelRow}>
+                    <CheckCircle2 size={13} color="#16A34A" />
+                    <Text style={[styles.matrimonyStatLabel, { color: secondaryText, fontFamily: appFontFamily }]}>
+                      Verified
+                    </Text>
+                  </View>
+                  <Text style={[styles.matrimonyStatVal, { color: '#16A34A', fontFamily: appFontFamily }]}>
+                    {matrimonyCounts?.verified ?? '—'}
+                  </Text>
+                </View>
+
+                <View style={[styles.matrimonyStatDivider, { backgroundColor: isDark ? '#27272A' : '#E2E8F0' }]} />
+
+                <View style={styles.matrimonyStatItem}>
+                  <View style={styles.matrimonyStatLabelRow}>
+                    <Clock size={13} color="#D97706" />
+                    <Text style={[styles.matrimonyStatLabel, { color: secondaryText, fontFamily: appFontFamily }]}>
+                      Pending
+                    </Text>
+                  </View>
+                  <Text style={[styles.matrimonyStatVal, { color: '#D97706', fontFamily: appFontFamily }]}>
+                    {matrimonyCounts?.pending ?? '—'}
+                  </Text>
+                </View>
+
+                {((matrimonyCounts?.openReports ?? 0) > 0 || (matrimonyCounts?.inactive ?? 0) > 0) && (
+                  <>
+                    <View style={[styles.matrimonyStatDivider, { backgroundColor: isDark ? '#27272A' : '#E2E8F0' }]} />
+                    <View style={styles.matrimonyStatItem}>
+                      <View style={styles.matrimonyStatLabelRow}>
+                        <Text style={[styles.matrimonyStatLabel, { color: '#DC2626', fontFamily: appFontFamily }]}>
+                          {(matrimonyCounts?.openReports ?? 0) > 0 ? 'Reports' : 'Inactive'}
+                        </Text>
+                      </View>
+                      <Text style={[styles.matrimonyStatVal, { color: '#DC2626', fontFamily: appFontFamily }]}>
+                        {(matrimonyCounts?.openReports ?? 0) > 0
+                          ? matrimonyCounts?.openReports
+                          : matrimonyCounts?.inactive}
+                      </Text>
+                    </View>
+                  </>
+                )}
+              </View>
+            </TouchableOpacity>
+          )}
+
           {SECTIONS.map((section) => {
             const sectionTabs = section.tabNames
               .map(name => {
@@ -678,5 +825,65 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: '800',
     letterSpacing: 0.3,
+  },
+  matrimonyBannerCard: {
+    borderRadius: 18,
+    borderWidth: 1.2,
+    padding: 14,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  matrimonyBannerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  matrimonyIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: 'rgba(224, 90, 90, 0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  matrimonyBannerTitle: {
+    fontWeight: '800',
+  },
+  matrimonyBannerSub: {
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  matrimonyStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+  },
+  matrimonyStatItem: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 3,
+  },
+  matrimonyStatLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  matrimonyStatLabel: {
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
+  matrimonyStatVal: {
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  matrimonyStatDivider: {
+    width: 1,
+    height: 28,
   },
 });

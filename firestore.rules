@@ -111,7 +111,7 @@ service cloud.firestore {
 
     // 4. Prayer Requests
     match /prayerRequests/{reqId} {
-      allow read: if isAuthenticated() && (resource.data.type == 'public' || isOwner(resource.data.uid));
+      allow read: if isAuthenticated() && (resource.data.type == 'public' || resource.data.isPublic == true || isOwner(resource.data.uid) || isAdmin());
       allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
       allow update, delete: if isOwner(resource.data.uid);
       
@@ -401,7 +401,7 @@ service cloud.firestore {
 
       // Prayer Requests (church-scoped)
       match /prayerRequests/{reqId} {
-        allow read: if isAuthenticated() && (resource.data.type == 'public' || isOwner(resource.data.uid));
+        allow read: if isAuthenticated() && (resource.data.type == 'public' || resource.data.isPublic == true || isOwner(resource.data.uid) || isChurchAdmin());
         allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
         allow update, delete: if isOwner(resource.data.uid) || isChurchAdmin();
         
@@ -672,13 +672,133 @@ service cloud.firestore {
           isChurchAdmin() || resource.data.memberId == request.auth.uid
         );
       }
-      }
 
       // Any other church subcollection: authenticated members can read, admins can write
       match /{subcollection}/{docId} {
         allow read: if isAuthenticated();
         allow write: if isChurchAdmin();
       }
+    }
+
+    // =========================================================================
+    // RHEMA MATRIMONY MODULE (Strict auth: never uses temporary debug bypass)
+    // =========================================================================
+    function matrimonySignedIn() {
+      return request.auth != null;
+    }
+
+    function isMatrimonyOwner(uid) {
+      return matrimonySignedIn() && request.auth.uid == uid;
+    }
+
+    match /matrimony_profiles/{uid} {
+      allow read: if matrimonySignedIn() && (
+        isMatrimonyOwner(uid) ||
+        (resource.data.profileStatus == 'approved' && resource.data.visibility == 'discoverable')
+      );
+      allow write: if false;
+
+      match /private/{docId} {
+        allow read, write: if false;
+      }
+
+      match /preferences/{docId} {
+        allow read, write: if false;
+      }
+
+      match /verification/{docId} {
+        allow read, write: if false;
+      }
+
+      match /shortlists/{docId} {
+        allow read, write: if false;
+      }
+
+      match /blocks/{docId} {
+        allow read, write: if false;
+      }
+    }
+
+    match /matrimony_bans/{uid} {
+      allow read, write: if false;
+    }
+
+    match /matrimony_private/{uid} {
+      allow read, write: if false;
+    }
+
+    match /matrimony_preferences/{uid} {
+      allow read, write: if false;
+    }
+
+    match /matrimony_verifications/{uid} {
+      allow read, write: if false;
+    }
+
+    match /matrimony_interests/{id} {
+      allow read: if matrimonySignedIn() && (
+        resource.data.senderUid == request.auth.uid ||
+        resource.data.receiverUid == request.auth.uid
+      );
+      allow write: if false;
+    }
+
+    match /matrimony_matches/{id} {
+      allow read: if matrimonySignedIn() &&
+        request.auth.uid in resource.data.participantIds;
+      allow write: if false;
+    }
+
+    match /matrimony_recommendations/{uid}/items/{candidateUid} {
+      allow read: if isMatrimonyOwner(uid);
+      allow write: if false;
+    }
+
+    match /matrimony_chats/{chatId} {
+      allow read: if matrimonySignedIn() &&
+        request.auth.uid in resource.data.participantIds;
+      allow write: if false;
+
+      match /messages/{messageId} {
+        allow read: if matrimonySignedIn() &&
+          request.auth.uid in get(/databases/$(database)/documents/matrimony_chats/$(chatId)).data.participantIds;
+        allow write: if false;
+      }
+    }
+
+    match /matrimony_shortlists/{uid}/saved/{targetUid} {
+      allow read, write: if false;
+    }
+
+    match /matrimony_guardians/{uid}/authorized/{guardianUid} {
+      allow read, write: if false;
+    }
+
+    match /matrimony_blocks/{uid}/blocked/{targetUid} {
+      allow read, write: if false;
+    }
+
+    match /matrimony_reports/{id} {
+      allow read, write: if false;
+    }
+
+    match /matrimony_notifications/{id} {
+      allow read: if matrimonySignedIn() &&
+        resource.data.recipientUid == request.auth.uid;
+      allow write: if false;
+    }
+
+    match /matrimony_settings/{id} {
+      allow read: if matrimonySignedIn();
+      allow write: if false;
+    }
+
+    match /matrimony_audit_logs/{id} {
+      allow read, write: if false;
+    }
+
+    match /matrimony_admin_profiles/{uid} {
+      allow read, write: if false;
     }
   }
 }
