@@ -927,21 +927,71 @@ function Navigation() {
       tryNav();
     };
 
+    const LAST_HANDLED_EXPO_NOTIF_KEY = '@rhema_last_handled_expo_notif';
+    const LAST_HANDLED_FCM_NOTIF_KEY = '@rhema_last_handled_fcm_notif';
+
+    const buildExpoResponseKey = (response: any) => {
+      const notifId = response?.notification?.request?.identifier || '';
+      const notifDate = String(response?.notification?.date || '');
+      const actionId = response?.actionIdentifier || '';
+      const d = (response?.notification?.request?.content?.data || {}) as any;
+      return `${notifId}::${notifDate}::${actionId}::${d.type || ''}::${d.videoId || d.id || ''}`;
+    };
+
+    const buildFcmMessageKey = (remoteMessage: any) => {
+      if (!remoteMessage) return '';
+      if (remoteMessage.messageId) return String(remoteMessage.messageId);
+      const d = remoteMessage.data || {};
+      return `${remoteMessage.sentTime || ''}::${d.type || ''}::${d.videoId || d.id || ''}`;
+    };
+
     const subscription = Notifications.addNotificationResponseReceivedListener(response => {
+      const responseKey = buildExpoResponseKey(response);
+      AsyncStorage.setItem(LAST_HANDLED_EXPO_NOTIF_KEY, responseKey).catch(() => {});
+      // Clear cached native response immediately so JS reloads/refreshes never replay this tap
+      (Notifications as any).clearLastNotificationResponseAsync?.().catch(() => {});
+
       const data = response.notification?.request?.content?.data;
       handleExpoNotificationPayload(data);
     });
 
     // Cold-start: app was fully closed when user tapped the notification.
-    Notifications.getLastNotificationResponseAsync().then(response => {
-      if (!response) return;
-      const data = response.notification?.request?.content?.data;
-      handleExpoNotificationPayload(data);
-    }).catch(() => {});
+    // Deduplicate via AsyncStorage + clear native cache so refreshing/reloading the app NEVER replays an old notification!
+    Notifications.getLastNotificationResponseAsync()
+      .then(async response => {
+        if (!response) return;
+        const responseKey = buildExpoResponseKey(response);
+        const data = (response.notification?.request?.content?.data || {}) as any;
+
+        // Always clear native cached response immediately so subsequent refreshes stay clean
+        (Notifications as any).clearLastNotificationResponseAsync?.().catch(() => {});
+
+        const lastHandled = await AsyncStorage.getItem(LAST_HANDLED_EXPO_NOTIF_KEY).catch(() => null);
+        if (lastHandled && lastHandled === responseKey) {
+          return; // Already handled in an earlier session/reload
+        }
+        await AsyncStorage.setItem(LAST_HANDLED_EXPO_NOTIF_KEY, responseKey).catch(() => {});
+
+        // Guard against stale YouTube Live notifications cached from hours earlier
+        if (data?.type === 'youtube_live') {
+          const rawDate = Number(response.notification?.date || 0);
+          const deliveredMs = rawDate > 1e12 ? rawDate : rawDate * 1000;
+          if (deliveredMs > 0 && Date.now() - deliveredMs > 60 * 60 * 1000) {
+            return;
+          }
+        }
+
+        handleExpoNotificationPayload(data);
+      })
+      .catch(() => {});
 
     // 1. When app is in background and user clicks notification
     const unsubscribeOnOpen = NotificationService.messaging().onNotificationOpenedApp(remoteMessage => {
       if (!remoteMessage) return;
+      const fcmKey = buildFcmMessageKey(remoteMessage);
+      if (fcmKey) {
+        AsyncStorage.setItem(LAST_HANDLED_FCM_NOTIF_KEY, fcmKey).catch(() => {});
+      }
       const { navigationRef } = require('../../App');
       if (
         navigationRef &&
@@ -972,8 +1022,25 @@ function Navigation() {
     });
 
     // 2. When app is closed and user clicks notification
-    NotificationService.messaging().getInitialNotification().then(remoteMessage => {
+    NotificationService.messaging().getInitialNotification().then(async remoteMessage => {
       if (remoteMessage) {
+        const fcmKey = buildFcmMessageKey(remoteMessage);
+        if (fcmKey) {
+          const lastHandledFcm = await AsyncStorage.getItem(LAST_HANDLED_FCM_NOTIF_KEY).catch(() => null);
+          if (lastHandledFcm && lastHandledFcm === fcmKey) {
+            return; // Already handled — prevent replay on reload/refresh
+          }
+          await AsyncStorage.setItem(LAST_HANDLED_FCM_NOTIF_KEY, fcmKey).catch(() => {});
+        }
+
+        // Guard against stale YouTube Live initial notification older than 1 hour
+        if (remoteMessage?.data?.type === 'youtube_live') {
+          const sentMs = Number(remoteMessage.sentTime || 0);
+          if (sentMs > 0 && Date.now() - sentMs > 60 * 60 * 1000) {
+            return;
+          }
+        }
+
         const { navigationRef } = require('../../App');
         if (
           navigationRef &&
