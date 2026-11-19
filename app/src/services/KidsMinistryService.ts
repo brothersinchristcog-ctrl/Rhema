@@ -1452,11 +1452,14 @@ class KidsMinistryService {
       name: string;
       phone: string;
       email?: string;
+      memberId?: string;
       role: any;
       assignedClassTier: KidsClassTier;
       assignedClassName: string;
       roomNumber?: string;
       pinCode?: string;
+      backgroundCheckPassed?: boolean;
+      safeguardingStatus?: 'verified' | 'pending' | 'in_review';
     }
   ): Promise<KidsTeacherRecord> {
     const cId = churchId || RHEMA_CHURCH_ID;
@@ -1467,6 +1470,7 @@ class KidsMinistryService {
     const newRecord = {
       teacherId,
       churchId: cId,
+      memberId: data.memberId || '',
       name: data.name.trim(),
       phone: data.phone.trim(),
       email: data.email?.trim() || '',
@@ -1474,10 +1478,10 @@ class KidsMinistryService {
       assignedClassTier: data.assignedClassTier,
       assignedClassName: data.assignedClassName,
       roomNumber: data.roomNumber || 'Room 201',
-      safeguardingStatus: 'verified' as const,
-      safeguardingVerifiedDate: new Date().toISOString().split('T')[0],
-      backgroundCheckPassed: true,
-      faceEnrolled: true,
+      safeguardingStatus: data.safeguardingStatus || 'verified',
+      safeguardingVerifiedDate: data.backgroundCheckPassed ? new Date().toISOString().split('T')[0] : '',
+      backgroundCheckPassed: Boolean(data.backgroundCheckPassed),
+      faceEnrolled: false,
       pinCode: data.pinCode || '1234',
       status: 'active' as const,
       attendanceCount: 0,
@@ -1487,6 +1491,34 @@ class KidsMinistryService {
 
     const docRef = await this.getTeachersCollection(cId).add(sanitizeForFirestore(newRecord));
     return { id: docRef.id, ...newRecord };
+  }
+
+  /**
+   * Fetches church members for search and selection when registering faculty.
+   */
+  async searchChurchMembers(churchId: string, search: string): Promise<any[]> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    try {
+      const snap = await firestore()
+        .collection(RHEMA_ROOT_COLLECTION)
+        .doc(cId)
+        .collection('members')
+        .limit(100)
+        .get();
+
+      const q = search.trim().toLowerCase();
+      return snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter((m: any) => {
+          const name = (m.name || `${m.firstName || ''} ${m.lastName || ''}`).trim().toLowerCase();
+          const phone = (m.phone || m.mobileNumber || '').toLowerCase();
+          if (!q) return true;
+          return name.includes(q) || phone.includes(q);
+        });
+    } catch (err) {
+      console.warn('searchChurchMembers error:', err);
+      return [];
+    }
   }
 
   /**
@@ -3094,10 +3126,29 @@ class KidsMinistryService {
       };
     });
   }
-  async createStory(churchId: string, story: Partial<KidsBibleStory>): Promise<void> {
+  async createStory(churchId: string, story: Partial<KidsBibleStory>): Promise<string> {
     const cId = churchId || RHEMA_CHURCH_ID;
     const now = firestore.FieldValue.serverTimestamp();
-    await this.getStoriesCollection(cId).add(sanitizeForFirestore({ ...story, createdAt: now, updatedAt: now }));
+    const docRef = await this.getStoriesCollection(cId).add(
+      sanitizeForFirestore({
+        ...story,
+        isPublished: story.isPublished ?? true,
+        createdAt: now,
+        updatedAt: now,
+      })
+    );
+    return docRef.id;
+  }
+
+  async updateStory(churchId: string, docId: string, updates: Partial<KidsBibleStory>): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const now = firestore.FieldValue.serverTimestamp();
+    await this.getStoriesCollection(cId).doc(docId).update(
+      sanitizeForFirestore({
+        ...updates,
+        updatedAt: now,
+      })
+    );
   }
 
   async deleteStory(churchId: string, docId: string): Promise<void> {
@@ -3105,10 +3156,29 @@ class KidsMinistryService {
     await this.getStoriesCollection(cId).doc(docId).delete();
   }
 
-  async createQuiz(churchId: string, quiz: Partial<KidsQuiz>): Promise<void> {
+  async createQuiz(churchId: string, quiz: Partial<KidsQuiz>): Promise<string> {
     const cId = churchId || RHEMA_CHURCH_ID;
     const now = firestore.FieldValue.serverTimestamp();
-    await this.getQuizzesCollection(cId).add(sanitizeForFirestore({ ...quiz, createdAt: now }));
+    const docRef = await this.getQuizzesCollection(cId).add(
+      sanitizeForFirestore({
+        ...quiz,
+        isPublished: quiz.isPublished ?? true,
+        createdAt: now,
+        updatedAt: now,
+      })
+    );
+    return docRef.id;
+  }
+
+  async updateQuiz(churchId: string, docId: string, updates: Partial<KidsQuiz>): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const now = firestore.FieldValue.serverTimestamp();
+    await this.getQuizzesCollection(cId).doc(docId).update(
+      sanitizeForFirestore({
+        ...updates,
+        updatedAt: now,
+      })
+    );
   }
 
   async deleteQuiz(churchId: string, docId: string): Promise<void> {
@@ -3116,10 +3186,29 @@ class KidsMinistryService {
     await this.getQuizzesCollection(cId).doc(docId).delete();
   }
 
-  async createSong(churchId: string, song: Partial<KidsWorshipSong>): Promise<void> {
+  async createSong(churchId: string, song: Partial<KidsWorshipSong>): Promise<string> {
     const cId = churchId || RHEMA_CHURCH_ID;
     const now = firestore.FieldValue.serverTimestamp();
-    await this.getSongsCollection(cId).add(sanitizeForFirestore({ ...song, createdAt: now }));
+    const docRef = await this.getSongsCollection(cId).add(
+      sanitizeForFirestore({
+        ...song,
+        isPublished: song.isPublished ?? true,
+        createdAt: now,
+        updatedAt: now,
+      })
+    );
+    return docRef.id;
+  }
+
+  async updateSong(churchId: string, docId: string, updates: Partial<KidsWorshipSong>): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const now = firestore.FieldValue.serverTimestamp();
+    await this.getSongsCollection(cId).doc(docId).update(
+      sanitizeForFirestore({
+        ...updates,
+        updatedAt: now,
+      })
+    );
   }
 
   async deleteSong(churchId: string, docId: string): Promise<void> {

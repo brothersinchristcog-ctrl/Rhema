@@ -275,6 +275,8 @@ export interface KidsBibleStory {
     questionTelugu: string;
   }>;
   audioNarrationUrl?: string;
+  isPublished?: boolean;
+  ageGroup?: string;
   createdAt: any;
   updatedAt: any;
 }
@@ -299,8 +301,12 @@ export interface KidsQuiz {
   pointsReward: number;
   badgeReward: string;
   coverEmoji: string;
+  difficulty?: 'beginner' | 'intermediate' | 'advanced';
+  ageGroup?: string;
+  isPublished?: boolean;
   questions: KidsQuizQuestion[];
   createdAt: any;
+  updatedAt?: any;
 }
 
 export interface KidsWorshipSong {
@@ -311,11 +317,16 @@ export interface KidsWorshipSong {
   titleTelugu: string;
   category: 'action_song' | 'praise' | 'hymn' | 'action_dance';
   youtubeVideoId: string;
+  audioUrl?: string;
+  audioFileName?: string;
+  thumbnailUrl?: string;
   lyricsTelugu: string;
   lyricsEnglish: string;
   duration: string;
   coverEmoji: string;
+  isPublished?: boolean;
   createdAt: any;
+  updatedAt?: any;
 }
 
 export interface KidsMemoryVerse {

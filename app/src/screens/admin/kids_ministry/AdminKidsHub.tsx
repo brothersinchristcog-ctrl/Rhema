@@ -349,29 +349,72 @@ export default function AdminKidsHub({ navigation }: any) {
           {/* ==================================================== */}
           {activeTab === 'overview' && (
             <>
-              {/* 4 Key Performance Indicators */}
+              {/* 4 Redesigned Executive Metric Cards */}
               <View style={styles.kpiGrid}>
-                <View style={styles.kpiCard}>
+                {/* 1. Enrolled Children */}
+                <View style={[styles.kpiCard, { borderColor: '#3B82F6', backgroundColor: '#0F172A' }]}>
+                  <View style={styles.kpiHeaderRow}>
+                    <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
+                      <Users size={18} color="#60A5FA" />
+                    </View>
+                    <View style={[styles.kpiTrendBadge, { backgroundColor: 'rgba(59, 130, 246, 0.2)' }]}>
+                      <Text style={[styles.kpiTrendText, { color: '#93C5FD' }]}>Roster</Text>
+                    </View>
+                  </View>
                   <Text style={styles.kpiNumber}>{children.length}</Text>
-                  <Text style={styles.kpiLabel}>Enrolled Children</Text>
+                  <Text style={styles.kpiTitle}>Enrolled Children</Text>
+                  <Text style={styles.kpiSub}>Registered in Sunday School</Text>
                 </View>
-                <View style={styles.kpiCard}>
+
+                {/* 2. Checked-In Today */}
+                <View style={[styles.kpiCard, { borderColor: '#10B981', backgroundColor: '#0F172A' }]}>
+                  <View style={styles.kpiHeaderRow}>
+                    <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
+                      <UserCheck size={18} color="#34D399" />
+                    </View>
+                    <View style={[styles.kpiTrendBadge, { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]}>
+                      <Text style={[styles.kpiTrendText, { color: '#6EE7B7' }]}>Live Today</Text>
+                    </View>
+                  </View>
                   <Text style={[styles.kpiNumber, { color: '#34D399' }]}>
                     {children.filter(c => c.custodyStatus === 'checked_in').length}
                   </Text>
-                  <Text style={styles.kpiLabel}>Checked-In Today</Text>
+                  <Text style={styles.kpiTitle}>Checked-In Today</Text>
+                  <Text style={styles.kpiSub}>Active in Sunday classrooms</Text>
                 </View>
-                <View style={styles.kpiCard}>
+
+                {/* 3. Faculty On Duty */}
+                <View style={[styles.kpiCard, { borderColor: '#F59E0B', backgroundColor: '#0F172A' }]}>
+                  <View style={styles.kpiHeaderRow}>
+                    <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
+                      <Clock size={18} color="#FBBF24" />
+                    </View>
+                    <View style={[styles.kpiTrendBadge, { backgroundColor: 'rgba(245, 158, 11, 0.2)' }]}>
+                      <Text style={[styles.kpiTrendText, { color: '#FCD34D' }]}>Attendance</Text>
+                    </View>
+                  </View>
                   <Text style={[styles.kpiNumber, { color: '#FBBF24' }]}>
                     {todayTeacherAttendance.length}/{teachers.length || 5}
                   </Text>
-                  <Text style={styles.kpiLabel}>Faculty On Duty</Text>
+                  <Text style={styles.kpiTitle}>Faculty On Duty</Text>
+                  <Text style={styles.kpiSub}>Clocked-in teachers & helpers</Text>
                 </View>
-                <View style={styles.kpiCard}>
-                  <Text style={[styles.kpiNumber, { color: '#60A5FA' }]}>
+
+                {/* 4. Face Scan Ready */}
+                <View style={[styles.kpiCard, { borderColor: '#8B5CF6', backgroundColor: '#0F172A' }]}>
+                  <View style={styles.kpiHeaderRow}>
+                    <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(139, 92, 246, 0.15)' }]}>
+                      <Camera size={18} color="#C084FC" />
+                    </View>
+                    <View style={[styles.kpiTrendBadge, { backgroundColor: 'rgba(139, 92, 246, 0.2)' }]}>
+                      <Text style={[styles.kpiTrendText, { color: '#DDD6FE' }]}>Biometrics</Text>
+                    </View>
+                  </View>
+                  <Text style={[styles.kpiNumber, { color: '#A78BFA' }]}>
                     {children.filter(c => c.faceEnrolled).length}
                   </Text>
-                  <Text style={styles.kpiLabel}>Face Scan Ready</Text>
+                  <Text style={styles.kpiTitle}>Face Scan Ready</Text>
+                  <Text style={styles.kpiSub}>With enrolled profile photos</Text>
                 </View>
               </View>
 
@@ -380,192 +423,185 @@ export default function AdminKidsHub({ navigation }: any) {
                 <Text style={styles.sectionHeading}>SUNDAY MORNING ACTIVE STATIONS</Text>
 
                 <View style={styles.stationsRow}>
+                  {/* Face Scan Kiosk */}
                   <TouchableOpacity
-                    style={styles.stationCard}
+                    style={[styles.stationCard, { borderColor: '#3B82F6' }]}
                     onPress={() => navigation.navigate('KidsFaceScanKiosk')}
                     activeOpacity={0.88}
                   >
-                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(251, 191, 36, 0.15)' }]}>
-                      <Camera size={20} color="#FBBF24" />
+                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.2)' }]}>
+                      <Camera size={20} color="#60A5FA" />
                     </View>
                     <Text style={styles.stationTitle}>Face Scan Kiosk</Text>
-                    <Text style={styles.stationSub}>Entrance rapid check-in & tokens</Text>
-                    <View style={styles.stationPill}>
-                      <Text style={styles.stationPillText}>Entrance &rsaquo;</Text>
+                    <Text style={styles.stationSub}>Entrance check-in for children & parents</Text>
+                    <View style={[styles.stationPill, { backgroundColor: '#1E3A8A' }]}>
+                      <Text style={[styles.stationPillText, { color: '#93C5FD' }]}>Entrance &rsaquo;</Text>
                     </View>
                   </TouchableOpacity>
 
+                  {/* Teacher Exit */}
                   <TouchableOpacity
-                    style={styles.stationCard}
+                    style={[styles.stationCard, { borderColor: '#10B981' }]}
                     onPress={() => navigation.navigate('KidsCheckOutScanner')}
                     activeOpacity={0.88}
                   >
-                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(52, 211, 153, 0.15)' }]}>
+                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]}>
                       <UserCheck size={20} color="#34D399" />
                     </View>
                     <Text style={styles.stationTitle}>Teacher Exit</Text>
-                    <Text style={styles.stationSub}>Dismissal scanner & guardian match</Text>
+                    <Text style={styles.stationSub}>Dismissal scanner & guardian verification</Text>
                     <View style={[styles.stationPill, { backgroundColor: '#064E3B' }]}>
                       <Text style={[styles.stationPillText, { color: '#34D399' }]}>Exit &rsaquo;</Text>
                     </View>
                   </TouchableOpacity>
 
+                  {/* Faculty Clock-In */}
                   <TouchableOpacity
-                    style={styles.stationCard}
+                    style={[styles.stationCard, { borderColor: '#F59E0B' }]}
                     onPress={() => navigation.navigate('KidsTeacherKiosk')}
                     activeOpacity={0.88}
                   >
-                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(96, 165, 250, 0.15)' }]}>
-                      <Clock size={20} color="#60A5FA" />
+                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.2)' }]}>
+                      <Clock size={20} color="#FBBF24" />
                     </View>
                     <Text style={styles.stationTitle}>Faculty Clock-In</Text>
-                    <Text style={styles.stationSub}>Teacher biometric scan & PIN</Text>
-                    <View style={[styles.stationPill, { backgroundColor: '#1E3A8A' }]}>
-                      <Text style={[styles.stationPillText, { color: '#60A5FA' }]}>Clock In &rsaquo;</Text>
+                    <Text style={styles.stationSub}>Teacher arrival & classroom duty recording</Text>
+                    <View style={[styles.stationPill, { backgroundColor: '#451A03' }]}>
+                      <Text style={[styles.stationPillText, { color: '#FBBF24' }]}>Clock In &rsaquo;</Text>
                     </View>
                   </TouchableOpacity>
                 </View>
+
+                {/* Faculty Clock-In Explanation Banner */}
+                <View style={styles.clockInExplainBanner}>
+                  <View style={styles.clockInExplainIcon}>
+                    <Clock size={16} color="#60A5FA" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.clockInExplainTitle}>Faculty Arrival & Duty Recording</Text>
+                    <Text style={styles.clockInExplainText}>
+                      Sunday School educators and volunteers clock in here prior to service to log arrival time, confirm active classroom assignments, and ensure required safeguarding ratios.
+                    </Text>
+                  </View>
+                </View>
               </View>
 
-              {/* Management Portals Navigation */}
+              {/* Management Portals - Clean 2x2 Grid Layout */}
               <View style={{ gap: 10, marginTop: 4 }}>
                 <Text style={styles.sectionHeading}>MANAGEMENT PORTALS</Text>
 
-                <TouchableOpacity
-                  style={styles.portalCard}
-                  onPress={() => setActiveTab('children')}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.portalIconBox}>
-                    <Users size={20} color="#FBBF24" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.portalTitle}>Children Roster & Guardian Verification</Text>
-                    <Text style={styles.portalSub}>View emergency alerts, medical notes & authorized pickup lists</Text>
-                  </View>
-                  <ChevronRight size={18} color="#6B7280" />
-                </TouchableOpacity>
+                <View style={styles.portalGrid2x2}>
+                  {/* Grid 1: Children Roster */}
+                  <TouchableOpacity
+                    style={styles.portalGridCard}
+                    onPress={() => setActiveTab('children')}
+                    activeOpacity={0.82}
+                  >
+                    <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
+                      <Users size={20} color="#60A5FA" />
+                    </View>
+                    <Text style={styles.portalGridTitle}>Children Roster</Text>
+                    <Text style={styles.portalGridSub}>
+                      {children.length} registered · Medical alerts, allergy flags & emergency pickup list
+                    </Text>
+                    <View style={styles.portalActionRow}>
+                      <Text style={styles.portalActionText}>Manage Roster &rsaquo;</Text>
+                    </View>
+                  </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={styles.portalCard}
-                  onPress={() => setActiveTab('classes')}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.portalIconBox}>
-                    <Calendar size={20} color="#60A5FA" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.portalTitle}>Sunday School Classrooms & Capacities</Text>
-                    <Text style={styles.portalSub}>Nursery to Teens tiers, teacher assignments & room limits</Text>
-                  </View>
-                  <ChevronRight size={18} color="#6B7280" />
-                </TouchableOpacity>
+                  {/* Grid 2: Classrooms & Capacities */}
+                  <TouchableOpacity
+                    style={styles.portalGridCard}
+                    onPress={() => setActiveTab('classes')}
+                    activeOpacity={0.82}
+                  >
+                    <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
+                      <Calendar size={20} color="#34D399" />
+                    </View>
+                    <Text style={styles.portalGridTitle}>Classrooms & Limits</Text>
+                    <Text style={styles.portalGridSub}>
+                      {classes.length} rooms · Nursery to Teens capacities, lead teachers & annual promotions
+                    </Text>
+                    <View style={styles.portalActionRow}>
+                      <Text style={[styles.portalActionText, { color: '#34D399' }]}>View Classes &rsaquo;</Text>
+                    </View>
+                  </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={styles.portalCard}
-                  onPress={() => setShowTeachersModal(true)}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.portalIconBox}>
-                    <ShieldCheck size={20} color="#34D399" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.portalTitle}>Sunday School Faculty & Safeguarding</Text>
-                    <Text style={styles.portalSub}>
-                      {teachers.length} Faculty · {todayTeacherAttendance.length} On Duty Today · Police Background Verified
+                  {/* Grid 3: Sunday School Faculty */}
+                  <TouchableOpacity
+                    style={styles.portalGridCard}
+                    onPress={() => setShowTeachersModal(true)}
+                    activeOpacity={0.82}
+                  >
+                    <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
+                      <ShieldCheck size={20} color="#FBBF24" />
+                    </View>
+                    <Text style={styles.portalGridTitle}>Faculty & Volunteers</Text>
+                    <Text style={styles.portalGridSub}>
+                      {teachers.length} team members · {todayTeacherAttendance.length} clocked in today · Member lookup
                     </Text>
-                  </View>
-                  <ChevronRight size={18} color="#6B7280" />
-                </TouchableOpacity>
+                    <View style={styles.portalActionRow}>
+                      <Text style={[styles.portalActionText, { color: '#FBBF24' }]}>Faculty Hub &rsaquo;</Text>
+                    </View>
+                  </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={styles.portalCard}
-                  onPress={() => setActiveTab('curriculum')}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.portalIconBox}>
-                    <Sparkles size={20} color="#F472B6" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.portalTitle}>52-Week Curriculum & AI Studio</Text>
-                    <Text style={styles.portalSub}>Bilingual Telugu & English lessons, quizzes & crafts</Text>
-                  </View>
-                  <ChevronRight size={18} color="#6B7280" />
-                </TouchableOpacity>
+                  {/* Grid 4: Bible Learning Center CMS */}
+                  <TouchableOpacity
+                    style={styles.portalGridCard}
+                    onPress={() => setShowContentManagerModal(true)}
+                    activeOpacity={0.82}
+                  >
+                    <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(168, 85, 247, 0.15)' }]}>
+                      <BookOpen size={20} color="#C084FC" />
+                    </View>
+                    <Text style={styles.portalGridTitle}>Bible Learning CMS</Text>
+                    <Text style={styles.portalGridSub}>
+                      {stories.length} stories · {quizzes.length} quizzes · {songs.length} action songs · Full CMS
+                    </Text>
+                    <View style={styles.portalActionRow}>
+                      <Text style={[styles.portalActionText, { color: '#C084FC' }]}>Open CMS &rsaquo;</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
 
-                <TouchableOpacity
-                  style={styles.portalCard}
-                  onPress={() => setShowContentManagerModal(true)}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.portalIconBox, { backgroundColor: 'rgba(251, 191, 36, 0.15)' }]}>
-                    <BookOpen size={20} color="#FBBF24" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.portalTitle}>Bible Learning Center CMS</Text>
-                    <Text style={styles.portalSub}>
-                      {stories.length} Illustrated Stories · {quizzes.length} Quizzes · {songs.length} Worship Songs
-                    </Text>
-                  </View>
-                  <ChevronRight size={18} color="#6B7280" />
-                </TouchableOpacity>
+                {/* Additional Specialized Portals */}
+                <View style={styles.additionalPortalsRow}>
+                  <TouchableOpacity
+                    style={[styles.smallPortalPill, { borderColor: '#F472B6' }]}
+                    onPress={() => setActiveTab('curriculum')}
+                    activeOpacity={0.8}
+                  >
+                    <Sparkles size={14} color="#F472B6" />
+                    <Text style={styles.smallPortalPillText}>52-Wk Curriculum</Text>
+                  </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={[styles.portalCard, { borderColor: '#8B5CF6', borderWidth: 1 }]}
-                  onPress={() => setShowAICopilotModal(true)}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.portalIconBox, { backgroundColor: 'rgba(139, 92, 246, 0.2)' }]}>
-                    <Sparkles size={20} color="#C084FC" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.portalTitle, { color: '#C084FC' }]}>
-                      AI Kids Ministry Studio (Claude 3.5 Sonnet)
-                    </Text>
-                    <Text style={styles.portalSub}>
-                      Generate bilingual lesson plans, interactive quizzes, stories & verse actions on-demand
-                    </Text>
-                  </View>
-                  <ChevronRight size={18} color="#C084FC" />
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.smallPortalPill, { borderColor: '#8B5CF6' }]}
+                    onPress={() => setShowAICopilotModal(true)}
+                    activeOpacity={0.8}
+                  >
+                    <Sparkles size={14} color="#C084FC" />
+                    <Text style={styles.smallPortalPillText}>Claude AI Studio</Text>
+                  </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={[styles.portalCard, { borderColor: '#EF4444', borderWidth: 1 }]}
-                  onPress={() => setShowVBSModal(true)}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.portalIconBox, { backgroundColor: 'rgba(239, 68, 68, 0.2)' }]}>
-                    <Award size={20} color="#EF4444" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.portalTitle, { color: '#EF4444' }]}>
-                      VBS & Summer Camps Hub (4 Houses)
-                    </Text>
-                    <Text style={styles.portalSub}>
-                      {vbsEvent?.title || 'Kingdom Champions VBS 2026'} · Live scores, house cheer & certificates
-                    </Text>
-                  </View>
-                  <ChevronRight size={18} color="#EF4444" />
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.smallPortalPill, { borderColor: '#EF4444' }]}
+                    onPress={() => setShowVBSModal(true)}
+                    activeOpacity={0.8}
+                  >
+                    <Award size={14} color="#EF4444" />
+                    <Text style={styles.smallPortalPillText}>VBS & Camps</Text>
+                  </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={[styles.portalCard, { borderColor: '#10B981', borderWidth: 1 }]}
-                  onPress={() => setShowReportsModal(true)}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.portalIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]}>
-                    <TrendingUp size={20} color="#10B981" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.portalTitle, { color: '#10B981' }]}>
-                      Ministry Health & Board Analytics
-                    </Text>
-                    <Text style={styles.portalSub}>
-                      Safeguarding ratios, attendance trends, medical audits & WhatsApp export
-                    </Text>
-                  </View>
-                  <ChevronRight size={18} color="#10B981" />
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.smallPortalPill, { borderColor: '#10B981' }]}
+                    onPress={() => setShowReportsModal(true)}
+                    activeOpacity={0.8}
+                  >
+                    <TrendingUp size={14} color="#10B981" />
+                    <Text style={styles.smallPortalPillText}>Reports</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </>
           )}
@@ -1194,48 +1230,77 @@ const styles = StyleSheet.create({
   },
   kpiCard: {
     width: (width - 50) / 2,
-    backgroundColor: '#18181B',
-    borderRadius: 18,
+    backgroundColor: '#0F172A',
+    borderRadius: 20,
     padding: 16,
-    borderWidth: 1,
-    borderColor: '#27272A',
+    borderWidth: 1.5,
+    borderColor: '#1E293B',
+    gap: 2,
+  },
+  kpiHeaderRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  kpiIconBox: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kpiTrendBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  kpiTrendText: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   kpiNumber: {
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: '900',
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     color: '#FFFFFF',
+    marginTop: 2,
   },
-  kpiLabel: {
-    fontSize: 11,
-    color: '#9CA3AF',
+  kpiTitle: {
+    fontSize: 13,
+    color: '#F1F5F9',
+    fontWeight: '700',
     marginTop: 4,
-    fontWeight: '500',
+  },
+  kpiSub: {
+    fontSize: 10,
+    color: '#94A3B8',
+    marginTop: 1,
   },
   sectionHeading: {
     fontSize: 11,
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    fontWeight: '700',
-    color: '#9CA3AF',
+    fontWeight: '800',
+    color: '#94A3B8',
     letterSpacing: 1.5,
     marginBottom: 4,
   },
   stationsRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
   },
   stationCard: {
     flex: 1,
-    backgroundColor: '#18181B',
-    borderRadius: 16,
+    backgroundColor: '#0F172A',
+    borderRadius: 18,
     padding: 14,
-    borderWidth: 1,
-    borderColor: '#27272A',
+    borderWidth: 1.5,
+    borderColor: '#1E293B',
   },
   stationIconBox: {
-    width: 38,
-    height: 38,
+    width: 40,
+    height: 40,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1243,19 +1308,18 @@ const styles = StyleSheet.create({
   },
   stationTitle: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#FFFFFF',
     marginBottom: 2,
   },
   stationSub: {
     fontSize: 10,
-    color: '#9CA3AF',
+    color: '#94A3B8',
     lineHeight: 14,
     minHeight: 28,
   },
   stationPill: {
     marginTop: 8,
-    backgroundColor: 'rgba(251, 191, 36, 0.1)',
     paddingVertical: 5,
     paddingHorizontal: 8,
     borderRadius: 6,
@@ -1263,8 +1327,104 @@ const styles = StyleSheet.create({
   },
   stationPillText: {
     fontSize: 10,
+    fontWeight: '800',
+  },
+  clockInExplainBanner: {
+    backgroundColor: '#0F172A',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'flex-start',
+    marginTop: 6,
+  },
+  clockInExplainIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  clockInExplainTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#93C5FD',
+    marginBottom: 2,
+  },
+  clockInExplainText: {
+    fontSize: 11,
+    color: '#94A3B8',
+    lineHeight: 16,
+  },
+  portalGrid2x2: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  portalGridCard: {
+    width: (width - 52) / 2,
+    backgroundColor: '#0F172A',
+    borderRadius: 20,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: '#1E293B',
+    gap: 4,
+  },
+  portalGridIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  portalGridTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  portalGridSub: {
+    fontSize: 11,
+    color: '#94A3B8',
+    lineHeight: 15,
+    minHeight: 45,
+    marginTop: 2,
+  },
+  portalActionRow: {
+    marginTop: 6,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#1E293B',
+  },
+  portalActionText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#60A5FA',
+  },
+  additionalPortalsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+    marginTop: 6,
+  },
+  smallPortalPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#0F172A',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  smallPortalPillText: {
+    fontSize: 11,
+    color: '#E2E8F0',
     fontWeight: '700',
-    color: '#FBBF24',
   },
   portalCard: {
     backgroundColor: '#18181B',
