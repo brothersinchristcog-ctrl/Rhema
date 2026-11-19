@@ -10,7 +10,9 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  KeyboardAvoidingView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   X,
   Save,
@@ -56,6 +58,7 @@ export default function EditClassModal({
   onClose,
   onSaved,
 }: EditClassModalProps) {
+  const insets = useSafeAreaInsets();
   const isEditing = Boolean(classData);
 
   const [name, setName] = useState('');
@@ -273,39 +276,46 @@ export default function EditClassModal({
   if (!visible) return null;
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <View style={styles.modalCard}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.headerTag}>SUNDAY SCHOOL SETTINGS</Text>
-              <Text style={styles.headerTitleSerif}>
-                {isEditing ? 'Edit Classroom' : 'Create New Classroom'}
-              </Text>
-            </View>
-            <View style={styles.headerActions}>
-              {isEditing && (
-                <TouchableOpacity
-                  onPress={handleDelete}
-                  style={styles.deleteHeaderBtn}
-                  disabled={saving || deleting}
-                  activeOpacity={0.8}
-                >
-                  {deleting ? (
-                    <ActivityIndicator size="small" color="#EF4444" />
-                  ) : (
-                    <Trash2 size={16} color="#EF4444" />
-                  )}
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity onPress={onClose} style={styles.closeBtn} disabled={saving || deleting}>
-                <X size={18} color="#9CA3AF" />
-              </TouchableOpacity>
-            </View>
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTag}>SUNDAY SCHOOL SETTINGS</Text>
+            <Text style={styles.headerTitleSerif}>
+              {isEditing ? 'Edit Classroom' : 'Create New Classroom'}
+            </Text>
           </View>
+          <View style={styles.headerActions}>
+            {isEditing && (
+              <TouchableOpacity
+                onPress={handleDelete}
+                style={styles.deleteHeaderBtn}
+                disabled={saving || deleting}
+                activeOpacity={0.8}
+              >
+                {deleting ? (
+                  <ActivityIndicator size="small" color="#EF4444" />
+                ) : (
+                  <Trash2 size={16} color="#EF4444" />
+                )}
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn} disabled={saving || deleting}>
+              <X size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+          </View>
+        </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={{ flex: 1 }}
+        >
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.scroll}
+            keyboardShouldPersistTaps="handled"
+          >
             {/* Class Name */}
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>Classroom Name *</Text>
@@ -573,32 +583,25 @@ export default function EditClassModal({
               )}
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
+  container: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    justifyContent: 'flex-end',
-  },
-  modalCard: {
-    backgroundColor: '#18181B',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    borderTopWidth: 1,
-    borderColor: '#27272A',
-    maxHeight: '90%',
+    backgroundColor: '#0F172A',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
   },
   headerActions: {
     flexDirection: 'row',
@@ -632,13 +635,14 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: '#27272A',
+    backgroundColor: '#1E293B',
     alignItems: 'center',
     justifyContent: 'center',
   },
   scroll: {
+    padding: 16,
     gap: 14,
-    paddingBottom: 16,
+    paddingBottom: 24,
   },
   fieldGroup: {
     gap: 6,
@@ -715,7 +719,11 @@ const styles = StyleSheet.create({
   footerRow: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#1E293B',
+    backgroundColor: '#0F172A',
   },
   cancelBtn: {
     flex: 1,
