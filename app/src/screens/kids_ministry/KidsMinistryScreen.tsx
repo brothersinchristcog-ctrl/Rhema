@@ -42,6 +42,7 @@ import {
 } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 import KidsMinistryService from '../../services/KidsMinistryService';
 import {
   ChildRecord,
@@ -71,7 +72,46 @@ const { width } = Dimensions.get('window');
 export default function KidsMinistryScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const { member } = useAuth();
+  const { isDark, colors: themeColors } = useTheme();
   const churchId = member?.churchId || 'rhema';
+
+  // Dynamic Theme Palette Support (Pure White, Warm White & Dark)
+  const isLight = !isDark;
+  const theme = useMemo(() => {
+    return {
+      isDark,
+      isLight,
+      screenBg: isDark ? '#000000' : (themeColors.background || '#F8FAFC'),
+      headerBg: isDark ? '#000000' : (themeColors.surface || '#FFFFFF'),
+      cardBg: isDark ? '#18181B' : (themeColors.surface || '#FFFFFF'),
+      innerCardBg: isDark ? '#09090B' : '#F1F5F9',
+      border: isDark ? '#27272A' : (themeColors.border || '#E2E8F0'),
+      borderLight: isDark ? '#18181B' : '#E2E8F0',
+      textPrimary: isDark ? '#FFFFFF' : '#0F172A',
+      textSecondary: isDark ? '#9CA3AF' : '#64748B',
+      textMuted: isDark ? '#71717A' : '#94A3B8',
+      goldAccent: isDark ? '#FBBF24' : '#D97706',
+      goldBg: isDark ? 'rgba(251, 191, 36, 0.15)' : '#FEF3C7',
+      tabBarBg: isDark ? '#000000' : (themeColors.surface || '#FFFFFF'),
+      tabPillInactiveBg: isDark ? '#18181B' : '#F1F5F9',
+      tabPillInactiveBorder: isDark ? '#27272A' : '#CBD5E1',
+      tabPillInactiveText: isDark ? '#9CA3AF' : '#64748B',
+      tabPillActiveBg: isDark ? '#FFFFFF' : '#0F172A',
+      tabPillActiveBorder: isDark ? '#FFFFFF' : '#0F172A',
+      tabPillActiveText: isDark ? '#000000' : '#FFFFFF',
+      backBtnBg: isDark ? '#18181B' : '#F1F5F9',
+      backBtnIcon: isDark ? '#FFFFFF' : '#0F172A',
+      addKidBtnBg: isDark ? '#FFFFFF' : '#0F172A',
+      addKidBtnText: isDark ? '#000000' : '#FFFFFF',
+      childBarBg: isDark ? '#0D0D11' : (themeColors.surface || '#FFFFFF'),
+      childBarBorder: isDark ? '#1F1F24' : '#E2E8F0',
+      childChipInactiveBg: isDark ? '#18181B' : '#F1F5F9',
+      childChipInactiveBorder: isDark ? '#27272A' : '#E2E8F0',
+      childChipActiveBg: isDark ? '#1E1B13' : '#FEF3C7',
+      childChipActiveBorder: isDark ? '#FBBF24' : '#D97706',
+      dropdownBg: isDark ? '#18181B' : '#FFFFFF',
+    };
+  }, [isDark, themeColors]);
 
   // Splash Screen State
   const [showSplash, setShowSplash] = useState(true);
@@ -303,31 +343,34 @@ export default function KidsMinistryScreen({ navigation }: any) {
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#000000" />
+    <View style={[styles.container, { backgroundColor: theme.screenBg, paddingTop: insets.top }]}>
+      <StatusBar
+        barStyle={theme.isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.screenBg}
+      />
 
       {/* ── TOP APP HEADER ── */}
-      <View style={styles.headerRow}>
+      <View style={[styles.headerRow, { backgroundColor: theme.headerBg, borderBottomColor: theme.border }]}>
         <TouchableOpacity
-          style={styles.backBtn}
+          style={[styles.backBtn, { backgroundColor: theme.backBtnBg }]}
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />
+          <ArrowLeft size={20} color={theme.backBtnIcon} strokeWidth={2.4} />
         </TouchableOpacity>
 
         {/* Center: Title & Child Switcher */}
         <View style={styles.headerCenter}>
           <View style={styles.titleWithCrown}>
             <Text style={styles.crownEmoji}>👑</Text>
-            <Text style={styles.appTitleSerif}>Rhema Kids</Text>
+            <Text style={[styles.appTitleSerif, { color: theme.textPrimary }]}>Rhema Kids</Text>
           </View>
 
           {children.length > 0 && activeChild ? (
             <TouchableOpacity
               style={[
                 styles.childSwitcher,
-                children.length > 1 && styles.childSwitcherInteractive,
+                children.length > 1 && [styles.childSwitcherInteractive, { backgroundColor: theme.goldBg, borderColor: theme.goldAccent }],
               ]}
               onPress={() => {
                 if (children.length > 1) {
@@ -336,42 +379,42 @@ export default function KidsMinistryScreen({ navigation }: any) {
               }}
               activeOpacity={children.length > 1 ? 0.7 : 1}
             >
-              <Text style={styles.childSwitcherText} numberOfLines={1}>
+              <Text style={[styles.childSwitcherText, { color: theme.goldAccent }]} numberOfLines={1}>
                 {activeChild.fullName} (Age {activeChild.age})
               </Text>
               {children.length > 1 && (
                 showChildPicker ? (
-                  <ChevronUp size={13} color="#FBBF24" strokeWidth={2.6} />
+                  <ChevronUp size={13} color={theme.goldAccent} strokeWidth={2.6} />
                 ) : (
-                  <ChevronDown size={13} color="#FBBF24" strokeWidth={2.6} />
+                  <ChevronDown size={13} color={theme.goldAccent} strokeWidth={2.6} />
                 )
               )}
             </TouchableOpacity>
           ) : (
-            <Text style={styles.childSwitcherSub}>Sunday School Ministry</Text>
+            <Text style={[styles.childSwitcherSub, { color: theme.textSecondary }]}>Sunday School Ministry</Text>
           )}
         </View>
 
         {/* Right Action: Enroll Kid or Pass */}
         <TouchableOpacity
-          style={styles.topActionBtn}
+          style={[styles.topActionBtn, { backgroundColor: theme.addKidBtnBg }]}
           onPress={() => setShowEnrollModal(true)}
           activeOpacity={0.8}
         >
-          <Plus size={14} color="#000000" strokeWidth={2.8} />
-          <Text style={styles.topActionBtnText}>Add Kid</Text>
+          <Plus size={14} color={theme.addKidBtnText} strokeWidth={2.8} />
+          <Text style={[styles.topActionBtnText, { color: theme.addKidBtnText }]}>Add Kid</Text>
         </TouchableOpacity>
       </View>
 
       {/* Prominent Multi-Child Switcher Banner (Shows clearly when family has multiple kids) */}
       {children.length > 1 && (
-        <View style={styles.childBarContainer}>
+        <View style={[styles.childBarContainer, { backgroundColor: theme.childBarBg, borderBottomColor: theme.childBarBorder }]}>
           <View style={styles.childBarHeader}>
             <View style={styles.childBarLabelWrap}>
-              <Users size={12} color="#FBBF24" />
-              <Text style={styles.childBarLabel}>ACTIVE CHILD</Text>
+              <Users size={12} color={theme.goldAccent} />
+              <Text style={[styles.childBarLabel, { color: theme.goldAccent }]}>ACTIVE CHILD</Text>
             </View>
-            <Text style={styles.childBarSub}>Tap to switch</Text>
+            <Text style={[styles.childBarSub, { color: theme.textMuted }]}>Tap to switch</Text>
           </View>
           <ScrollView
             horizontal
@@ -385,7 +428,9 @@ export default function KidsMinistryScreen({ navigation }: any) {
                   key={k.id}
                   style={[
                     styles.childChip,
-                    isSelected ? styles.childChipActive : styles.childChipInactive,
+                    isSelected
+                      ? [styles.childChipActive, { backgroundColor: theme.childChipActiveBg, borderColor: theme.childChipActiveBorder }]
+                      : [styles.childChipInactive, { backgroundColor: theme.childChipInactiveBg, borderColor: theme.childChipInactiveBorder }],
                   ]}
                   onPress={() => {
                     setSelectedChildIndex(idx);
@@ -400,7 +445,9 @@ export default function KidsMinistryScreen({ navigation }: any) {
                     <Text
                       style={[
                         styles.childChipName,
-                        isSelected ? styles.childChipNameActive : styles.childChipNameInactive,
+                        isSelected
+                          ? [styles.childChipNameActive, { color: theme.textPrimary }]
+                          : [styles.childChipNameInactive, { color: theme.textSecondary }],
                       ]}
                       numberOfLines={1}
                     >
@@ -409,7 +456,9 @@ export default function KidsMinistryScreen({ navigation }: any) {
                     <Text
                       style={[
                         styles.childChipMeta,
-                        isSelected ? styles.childChipMetaActive : styles.childChipMetaInactive,
+                        isSelected
+                          ? [styles.childChipMetaActive, { color: theme.goldAccent }]
+                          : [styles.childChipMetaInactive, { color: theme.textMuted }],
                       ]}
                     >
                       Age {k.age} · {k.assignedClassName || 'Sunday School'}
@@ -429,14 +478,14 @@ export default function KidsMinistryScreen({ navigation }: any) {
 
       {/* Child Dropdown Menu (If opened from header chevron) */}
       {showChildPicker && children.length > 1 && (
-        <View style={styles.dropdownPicker}>
-          <Text style={styles.dropdownHeader}>SWITCH CHILD PROFILE:</Text>
+        <View style={[styles.dropdownPicker, { backgroundColor: theme.dropdownBg, borderColor: theme.border }]}>
+          <Text style={[styles.dropdownHeader, { color: theme.textMuted }]}>SWITCH CHILD PROFILE:</Text>
           {children.map((k, idx) => (
             <TouchableOpacity
               key={k.id}
               style={[
                 styles.dropdownItem,
-                idx === selectedChildIndex && styles.dropdownItemActive,
+                idx === selectedChildIndex && [styles.dropdownItemActive, { backgroundColor: theme.goldBg }],
               ]}
               onPress={() => {
                 setSelectedChildIndex(idx);
@@ -446,7 +495,8 @@ export default function KidsMinistryScreen({ navigation }: any) {
               <Text
                 style={[
                   styles.dropdownItemText,
-                  idx === selectedChildIndex && styles.dropdownItemTextActive,
+                  { color: theme.textSecondary },
+                  idx === selectedChildIndex && [styles.dropdownItemTextActive, { color: theme.goldAccent }],
                 ]}
               >
                 {k.gender === 'female' ? '👧' : '🧒'} {k.fullName} · Age {k.age} ({k.assignedClassName || 'Class'})
@@ -457,44 +507,84 @@ export default function KidsMinistryScreen({ navigation }: any) {
       )}
 
       {/* ── TABS NAVIGATION (RHEMA PILLS - HORIZONTAL SCROLL FOR FULL VISIBILITY) ── */}
-      <View style={styles.tabsContainer}>
+      <View style={[styles.tabsContainer, { backgroundColor: theme.tabBarBg, borderBottomColor: theme.border }]}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.tabsRow}
         >
           <TouchableOpacity
-            style={[styles.tabPill, activeTab === 'home' && styles.tabPillActive]}
+            style={[
+              styles.tabPill,
+              { backgroundColor: theme.tabPillInactiveBg, borderColor: theme.tabPillInactiveBorder },
+              activeTab === 'home' && { backgroundColor: theme.tabPillActiveBg, borderColor: theme.tabPillActiveBorder },
+            ]}
             onPress={() => setActiveTab('home')}
           >
-            <Text style={[styles.tabText, activeTab === 'home' && styles.tabTextActive]}>
+            <Text
+              style={[
+                styles.tabText,
+                { color: theme.tabPillInactiveText },
+                activeTab === 'home' && { color: theme.tabPillActiveText, fontWeight: '800' },
+              ]}
+            >
               Home
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabPill, activeTab === 'classroom' && styles.tabPillActive]}
+            style={[
+              styles.tabPill,
+              { backgroundColor: theme.tabPillInactiveBg, borderColor: theme.tabPillInactiveBorder },
+              activeTab === 'classroom' && { backgroundColor: theme.tabPillActiveBg, borderColor: theme.tabPillActiveBorder },
+            ]}
             onPress={() => setActiveTab('classroom')}
           >
-            <Text style={[styles.tabText, activeTab === 'classroom' && styles.tabTextActive]}>
+            <Text
+              style={[
+                styles.tabText,
+                { color: theme.tabPillInactiveText },
+                activeTab === 'classroom' && { color: theme.tabPillActiveText, fontWeight: '800' },
+              ]}
+            >
               Sunday School
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabPill, activeTab === 'lms' && styles.tabPillActive]}
+            style={[
+              styles.tabPill,
+              { backgroundColor: theme.tabPillInactiveBg, borderColor: theme.tabPillInactiveBorder },
+              activeTab === 'lms' && { backgroundColor: theme.tabPillActiveBg, borderColor: theme.tabPillActiveBorder },
+            ]}
             onPress={() => setActiveTab('lms')}
           >
-            <Text style={[styles.tabText, activeTab === 'lms' && styles.tabTextActive]}>
+            <Text
+              style={[
+                styles.tabText,
+                { color: theme.tabPillInactiveText },
+                activeTab === 'lms' && { color: theme.tabPillActiveText, fontWeight: '800' },
+              ]}
+            >
               Bible LMS
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabPill, activeTab === 'pass' && styles.tabPillActive]}
+            style={[
+              styles.tabPill,
+              { backgroundColor: theme.tabPillInactiveBg, borderColor: theme.tabPillInactiveBorder },
+              activeTab === 'pass' && { backgroundColor: theme.tabPillActiveBg, borderColor: theme.tabPillActiveBorder },
+            ]}
             onPress={() => setActiveTab('pass')}
           >
-            <Text style={[styles.tabText, activeTab === 'pass' && styles.tabTextActive]}>
+            <Text
+              style={[
+                styles.tabText,
+                { color: theme.tabPillInactiveText },
+                activeTab === 'pass' && { color: theme.tabPillActiveText, fontWeight: '800' },
+              ]}
+            >
               Custody Pass 🛡️
             </Text>
           </TouchableOpacity>
@@ -504,27 +594,27 @@ export default function KidsMinistryScreen({ navigation }: any) {
       {/* ── MAIN BODY CONTENT ── */}
       {loading ? (
         <View style={styles.centerLoading}>
-          <ActivityIndicator size="large" color="#FBBF24" />
-          <Text style={styles.loadingText}>Loading Rhema Kids...</Text>
+          <ActivityIndicator size="large" color={theme.goldAccent} />
+          <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Loading Rhema Kids...</Text>
         </View>
       ) : children.length === 0 ? (
         /* Empty State: No child enrolled yet */
         <View style={styles.emptyContainer}>
-          <View style={styles.emptyIconBox}>
+          <View style={[styles.emptyIconBox, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
             <Text style={{ fontSize: 36 }}>👶</Text>
           </View>
-          <Text style={styles.emptyTitle}>Welcome to Rhema Kids!</Text>
-          <Text style={styles.emptySub}>
+          <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>Welcome to Rhema Kids!</Text>
+          <Text style={[styles.emptySub, { color: theme.textSecondary }]}>
             Register your children to access secure Sunday School attendance, live entrance face scan, and bilingual Bible learning.
           </Text>
 
           <TouchableOpacity
-            style={styles.enrollNowBtn}
+            style={[styles.enrollNowBtn, { backgroundColor: theme.addKidBtnBg }]}
             onPress={() => setShowEnrollModal(true)}
             activeOpacity={0.88}
           >
-            <Plus size={18} color="#000000" strokeWidth={2.8} />
-            <Text style={styles.enrollNowBtnText}>Enroll Child in Sunday School</Text>
+            <Plus size={18} color={theme.addKidBtnText} strokeWidth={2.8} />
+            <Text style={[styles.enrollNowBtnText, { color: theme.addKidBtnText }]}>Enroll Child in Sunday School</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -535,32 +625,32 @@ export default function KidsMinistryScreen({ navigation }: any) {
           {activeTab === 'home' && (
             <>
               {/* Today's Sunday School Status Card */}
-              <View style={styles.heroStatusCard}>
+              <View style={[styles.heroStatusCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
                 <View style={styles.statusRow}>
                   <View style={styles.liveBadge}>
                     <View style={styles.livePulseDot} />
                     <Text style={styles.liveBadgeText}>SUNDAY SCHOOL TODAY</Text>
                   </View>
-                  <Text style={styles.codeLabel}>{activeChild?.childId}</Text>
+                  <Text style={[styles.codeLabel, { color: theme.textSecondary }]}>{activeChild?.childId}</Text>
                 </View>
 
                 <View style={styles.statusDetailsRow}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.classTierSub}>
+                    <Text style={[styles.classTierSub, { color: theme.goldAccent }]}>
                       {activeChild?.assignedClassName || 'Sunday School'}
                     </Text>
-                    <Text style={styles.classRoomTitle}>Room 204 · 2nd Floor</Text>
-                    <Text style={styles.scheduleMeta}>Sundays 09:30 AM – 11:30 AM</Text>
+                    <Text style={[styles.classRoomTitle, { color: theme.textPrimary }]}>Room 204 · 2nd Floor</Text>
+                    <Text style={[styles.scheduleMeta, { color: theme.textSecondary }]}>Sundays 09:30 AM – 11:30 AM</Text>
                   </View>
 
                   {/* One-Time Pickup Code Badge */}
-                  <View style={styles.pickupCodeBadge}>
-                    <Text style={styles.codeTag}>PICKUP CODE</Text>
-                    <Text style={styles.codeDigits}>{dailyPickupCode}</Text>
+                  <View style={[styles.pickupCodeBadge, { backgroundColor: theme.innerCardBg, borderColor: theme.goldAccent }]}>
+                    <Text style={[styles.codeTag, { color: theme.textMuted }]}>PICKUP CODE</Text>
+                    <Text style={[styles.codeDigits, { color: theme.goldAccent }]}>{dailyPickupCode}</Text>
                   </View>
                 </View>
 
-                <View style={styles.cardFooter}>
+                <View style={[styles.cardFooter, { borderTopColor: theme.border }]}>
                   <Text style={styles.allergySummary}>
                     {activeChild?.medical?.hasAllergies ? (
                       <Text style={{ color: '#F87171' }}>
@@ -574,7 +664,7 @@ export default function KidsMinistryScreen({ navigation }: any) {
                     onPress={() => setActiveTab('pass')}
                     style={styles.viewPassLink}
                   >
-                    <Text style={styles.viewPassLinkText}>View Pass &rsaquo;</Text>
+                    <Text style={[styles.viewPassLinkText, { color: theme.goldAccent }]}>View Pass &rsaquo;</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -591,30 +681,30 @@ export default function KidsMinistryScreen({ navigation }: any) {
 
                 return (
                   <TouchableOpacity
-                    style={[styles.card, { borderColor: '#FBBF24', borderWidth: 1 }]}
+                    style={[styles.card, { backgroundColor: theme.cardBg, borderColor: theme.goldAccent, borderWidth: 1 }]}
                     onPress={() => activeLesson && setSelectedLessonForModal(activeLesson)}
                     activeOpacity={0.88}
                   >
                     <View style={styles.cardHeaderSmall}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={[styles.cardHeaderTag, { color: '#FBBF24' }]}>
+                        <Text style={[styles.cardHeaderTag, { color: theme.goldAccent }]}>
                           ⭐ WEEK {weekNum} SUNDAY LESSON
                         </Text>
-                        <View style={{ backgroundColor: 'rgba(251, 191, 36, 0.2)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                          <Text style={{ fontSize: 9, fontWeight: '800', color: '#FBBF24' }}>TAP DETAILS &rsaquo;</Text>
+                        <View style={{ backgroundColor: theme.goldBg, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                          <Text style={{ fontSize: 9, fontWeight: '800', color: theme.goldAccent }}>TAP DETAILS &rsaquo;</Text>
                         </View>
                       </View>
-                      <Text style={styles.verseRef}>{verseRef}</Text>
+                      <Text style={[styles.verseRef, { color: theme.textSecondary }]}>{verseRef}</Text>
                     </View>
 
-                    <Text style={{ fontSize: 15, fontWeight: 'bold', color: '#FFFFFF', marginTop: 2, marginBottom: 4 }}>
+                    <Text style={{ fontSize: 15, fontWeight: 'bold', color: theme.textPrimary, marginTop: 2, marginBottom: 4 }}>
                       {lessonTitle}
                     </Text>
 
-                    <Text style={styles.verseTelugu}>
+                    <Text style={[styles.verseTelugu, { color: theme.textPrimary }]}>
                       "{verseTe}"
                     </Text>
-                    <Text style={styles.verseEnglish}>
+                    <Text style={[styles.verseEnglish, { color: theme.textSecondary }]}>
                       "{verseEn}"
                     </Text>
                   </TouchableOpacity>
@@ -623,40 +713,40 @@ export default function KidsMinistryScreen({ navigation }: any) {
 
               {/* Quick Modules 2x2 Grid */}
               <View>
-                <Text style={styles.sectionHeader}>EXPLORE RHEMA KIDS</Text>
+                <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>EXPLORE RHEMA KIDS</Text>
                 <View style={styles.grid2x2}>
                   <TouchableOpacity
-                    style={styles.gridItem}
+                    style={[styles.gridItem, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
                     onPress={() => setActiveTab('lms')}
                     activeOpacity={0.8}
                   >
                     <Text style={styles.gridEmoji}>📖</Text>
-                    <Text style={styles.gridTitle}>Bible Stories</Text>
-                    <Text style={styles.gridSub}>Illustrated & Telugu Audio</Text>
+                    <Text style={[styles.gridTitle, { color: theme.textPrimary }]}>Bible Stories</Text>
+                    <Text style={[styles.gridSub, { color: theme.textSecondary }]}>Illustrated & Telugu Audio</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={styles.gridItem}
+                    style={[styles.gridItem, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
                     onPress={() => setActiveTab('lms')}
                     activeOpacity={0.8}
                   >
                     <Text style={styles.gridEmoji}>🏆</Text>
-                    <Text style={styles.gridTitle}>Kids Quizzes</Text>
-                    <Text style={styles.gridSub}>Earn Bible Star Badges</Text>
+                    <Text style={[styles.gridTitle, { color: theme.textPrimary }]}>Kids Quizzes</Text>
+                    <Text style={[styles.gridSub, { color: theme.textSecondary }]}>Earn Bible Star Badges</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={styles.gridItem}
+                    style={[styles.gridItem, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
                     onPress={() => setActiveTab('classroom')}
                     activeOpacity={0.8}
                   >
                     <Text style={styles.gridEmoji}>📚</Text>
-                    <Text style={styles.gridTitle}>52-Wk Lessons</Text>
-                    <Text style={styles.gridSub}>Telugu & English Guides</Text>
+                    <Text style={[styles.gridTitle, { color: theme.textPrimary }]}>52-Wk Lessons</Text>
+                    <Text style={[styles.gridSub, { color: theme.textSecondary }]}>Telugu & English Guides</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={styles.gridItem}
+                    style={[styles.gridItem, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
                     onPress={() => {
                       if (songs.length > 0) {
                         setSelectedSongForPlayer(songs[0]);
@@ -667,50 +757,50 @@ export default function KidsMinistryScreen({ navigation }: any) {
                     activeOpacity={0.8}
                   >
                     <Text style={styles.gridEmoji}>🎵</Text>
-                    <Text style={styles.gridTitle}>Action Songs</Text>
-                    <Text style={styles.gridSub}>Worship with Lyrics</Text>
+                    <Text style={[styles.gridTitle, { color: theme.textPrimary }]}>Action Songs</Text>
+                    <Text style={[styles.gridSub, { color: theme.textSecondary }]}>Worship with Lyrics</Text>
                   </TouchableOpacity>
                 </View>
               </View>
 
               {/* Entrance & Dismissal Stations */}
               <View style={{ marginTop: 16 }}>
-                <Text style={styles.sectionHeader}>SAFETY & ATTENDANCE STATIONS</Text>
+                <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>SAFETY & ATTENDANCE STATIONS</Text>
                 <View style={styles.stationsRow}>
                   <TouchableOpacity
-                    style={styles.stationCard}
+                    style={[styles.stationCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
                     onPress={() => navigation.navigate('KidsFaceScanKiosk', { targetChildId: activeChild?.id })}
                     activeOpacity={0.88}
                   >
                     <View style={[styles.stationIconBox, { backgroundColor: 'rgba(251, 191, 36, 0.15)' }]}>
                       <Camera size={18} color="#FBBF24" />
                     </View>
-                    <Text style={styles.stationTitle}>Entrance Kiosk</Text>
-                    <Text style={styles.stationSub}>Face scan check-in</Text>
+                    <Text style={[styles.stationTitle, { color: theme.textPrimary }]}>Entrance Kiosk</Text>
+                    <Text style={[styles.stationSub, { color: theme.textSecondary }]}>Face scan check-in</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={styles.stationCard}
+                    style={[styles.stationCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
                     onPress={() => navigation.navigate('KidsCheckOutScanner')}
                     activeOpacity={0.88}
                   >
                     <View style={[styles.stationIconBox, { backgroundColor: 'rgba(52, 211, 153, 0.15)' }]}>
                       <UserCheck size={18} color="#34D399" />
                     </View>
-                    <Text style={styles.stationTitle}>Teacher Exit</Text>
-                    <Text style={styles.stationSub}>Guardian photo match</Text>
+                    <Text style={[styles.stationTitle, { color: theme.textPrimary }]}>Teacher Exit</Text>
+                    <Text style={[styles.stationSub, { color: theme.textSecondary }]}>Guardian photo match</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={styles.stationCard}
+                    style={[styles.stationCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
                     onPress={() => navigation.navigate('KidsTeacherKiosk')}
                     activeOpacity={0.88}
                   >
                     <View style={[styles.stationIconBox, { backgroundColor: 'rgba(96, 165, 250, 0.15)' }]}>
                       <Clock size={18} color="#60A5FA" />
                     </View>
-                    <Text style={styles.stationTitle}>Faculty In</Text>
-                    <Text style={styles.stationSub}>Face scan & PIN</Text>
+                    <Text style={[styles.stationTitle, { color: theme.textPrimary }]}>Faculty In</Text>
+                    <Text style={[styles.stationSub, { color: theme.textSecondary }]}>Teacher clock-in</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -722,11 +812,11 @@ export default function KidsMinistryScreen({ navigation }: any) {
           {/* ==================================================== */}
           {activeTab === 'classroom' && (
             <>
-              <View style={styles.card}>
+              <View style={[styles.card, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
                 <View style={styles.classHeaderRow}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.cardHeaderTag}>ASSIGNED SUNDAY SCHOOL CLASS</Text>
-                    <Text style={styles.classTitleBig}>
+                    <Text style={[styles.cardHeaderTag, { color: theme.goldAccent }]}>ASSIGNED SUNDAY SCHOOL CLASS</Text>
+                    <Text style={[styles.classTitleBig, { color: theme.textPrimary }]}>
                       {assignedClass?.name || activeChild?.assignedClassName || 'Sunday School'}
                     </Text>
                   </View>
@@ -737,37 +827,37 @@ export default function KidsMinistryScreen({ navigation }: any) {
                   </View>
                 </View>
 
-                <Text style={styles.classAgeRange}>
+                <Text style={[styles.classAgeRange, { color: theme.textSecondary }]}>
                   Student: {activeChild?.fullName} (Age {activeChild?.age}) · Academic Year {assignedClass?.academicYear || activeChild?.academicYear}
                 </Text>
 
-                <View style={styles.divider} />
+                <View style={[styles.divider, { backgroundColor: theme.border }]} />
 
                 <View style={styles.metaRow}>
-                  <Text style={styles.metaKey}>Room Location:</Text>
-                  <Text style={styles.metaVal}>{assignedClass?.roomNumber || 'Room 201 (2nd Floor)'}</Text>
+                  <Text style={[styles.metaKey, { color: theme.textSecondary }]}>Room Location:</Text>
+                  <Text style={[styles.metaVal, { color: theme.textPrimary }]}>{assignedClass?.roomNumber || 'Room 201 (2nd Floor)'}</Text>
                 </View>
 
                 <View style={styles.metaRow}>
-                  <Text style={styles.metaKey}>Weekly Schedule:</Text>
-                  <Text style={styles.metaVal}>
+                  <Text style={[styles.metaKey, { color: theme.textSecondary }]}>Weekly Schedule:</Text>
+                  <Text style={[styles.metaVal, { color: theme.textPrimary }]}>
                     Sundays {assignedClass?.schedule?.startTime || '09:30'} AM – {assignedClass?.schedule?.endTime || '11:30'} AM
                   </Text>
                 </View>
 
                 <View style={styles.metaRow}>
-                  <Text style={styles.metaKey}>Lead Teacher:</Text>
-                  <Text style={styles.metaVal}>
+                  <Text style={[styles.metaKey, { color: theme.textSecondary }]}>Lead Teacher:</Text>
+                  <Text style={[styles.metaVal, { color: theme.textPrimary }]}>
                     {assignedClass?.leadTeacherName || 'Bro. Sunil Babu'}
                   </Text>
                 </View>
 
                 {/* Teacher Contact Bar */}
-                <View style={styles.teacherContactBox}>
-                  <Text style={styles.teacherContactLabel}>Need to notify teacher about attendance?</Text>
+                <View style={[styles.teacherContactBox, { backgroundColor: theme.innerCardBg, borderColor: theme.border }]}>
+                  <Text style={[styles.teacherContactLabel, { color: theme.textSecondary }]}>Need to notify teacher about attendance?</Text>
                   <View style={styles.teacherButtonsRow}>
                     <TouchableOpacity
-                      style={styles.teacherBtn}
+                      style={[styles.teacherBtn, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
                       onPress={() => {
                         const phone = assignedClass?.leadTeacherPhone || '+919876543210';
                         Linking.openURL(`tel:${phone}`).catch(() => {
@@ -776,7 +866,7 @@ export default function KidsMinistryScreen({ navigation }: any) {
                       }}
                     >
                       <Phone size={13} color="#34D399" />
-                      <Text style={styles.teacherBtnText}>Call Teacher</Text>
+                      <Text style={[styles.teacherBtnText, { color: theme.textPrimary }]}>Call Teacher</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -797,16 +887,16 @@ export default function KidsMinistryScreen({ navigation }: any) {
               </View>
 
               {/* Weekly Homework & Goal Checklist */}
-              <View style={styles.card}>
+              <View style={[styles.card, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
                 <View style={styles.homeworkHeader}>
-                  <Text style={styles.cardTitleMedium}>This Week's Homework & Goals</Text>
+                  <Text style={[styles.cardTitleMedium, { color: theme.textPrimary }]}>This Week's Homework & Goals</Text>
                   {homeworkDone && (
                     <View style={styles.donePill}>
                       <Text style={styles.donePillText}>★ Completed</Text>
                     </View>
                   )}
                 </View>
-                <Text style={styles.homeworkDesc}>
+                <Text style={[styles.homeworkDesc, { color: theme.textSecondary }]}>
                   Practice these 3 discipleship goals at home before this Sunday:
                 </Text>
 
@@ -815,11 +905,11 @@ export default function KidsMinistryScreen({ navigation }: any) {
                   onPress={() => setHomeworkDone(!homeworkDone)}
                   activeOpacity={0.88}
                 >
-                  <View style={[styles.checkCircle, homeworkDone && styles.checkCircleActive]}>
+                  <View style={[styles.checkCircle, { borderColor: theme.border }, homeworkDone && styles.checkCircleActive]}>
                     {homeworkDone && <Check size={12} color="#000000" strokeWidth={3} />}
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.goalText, homeworkDone && styles.goalTextDone]}>
+                    <Text style={[styles.goalText, { color: theme.textPrimary }, homeworkDone && styles.goalTextDone]}>
                       1. Read 1 Samuel 17 (David & Goliath) with family
                     </Text>
                   </View>
@@ -830,11 +920,11 @@ export default function KidsMinistryScreen({ navigation }: any) {
                   onPress={() => setHomeworkDone(!homeworkDone)}
                   activeOpacity={0.88}
                 >
-                  <View style={[styles.checkCircle, homeworkDone && styles.checkCircleActive]}>
+                  <View style={[styles.checkCircle, { borderColor: theme.border }, homeworkDone && styles.checkCircleActive]}>
                     {homeworkDone && <Check size={12} color="#000000" strokeWidth={3} />}
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.goalText, homeworkDone && styles.goalTextDone]}>
+                    <Text style={[styles.goalText, { color: theme.textPrimary }, homeworkDone && styles.goalTextDone]}>
                       2. Recite memory verse (1 Sam 17:47) in Telugu or English
                     </Text>
                   </View>
@@ -845,18 +935,18 @@ export default function KidsMinistryScreen({ navigation }: any) {
                   onPress={() => setHomeworkDone(!homeworkDone)}
                   activeOpacity={0.88}
                 >
-                  <View style={[styles.checkCircle, homeworkDone && styles.checkCircleActive]}>
+                  <View style={[styles.checkCircle, { borderColor: theme.border }, homeworkDone && styles.checkCircleActive]}>
                     {homeworkDone && <Check size={12} color="#000000" strokeWidth={3} />}
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.goalText, homeworkDone && styles.goalTextDone]}>
+                    <Text style={[styles.goalText, { color: theme.textPrimary }, homeworkDone && styles.goalTextDone]}>
                       3. Bring your physical Bible & activity booklet to class
                     </Text>
                   </View>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.homeworkBtn, homeworkDone && { backgroundColor: '#064E3B' }]}
+                  style={[styles.homeworkBtn, { backgroundColor: theme.addKidBtnBg }, homeworkDone && { backgroundColor: '#064E3B' }]}
                   onPress={() => {
                     setHomeworkDone(!homeworkDone);
                     if (!homeworkDone) {
@@ -867,8 +957,8 @@ export default function KidsMinistryScreen({ navigation }: any) {
                     }
                   }}
                 >
-                  <CheckCircle2 size={16} color={homeworkDone ? '#34D399' : '#000000'} />
-                  <Text style={[styles.homeworkBtnText, homeworkDone && { color: '#34D399' }]}>
+                  <CheckCircle2 size={16} color={homeworkDone ? '#34D399' : theme.addKidBtnText} />
+                  <Text style={[styles.homeworkBtnText, { color: theme.addKidBtnText }, homeworkDone && { color: '#34D399' }]}>
                     {homeworkDone ? 'Homework Completed ✓' : 'Mark Homework Completed'}
                   </Text>
                 </TouchableOpacity>
@@ -883,32 +973,32 @@ export default function KidsMinistryScreen({ navigation }: any) {
             <>
               {/* Featured Bible Quiz Card */}
               {quizzes.length > 0 && (
-                <View style={styles.quizCard}>
+                <View style={[styles.quizCard, { backgroundColor: theme.goldBg, borderColor: theme.goldAccent }]}>
                   <View style={styles.quizHeader}>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.quizHeaderTag}>BIBLE CHALLENGE OF THE WEEK</Text>
-                      <Text style={styles.quizTitle}>{quizzes[0].title}</Text>
-                      <Text style={styles.quizTeluguSub}>{quizzes[0].titleTelugu} · {quizzes[0].scriptureRef}</Text>
+                      <Text style={[styles.quizHeaderTag, { color: theme.goldAccent }]}>BIBLE CHALLENGE OF THE WEEK</Text>
+                      <Text style={[styles.quizTitle, { color: theme.textPrimary }]}>{quizzes[0].title}</Text>
+                      <Text style={[styles.quizTeluguSub, { color: theme.textSecondary }]}>{quizzes[0].titleTelugu} · {quizzes[0].scriptureRef}</Text>
                     </View>
                     <Text style={{ fontSize: 32 }}>{quizzes[0].coverEmoji || '🏆'}</Text>
                   </View>
 
                   <View style={styles.quizRewardBadgeRow}>
-                    <View style={styles.quizPointsPill}>
-                      <Text style={styles.quizPointsText}>★ +{quizzes[0].pointsReward} Star Points</Text>
+                    <View style={[styles.quizPointsPill, { backgroundColor: theme.goldBg }]}>
+                      <Text style={[styles.quizPointsText, { color: theme.goldAccent }]}>★ +{quizzes[0].pointsReward} Star Points</Text>
                     </View>
-                    <View style={styles.quizBadgePill}>
-                      <Text style={styles.quizBadgePillText}>{quizzes[0].badgeReward}</Text>
+                    <View style={[styles.quizBadgePill, { backgroundColor: theme.cardBg, borderColor: theme.border, borderWidth: 1 }]}>
+                      <Text style={[styles.quizBadgePillText, { color: theme.textPrimary }]}>{quizzes[0].badgeReward}</Text>
                     </View>
                   </View>
 
                   <TouchableOpacity
-                    style={styles.startQuizBtn}
+                    style={[styles.startQuizBtn, { backgroundColor: theme.goldAccent }]}
                     onPress={() => setSelectedQuizForPlayer(quizzes[0])}
                     activeOpacity={0.88}
                   >
-                    <Award size={16} color="#000000" />
-                    <Text style={styles.startQuizBtnText}>Start Interactive Quiz &rsaquo;</Text>
+                    <Award size={16} color="#FFFFFF" />
+                    <Text style={[styles.startQuizBtnText, { color: '#FFFFFF' }]}>Start Interactive Quiz &rsaquo;</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -916,18 +1006,18 @@ export default function KidsMinistryScreen({ navigation }: any) {
               {/* Illustrated Bilingual Bible Stories */}
               <View style={{ marginTop: 8 }}>
                 <View style={styles.sectionHeaderRow}>
-                  <Text style={styles.sectionHeader}>ILLUSTRATED BIBLE STORIES</Text>
-                  <Text style={styles.sectionHeaderSub}>Telugu & English</Text>
+                  <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>ILLUSTRATED BIBLE STORIES</Text>
+                  <Text style={[styles.sectionHeaderSub, { color: theme.goldAccent }]}>Telugu & English</Text>
                 </View>
 
                 {stories.map(s => (
                   <TouchableOpacity
                     key={s.id}
-                    style={styles.storyCard}
+                    style={[styles.storyCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
                     onPress={() => setSelectedStoryForReader(s)}
                     activeOpacity={0.88}
                   >
-                    <View style={styles.storyEmojiBubble}>
+                    <View style={[styles.storyEmojiBubble, { backgroundColor: theme.innerCardBg, borderColor: theme.border }]}>
                       {s.coverImageUrl ? (
                         <Image source={{ uri: s.coverImageUrl }} style={styles.storyCoverImg} />
                       ) : (
@@ -935,15 +1025,15 @@ export default function KidsMinistryScreen({ navigation }: any) {
                       )}
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.storyTitle}>{s.title}</Text>
-                      <Text style={styles.storyTeluguText}>{s.titleTelugu}</Text>
-                      <Text style={styles.storyMeta}>
+                      <Text style={[styles.storyTitle, { color: theme.textPrimary }]}>{s.title}</Text>
+                      <Text style={[styles.storyTeluguText, { color: theme.textPrimary }]}>{s.titleTelugu}</Text>
+                      <Text style={[styles.storyMeta, { color: theme.textSecondary }]}>
                         {s.scriptureRef ? `${s.scriptureRef} · ` : ''}{s.readTime || '5 min'} · {s.pages?.length || 1} Pages
                       </Text>
                     </View>
                     <View style={styles.cardActionsRow}>
-                      <View style={styles.storyReadPill}>
-                        <Text style={styles.storyReadPillText}>Read &rsaquo;</Text>
+                      <View style={[styles.storyReadPill, { backgroundColor: theme.goldBg }]}>
+                        <Text style={[styles.storyReadPillText, { color: theme.goldAccent }]}>Read &rsaquo;</Text>
                       </View>
                       <TouchableOpacity
                         style={styles.itemDeleteBtn}
@@ -960,18 +1050,18 @@ export default function KidsMinistryScreen({ navigation }: any) {
               {/* Action Worship Songs Playlist */}
               <View style={{ marginTop: 14 }}>
                 <View style={styles.sectionHeaderRow}>
-                  <Text style={styles.sectionHeader}>KIDS ACTION WORSHIP SONGS</Text>
-                  <Text style={styles.sectionHeaderSub}>Video & Lyrics</Text>
+                  <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>KIDS ACTION WORSHIP SONGS</Text>
+                  <Text style={[styles.sectionHeaderSub, { color: theme.goldAccent }]}>Video & Lyrics</Text>
                 </View>
 
                 {songs.map(song => (
                   <TouchableOpacity
                     key={song.id}
-                    style={styles.songListCard}
+                    style={[styles.songListCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
                     onPress={() => setSelectedSongForPlayer(song)}
                     activeOpacity={0.88}
                   >
-                    <View style={styles.songEmojiBubble}>
+                    <View style={[styles.songEmojiBubble, { backgroundColor: theme.innerCardBg, borderColor: theme.border }]}>
                       {song.thumbnailUrl ? (
                         <Image source={{ uri: song.thumbnailUrl }} style={styles.storyCoverImg} />
                       ) : (
@@ -979,13 +1069,13 @@ export default function KidsMinistryScreen({ navigation }: any) {
                       )}
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.songTitle}>{song.title}</Text>
-                      <Text style={styles.songTeluguSub}>{song.titleTelugu}</Text>
-                      <Text style={styles.songDurationMeta}>Duration: {song.duration || '3:00'} · Action Dance</Text>
+                      <Text style={[styles.songTitle, { color: theme.textPrimary }]}>{song.title}</Text>
+                      <Text style={[styles.songTeluguSub, { color: theme.textSecondary }]}>{song.titleTelugu}</Text>
+                      <Text style={[styles.songDurationMeta, { color: theme.textSecondary }]}>Duration: {song.duration || '3:00'} · Action Dance</Text>
                     </View>
                     <View style={styles.cardActionsRow}>
-                      <View style={styles.songPlayBtn}>
-                        <Volume2 size={14} color="#FBBF24" />
+                      <View style={[styles.songPlayBtn, { backgroundColor: theme.innerCardBg }]}>
+                        <Volume2 size={14} color={theme.goldAccent} />
                       </View>
                       <TouchableOpacity
                         style={styles.itemDeleteBtn}
@@ -1007,7 +1097,7 @@ export default function KidsMinistryScreen({ navigation }: any) {
           {activeTab === 'pass' && (
             <View style={{ gap: 14 }}>
               {/* Main Live Custody Card */}
-              <View style={styles.passCard}>
+              <View style={[styles.passCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
                 {/* Realtime Custody Status Header */}
                 <View style={styles.passStatusHeader}>
                   {activeChild?.custodyStatus === 'emergency_hold' ? (
@@ -1022,11 +1112,11 @@ export default function KidsMinistryScreen({ navigation }: any) {
                     </View>
                   ) : (
                     <View style={styles.statusPillOut}>
-                      <UserCheck size={14} color="#FBBF24" />
-                      <Text style={styles.statusPillTextOut}>CHECKED OUT / WITH PARENT</Text>
+                      <UserCheck size={14} color={theme.goldAccent} />
+                      <Text style={[styles.statusPillTextOut, { color: theme.goldAccent }]}>CHECKED OUT / WITH PARENT</Text>
                     </View>
                   )}
-                  <Text style={styles.academicBadge}>2026-2027</Text>
+                  <Text style={[styles.academicBadge, { color: theme.textMuted }]}>2026-2027</Text>
                 </View>
 
                 {/* Child Identity Row */}
@@ -1037,37 +1127,37 @@ export default function KidsMinistryScreen({ navigation }: any) {
                     </Text>
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.passChildName}>{activeChild?.fullName}</Text>
-                    <Text style={styles.passClassRoom}>
+                    <Text style={[styles.passChildName, { color: theme.textPrimary }]}>{activeChild?.fullName}</Text>
+                    <Text style={[styles.passClassRoom, { color: theme.textSecondary }]}>
                       {activeChild?.assignedClassName} · Room 204
                     </Text>
-                    <Text style={styles.passChildId}>Child ID: {activeChild?.childId}</Text>
+                    <Text style={[styles.passChildId, { color: theme.goldAccent }]}>Child ID: {activeChild?.childId}</Text>
                   </View>
                 </View>
 
                 {/* Dynamic Security Claim Code with Regenerate */}
-                <View style={styles.passCodeBox}>
+                <View style={[styles.passCodeBox, { backgroundColor: theme.innerCardBg, borderColor: theme.border }]}>
                   <View style={styles.passCodeTopRow}>
-                    <Text style={styles.passCodeLabel}>DYNAMIC SECURE PICKUP CODE</Text>
+                    <Text style={[styles.passCodeLabel, { color: theme.textSecondary }]}>DYNAMIC SECURE PICKUP CODE</Text>
                     <TouchableOpacity
-                      style={styles.refreshCodeBtn}
+                      style={[styles.refreshCodeBtn, { backgroundColor: theme.cardBg, borderColor: theme.border, borderWidth: 1 }]}
                       onPress={() => {
                         setDailyPickupCode(generateDynamicPickupCode());
                         Alert.alert('New Code Generated', 'Pickup security code has been refreshed!');
                       }}
                     >
-                      <RefreshCw size={12} color="#FBBF24" />
-                      <Text style={styles.refreshCodeBtnText}>Refresh</Text>
+                      <RefreshCw size={12} color={theme.goldAccent} />
+                      <Text style={[styles.refreshCodeBtnText, { color: theme.goldAccent }]}>Refresh</Text>
                     </TouchableOpacity>
                   </View>
-                  <Text style={styles.passCodeDigits}>{dailyPickupCode}</Text>
-                  <Text style={styles.passCodeSub}>
+                  <Text style={[styles.passCodeDigits, { color: theme.textPrimary }]}>{dailyPickupCode}</Text>
+                  <Text style={[styles.passCodeSub, { color: '#10B981' }]}>
                     Present this dynamic token or QR to the teacher dismissal scanner
                   </Text>
                 </View>
 
                 {/* QR Code Container */}
-                <View style={styles.qrContainer}>
+                <View style={[styles.qrContainer, { backgroundColor: '#FFFFFF', borderColor: theme.border, borderWidth: 1 }]}>
                   <QRCode
                     value={`RHEMA_KIDS:${activeChild?.id}:${dailyPickupCode}`}
                     size={150}
@@ -1107,23 +1197,23 @@ export default function KidsMinistryScreen({ navigation }: any) {
               </View>
 
               {/* Medical & Allergies Safeguarding Passport */}
-              <View style={styles.safeguardCard}>
+              <View style={[styles.safeguardCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
                 <View style={styles.safeguardHeader}>
                   <AlertTriangle
                     size={16}
                     color={activeChild?.medical?.hasAllergies ? '#EF4444' : '#10B981'}
                   />
-                  <Text style={styles.safeguardTitle}>MEDICAL & ALLERGY SAFEGUARDING</Text>
+                  <Text style={[styles.safeguardTitle, { color: theme.goldAccent }]}>MEDICAL & ALLERGY SAFEGUARDING</Text>
                 </View>
 
                 {activeChild?.medical?.hasAllergies ? (
                   <View style={styles.allergyAlertBox}>
                     <Text style={styles.allergyAlertTitle}>⚠️ KNOWN ALLERGIES / CONDITIONS:</Text>
-                    <Text style={styles.allergyAlertList}>
+                    <Text style={[styles.allergyAlertList, { color: theme.textPrimary }]}>
                       {activeChild.medical.allergiesList.join(' · ')}
                     </Text>
                     {activeChild.medical.medicalAlertNotes ? (
-                      <Text style={styles.medicalNotesText}>
+                      <Text style={[styles.medicalNotesText, { color: theme.textSecondary }]}>
                         Notes: {activeChild.medical.medicalAlertNotes}
                       </Text>
                     ) : null}
@@ -1135,44 +1225,44 @@ export default function KidsMinistryScreen({ navigation }: any) {
                 )}
 
                 <View style={styles.bloodRow}>
-                  <Text style={styles.bloodLabel}>Blood Group: </Text>
-                  <Text style={styles.bloodVal}>{activeChild?.medical?.bloodGroup || 'O+ (Recorded)'}</Text>
+                  <Text style={[styles.bloodLabel, { color: theme.textSecondary }]}>Blood Group: </Text>
+                  <Text style={[styles.bloodVal, { color: theme.textPrimary }]}>{activeChild?.medical?.bloodGroup || 'O+ (Recorded)'}</Text>
                 </View>
               </View>
 
               {/* Authorized Guardians Roster */}
-              <View style={styles.guardiansCard}>
+              <View style={[styles.guardiansCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
                 <View style={styles.guardiansHeaderRow}>
                   <View>
-                    <Text style={styles.guardiansHeading}>AUTHORIZED FOR CUSTODY RELEASE</Text>
-                    <Text style={styles.guardiansSub}>Verified by teacher before child leaves room</Text>
+                    <Text style={[styles.guardiansHeading, { color: theme.goldAccent }]}>AUTHORIZED FOR CUSTODY RELEASE</Text>
+                    <Text style={[styles.guardiansSub, { color: theme.textSecondary }]}>Verified by teacher before child leaves room</Text>
                   </View>
                   <TouchableOpacity
-                    style={styles.addGuardianBtn}
+                    style={[styles.addGuardianBtn, { backgroundColor: theme.goldAccent }]}
                     onPress={() => setShowAddGuardianModal(true)}
                   >
-                    <UserPlus size={14} color="#000000" />
-                    <Text style={styles.addGuardianBtnText}>Add</Text>
+                    <UserPlus size={14} color="#FFFFFF" />
+                    <Text style={[styles.addGuardianBtnText, { color: '#FFFFFF' }]}>Add</Text>
                   </TouchableOpacity>
                 </View>
 
                 <View style={styles.guardiansListWrap}>
                   {activeChild?.guardians && activeChild.guardians.length > 0 ? (
                     activeChild.guardians.map(g => (
-                      <View key={g.id} style={styles.guardianCardRow}>
+                      <View key={g.id} style={[styles.guardianCardRow, { backgroundColor: theme.innerCardBg, borderColor: theme.border }]}>
                         <View style={styles.guardianInfo}>
                           <View style={styles.guardianNameRow}>
-                            <Text style={styles.guardianName}>{g.name}</Text>
-                            <View style={styles.relationTag}>
-                              <Text style={styles.relationTagText}>{g.relationship}</Text>
+                            <Text style={[styles.guardianName, { color: theme.textPrimary }]}>{g.name}</Text>
+                            <View style={[styles.relationTag, { backgroundColor: theme.cardBg }]}>
+                              <Text style={[styles.relationTagText, { color: theme.textSecondary }]}>{g.relationship}</Text>
                             </View>
                             {g.isPrimaryContact && (
-                              <View style={styles.primaryBadge}>
-                                <Text style={styles.primaryBadgeText}>PRIMARY</Text>
+                              <View style={[styles.primaryBadge, { backgroundColor: theme.goldBg }]}>
+                                <Text style={[styles.primaryBadgeText, { color: theme.goldAccent }]}>PRIMARY</Text>
                               </View>
                             )}
                           </View>
-                          <Text style={styles.guardianPhone}>{g.phone}</Text>
+                          <Text style={[styles.guardianPhone, { color: theme.textSecondary }]}>{g.phone}</Text>
                         </View>
 
                         <View style={styles.guardianActions}>
@@ -1194,17 +1284,17 @@ export default function KidsMinistryScreen({ navigation }: any) {
                       </View>
                     ))
                   ) : (
-                    <View style={styles.guardianCardRow}>
+                    <View style={[styles.guardianCardRow, { backgroundColor: theme.innerCardBg, borderColor: theme.border }]}>
                       <View style={styles.guardianInfo}>
-                        <Text style={styles.guardianName}>
+                        <Text style={[styles.guardianName, { color: theme.textPrimary }]}>
                           {activeChild?.parentName || 'Parent'}
                         </Text>
-                        <Text style={styles.guardianPhone}>
+                        <Text style={[styles.guardianPhone, { color: theme.textSecondary }]}>
                           {activeChild?.parentPhone || 'Phone Registered'}
                         </Text>
                       </View>
-                      <View style={styles.primaryBadge}>
-                        <Text style={styles.primaryBadgeText}>PRIMARY</Text>
+                      <View style={[styles.primaryBadge, { backgroundColor: theme.goldBg }]}>
+                        <Text style={[styles.primaryBadgeText, { color: theme.goldAccent }]}>PRIMARY</Text>
                       </View>
                     </View>
                   )}
@@ -1212,11 +1302,11 @@ export default function KidsMinistryScreen({ navigation }: any) {
               </View>
 
               {/* Lead Teacher Contact Hotline */}
-              <View style={styles.teacherContactCard}>
+              <View style={[styles.teacherContactCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.teacherContactHeading}>SUNDAY SCHOOL LEAD TEACHER</Text>
-                  <Text style={styles.teacherName}>Mrs. Sarah Jenkins (Verified Lead)</Text>
-                  <Text style={styles.teacherLocation}>Room 204 · Floor 2 · 09:30 AM – 11:30 AM</Text>
+                  <Text style={[styles.teacherName, { color: theme.textPrimary }]}>Mrs. Sarah Jenkins (Verified Lead)</Text>
+                  <Text style={[styles.teacherLocation, { color: theme.textSecondary }]}>Room 204 · Floor 2 · 09:30 AM – 11:30 AM</Text>
                 </View>
                 <View style={styles.teacherBtnRow}>
                   <TouchableOpacity
@@ -1229,7 +1319,7 @@ export default function KidsMinistryScreen({ navigation }: any) {
                     style={styles.teacherWaBtn}
                     onPress={() => Linking.openURL('https://wa.me/919876543210').catch(() => {})}
                   >
-                    <MessageCircle size={15} color="#FBBF24" />
+                    <MessageCircle size={15} color={theme.goldAccent} />
                   </TouchableOpacity>
                 </View>
               </View>
