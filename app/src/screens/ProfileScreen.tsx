@@ -23,6 +23,7 @@ import {
   Easing,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import MotherTonguePickerModal from '../modules/matrimony/components/MotherTonguePickerModal';
 import { 
   ArrowLeft,
   Calendar,
@@ -73,6 +74,7 @@ import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import { formatDateDisplay } from '../utils/DateUtils';
 import { CHURCH_SKILL_CATEGORIES, ALL_PREDEFINED_SKILLS } from '../constants/churchSkills';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Defs, Path, Pattern, Rect } from 'react-native-svg';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import MemberLocationService from '../services/MemberLocationService';
 import LocationService from '../services/LocationService';
@@ -88,12 +90,35 @@ const parseSkillsList = (val: any): string[] => {
   return [];
 };
 
-export default function ProfileScreen({ navigation }: any) {
+export default function ProfileScreen({
+  navigation,
+  isDrawer = false,
+  onCloseDrawer,
+}: {
+  navigation?: any;
+  isDrawer?: boolean;
+  onCloseDrawer?: () => void;
+}) {
   const { user, signOut, member: authMember, setViewMode, setMember: setGlobalMember, isPlatformSuperAdmin } = useAuth();
   const { activeChurch, isImpersonating, impersonatedBranchName, stopImpersonation } = useChurch();
   const { isDark, toggleTheme, colors, currentThemeOption } = useTheme();
   const { language, setLanguage, languages, currentLanguageOption, t } = useLanguage();
   const insets = useSafeAreaInsets();
+
+  const navigateFromProfile = (screenName: string, params?: any) => {
+    if (isDrawer && onCloseDrawer) {
+      onCloseDrawer();
+      setTimeout(() => {
+        try {
+          navigation?.navigate?.(screenName, params);
+        } catch (_) {}
+      }, 120);
+    } else {
+      try {
+        navigation?.navigate?.(screenName, params);
+      } catch (_) {}
+    }
+  };
   
   const [member, setMember] = useState<AppMember | null>(authMember as AppMember | null);
   const [loading, setLoading] = useState(!authMember);
@@ -157,12 +182,14 @@ export default function ProfileScreen({ navigation }: any) {
     mailingStreet: authMember?.mailingStreet || '',
     mailingState: authMember?.mailingState || '',
     dob: authMember?.dob || '',
+    motherTongue: authMember?.motherTongue || '',
     baptismDate: authMember?.baptismDate || '',
     anniversaryDate: authMember?.anniversaryDate || '',
     primarySkill: authMember?.primarySkill || '',
     secondarySkill: authMember?.secondarySkill || ''
   });
   const [updating, setUpdating] = useState(false);
+  const [isMotherTonguePickerVisible, setMotherTonguePickerVisible] = useState(false);
 
   // Collapsible background image card state & animation (COLLAPSED BY DEFAULT)
   const [isBannerExpanded, setIsBannerExpanded] = useState(false);
@@ -277,6 +304,7 @@ export default function ProfileScreen({ navigation }: any) {
             mailingStreet: contactCheck.member.mailingStreet || '',
             mailingState: contactCheck.member.mailingState || '',
             dob: contactCheck.member.dob || '',
+            motherTongue: contactCheck.member.motherTongue || '',
             baptismDate: contactCheck.member.baptismDate || '',
             anniversaryDate: contactCheck.member.anniversaryDate || '',
             primarySkill: contactCheck.member.primarySkill || '',
@@ -592,16 +620,36 @@ export default function ProfileScreen({ navigation }: any) {
     );
   }
 
+  const displayMemberName =
+    (member?.name && member.name.trim()) ||
+    ((member as any)?.displayName && (member as any).displayName.trim()) ||
+    (member?.firstName ? `${member.firstName} ${member.lastName || ''}`.trim() : user?.displayName || 'Beloved Member');
+  const displayMemberPhoneOrEmail =
+    (member as any)?.phone || user?.phoneNumber || (member as any)?.email || '';
+  const drawerPatternStroke = isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(148, 163, 184, 0.16)';
+  const drawerDividerColor = isDark ? 'rgba(255, 255, 255, 0.1)' : '#E5E7EB';
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar 
-        barStyle={isBannerExpanded ? "light-content" : (isDark ? "light-content" : "dark-content")} 
-        translucent 
-        backgroundColor="transparent" 
-      />
+      {!isDrawer && (
+        <StatusBar 
+          barStyle={isBannerExpanded ? "light-content" : (isDark ? "light-content" : "dark-content")} 
+          translucent 
+          backgroundColor="transparent" 
+        />
+      )}
 
       {isImpersonating ? (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          {isDrawer && onCloseDrawer && (
+            <TouchableOpacity
+              onPress={onCloseDrawer}
+              style={{ position: 'absolute', top: insets.top + 12, left: 16, padding: 6 }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <ArrowLeft size={22} color={colors.text} />
+            </TouchableOpacity>
+          )}
           <Shield size={64} color="#1a2d5a" style={{ marginBottom: 20 }} />
           <Text style={{ fontSize: 24, fontWeight: '800', color: '#1a2d5a', textAlign: 'center', marginBottom: 12 }}>
             Admin View
@@ -611,7 +659,10 @@ export default function ProfileScreen({ navigation }: any) {
           </Text>
           <TouchableOpacity 
             style={{ backgroundColor: '#1a2d5a', paddingVertical: 14, paddingHorizontal: 32, borderRadius: 12 }}
-            onPress={stopImpersonation}
+            onPress={() => {
+              if (isDrawer && onCloseDrawer) onCloseDrawer();
+              stopImpersonation();
+            }}
           >
             <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Return to Main Church</Text>
           </TouchableOpacity>
@@ -620,130 +671,217 @@ export default function ProfileScreen({ navigation }: any) {
         <>
           <ScrollView 
             showsVerticalScrollIndicator={false} 
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={isDrawer ? { paddingBottom: Math.max(insets.bottom + 28, 36) } : styles.scrollContent}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? "#FFFFFF" : "#1a2d5a"} />}
             bounces={true}
           >
-          {/* ── Top Cover Banner Container (Collapsible) ── */}
-          <View style={[styles.headerContainer, { backgroundColor: colors.background }]}>
-            {/* Collapsible Background Image (Original clean style, no blur, no blue tint) */}
-            <Animated.View
+          {isDrawer ? (
+            /* ── Compact Side-Drawer Header (matches reference drawer layout) ── */
+            <View
               style={[
-                styles.collapsibleBanner,
+                styles.drawerHeaderSection,
                 {
-                  height: bannerAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, 310],
-                  }),
-                  opacity: bannerAnim.interpolate({
-                    inputRange: [0, 0.2, 1],
-                    outputRange: [0, 0.4, 1],
-                  }),
+                  paddingTop: insets.top + 12,
+                  borderBottomColor: drawerDividerColor,
+                  backgroundColor: isDark ? colors.surface : '#FFFFFF',
                 },
               ]}
             >
-              {localPhotoUrl ? (
-                <View style={StyleSheet.absoluteFillObject}>
-                  {/* Clean, unblurred original photo */}
-                  <Image
-                    source={{ uri: localPhotoUrl }}
-                    style={styles.bannerImgFullTop}
-                    resizeMode="cover"
-                  />
-                  {/* Clean subtle dark gradient overlay (preserves natural photo colors, no blue tint) */}
-                  <LinearGradient
-                    colors={[
-                      'rgba(0, 0, 0, 0.12)',
-                      'rgba(0, 0, 0, 0.58)',
-                    ]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 0, y: 1 }}
-                    style={StyleSheet.absoluteFillObject}
-                  />
-                </View>
-              ) : (
-                <LinearGradient
-                  colors={colors.headerGradient || (isDark ? ['#18181B', '#000000'] : ['#1E293B', '#0F172A'])}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={StyleSheet.absoluteFillObject}
-                />
-              )}
-            </Animated.View>
-          </View>
-
-          {/* ── Circular Profile Avatar Overlapping & Member Name ── */}
-          <Animated.View 
-            style={[
-              styles.avatarAndNameSection, 
-              { 
-                backgroundColor: colors.background,
-                marginTop: bannerAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [Platform.OS === 'ios' ? 95 : 82, -52],
-                }),
-              }
-            ]}
-          >
-            {/* Avatar Circle with Pencil Badge on Circle Line */}
-            <View style={styles.avatarWrapper}>
-              <TouchableOpacity
-                style={[
-                  styles.avatarOverlapCircle,
-                  {
-                    borderColor: isDark ? colors.surface : '#FFFFFF',
-                    backgroundColor: isDark ? '#27272A' : '#E2E8F0',
-                  }
-                ]}
-                onPress={pickImage}
-                activeOpacity={0.9}
-              >
-                {localPhotoUrl ? (
-                  <Image source={{ uri: localPhotoUrl }} style={styles.avatarOverlapImg} />
-                ) : (
-                  <View style={[styles.avatarFallbackCircle, { backgroundColor: colors.accent || '#2563EB' }]}>
-                    <User size={46} color="#FFFFFF" strokeWidth={1.8} />
-                  </View>
-                )}
-              </TouchableOpacity>
-
-              {/* Pencil icon badge directly on the avatar circle line */}
-              <TouchableOpacity
-                style={[
-                  styles.avatarPencilBadge,
-                  {
-                    backgroundColor: colors.accent || '#2563EB',
-                    borderColor: isDark ? colors.surface : '#FFFFFF',
-                  }
-                ]}
-                onPress={pickImage}
-                activeOpacity={0.85}
-              >
-                <Pencil size={13} color="#FFFFFF" strokeWidth={2.5} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Member Name */}
-            <Text style={[styles.profileNameText, { color: colors.text }]}>
-              {(member?.name && member.name.trim()) || ((member as any)?.displayName && (member as any).displayName.trim()) || (member?.firstName ? `${member.firstName} ${member.lastName || ''}`.trim() : user?.displayName || 'Beloved Member')}
-            </Text>
-
-            {/* Member Code / ID Badge */}
-            {member?.memberCode ? (
-              <View style={[
-                styles.memberCodeBadge,
-                {
-                  backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF',
-                  borderColor: isDark ? 'rgba(59, 130, 246, 0.35)' : '#BFDBFE',
-                }
-              ]}>
-                <View style={[styles.memberCodeDot, { backgroundColor: isDark ? '#60A5FA' : '#2563EB' }]} />
-                <Text style={[styles.memberCodeLabel, { color: isDark ? '#93C5FD' : '#1D4ED8' }]}>
-                  MEMBER ID: <Text style={{ fontWeight: '800' }}>{member.memberCode}</Text>
-                </Text>
+              <View style={StyleSheet.absoluteFill} pointerEvents="none">
+                <Svg width="100%" height="100%">
+                  <Defs>
+                    <Pattern
+                      id="profileDrawerDiamondGrid"
+                      width="24"
+                      height="36"
+                      patternUnits="userSpaceOnUse"
+                    >
+                      <Path
+                        d="M12 2 L22 18 L12 34 L2 18 Z"
+                        fill="none"
+                        stroke={drawerPatternStroke}
+                        strokeWidth="1"
+                      />
+                    </Pattern>
+                  </Defs>
+                  <Rect width="100%" height="100%" fill="url(#profileDrawerDiamondGrid)" />
+                </Svg>
               </View>
-            ) : null}
-          </Animated.View>
+
+              <TouchableOpacity
+                style={styles.drawerBackBtn}
+                onPress={onCloseDrawer}
+                activeOpacity={0.75}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <ArrowLeft size={22} color={colors.text} />
+              </TouchableOpacity>
+
+              <View style={styles.drawerProfileRow}>
+                <TouchableOpacity
+                  style={styles.drawerAvatarWrap}
+                  onPress={pickImage}
+                  activeOpacity={0.85}
+                >
+                  {localPhotoUrl ? (
+                    <Image source={{ uri: localPhotoUrl }} style={styles.drawerAvatar} />
+                  ) : (
+                    <View style={[styles.drawerAvatar, { backgroundColor: colors.accent || '#2563EB', justifyContent: 'center', alignItems: 'center' }]}>
+                      <Text style={styles.drawerAvatarInitial}>{getInitials(displayMemberName)}</Text>
+                    </View>
+                  )}
+                  <View
+                    style={[
+                      styles.drawerCameraBadge,
+                      {
+                        backgroundColor: isDark ? colors.background : '#FFFFFF',
+                        borderColor: drawerDividerColor,
+                      },
+                    ]}
+                  >
+                    <Camera size={12} color={colors.text} />
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.drawerProfileTextCol}>
+                  <Text style={[styles.drawerProfileName, { color: colors.text }]} numberOfLines={2}>
+                    {displayMemberName}
+                  </Text>
+                  {displayMemberPhoneOrEmail ? (
+                    <Text style={[styles.drawerProfileSub, { color: colors.textSecondary }]} numberOfLines={1}>
+                      {displayMemberPhoneOrEmail}
+                    </Text>
+                  ) : null}
+                  <Text style={[styles.drawerProfileSub, { color: colors.textSecondary }]} numberOfLines={1}>
+                    {activeChurch?.name || 'Church Member'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ) : (
+            <>
+              {/* ── Top Cover Banner Container (Collapsible) ── */}
+              <View style={[styles.headerContainer, { backgroundColor: colors.background }]}>
+                {/* Collapsible Background Image (Original clean style, no blur, no blue tint) */}
+                <Animated.View
+                  style={[
+                    styles.collapsibleBanner,
+                    {
+                      height: bannerAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, 310],
+                      }),
+                      opacity: bannerAnim.interpolate({
+                        inputRange: [0, 0.2, 1],
+                        outputRange: [0, 0.4, 1],
+                      }),
+                    },
+                  ]}
+                >
+                  {localPhotoUrl ? (
+                    <View style={StyleSheet.absoluteFillObject}>
+                      {/* Clean, unblurred original photo */}
+                      <Image
+                        source={{ uri: localPhotoUrl }}
+                        style={styles.bannerImgFullTop}
+                        resizeMode="cover"
+                      />
+                      {/* Clean subtle dark gradient overlay (preserves natural photo colors, no blue tint) */}
+                      <LinearGradient
+                        colors={[
+                          'rgba(0, 0, 0, 0.12)',
+                          'rgba(0, 0, 0, 0.58)',
+                        ]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFillObject}
+                      />
+                    </View>
+                  ) : (
+                    <LinearGradient
+                      colors={colors.headerGradient || (isDark ? ['#18181B', '#000000'] : ['#1E293B', '#0F172A'])}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={StyleSheet.absoluteFillObject}
+                    />
+                  )}
+                </Animated.View>
+              </View>
+
+              {/* ── Circular Profile Avatar Overlapping & Member Name ── */}
+              <Animated.View 
+                style={[
+                  styles.avatarAndNameSection, 
+                  { 
+                    backgroundColor: colors.background,
+                    marginTop: bannerAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [Platform.OS === 'ios' ? 95 : 82, -52],
+                    }),
+                  }
+                ]}
+              >
+                {/* Avatar Circle with Pencil Badge on Circle Line */}
+                <View style={styles.avatarWrapper}>
+                  <TouchableOpacity
+                    style={[
+                      styles.avatarOverlapCircle,
+                      {
+                        borderColor: isDark ? colors.surface : '#FFFFFF',
+                        backgroundColor: isDark ? '#27272A' : '#E2E8F0',
+                      }
+                    ]}
+                    onPress={pickImage}
+                    activeOpacity={0.9}
+                  >
+                    {localPhotoUrl ? (
+                      <Image source={{ uri: localPhotoUrl }} style={styles.avatarOverlapImg} />
+                    ) : (
+                      <View style={[styles.avatarFallbackCircle, { backgroundColor: colors.accent || '#2563EB' }]}>
+                        <User size={46} color="#FFFFFF" strokeWidth={1.8} />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+
+                  {/* Pencil icon badge directly on the avatar circle line */}
+                  <TouchableOpacity
+                    style={[
+                      styles.avatarPencilBadge,
+                      {
+                        backgroundColor: colors.accent || '#2563EB',
+                        borderColor: isDark ? colors.surface : '#FFFFFF',
+                      }
+                    ]}
+                    onPress={pickImage}
+                    activeOpacity={0.85}
+                  >
+                    <Pencil size={13} color="#FFFFFF" strokeWidth={2.5} />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Member Name */}
+                <Text style={[styles.profileNameText, { color: colors.text }]}>
+                  {displayMemberName}
+                </Text>
+
+                {/* Member Code / ID Badge */}
+                {member?.memberCode ? (
+                  <View style={[
+                    styles.memberCodeBadge,
+                    {
+                      backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF',
+                      borderColor: isDark ? 'rgba(59, 130, 246, 0.35)' : '#BFDBFE',
+                    }
+                  ]}>
+                    <View style={[styles.memberCodeDot, { backgroundColor: isDark ? '#60A5FA' : '#2563EB' }]} />
+                    <Text style={[styles.memberCodeLabel, { color: isDark ? '#93C5FD' : '#1D4ED8' }]}>
+                      MEMBER ID: <Text style={{ fontWeight: '800' }}>{member.memberCode}</Text>
+                    </Text>
+                  </View>
+                ) : null}
+              </Animated.View>
+            </>
+          )}
 
           {/* ── All Buttons / Options Card ── */}
           <View 
@@ -768,11 +906,7 @@ export default function ProfileScreen({ navigation }: any) {
                 sub={t('profile.adminDashboardSub')} 
                 onPress={() => {
                   setViewMode('admin');
-                  try {
-                    if (navigation?.navigate) {
-                      navigation.navigate('AdminRoot');
-                    }
-                  } catch (_) {}
+                  navigateFromProfile('AdminRoot');
                 }}
                 textColor={colors.text}
                 subColor={colors.textSecondary}
@@ -787,13 +921,7 @@ export default function ProfileScreen({ navigation }: any) {
                 }
                 badge={pendingApprovalsCount > 0 ? `${pendingApprovalsCount}` : undefined}
                 badgeColor="#EF4444"
-                onPress={() => {
-                  try {
-                    if (navigation?.navigate) {
-                      navigation.navigate('AdminRegistrationApprovals');
-                    }
-                  } catch (_) {}
-                }}
+                onPress={() => navigateFromProfile('AdminRegistrationApprovals')}
                 textColor={colors.text}
                 subColor={colors.textSecondary}
               />
@@ -811,7 +939,7 @@ export default function ProfileScreen({ navigation }: any) {
             icon={<CreditCard size={22} color={colors.text} strokeWidth={1.8} />} 
             title={t('profile.givingHistory')} 
             sub={t('profile.givingHistorySub')} 
-            onPress={() => navigation.navigate('GivingHistory')}
+            onPress={() => navigateFromProfile('GivingHistory')}
             textColor={colors.text}
             subColor={colors.textSecondary}
           />
@@ -819,7 +947,7 @@ export default function ProfileScreen({ navigation }: any) {
             icon={<Droplets size={22} color={colors.text} strokeWidth={1.8} />} 
             title="Baptism" 
             sub="Submit request & track approval status" 
-            onPress={() => navigation.navigate('BaptismRequest')}
+            onPress={() => navigateFromProfile('BaptismRequest')}
             textColor={colors.text}
             subColor={colors.textSecondary}
           />
@@ -835,7 +963,7 @@ export default function ProfileScreen({ navigation }: any) {
             icon={<HeartHandshake size={22} color={colors.text} strokeWidth={1.8} />} 
             title="Church Volunteering" 
             sub="Apply to serve & view volunteer assignments" 
-            onPress={() => navigation.navigate('Volunteer')}
+            onPress={() => navigateFromProfile('Volunteer')}
             textColor={colors.text}
             subColor={colors.textSecondary}
           />
@@ -864,7 +992,7 @@ export default function ProfileScreen({ navigation }: any) {
             icon={<Heart size={22} color={colors.text} strokeWidth={1.8} />} 
             title="Care Cells" 
             sub="My fellowship group and house visits" 
-            onPress={() => navigation.navigate('CareCell')} 
+            onPress={() => navigateFromProfile('CareCell')} 
             textColor={colors.text} 
             subColor={colors.textSecondary} 
           />
@@ -880,7 +1008,7 @@ export default function ProfileScreen({ navigation }: any) {
             icon={<Info size={22} color={colors.text} strokeWidth={1.8} />} 
             title={t('home.aboutUs') || t('profile.aboutChurch') || 'About Us'} 
             sub={t('home.aboutUsSub') || 'Our mission'} 
-            onPress={() => navigation.navigate('AboutUs')}
+            onPress={() => navigateFromProfile('AboutUs')}
             textColor={colors.text}
             subColor={colors.textSecondary}
           />
@@ -888,7 +1016,7 @@ export default function ProfileScreen({ navigation }: any) {
             icon={<Phone size={22} color={colors.text} strokeWidth={1.8} />} 
             title={t('home.contactUs') || t('profile.contactUs') || 'Contact Us'} 
             sub={t('home.contactUsSub') || 'Get in touch'} 
-            onPress={() => navigation.navigate('ContactUs')}
+            onPress={() => navigateFromProfile('ContactUs')}
             textColor={colors.text}
             subColor={colors.textSecondary}
           />
@@ -929,7 +1057,7 @@ export default function ProfileScreen({ navigation }: any) {
             icon={<Palette size={22} color={colors.text} strokeWidth={1.8} />} 
             title="Appearance" 
             value={currentThemeOption?.name || 'Warm white'} 
-            onPress={() => navigation.navigate('Appearance')}
+            onPress={() => navigateFromProfile('Appearance')}
             textColor={colors.text}
             subColor={colors.textSecondary}
           />
@@ -977,7 +1105,10 @@ export default function ProfileScreen({ navigation }: any) {
               borderColor: isDark ? '#27272A' : '#E2E8F0',
             }
           ]}
-          onPress={signOut}
+          onPress={() => {
+            if (isDrawer && onCloseDrawer) onCloseDrawer();
+            signOut();
+          }}
           activeOpacity={0.8}
         >
           <LogOut size={18} color="#EF4444" style={{ marginRight: 8 }} />
@@ -990,7 +1121,8 @@ export default function ProfileScreen({ navigation }: any) {
         </View>
       </ScrollView>
 
-      {/* ── Floating Top Bar: Always fixed on top of screen & ScrollView (Never occluded!) ── */}
+      {!isDrawer && (
+      /* ── Floating Top Bar: Always fixed on top of screen & ScrollView (Never occluded!) ── */
       <View style={styles.floatingTopBar} pointerEvents="box-none">
         <View style={{ flex: 1 }} />
 
@@ -1053,6 +1185,7 @@ export default function ProfileScreen({ navigation }: any) {
           </TouchableOpacity>
         </View>
       </View>
+      )}
 
       {/* ── My Home Location Modal (Care Cell & Pastoral Visits) ── */}
       <Modal
@@ -1652,6 +1785,51 @@ export default function ProfileScreen({ navigation }: any) {
             </View>
 
             <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Mother Tongue</Text>
+              <TouchableOpacity
+                style={[
+                  styles.input,
+                  {
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                  },
+                ]}
+                onPress={() => setMotherTonguePickerVisible(true)}
+              >
+                <Text
+                  style={{
+                    fontSize: 15,
+                    color: editForm.motherTongue ? colors.text : (isDark ? '#71717A' : '#94a3b8'),
+                    flex: 1,
+                  }}
+                >
+                  {editForm.motherTongue || 'Select Mother Tongue'}
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  {editForm.motherTongue ? (
+                    <TouchableOpacity
+                      onPress={() => setEditForm({ ...editForm, motherTongue: '' })}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <X size={16} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                  ) : null}
+                  <ChevronDown size={18} color={colors.textSecondary} />
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            <MotherTonguePickerModal
+              visible={isMotherTonguePickerVisible}
+              selectedValue={editForm.motherTongue}
+              onSelect={(val) => setEditForm({ ...editForm, motherTongue: val })}
+              onClose={() => setMotherTonguePickerVisible(false)}
+            />
+
+            <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('profile.baptismDate')}</Text>
               <TouchableOpacity 
                 style={[styles.input, { justifyContent: 'center', backgroundColor: colors.surface, borderColor: colors.border }]}
@@ -2003,9 +2181,14 @@ export default function ProfileScreen({ navigation }: any) {
       </Modal>
 
       {/* ── Language Selection Modal ── */}
-      {isLanguageModalVisible && (
+      <Modal
+        visible={isLanguageModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsLanguageModalVisible(false)}
+      >
         <View style={styles.modalOverlay}>
-          <View style={[styles.bottomSheetContent, { backgroundColor: colors.surface }]}>
+          <View style={[styles.bottomSheetContent, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom + 24, 36) }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>{t('profile.selectLanguage')}</Text>
               <TouchableOpacity onPress={() => setIsLanguageModalVisible(false)}>
@@ -2059,12 +2242,17 @@ export default function ProfileScreen({ navigation }: any) {
             </ScrollView>
           </View>
         </View>
-      )}
+      </Modal>
 
       {/* ── Notification Preferences Modal ── */}
-      {isNotifyModalVisible && (
+      <Modal
+        visible={isNotifyModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsNotifyModalVisible(false)}
+      >
         <View style={styles.modalOverlay}>
-          <View style={[styles.bottomSheetContent, { backgroundColor: colors.surface }]}>
+          <View style={[styles.bottomSheetContent, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom + 24, 36) }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>{t('profile.notifications')}</Text>
               <TouchableOpacity onPress={() => setIsNotifyModalVisible(false)}>
@@ -2123,7 +2311,7 @@ export default function ProfileScreen({ navigation }: any) {
             </View>
           </View>
         </View>
-      )}
+      </Modal>
 
       {/* Success Modal */}
       <Modal visible={successModalVisible} transparent animationType="fade">
@@ -2239,6 +2427,70 @@ function MenuItem({ icon, title, sub, value, badge, badgeColor, onPress, textCol
 const styles = StyleSheet.create({
   container: { flex: 1 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+
+  // Side Drawer Header (matches reference drawer layout)
+  drawerHeaderSection: {
+    paddingHorizontal: 18,
+    paddingBottom: 18,
+    position: 'relative',
+    overflow: 'hidden',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  drawerBackBtn: {
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+    paddingRight: 8,
+    marginBottom: 14,
+  },
+  drawerProfileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  drawerAvatarWrap: {
+    width: 76,
+    height: 76,
+    position: 'relative',
+  },
+  drawerAvatar: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+  },
+  drawerAvatarInitial: {
+    color: '#FFFFFF',
+    fontSize: 26,
+    fontWeight: '800',
+  },
+  drawerCameraBadge: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.14,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 3,
+  },
+  drawerProfileTextCol: {
+    flex: 1,
+    gap: 3,
+  },
+  drawerProfileName: {
+    fontSize: 18,
+    fontWeight: '800',
+    lineHeight: 22,
+  },
+  drawerProfileSub: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
 
   // Top Cover Banner (Collapsible with Background Image)
   headerContainer: {

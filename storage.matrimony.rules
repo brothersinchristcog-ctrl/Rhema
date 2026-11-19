@@ -1,0 +1,31 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function validImage() {
+      return request.resource != null &&
+        request.resource.contentType.matches('image/(jpeg|png|webp)') &&
+        request.resource.size < 5 * 1024 * 1024;
+    }
+
+    // Matrimony profile & gallery photos: owner can upload/read their own;
+    // other members access approved photos only via short-lived signed URLs from Cloud Functions.
+    match /photos/{uid}/{fileName} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if signedIn() && request.auth.uid == uid && validImage();
+    }
+
+    // Verification documents: strictly server-only (Cloud Functions / Admin SDK).
+    match /verification/{uid}/{fileName} {
+      allow read, write: if false;
+    }
+
+    // Deny-by-default for all other paths in the matrimony bucket.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -20,9 +20,18 @@
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
-  "storage": {
-    "rules": "storage.rules"
+  "database": {
+    "rules": "database.rules.json"
   },
+  "storage": [
+    {
+      "rules": "storage.rules"
+    },
+    {
+      "bucket": "rhema-global-ministries-matrimony",
+      "rules": "storage.matrimony.rules"
+    }
+  ],
   "hosting": {
     "public": "hosting",
     "ignore": [

@@ -30,6 +30,7 @@ import * as Font from 'expo-font';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { formatDateDisplay, formatDateMonthYear, formatSermonDuration, formatTimeTo12Hour } from '../utils/DateUtils';
+import { getMatrimonyQuickAccessItem } from '../modules/matrimony/quickAccessItem';
 import { 
   Bell, 
   Hexagon,
@@ -89,6 +90,7 @@ import { useAuth } from '../context/AuthContext';
 import { useChurch } from '../context/ChurchContext';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { useProfileDrawer } from '../context/ProfileDrawerContext';
 import Theme from '../theme/Theme';
 import FirestoreService, { DailyPromise, ScheduleEvent, AppMember, Sermon } from '../services/FirestoreService';
 import VerseNotificationService, { DailyVerse } from '../services/VerseNotificationService';
@@ -96,6 +98,7 @@ import { getVerseBackgroundUrl } from '../constants/VerseBackgrounds';
 import { BibleService } from '../services/BibleService';
 import { SupportedLanguage } from '../locales';
 import { CustomAlert } from '../components/CustomAlert';
+import { RHEMA_LOGO_PATH, RHEMA_LOGO_VIEWBOX } from './auth/rhemaLogoPath';
 import ServiceRosterService from '../services/ServiceRosterService';
 import {
   RHEMA_YOUTUBE_CHANNEL_URL,
@@ -956,40 +959,207 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
 };
 
 /* ───────────── unique signature church hero & greeting card ───────────── */
+interface HeroSlideItem {
+  key: string;
+  eyebrow?: string;
+  brand?: string;
+  title: string;
+  telugu: string;
+  subtitle: string;
+  ctaLabel?: string;
+  route?: 'Sermons' | 'Prayer' | 'Celebration' | 'Give' | 'Matrimony';
+}
+
+const HERO_SLIDES: HeroSlideItem[] = [
+  {
+    key: 'welcome',
+    eyebrow: 'Welcome to',
+    brand: 'Rhema',
+    title: 'Global Ministries',
+    telugu: 'రేమా కుటుంబానికి స్వాగతం',
+    subtitle: 'Always with you, wherever you are.',
+  },
+  {
+    key: 'sermons',
+    title: 'Hear the Word anywhere',
+    telugu: 'ఎక్కడైనా దేవుని వాక్యం వినండి',
+    subtitle: 'Watch or listen to every Sunday message.',
+    ctaLabel: 'Watch sermons',
+    route: 'Sermons',
+  },
+  {
+    key: 'prayer',
+    title: 'You never pray alone',
+    telugu: 'మీరు ఎప్పుడూ ఒంటరిగా ప్రార్థించరు',
+    subtitle: 'Share a request and the church stands with you.',
+    ctaLabel: 'Open prayer',
+    route: 'Prayer',
+  },
+  {
+    key: 'celebrate',
+    title: 'Celebrate together',
+    telugu: 'కలిసి ఆనందిద్దాం',
+    subtitle: 'Send birthday and anniversary greetings with a verse.',
+    ctaLabel: 'See celebrations',
+    route: 'Celebration',
+  },
+  {
+    key: 'giving',
+    title: 'Give with joy',
+    telugu: 'సంతోషంగా ఇవ్వండి',
+    subtitle: 'Support the ministry securely, with a receipt every time.',
+    ctaLabel: 'Give now',
+    route: 'Give',
+  },
+  {
+    key: 'matrimony',
+    title: 'Blessed unions in Christ',
+    telugu: 'క్రీస్తులో ఆశీర్వదించబడిన బంధాలు',
+    subtitle: 'Find a Christ-centred match in the church family.',
+    ctaLabel: 'Explore matches',
+    route: 'Matrimony',
+  },
+];
+
 const PremiumHero = ({
-  churchName, tagline, logoUrl, initials, userName, bellRotate, onBellPress, topInset, onHeight, theme, 
+  userName, userPhotoUrl, bellRotate, onBellPress, onProfilePress, onSlideAction, topInset, onHeight, theme,
 }: {
-  churchName: string; tagline: string; logoUrl?: string; initials: string; userName: string; 
-  bellRotate: any; onBellPress: () => void; topInset: number; onHeight?: (h: number) => void;
+  userName: string; userPhotoUrl?: string | null;
+  bellRotate: any; onBellPress: () => void; onProfilePress?: () => void;
+  onSlideAction?: (route: NonNullable<HeroSlideItem['route']>) => void;
+  topInset: number; onHeight?: (h: number) => void;
   theme: any;
 }) => {
   const now = useMemo(() => new Date(), []);
-  const { text: greet, Icon } = getGreetingData(now);
+  const { text: greet } = getGreetingData(now);
   const [first, ...rest] = (userName || 'Beloved').trim().split(/\s+/);
   const last = rest.join(' ');
   const fullName = [first, last].filter(Boolean).join(' ');
+  const memberInitials = (
+    [first, rest[0]]
+      .filter(Boolean)
+      .map((w) => w[0]?.toUpperCase() || '')
+      .join('')
+  ) || 'M';
+  const [avatarError, setAvatarError] = useState(false);
+
+  useEffect(() => {
+    setAvatarError(false);
+  }, [userPhotoUrl]);
 
   // Device responsive scaling (user's phone stays 100% exact, smaller phones scale seamlessly)
   const { width: heroWidth } = useWindowDimensions();
   const isCompactPhone = heroWidth < 385; // e.g. Samsung M30/M31, Galaxy A-series (~360px)
   const isSmallPhone = heroWidth < 350;   // e.g. iPhone SE (~320-340px)
-  const deviceScale = isSmallPhone ? 0.88 : isCompactPhone ? 0.94 : 1.0;
+  const deviceScale = isSmallPhone ? 0.86 : isCompactPhone ? 0.92 : 1.0;
 
-  // 1. Church Name: 18px on user's phone, gracefully scaled on smaller phones
-  const churchNameSize = Math.round(18 * deviceScale);
+  // 1. Greeting Text: 25px on standard phone, gracefully scaled on smaller phones
+  const greetingTextSize = Math.round(25 * deviceScale);
 
-  // 2. Greeting Text: 26px on user's phone, gracefully scaled on smaller phones
-  const greetingTextSize = Math.round(26 * deviceScale);
-
-  // 3. User Name: Flexible length-based, scaled proportionally by device
+  // 2. User Name: Flexible length-based, scaled proportionally by device
   const nameLen = fullName.length;
-  const baseUserNameSize = nameLen <= 8 ? 26 : nameLen <= 14 ? 23 : nameLen <= 20 ? 20 : 18;
+  const baseUserNameSize = nameLen <= 8 ? 25 : nameLen <= 14 ? 22 : nameLen <= 20 ? 19 : 17;
   const dynamicUserNameSize = Math.round(baseUserNameSize * deviceScale);
 
   // Responsive element widths
-  const logoSize = isSmallPhone ? 44 : isCompactPhone ? 48 : 52;
-  const bellSize = isSmallPhone ? 36 : isCompactPhone ? 38 : 42;
-  const dateCardWidth = isSmallPhone ? 52 : isCompactPhone ? 56 : 60;
+  const avatarSize = isSmallPhone ? 50 : isCompactPhone ? 54 : 58;
+  const bellSize = isSmallPhone ? 36 : isCompactPhone ? 38 : 40;
+
+  // Simultaneous native cross-dissolve across pre-mounted slides (zero blink, zero movement, fixed height)
+  const [activeSlideIdx, setActiveSlideIdx] = useState(0);
+  const slideOpacities = useRef(
+    HERO_SLIDES.map((_, i) => new Animated.Value(i === 0 ? 1 : 0))
+  ).current;
+
+  useEffect(() => {
+    let currIdx = 0;
+    const interval = setInterval(() => {
+      const oldIdx = currIdx;
+      const nextIdx = (currIdx + 1) % HERO_SLIDES.length;
+      currIdx = nextIdx;
+      setActiveSlideIdx(nextIdx);
+
+      Animated.parallel([
+        Animated.timing(slideOpacities[oldIdx], {
+          toValue: 0,
+          duration: 600,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideOpacities[nextIdx], {
+          toValue: 1,
+          duration: 600,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }, 4200);
+
+    return () => clearInterval(interval);
+  }, [slideOpacities]);
+
+  const renderSlideBody = (slide: HeroSlideItem) => (
+    <>
+      {slide.eyebrow ? (
+        <View style={hStyles.celebratingRow}>
+          <View style={hStyles.celebratingLine} />
+          <Text style={hStyles.celebratingScript}>{slide.eyebrow}</Text>
+          <View style={hStyles.celebratingLine} />
+        </View>
+      ) : null}
+
+      {slide.brand ? (
+        <View style={[hStyles.splashBrandScaleWrap, { transform: [{ scale: isSmallPhone ? 0.74 : 0.82 }] }]}>
+          <View style={hStyles.splashBrandLogoBox}>
+            <Svg width="100%" height="100%" viewBox={RHEMA_LOGO_VIEWBOX}>
+              <Path d={RHEMA_LOGO_PATH} fill="#0B1F5C" fillRule="evenodd" />
+            </Svg>
+            <Text style={hStyles.splashBrandSub} numberOfLines={1} adjustsFontSizeToFit>
+              GLOBAL MINISTRIES
+            </Text>
+          </View>
+        </View>
+      ) : (
+        <Text
+          style={[hStyles.slideMainTitle, isSmallPhone && { fontSize: 19, lineHeight: 24 }]}
+          numberOfLines={2}
+          adjustsFontSizeToFit
+          minimumFontScale={0.85}
+        >
+          {slide.title}
+        </Text>
+      )}
+
+      <Text
+        style={hStyles.slideTelugu}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.78}
+      >
+        {slide.telugu}
+      </Text>
+
+      <Text
+        style={hStyles.slideSub}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.72}
+      >
+        {slide.subtitle}
+      </Text>
+
+      {slide.ctaLabel && slide.route ? (
+        <TouchableOpacity
+          style={hStyles.celebrateCta}
+          onPress={() => onSlideAction && onSlideAction(slide.route!)}
+          activeOpacity={0.9}
+        >
+          <Text style={hStyles.celebrateCtaText}>{slide.ctaLabel}</Text>
+          <ChevronRight size={15} color="#FFFFFF" />
+        </TouchableOpacity>
+      ) : null}
+    </>
+  );
 
   const enter = useRef(new Animated.Value(0)).current;
   const [cursiveLoaded, setCursiveLoaded] = useState(() => {
@@ -1020,71 +1190,51 @@ const PremiumHero = ({
   }, [enter]);
 
   return (
-    <View style={[hStyles.hero, { paddingTop: Math.max(0, topInset - 10) }]} onLayout={(e) => onHeight && onHeight(e.nativeEvent.layout.height)}>
+    <View style={[hStyles.hero, { paddingTop: Math.max(0, topInset - 6) }]} onLayout={(e) => onHeight && onHeight(e.nativeEvent.layout.height)}>
       <Animated.View style={{ opacity: enter, transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) }] }}>
-        
-        {/* 1. TOP BAR: Church Identity Row */}
-        <View style={hStyles.identityRow}>
-          <LinearGradient colors={theme.isDark ? C.foil : ['#FFFFFF', '#FFFFFF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[hStyles.logoRing, isCompactPhone && { width: logoSize, height: logoSize, borderRadius: logoSize / 2 }]}>
-            <View style={[hStyles.logoInner, !theme.isDark && { backgroundColor: '#FFFFFF' }]}>
-              {logoUrl ? (
-                <Image source={{ uri: logoUrl }} style={hStyles.logoImg} resizeMode="cover" />
+
+        {/* GREETING ROW: Member Profile Circle + Greeting/Name + Bell */}
+        <View style={hStyles.greetingRowDirect}>
+          {/* Member Profile Circle */}
+          <TouchableOpacity
+            onPress={onProfilePress}
+            activeOpacity={0.8}
+            style={[
+              hStyles.avatarRing,
+              {
+                width: avatarSize,
+                height: avatarSize,
+                borderRadius: avatarSize / 2,
+              },
+            ]}
+          >
+            <View style={[hStyles.avatarInner, { borderRadius: (avatarSize - 4) / 2 }]}>
+              {userPhotoUrl && !avatarError ? (
+                <Image
+                  source={{ uri: userPhotoUrl }}
+                  style={hStyles.avatarImg}
+                  resizeMode="cover"
+                  onError={() => setAvatarError(true)}
+                />
               ) : (
-                <LinearGradient colors={theme.isDark ? ['#2d5750', '#15302c'] : ['#FFFFFF', '#FFFFFF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={hStyles.logoFallback}>
-                  <Text style={[hStyles.logoInitials, !theme.isDark && { color: '#2563EB' }]}>{initials}</Text>
+                <LinearGradient
+                  colors={theme.isDark ? ['#EA580C', '#C2410C'] : ['#2563EB', '#1D4ED8']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={hStyles.avatarFallback}
+                >
+                  <Text style={[hStyles.avatarInitials, isSmallPhone && { fontSize: 17 }]}>
+                    {memberInitials}
+                  </Text>
                 </LinearGradient>
               )}
             </View>
-          </LinearGradient>
-
-          <View style={{ flex: 1, minWidth: 0, marginLeft: 10 }}>
-            <Text 
-              {...({ fixedFontSize: true, allowFontScaling: false } as any)}
-              style={[hStyles.churchName, { color: theme.heroText, fontSize: churchNameSize }]} 
-              numberOfLines={1} 
-              adjustsFontSizeToFit
-              minimumFontScale={0.78}
-            >
-              {churchName}
-            </Text>
-            <View style={hStyles.taglineRow}>
-              <Text 
-                style={[hStyles.tagline, { color: theme.heroTagline }]} 
-                numberOfLines={1} 
-                adjustsFontSizeToFit 
-                minimumFontScale={0.75} 
-                maxFontSizeMultiplier={1.1}
-              >
-                {tagline}
-              </Text>
-            </View>
-          </View>
-
-          <TouchableOpacity 
-            style={[
-              hStyles.bellBtn, 
-              isCompactPhone && { width: bellSize, height: bellSize, borderRadius: bellSize / 2, marginLeft: 6 },
-              { 
-                backgroundColor: '#FFFFFF',
-                borderColor: 'rgba(255,255,255,0.8)' 
-              }
-            ]} 
-            onPress={onBellPress} 
-            activeOpacity={0.75}
-          >
-            <Animated.View style={{ transform: [{ rotate: bellRotate }] }}>
-              <Bell color={theme.isDark ? '#EA580C' : '#2563EB'} size={isSmallPhone ? 17 : isCompactPhone ? 18 : 20} strokeWidth={2} />
-            </Animated.View>
-            <View style={[hStyles.bellDot, { borderColor: '#FFFFFF' }]} />
           </TouchableOpacity>
-        </View>
 
-        {/* 2. GREETING & DATE: Bold cursive greeting (Pacifico) + compact date card */}
-        <View style={hStyles.greetingRowDirect}>
-          {/* Left Column: Greeting with Sun/Moon Icon + Bold Serif User Name */}
-          <View style={{ flex: 1, minWidth: 0, paddingRight: isCompactPhone ? 8 : 12, justifyContent: 'center' }}>
+          {/* Center Column: Greeting + Bold Serif User Name */}
+          <View style={{ flex: 1, minWidth: 0, marginLeft: isSmallPhone ? 10 : 12, paddingRight: isCompactPhone ? 8 : 12, justifyContent: 'center' }}>
             <View style={gStyles.greetRow}>
-              <Text 
+              <Text
                 {...({ fixedFontSize: true, allowFontScaling: false } as any)}
                 style={[
                   gStyles.greet,
@@ -1099,69 +1249,75 @@ const PremiumHero = ({
                     textShadowRadius: 0,
                   }
                 ]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.72}
               >
                 {greet}
               </Text>
             </View>
 
             {/* USER NAME: Flexible responsive sizing (short = big, long = clearly visible) */}
-            <Text 
+            <Text
               {...({ fixedFontSize: true, allowFontScaling: false } as any)}
               style={[
-                hStyles.userName, 
-                { 
+                hStyles.userName,
+                {
                   color: theme.heroText,
                   textShadowColor: 'transparent',
                   textShadowRadius: 0,
-                  marginTop: 2,
+                  marginTop: 1,
                   fontSize: dynamicUserNameSize,
                 }
-              ]} 
-              numberOfLines={1} 
+              ]}
+              numberOfLines={1}
               adjustsFontSizeToFit
-              minimumFontScale={0.72}
+              minimumFontScale={0.68}
             >
               {fullName}
             </Text>
           </View>
 
-          {/* Right Column: Calendar Date Card (Ultra-compact 60px) */}
-          <View 
+          {/* Right Column: Bell Button */}
+          <TouchableOpacity
             style={[
-              gStyles.cal, 
+              hStyles.bellBtn,
               {
-                width: dateCardWidth,
-                borderRadius: 12,
+                width: bellSize,
+                height: bellSize,
+                borderRadius: bellSize / 2,
+                marginLeft: 0,
                 backgroundColor: '#FFFFFF',
-                borderWidth: 1,
-                borderColor: 'rgba(255,255,255,0.7)',
-                shadowOpacity: 0.08,
-                shadowRadius: 4,
-                shadowOffset: { width: 0, height: 2 },
-                elevation: 2.5,
+                borderColor: 'rgba(255,255,255,0.8)',
               }
             ]}
+            onPress={onBellPress}
+            activeOpacity={0.75}
           >
-            <LinearGradient 
-              colors={['#FFE5CD', '#FFD9B8']} 
-              style={[gStyles.calMonthBox, { paddingTop: 3, paddingBottom: 2 }]}
+            <Animated.View style={{ transform: [{ rotate: bellRotate }] }}>
+              <Bell color={theme.isDark ? '#EA580C' : '#2563EB'} size={isSmallPhone ? 17 : isCompactPhone ? 18 : 20} strokeWidth={2} />
+            </Animated.View>
+            <View style={[hStyles.bellDot, { borderColor: '#FFFFFF' }]} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Horizontal border line below member profile & name */}
+        <View style={hStyles.heroDivider} />
+
+        {/* Simultaneous Cross-Dissolve Hero Showcase (fixed height, zero blink) */}
+        <View style={hStyles.celebrationWrap}>
+          {HERO_SLIDES.map((slide, idx) => (
+            <Animated.View
+              key={slide.key}
+              pointerEvents={idx === activeSlideIdx ? 'auto' : 'none'}
+              style={[
+                hStyles.slidePage,
+                { opacity: slideOpacities[idx] },
+              ]}
             >
-              <Text style={[gStyles.calMonth, { fontSize: 9, letterSpacing: 1.1, color: '#C2410C' }]}>
-                {MONS_LIST[now.getMonth()]}
-              </Text>
-            </LinearGradient>
-            <Text style={[gStyles.calDay, { fontSize: 20, lineHeight: 24, paddingTop: 1, color: '#0F172A' }]}>
-              {now.getDate()}
-            </Text>
-            <Text 
-              style={[gStyles.calWeek, { fontSize: 8.5, paddingTop: 0, paddingBottom: 3.5, color: '#5A708E' }]} 
-              numberOfLines={1} 
-              adjustsFontSizeToFit 
-              minimumFontScale={0.7}
-            >
-              {DAYS_LIST[now.getDay()]}
-            </Text>
-          </View>
+              {renderSlideBody(slide)}
+            </Animated.View>
+          ))}
         </View>
 
       </Animated.View>
@@ -1170,19 +1326,139 @@ const PremiumHero = ({
 };
 
 const hStyles = StyleSheet.create({
-  hero: { paddingHorizontal: 16, paddingBottom: 0, backgroundColor: 'transparent' },
+  hero: { paddingHorizontal: 0, paddingBottom: 4, backgroundColor: 'transparent' },
   identityRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   logoRing: { width: 52, height: 52, borderRadius: 26, padding: 2, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 5 },
   logoInner: { flex: 1, borderRadius: 24, overflow: 'hidden', backgroundColor: '#15302c' },
   logoImg: { width: '100%', height: '100%' },
   logoFallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   logoInitials: { color: C.gold, fontSize: 17, fontWeight: '800', fontFamily: SERIF, letterSpacing: 0.5 },
+  avatarRing: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    padding: 2,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOpacity: 0.14,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+    flexShrink: 0,
+  },
+  avatarInner: {
+    flex: 1,
+    borderRadius: 27,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+  },
+  avatarImg: { width: '100%', height: '100%' },
+  avatarFallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  avatarInitials: { color: '#FFFFFF', fontSize: 19, fontWeight: '800', fontFamily: SERIF, letterSpacing: 0.5 },
   churchName: { fontSize: 18, fontWeight: '800', fontFamily: SERIF, letterSpacing: 0 },
   taglineRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2, gap: 5 },
   tagline: { flexShrink: 1, fontSize: 14, fontStyle: 'italic', fontFamily: SERIF, letterSpacing: 0.4 },
-  bellBtn: { width: 42, height: 42, borderRadius: 21, marginLeft: 8, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-  bellDot: { position: 'absolute', top: 8, right: 9, width: 8, height: 8, borderRadius: 4, backgroundColor: '#F95738', borderWidth: 1.5 },
-  greetingRowDirect: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 4, paddingBottom: 4 },
+  bellBtn: { width: 40, height: 40, borderRadius: 20, marginLeft: 8, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  bellDot: { position: 'absolute', top: 7, right: 8, width: 8, height: 8, borderRadius: 4, backgroundColor: '#F95738', borderWidth: 1.5 },
+  greetingRowDirect: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 4, paddingBottom: 4 },
+  heroDivider: {
+    height: 1,
+    marginHorizontal: 20,
+    marginTop: 8,
+    backgroundColor: 'rgba(15, 23, 42, 0.10)',
+  },
+  celebrationWrap: {
+    position: 'relative',
+    overflow: 'hidden',
+    height: 158,
+  },
+  slidePage: {
+    ...StyleSheet.absoluteFillObject,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  celebratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  celebratingLine: {
+    width: 30,
+    height: 1,
+    backgroundColor: '#94A3B8',
+    opacity: 0.65,
+  },
+  celebratingScript: {
+    fontSize: 15,
+    fontStyle: 'italic',
+    fontFamily: SERIF,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  splashBrandScaleWrap: {
+    width: 210,
+    height: 68,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  splashBrandLogoBox: {
+    width: 210,
+    height: 88,
+  },
+  splashBrandSub: {
+    position: 'absolute',
+    left: 73,
+    top: 67,
+    width: 136,
+    textAlign: 'center',
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 2.2,
+    color: '#07153F',
+    fontFamily: SERIF,
+  },
+  slideMainTitle: {
+    fontSize: 21,
+    lineHeight: 26,
+    fontWeight: '800',
+    fontFamily: SERIF,
+    color: '#2E1A47',
+    textAlign: 'center',
+  },
+  slideTelugu: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#9A6700',
+    textAlign: 'center',
+    marginTop: 1,
+  },
+  slideSub: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#475569',
+    textAlign: 'center',
+    lineHeight: 16.5,
+    width: '100%',
+  },
+  celebrateCta: {
+    marginTop: 6,
+    backgroundColor: '#2E1A47',
+    borderRadius: 22,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  celebrateCtaText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
   cardWrap: { borderRadius: 24, overflow: 'hidden', marginBottom: 6 },
   greetingCard: { borderRadius: 24, paddingVertical: 18, paddingHorizontal: 18, borderWidth: 1, overflow: 'hidden', position: 'relative' },
   cardInnerFrame: { position: 'absolute', top: 6, left: 6, right: 6, bottom: 6, borderRadius: 18, borderWidth: 1 },
@@ -2233,6 +2509,7 @@ const DailyVerseCard = ({ verse, period, onPress }: { verse: DailyVerse | null; 
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
+  const profileDrawer = useProfileDrawer();
   const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
   const { user, signOut, member: authMember } = useAuth();
@@ -2945,6 +3222,7 @@ export default function HomeScreen() {
       icon: require('../../assets/3d_party_popper.png'),
       onPress: () => navigation.navigate('Testimonies'),
     },
+    getMatrimonyQuickAccessItem(() => handleGuestProtectedNavigation('Matrimony')),
   ];
 
   const sermonPanResponder = useRef(
@@ -3001,7 +3279,7 @@ export default function HomeScreen() {
     Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0,
     Platform.OS === 'ios' ? 54 : 50
   ) + 2;
-  const [heroHeight, setHeroHeight] = useState(180);
+  const [heroHeight, setHeroHeight] = useState(300);
   const HEADER_SCROLL_DISTANCE = 85;
   const headerTranslateY = scrollY.interpolate({
     inputRange: [0, HEADER_SCROLL_DISTANCE],
@@ -3892,6 +4170,17 @@ export default function HomeScreen() {
     ? 'Branch Admin'
     : ((`${member?.firstName || ''} ${member?.lastName || ''}`.trim()) || member?.name || user?.displayName || 'Beloved');
 
+  const memberPhotoUrl = useMemo(() => {
+    const m: any = member || authMember;
+    if (m) {
+      if (m.photoRemoved || m.profilePhoto === null) {
+        return null;
+      }
+      return m.profilePhoto || m.photoURL || m.photoUrl || m.profileImageUrl || m.PhotoUrl || m.Photo || user?.photoURL || null;
+    }
+    return user?.photoURL || null;
+  }, [member, authMember, user?.photoURL]);
+
   const tickerEvents = useMemo(() => {
     const list = (todayEvents && todayEvents.length > 0) ? todayEvents : (events || []);
     if (list.length === 0) {
@@ -4042,13 +4331,26 @@ export default function HomeScreen() {
 
           {/* UNIQUE PREMIUM CHURCH HERO & SIGNATURE GREETING CARD */}
           <PremiumHero
-            churchName={churchDisplayName}
-            tagline={activeChurch?.tagline || 'Together In Christ'}
-            logoUrl={activeChurch?.theme?.logoUrl}
-            initials={churchInitials}
             userName={currentUserName}
+            userPhotoUrl={memberPhotoUrl}
             bellRotate={bellRotate}
             onBellPress={() => navigation.navigate('Updates')}
+            onProfilePress={() => {
+              if (profileDrawer?.openDrawer) {
+                profileDrawer.openDrawer();
+              } else {
+                navigation.navigate('Profile');
+              }
+            }}
+            onSlideAction={(route) => {
+              if (route === 'Sermons') {
+                navigation.navigate('Sermons');
+              } else if (route === 'Celebration') {
+                handleGuestProtectedNavigation('LiveCelebrationsChat', { celebrations: liveCelebrations });
+              } else {
+                handleGuestProtectedNavigation(route);
+              }
+            }}
             topInset={heroTopInset}
             onHeight={(h) => setHeroHeight((prev) => (Math.abs(prev - h) > 1 ? h : prev))}
             theme={screenTheme}

@@ -1,0 +1,257 @@
+export const RELIGION_OPTIONS = [
+  'Christian',
+  'Christian - Protestant',
+  'Christian - Pentecostal',
+  'Christian - Evangelical',
+  'Christian - Catholic',
+  'Christian - Orthodox',
+  'Christian - Non-Denominational',
+  'Other',
+];
+
+export const RELIGIOUS_VALUES_OPTIONS = [
+  'Very religious',
+  'Religious',
+  'Spiritual',
+  'Traditional',
+  'Moderate',
+];
+
+export const DENOMINATION_OPTIONS = [
+  'Rhema Global Ministries',
+  'Adventist',
+  'Anglican / Episcopal',
+  'Apostolic',
+  'Assyrian',
+  'Assembly of God (AG)',
+  'Baptist',
+  'Born Again',
+  'Brethren',
+  'Calvinist',
+  'Catholic',
+  'Church of God',
+  'Church of South India (CSI)',
+  'Church of North India (CNI)',
+  'Church of Christ',
+  'Evangelical',
+  'Full Gospel',
+  'Jacobite',
+  'Knanaya',
+  'Knanaya Catholic',
+  'Knanaya Jacobite',
+  'Latin Catholic',
+  'Lutheran',
+  'Malankara',
+  'Malabar Independent Syrian Church',
+  'Marthoma',
+  'Melkite',
+  'Mennonite',
+  'Methodist',
+  'Moravian',
+  'Non-Denominational',
+  'Orthodox',
+  'Pentecostal',
+  'Presbyterian',
+  'Protestant',
+  'Reformed Baptist',
+  'Reformed Presbyterian',
+  'Seventh-day Adventist',
+  'St. Thomas Evangelical',
+  'Syro Malabar',
+  'Syrian Catholic',
+  'Syrian Jacobite',
+  'Syrian Orthodox',
+  'Others',
+];
+
+export const DIVISION_OPTIONS = [
+  'Adi Dravidar',
+  'Anglo Indian',
+  'Chettiar / Chettiyar',
+  'Thevar / Mukkulathor',
+  'Paravar / Bharathar / Fernando',
+  'Garo',
+  'Goan',
+  'Gounder',
+  'Intercaste',
+  'Kamma',
+  'Kapu',
+  'Khasi',
+  'Knanaya',
+  'Madiga',
+  'Mahar',
+  'Mala',
+  'Matang',
+  'Mangalorean',
+  'Mudaliar / Mudaliyar',
+  'Mukkuvar',
+  'Mizo',
+  'Nadar',
+  'Naga',
+  'Naidu',
+  'Oraon / Kurukh',
+  'Padmashali / Padmasali',
+  'Pallar / Devendrakula Vellalar',
+  'Parkavakulam / Udayar',
+  'Pillai',
+  'Pulayar / Cheramar / Cherumar',
+  'Rajaka / Vannar',
+  'Reddy',
+  'Sambavar',
+  'SC',
+  'Setti Balija',
+  'ST',
+  'Vaniya Chettiar',
+  'Vanniya Kula Kshatriyar',
+  'Vellalar',
+  'Vishwakarma',
+  'Yadav / Yadavar',
+  'Others',
+  "Don't wish to specify",
+  "Don't know division",
+];
+
+export const COUNTRY_OPTIONS = [
+  'India',
+  'United States',
+  'United Kingdom',
+  'Canada',
+  'Australia',
+  'United Arab Emirates',
+  'Singapore',
+  'Malaysia',
+  'Germany',
+  'New Zealand',
+  'Saudi Arabia',
+  'Qatar',
+  'Kuwait',
+  'Oman',
+  'Ireland',
+  'France',
+  'Netherlands',
+  'South Africa',
+  'Philippines',
+  'Other',
+];
+
+export const INDIA_STATES = [
+  'Andhra Pradesh',
+  'Arunachal Pradesh',
+  'Assam',
+  'Bihar',
+  'Chhattisgarh',
+  'Delhi',
+  'Goa',
+  'Gujarat',
+  'Haryana',
+  'Himachal Pradesh',
+  'Jammu and Kashmir',
+  'Jharkhand',
+  'Karnataka',
+  'Kerala',
+  'Ladakh',
+  'Madhya Pradesh',
+  'Maharashtra',
+  'Manipur',
+  'Meghalaya',
+  'Mizoram',
+  'Nagaland',
+  'Odisha',
+  'Puducherry',
+  'Punjab',
+  'Rajasthan',
+  'Sikkim',
+  'Tamil Nadu',
+  'Telangana',
+  'Tripura',
+  'Uttar Pradesh',
+  'Uttarakhand',
+  'West Bengal',
+  'Chandigarh',
+  'Andaman and Nicobar Islands',
+  'Other',
+];
+
+export const GLOBAL_STATES = [
+  'California',
+  'Texas',
+  'New York',
+  'New Jersey',
+  'Illinois',
+  'Washington',
+  'Ontario',
+  'British Columbia',
+  'Alberta',
+  'London / Greater London',
+  'New South Wales',
+  'Victoria',
+  'Queensland',
+  'Dubai',
+  'Abu Dhabi',
+  'Central Region',
+  'Other',
+];
+
+export const CITIZENSHIP_OPTIONS = [
+  'Indian',
+  'American (USA)',
+  'British (UK)',
+  'Canadian',
+  'Australian',
+  'Singaporean',
+  'Malaysian',
+  'Emirati (UAE)',
+  'German',
+  'New Zealander',
+  'Irish',
+  'South African',
+  'Filipino',
+  'NRI / OCI',
+  'Other',
+];
+
+export const HEIGHT_OPTIONS = Array.from({ length: 33 }, (_, i) => {
+  const totalInches = 52 + i; // 4ft 4in (132cm) to 7ft 0in (213cm)
+  const feet = Math.floor(totalInches / 12);
+  const inches = totalInches % 12;
+  const cm = Math.round(totalInches * 2.54);
+  return {
+    cm,
+    label: `${feet} ft ${inches} in (${cm} cm)`,
+  };
+});
+
+export const GENDER_OPTIONS = ['Male', 'Female'];
+export const PHYSICAL_STATUS_OPTIONS = ['Normal', 'Physically challenged'];
+export const MARITAL_STATUS_OPTIONS = ['Never Married', 'Widowed', 'Divorced', 'Awaiting Divorce'];
+export const CHILDREN_OPTIONS = ['None', '1', '2', '3', '4', '5+'];
+
+export const MOTHER_TONGUE_OPTIONS = [
+  'Telugu',
+  'Tamil',
+  'Malayalam',
+  'Kannada',
+  'Hindi',
+  'English',
+  'Marathi',
+  'Konkani',
+  'Bengali',
+  'Gujarati',
+  'Punjabi',
+  'Odia',
+  'Tulu',
+  'Other',
+];
+
+export const FAMILY_STATUS_OPTIONS = [
+  'Middle Class',
+  'Upper Middle Class',
+  'Rich / Affluent',
+];
+
+export const FAMILY_VALUES_OPTIONS = ['Orthodox', 'Traditional', 'Moderate', 'Liberal'];
+
+export const FAMILY_TYPE_OPTIONS = ['Nuclear', 'Joint', 'Extended'];
+export const SIBLING_COUNT_OPTIONS = ['None', '1', '2', '3', '4+'];
+export const EATING_HABITS_OPTIONS = ['Not Specified', 'Vegetarian', 'Non-Vegetarian', 'Eggetarian'];
+export const SMOKING_DRINKING_OPTIONS = ['Not Specified', 'No', 'Occasionally', 'Yes'];

@@ -90,6 +90,7 @@ import AdminKidsHub from '../screens/admin/kids_ministry/AdminKidsHub';
 import AdminServicePlanner from '../screens/admin/AdminServicePlanner';
 import AdminTestimonies from '../screens/admin/AdminTestimonies';
 import AdminVolunteerManagement from '../screens/admin/AdminVolunteerManagement';
+import AdminMatrimonyScreen from '../screens/admin/AdminMatrimonyScreen';
 import AdminJobCircleDashboard from '../screens/admin/job_circle/AdminJobCircleDashboard';
 import CareCellService from '../services/CareCellService';
 import { RHEMA_CHURCH_ID } from '../constants/ChurchConfig';
@@ -319,6 +320,7 @@ export default function AdminNavigator({ navigation, route }: any) {
     { name: 'New Online Meeting', icon: VideoIcon, component: AdminOnlineMeetingEditor },
     { name: 'Bible Quiz', icon: Award, component: AdminQuizList },
     { name: 'Baptism', icon: Droplets, component: AdminBaptism },
+    { name: 'Rhema Matrimony', icon: HeartHandshake, component: AdminMatrimonyScreen },
     ...(isSuperAdminUser ? [{ name: 'App Admin', icon: Shield, component: SuperAdminDashboard }] : []),
   ];
 
