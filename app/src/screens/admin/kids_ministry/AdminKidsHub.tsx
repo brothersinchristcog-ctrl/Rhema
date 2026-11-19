@@ -461,7 +461,7 @@ export default function AdminKidsHub({ navigation }: any) {
                 </View>
               </View>
 
-              {/* Management Portals - Clean Compact 2x2 Grid */}
+              {/* Management Portals - Clean 2x4 Grid (All 8 Portals in uniform card design) */}
               <View style={{ gap: 8, marginTop: 12 }}>
                 <Text style={styles.sectionHeading}>MANAGEMENT PORTALS</Text>
 
@@ -480,7 +480,7 @@ export default function AdminKidsHub({ navigation }: any) {
                     </View>
                     <Text style={styles.portalGridTitle}>Children Roster</Text>
                     <Text style={styles.portalGridSub}>
-                      {children.length} enrolled · Medical & emergency list
+                      {children.length} enrolled · Medical & alerts
                     </Text>
                   </TouchableOpacity>
 
@@ -537,44 +537,77 @@ export default function AdminKidsHub({ navigation }: any) {
                       {stories.length} stories · {quizzes.length} quizzes · {songs.length} songs
                     </Text>
                   </TouchableOpacity>
-                </View>
 
-                {/* Additional Specialized Portals */}
-                <View style={styles.additionalPortalsRow}>
+                  {/* Grid 5: 52-Week Curriculum */}
                   <TouchableOpacity
-                    style={styles.smallPortalPill}
+                    style={styles.portalGridCard}
                     onPress={() => setActiveTab('curriculum')}
-                    activeOpacity={0.8}
+                    activeOpacity={0.82}
                   >
-                    <Sparkles size={13} color="#F472B6" />
-                    <Text style={styles.smallPortalPillText}>Curriculum</Text>
+                    <View style={styles.portalCardHeader}>
+                      <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(244, 114, 182, 0.12)' }]}>
+                        <Sparkles size={18} color="#F472B6" />
+                      </View>
+                      <ChevronRight size={15} color="#64748B" />
+                    </View>
+                    <Text style={styles.portalGridTitle}>52-Wk Curriculum</Text>
+                    <Text style={styles.portalGridSub}>
+                      52 weekly scripture & memory plans
+                    </Text>
                   </TouchableOpacity>
 
+                  {/* Grid 6: AI Lesson Studio */}
                   <TouchableOpacity
-                    style={styles.smallPortalPill}
+                    style={styles.portalGridCard}
                     onPress={() => setShowAICopilotModal(true)}
-                    activeOpacity={0.8}
+                    activeOpacity={0.82}
                   >
-                    <Sparkles size={13} color="#C084FC" />
-                    <Text style={styles.smallPortalPillText}>AI Studio</Text>
+                    <View style={styles.portalCardHeader}>
+                      <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(147, 51, 234, 0.12)' }]}>
+                        <Sparkles size={18} color="#A855F7" />
+                      </View>
+                      <ChevronRight size={15} color="#64748B" />
+                    </View>
+                    <Text style={styles.portalGridTitle}>Claude AI Studio</Text>
+                    <Text style={styles.portalGridSub}>
+                      Automated crafts, stories & quiz maker
+                    </Text>
                   </TouchableOpacity>
 
+                  {/* Grid 7: VBS & Special Camps */}
                   <TouchableOpacity
-                    style={styles.smallPortalPill}
+                    style={styles.portalGridCard}
                     onPress={() => setShowVBSModal(true)}
-                    activeOpacity={0.8}
+                    activeOpacity={0.82}
                   >
-                    <Award size={13} color="#EF4444" />
-                    <Text style={styles.smallPortalPillText}>VBS Camps</Text>
+                    <View style={styles.portalCardHeader}>
+                      <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(239, 68, 68, 0.12)' }]}>
+                        <Award size={18} color="#EF4444" />
+                      </View>
+                      <ChevronRight size={15} color="#64748B" />
+                    </View>
+                    <Text style={styles.portalGridTitle}>VBS & Camps</Text>
+                    <Text style={styles.portalGridSub}>
+                      Vacation Bible School registrations
+                    </Text>
                   </TouchableOpacity>
 
+                  {/* Grid 8: Analytics & Safety Reports */}
                   <TouchableOpacity
-                    style={styles.smallPortalPill}
+                    style={styles.portalGridCard}
                     onPress={() => setShowReportsModal(true)}
-                    activeOpacity={0.8}
+                    activeOpacity={0.82}
                   >
-                    <TrendingUp size={13} color="#10B981" />
-                    <Text style={styles.smallPortalPillText}>Reports</Text>
+                    <View style={styles.portalCardHeader}>
+                      <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
+                        <TrendingUp size={18} color="#34D399" />
+                      </View>
+                      <ChevronRight size={15} color="#64748B" />
+                    </View>
+                    <Text style={styles.portalGridTitle}>Safety Reports</Text>
+                    <Text style={styles.portalGridSub}>
+                      Attendance logs, incident records & PDF
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -1207,8 +1240,8 @@ const styles = StyleSheet.create({
     width: (width - 48) / 2,
     backgroundColor: '#0F172A',
     borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
     borderWidth: 1,
     borderColor: '#1E293B',
   },
@@ -1216,39 +1249,39 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   kpiIconBox: {
-    width: 28,
-    height: 28,
+    width: 32,
+    height: 32,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
   kpiNumber: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '900',
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     color: '#FFFFFF',
   },
   kpiTitle: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#F1F5F9',
     fontWeight: '700',
     marginTop: 2,
   },
   kpiSub: {
-    fontSize: 10,
+    fontSize: 11,
     color: '#94A3B8',
-    marginTop: 1,
+    marginTop: 2,
   },
   sectionHeading: {
-    fontSize: 10.5,
+    fontSize: 11,
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     fontWeight: '800',
     color: '#94A3B8',
     letterSpacing: 1.2,
-    marginBottom: 2,
+    marginBottom: 4,
   },
   stationsRow: {
     flexDirection: 'row',
@@ -1258,30 +1291,30 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0F172A',
     borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 11,
     borderWidth: 1,
     borderColor: '#1E293B',
     position: 'relative',
   },
   stationIconBox: {
-    width: 32,
-    height: 32,
+    width: 34,
+    height: 34,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   stationTitle: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '800',
     color: '#FFFFFF',
-    marginBottom: 1,
+    marginBottom: 2,
   },
   stationSub: {
-    fontSize: 9.5,
+    fontSize: 10.5,
     color: '#94A3B8',
-    lineHeight: 13,
+    lineHeight: 14,
   },
   stationArrow: {
     position: 'absolute',
@@ -1297,7 +1330,7 @@ const styles = StyleSheet.create({
     width: (width - 48) / 2,
     backgroundColor: '#0F172A',
     borderRadius: 14,
-    padding: 12,
+    padding: 13,
     borderWidth: 1,
     borderColor: '#1E293B',
   },
@@ -1308,21 +1341,21 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   portalGridIconBox: {
-    width: 32,
-    height: 32,
+    width: 34,
+    height: 34,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   portalGridTitle: {
-    fontSize: 12.5,
+    fontSize: 13.5,
     fontWeight: '800',
     color: '#FFFFFF',
   },
   portalGridSub: {
-    fontSize: 10,
+    fontSize: 11,
     color: '#94A3B8',
-    lineHeight: 14,
+    lineHeight: 15,
     marginTop: 2,
   },
   additionalPortalsRow: {

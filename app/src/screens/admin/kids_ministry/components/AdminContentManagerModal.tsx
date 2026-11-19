@@ -501,15 +501,15 @@ export default function AdminContentManagerModal({
       <View style={[styles.container, { paddingTop: insets.top }]}>
         {/* ── TOP HEADER (FULL-SCREEN LMS/CMS) ── */}
         <View style={styles.topHeader}>
-          <View style={{ flex: 1, marginRight: 8 }}>
+          <View style={{ flex: 1, marginRight: 12 }}>
             <View style={styles.hubBadgeRow}>
               <View style={styles.hubBadge}>
-                <BookOpen size={11} color="#93C5FD" />
+                <BookOpen size={12} color="#93C5FD" />
                 <Text style={styles.hubBadgeText}>BIBLE LEARNING CENTER</Text>
               </View>
               <View style={styles.statsBadge}>
                 <Text style={styles.statsBadgeText}>
-                  {stories.length}S · {quizzes.length}Q · {songs.length}M
+                  {stories.length} Stories · {quizzes.length} Quizzes · {songs.length} Songs
                 </Text>
               </View>
             </View>
@@ -520,13 +520,18 @@ export default function AdminContentManagerModal({
           </View>
 
           <TouchableOpacity onPress={onClose} style={styles.closeHeaderBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <X size={18} color="#94A3B8" />
+            <X size={20} color="#94A3B8" />
           </TouchableOpacity>
         </View>
 
-        {/* ── SEGMENT TABS (STORIES / QUIZZES / SONGS) ── */}
+        {/* ── SEGMENT TABS (STORIES / QUIZZES / SONGS) & ACTION BUTTON ── */}
         <View style={styles.navBar}>
-          <View style={styles.tabsRow}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.tabsRow}
+            style={{ flex: 1 }}
+          >
             <TouchableOpacity
               style={[styles.tab, activeTab === 'stories' && styles.tabActive]}
               onPress={() => setActiveTab('stories')}
@@ -556,9 +561,9 @@ export default function AdminContentManagerModal({
                 Songs ({songs.length})
               </Text>
             </TouchableOpacity>
-          </View>
+          </ScrollView>
 
-          {/* Create Button depending on active tab */}
+          {/* Create Button: Visible & styled cleanly */}
           <TouchableOpacity
             style={styles.createBtn}
             onPress={() => {
@@ -566,9 +571,9 @@ export default function AdminContentManagerModal({
               else if (activeTab === 'quizzes') openNewQuizForm();
               else openNewSongForm();
             }}
-            activeOpacity={0.88}
+            activeOpacity={0.85}
           >
-            <Plus size={16} color="#FFFFFF" strokeWidth={2.6} />
+            <Plus size={15} color="#FFFFFF" strokeWidth={2.8} />
             <Text style={styles.createBtnText}>
               {activeTab === 'stories' ? 'New Story' : activeTab === 'quizzes' ? 'New Quiz' : 'New Song'}
             </Text>
@@ -1177,92 +1182,96 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#1E293B',
   },
   hubBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 2,
+    gap: 8,
+    marginBottom: 4,
   },
   hubBadge: {
     backgroundColor: '#1E3A8A',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
   },
   hubBadgeText: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '800',
     color: '#93C5FD',
     letterSpacing: 0.8,
   },
   statsBadge: {
     backgroundColor: 'rgba(52, 211, 153, 0.15)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
   statsBadgeText: {
-    fontSize: 9.5,
+    fontSize: 10.5,
     color: '#34D399',
     fontWeight: '700',
   },
   headerTitle: {
-    fontSize: 17,
+    fontSize: 19,
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     fontWeight: '800',
     color: '#FFFFFF',
   },
   headerSubtitle: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#94A3B8',
-    marginTop: 1,
+    marginTop: 2,
   },
   closeHeaderBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: '#1E293B',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#334155',
   },
   navBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#1E293B',
-    gap: 8,
+    gap: 10,
   },
   tabsRow: {
     flexDirection: 'row',
-    gap: 6,
+    alignItems: 'center',
+    gap: 8,
+    paddingRight: 6,
   },
   tab: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    gap: 6,
+    paddingHorizontal: 13,
+    paddingVertical: 8,
     borderRadius: 999,
     backgroundColor: '#1E293B',
     borderWidth: 1,
     borderColor: '#334155',
   },
   tabActive: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#2563EB',
     borderColor: '#3B82F6',
   },
   tabText: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#94A3B8',
     fontWeight: '600',
   },
@@ -1271,28 +1280,34 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   createBtn: {
-    backgroundColor: '#1E40AF',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    backgroundColor: '#2563EB',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 999,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    justifyContent: 'center',
+    gap: 5,
     borderWidth: 1,
-    borderColor: '#3B82F6',
+    borderColor: '#60A5FA',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+    elevation: 3,
   },
   createBtnText: {
     color: '#FFFFFF',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
   },
   searchBarBox: {
     backgroundColor: '#1E293B',
     marginHorizontal: 16,
-    marginVertical: 8,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    marginVertical: 10,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     borderWidth: 1,
     borderColor: '#334155',
     flexDirection: 'row',
@@ -1301,31 +1316,31 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 13.5,
     padding: 0,
   },
   contentScroll: {
     paddingHorizontal: 16,
     paddingBottom: 40,
-    gap: 8,
+    gap: 10,
   },
   itemsGrid: {
-    gap: 8,
+    gap: 10,
   },
   contentCard: {
     backgroundColor: '#131C31',
-    borderRadius: 12,
-    padding: 10,
+    borderRadius: 14,
+    padding: 12,
     borderWidth: 1,
     borderColor: '#1E293B',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
   },
   cardCoverBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 8,
+    width: 44,
+    height: 44,
+    borderRadius: 10,
     backgroundColor: '#1E293B',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1339,31 +1354,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 6,
+    gap: 8,
   },
   cardTitle: {
-    fontSize: 13,
+    fontSize: 14.5,
     fontWeight: '700',
     color: '#FFFFFF',
     flex: 1,
   },
   cardTeluguTitle: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#93C5FD',
-    marginTop: 1,
+    marginTop: 2,
   },
   cardRef: {
-    fontSize: 10,
+    fontSize: 11,
     color: '#94A3B8',
-    marginTop: 1,
+    marginTop: 2,
   },
   statusPill: {
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
   },
   statusPillText: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '700',
   },
   publishedPill: {
@@ -1380,20 +1395,20 @@ const styles = StyleSheet.create({
   },
   actionButtonsCol: {
     flexDirection: 'row',
-    gap: 6,
+    gap: 8,
   },
   editBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     backgroundColor: 'rgba(59, 130, 246, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   deleteBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     backgroundColor: 'rgba(239, 68, 68, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
