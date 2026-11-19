@@ -1810,23 +1810,38 @@ export async function sendDailyQuizNotificationInternal(force = false) {
             return { success: false, sentCount: 0, message: `Scheduled for ${targetTime}` };
         }
     }
-    // ── ATOMIC EARLY IDEMPOTENCY GUARD ─────────────────────────────────────────
-    // Write lastBroadcastDate NOW — before any network I/O — so that any other
-    // concurrent scheduler invocation (automatedDailyQuiz / periodicDailyQuizSafetyNet
-    // / monitorMeetingLive) that reads Firestore will see today's date and exit early.
-    try {
-        const earlyLockPayload = { lastBroadcastDate: dStr, lastBroadcastAt: FieldValue.serverTimestamp() };
-        if (scheduleDocRef) {
-            await scheduleDocRef.set(earlyLockPayload, { merge: true });
+    // ── ATOMIC FIRESTORE TRANSACTION IDEMPOTENCY LOCK ──────────────────────────
+    // Because automatedDailyQuiz, periodicDailyQuizSafetyNet, and monitorMeetingLive
+    // can all fire at 06:00:00 IST simultaneously, use a true Firestore transaction
+    // so strictly ONE invocation acquires today's broadcast lock.
+    const lockRef = scheduleDocRef ||
+        db.collection('Rhema Church').doc('rhema').collection('settings').doc('daily_quiz_schedule');
+    if (!force) {
+        try {
+            const acquired = await db.runTransaction(async (tx) => {
+                const snap = await tx.get(lockRef);
+                const cur = snap.exists ? snap.data() || {} : {};
+                if (cur.lastBroadcastDate === dStr) {
+                    return false;
+                }
+                tx.set(lockRef, { lastBroadcastDate: dStr, lastBroadcastAt: FieldValue.serverTimestamp() }, { merge: true });
+                return true;
+            });
+            if (!acquired) {
+                console.log(`ℹ️ [DailyQuiz] Transaction lock already claimed for ${dStr}; skipping duplicate run.`);
+                return { success: true, sentCount: 0, message: 'Already sent today' };
+            }
+            await db
+                .collection('settings')
+                .doc('daily_quiz_schedule')
+                .set({ lastBroadcastDate: dStr, lastBroadcastAt: FieldValue.serverTimestamp() }, { merge: true })
+                .catch(() => { });
+            console.log(`🔒 [DailyQuiz] Atomic transaction lock acquired for ${dStr}. Proceeding with delivery...`);
         }
-        else {
-            await db.collection('Rhema Church').doc('rhema').collection('settings').doc('daily_quiz_schedule').set(earlyLockPayload, { merge: true });
+        catch (lockErr) {
+            console.warn('[DailyQuiz] Transaction lock error; aborting to avoid duplicate delivery:', lockErr);
+            return { success: false, sentCount: 0, message: 'Lock error' };
         }
-        await db.collection('settings').doc('daily_quiz_schedule').set(earlyLockPayload, { merge: true });
-        console.log(`🔒 [DailyQuiz] Idempotency lock acquired for ${dStr}. Proceeding with delivery...`);
-    }
-    catch (lockErr) {
-        console.warn('[DailyQuiz] Could not acquire idempotency lock; continuing anyway:', lockErr);
     }
     const dParts = dStr.split('-');
     const displayDateStr = dParts.length === 3 ? `${dParts[2]}-${dParts[1]}-${dParts[0]}` : dStr;
@@ -1900,15 +1915,18 @@ export async function sendDailyQuizNotificationInternal(force = false) {
         }
         console.log(`✅ [DailyQuiz] Multicast push sent: ${multicastSuccess} success, ${multicastFailed} failed.`);
     }
-    // 5. Log in broadcasts/notifications for Rhema Church
+    // 5. Persist ONE deterministic broadcast entry per day (doc ID = daily_quiz_YYYY-MM-DD)
+    // Do NOT also write a duplicate doc into `notifications` because UpdatesScreen merges both collections!
     try {
         const churchesSnap = await db.collection('Rhema Church').get();
         for (const cDoc of churchesSnap.docs) {
             const churchId = cDoc.id;
             if (churchId === 'global')
                 continue;
-            // Add to broadcasts collection (silent — no secondary push)
-            await cDoc.ref.collection('broadcasts').add({
+            await cDoc.ref
+                .collection('broadcasts')
+                .doc(quizId)
+                .set({
                 title: pushTitle,
                 content: pushBody,
                 type: 'quiz',
@@ -1919,20 +1937,8 @@ export async function sendDailyQuizNotificationInternal(force = false) {
                 churchId: churchId,
                 silent: true,
                 createdAt: FieldValue.serverTimestamp(),
-            }).catch(() => { });
-            // Add to notifications collection
-            await cDoc.ref.collection('notifications').add({
-                title: pushTitle,
-                body: pushBody,
-                type: 'quiz',
-                quizId: quizId,
-                id: quizId,
-                relatedId: quizId,
-                screen: 'BibleQuizDetail',
-                churchId: churchId,
-                read: false,
-                createdAt: FieldValue.serverTimestamp(),
-            }).catch(() => { });
+            }, { merge: true })
+                .catch(() => { });
         }
     }
     catch (churchErr) {

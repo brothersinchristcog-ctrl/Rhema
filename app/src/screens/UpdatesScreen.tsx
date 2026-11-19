@@ -181,12 +181,24 @@ export default function UpdatesScreen({ navigation, route }: any) {
     const seenVolunteerKeys = new Set<string>();
     const seenRosterAlertKeys = new Set<string>();
     const seenLiveStreams = new Set<string>();
+    const seenQuizKeys = new Set<string>();
     const deduplicated = combined.filter(item => {
       if (!item || !item.id) return false;
       if (seenIds.has(item.id)) {
         return false;
       }
       seenIds.add(item.id);
+
+      // Deduplicate Bible Quiz updates (e.g. Daily Bible Quiz logged across both broadcasts & notifications)
+      if (item.type === 'quiz' || item.type === 'bible_quiz' || item.type === 'quiz_scheduled') {
+        const quizKey =
+          String(item.relatedId || item.quizId || '').trim() ||
+          `${item.title || ''}|${item.content || ''}|${item.date || ''}`;
+        if (seenQuizKeys.has(quizKey)) {
+          return false;
+        }
+        seenQuizKeys.add(quizKey);
+      }
 
       // Deduplicate identical volunteer & Job Circle alerts across notifications/broadcasts/member subcollection
       if (String(item.type || '').startsWith('volunteer_') || String(item.type || '').startsWith('job_')) {
