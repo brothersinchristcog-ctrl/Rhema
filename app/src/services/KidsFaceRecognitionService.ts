@@ -153,14 +153,26 @@ Image 1 is the LIVE CAMERA CAPTURE taken right now at the entrance kiosk.
 The remaining images are the ONLY authorized enrolled ${subjectType} reference photos:
 ${candidateLines}
 
-MANDATORY SECURITY RULES — FOLLOW STRICTLY:
-1. LIVE FACE CHECK: Inspect Image 1 first. If Image 1 has NO clear human face (e.g. empty room, wall, ceiling, hand, obscured/blurry face, back of head, or looking away), you MUST return faceDetected=false, matched=false, matchedCandidateIndex=null, confidence=0.
-2. STRICT IDENTITY VERIFICATION: Compare the person's permanent facial structure in Image 1 (eye shape & spacing, eyebrows, nose bridge & tip, mouth & lips, jawline, ears, age group, gender) against each reference photo.
-3. ZERO FALSE POSITIVES:
-   - An ADULT face (parent, pastor, staff) MUST NEVER match a CHILD reference photo (return matched=false, confidence <= 10, reason="Adult face detected; does not match any enrolled child").
-   - A different person, sibling, or stranger MUST NEVER match (return matched=false, matchedCandidateIndex=null).
-   - Clothing, background, lighting, or hair alone do NOT make a match.
-4. THRESHOLD: ONLY set matched=true and matchedCandidateIndex to the exact 0-based index if you are CERTAIN (>= 85% confidence) that Image 1 and that reference image show the EXACT SAME HUMAN INDIVIDUAL. When in doubt, ALWAYS return matched=false.
+MANDATORY CHILD SAFETY & IDENTITY RULES — FOLLOW STRICTLY:
+1. LIVE FACE DETECTION: Inspect Image 1 first. If Image 1 has NO clear human face (e.g. empty room, wall, ceiling, hand, obscured/blurry face, back of head, or looking away), you MUST return:
+   {"faceDetected": false, "matched": false, "matchedCandidateIndex": null, "confidence": 0, "reason": "No face detected in live camera frame"}
+
+2. ADULT REJECTION:
+   If Image 1 shows an ADULT face (parent, pastor, volunteer, staff), you MUST NEVER match any child reference photo. Return:
+   {"faceDetected": true, "matched": false, "matchedCandidateIndex": null, "confidence": 0, "reason": "Adult face detected. Only registered children can be checked in via face scan."}
+
+3. ZERO SIBLING / CROSS-CHILD MISMATCH (CRITICAL):
+   - Each child is an individual. If Image 1 is child A (e.g. Vihaan), it MUST NOT match child B (e.g. Shahasra / Sahasra) or any other sibling/child.
+   - Even if they are siblings or have similar features, if Image 1 does NOT depict the exact same specific child as the enrolled reference image, you MUST return matched=false.
+   - Do NOT guess or pick the closest child.
+
+4. 1:1 IDENTITY VERIFICATION:
+   - Compare permanent facial structure: eye spacing and shape, nose bridge and nostril shape, mouth and lip structure, ear placement, jawline, and age-consistent facial contours.
+   - Ignore temporary variations: hairstyle, lighting changes, slight head tilts, expressions (smiling/neutral).
+
+5. THRESHOLD:
+   - ONLY set "matched": true and "matchedCandidateIndex": <index> if you are 100% confident (confidence >= 85) that Image 1 and Candidate <index> are the EXACT SAME individual.
+   - Otherwise, return matched=false, matchedCandidateIndex=null, and an informative reason explaining why it did not match.
 
 Respond ONLY with raw valid JSON (no markdown, no backticks):
 {"faceDetected": true/false, "matched": true/false, "matchedCandidateIndex": number or null, "confidence": 0-100, "reason": "brief factual reason"}`;
@@ -446,6 +458,28 @@ class KidsFaceRecognitionService {
           ? 'Face did not match any enrolled Sunday School child. Only registered children can check in by face.'
           : 'Face did not match any enrolled Sunday School teacher.'),
     };
+  }
+
+  /**
+   * Strictly verifies live face against a single TARGET child (1:1 strict verification).
+   * Ideal when parent selects child or verifies Vihaan/Shahasra specifically.
+   */
+  async verifyTargetChildFace(
+    livePhotoBase64: string,
+    targetChild: FaceCandidate
+  ): Promise<FaceVerificationResult> {
+    return this.verifyLiveFace(livePhotoBase64, [targetChild], targetChild.role || 'child');
+  }
+
+  /**
+   * Clears in-memory photo cache when photo is re-enrolled or biometric consent is withdrawn.
+   */
+  clearPhotoCache(photoUrl?: string) {
+    if (photoUrl) {
+      referencePhotoCache.delete(photoUrl);
+    } else {
+      referencePhotoCache.clear();
+    }
   }
 }
 

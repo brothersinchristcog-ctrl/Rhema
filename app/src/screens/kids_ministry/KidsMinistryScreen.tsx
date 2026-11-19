@@ -634,7 +634,7 @@ export default function KidsMinistryScreen({ navigation }: any) {
                 <View style={styles.stationsRow}>
                   <TouchableOpacity
                     style={styles.stationCard}
-                    onPress={() => navigation.navigate('KidsFaceScanKiosk')}
+                    onPress={() => navigation.navigate('KidsFaceScanKiosk', { targetChildId: activeChild?.id })}
                     activeOpacity={0.88}
                   >
                     <View style={[styles.stationIconBox, { backgroundColor: 'rgba(251, 191, 36, 0.15)' }]}>
