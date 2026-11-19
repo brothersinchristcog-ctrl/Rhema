@@ -10,6 +10,7 @@ import {
   Alert,
   Dimensions,
   StatusBar,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -116,14 +117,24 @@ export default function KidsStoryReaderModal({
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
           {currentPage && (
             <View style={styles.pageCard}>
-              {/* Giant Illustration Bubble */}
-              <View style={styles.illustrationBubble}>
-                <Text style={styles.illustrationEmoji}>{currentPage.illustrationEmoji || '📖'}</Text>
-              </View>
+              {/* Illustration: Show Uploaded Image if available, otherwise display bubble */}
+              {(currentPage.imageUrl || story.coverImageUrl) ? (
+                <View style={styles.illustrationImageBox}>
+                  <Image
+                    source={{ uri: currentPage.imageUrl || story.coverImageUrl }}
+                    style={styles.illustrationImage}
+                    resizeMode="cover"
+                  />
+                </View>
+              ) : (
+                <View style={styles.illustrationBubble}>
+                  <Text style={styles.illustrationEmoji}>{currentPage.illustrationEmoji || story.coverEmoji || '📖'}</Text>
+                </View>
+              )}
 
               {/* Page Heading */}
-              <Text style={styles.pageHeading}>{currentPage.heading}</Text>
-              <Text style={styles.scriptureRefBadge}>{story.scriptureRef}</Text>
+              {currentPage.heading ? <Text style={styles.pageHeading}>{currentPage.heading}</Text> : null}
+              {story.scriptureRef ? <Text style={styles.scriptureRefBadge}>{story.scriptureRef}</Text> : null}
 
               <View style={styles.divider} />
 
@@ -317,6 +328,20 @@ const styles = StyleSheet.create({
   },
   illustrationEmoji: {
     fontSize: 44,
+  },
+  illustrationImageBox: {
+    width: '100%',
+    height: 200,
+    borderRadius: 18,
+    overflow: 'hidden',
+    marginBottom: 16,
+    borderWidth: 1.5,
+    borderColor: '#334155',
+    backgroundColor: '#09090B',
+  },
+  illustrationImage: {
+    width: '100%',
+    height: '100%',
   },
   pageHeading: {
     fontSize: 18,

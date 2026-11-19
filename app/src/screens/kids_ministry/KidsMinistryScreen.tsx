@@ -11,6 +11,7 @@ import {
   Platform,
   Alert,
   Linking,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -883,13 +884,17 @@ export default function KidsMinistryScreen({ navigation }: any) {
                     activeOpacity={0.88}
                   >
                     <View style={styles.storyEmojiBubble}>
-                      <Text style={{ fontSize: 26 }}>{s.coverEmoji || '📖'}</Text>
+                      {s.coverImageUrl ? (
+                        <Image source={{ uri: s.coverImageUrl }} style={styles.storyCoverImg} />
+                      ) : (
+                        <Text style={{ fontSize: 26 }}>{s.coverEmoji || '📖'}</Text>
+                      )}
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.storyTitle}>{s.title}</Text>
                       <Text style={styles.storyTeluguText}>{s.titleTelugu}</Text>
                       <Text style={styles.storyMeta}>
-                        {s.scriptureRef} · {s.readTime || '5 min'} · {s.pages?.length || 4} Illustrated Pages
+                        {s.scriptureRef ? `${s.scriptureRef} · ` : ''}{s.readTime || '5 min'} · {s.pages?.length || 1} Pages
                       </Text>
                     </View>
                     <View style={styles.storyReadPill}>
@@ -2018,6 +2023,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#27272A',
+    overflow: 'hidden',
+  },
+  storyCoverImg: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
   },
   storyTeluguText: {
     fontSize: 11,
