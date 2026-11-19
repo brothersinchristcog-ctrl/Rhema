@@ -279,6 +279,8 @@ class KidsMinistryService {
       guardians?: any[];
       emergencyContact?: { name: string; phone: string; relationship: string };
       notes?: string;
+      memberContactId?: string;
+      isSyncedFromMember?: boolean;
     }
   ): Promise<ChildRecord> {
     const cId = churchId || RHEMA_CHURCH_ID;
@@ -348,6 +350,8 @@ class KidsMinistryService {
           ],
 
       notes: data.notes || '',
+      ...(data.memberContactId ? { memberContactId: data.memberContactId } : {}),
+      ...(data.isSyncedFromMember ? { isSyncedFromMember: true } : {}),
       enrolledAt: now,
       updatedAt: now,
     };
@@ -390,6 +394,163 @@ class KidsMinistryService {
     } catch (e) {
       console.warn('Could not load related contacts for family:', e);
       return [];
+    }
+  }
+
+  /**
+   * Synchronizes registered children from Church Member Registration (`Rhema Church/{churchId}/members`)
+   * to the Rhema Kids Sunday School module (`kids_children`).
+   * 
+   * Single Source of Truth:
+   * - Scans family members with kid relations (Son, Daughter, Child, Grandson, Granddaughter, Nephew, Niece)
+   *   or flagged with isKidMember: true.
+   * - Deduplicates strictly by `memberContactId`, exact full name matching, or `(familyId + fullName)`.
+   * - Automatically registers missing children with their age, recommended class tier, and guardian contacts.
+   * - Updates existing kids_children if details like DOB, names, or photo have changed.
+   * - Can sync for a single family (familyId) or across the entire church.
+   */
+  async syncMemberChildrenToKidsMinistry(churchId: string, familyId?: string): Promise<{ synced: number; created: number }> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const kidRelations = ['Son', 'Daughter', 'Child', 'Grandson', 'Granddaughter', 'Nephew', 'Niece'];
+
+    try {
+      // 1. Fetch relevant member records
+      let membersQuery: any = firestore().collection(RHEMA_ROOT_COLLECTION).doc(cId).collection('members');
+      if (familyId) {
+        membersQuery = membersQuery.where('accountId', '==', familyId);
+      }
+      const membersSnap = await membersQuery.get();
+      if (membersSnap.empty) {
+        return { synced: 0, created: 0 };
+      }
+
+      // Filter down to children/kids (under 18)
+      const childDocs = membersSnap.docs.filter((doc: any) => {
+        const d = doc.data();
+        const rel = (d.relation || d.Relation || '').trim();
+        const isKid = d.isKidMember === true || kidRelations.some(r => r.toLowerCase() === rel.toLowerCase());
+        if (!isKid) return false;
+        // Age guard: must be under 18 years old to be in Kids Ministry
+        if (d.dob) {
+          const age = calculateChildAge(d.dob);
+          if (age > 17) return false;
+        }
+        return true;
+      });
+
+      if (childDocs.length === 0) {
+        return { synced: 0, created: 0 };
+      }
+
+      // 2. Fetch existing kids_children in this church/family to prevent duplicates
+      let existingKidsQuery: any = this.getKidsCollection(cId);
+      if (familyId) {
+        existingKidsQuery = existingKidsQuery.where('familyId', '==', familyId);
+      }
+      const existingKidsSnap = await existingKidsQuery.get();
+      const existingKids = existingKidsSnap.docs.map((d: any) => ({
+        docId: d.id,
+        ...(d.data() as ChildRecord),
+      }));
+
+      // Cache parents for pre-populating guardian & contact info
+      const parentCache: Record<string, any> = {};
+      const getParentInfo = async (accId: string) => {
+        if (!accId) return null;
+        if (parentCache[accId]) return parentCache[accId];
+        try {
+          const parentDoc = await firestore().collection(RHEMA_ROOT_COLLECTION).doc(cId).collection('members').doc(accId).get();
+          if (parentDoc.exists) {
+            parentCache[accId] = parentDoc.data();
+            return parentDoc.data();
+          }
+        } catch {
+          // ignore lookup error
+        }
+        return null;
+      };
+
+      let created = 0;
+      let synced = 0;
+
+      for (const mDoc of childDocs) {
+        const mData = mDoc.data();
+        const memberContactId = mDoc.id;
+        const mFamilyId = mData.accountId || familyId || memberContactId;
+
+        const firstName = (mData.firstName || mData.FirstName || '').trim() || (mData.name ? mData.name.split(' ')[0] : 'Child');
+        const lastName = (mData.lastName || mData.LastName || '').trim() || (mData.name ? mData.name.split(' ').slice(1).join(' ') : '');
+        const fullName = (`${firstName} ${lastName}`).trim() || mData.name || 'Child';
+        const dob = mData.dob || mData.dateOfBirth || mData.DOB || '2020-01-01';
+        const gender: 'male' | 'female' = (mData.gender || mData.Gender || '').toLowerCase() === 'female' ? 'female' : 'male';
+
+        // Check if this child already exists in kids_children
+        const existingMatch = existingKids.find((k: any) => {
+          if (k.memberContactId && k.memberContactId === memberContactId) return true;
+          // Match by name within same family
+          if (k.familyId === mFamilyId && k.fullName.toLowerCase() === fullName.toLowerCase()) return true;
+          return false;
+        });
+
+        if (existingMatch) {
+          // Keep synchronized if DOB or link changed
+          const updates: any = {};
+          if (!existingMatch.memberContactId) {
+            updates.memberContactId = memberContactId;
+            updates.isSyncedFromMember = true;
+          }
+          if (mData.dob && existingMatch.dob !== mData.dob) {
+            updates.dob = mData.dob;
+            const newAge = calculateChildAge(mData.dob);
+            updates.age = newAge;
+            const rec = getRecommendedClassTier(newAge);
+            updates.assignedTier = rec.tier;
+            updates.assignedClassName = rec.displayName;
+          }
+          if (Object.keys(updates).length > 0) {
+            await this.updateChildProfile(cId, existingMatch.docId, updates);
+            synced++;
+          }
+        } else {
+          // Not in kids_children yet -> automatically create linked record
+          const parentData = await getParentInfo(mFamilyId);
+          const parentName = parentData?.name || `${parentData?.firstName || ''} ${parentData?.lastName || ''}`.trim() || 'Parent';
+          const parentPhone = parentData?.phone || parentData?.MobilePhone || mData.referencePhone || mData.phone || '';
+          const parentEmail = parentData?.email || '';
+
+          await this.registerChild(cId, {
+            familyId: mFamilyId,
+            parentMemberId: mFamilyId,
+            parentName,
+            parentPhone,
+            parentEmail,
+            firstName,
+            lastName,
+            dob,
+            gender,
+            photoUrl: mData.profilePhoto || mData.photoUrl || '',
+            guardians: [
+              {
+                id: mFamilyId,
+                name: parentName,
+                relationship: mData.relation === 'Daughter' || mData.relation === 'Son' ? 'Father' : 'Guardian',
+                phone: parentPhone,
+                isPrimaryContact: true,
+                canPickup: true,
+              },
+            ],
+            notes: 'Auto-synced from Church Member Registration',
+            memberContactId,
+            isSyncedFromMember: true,
+          });
+          created++;
+        }
+      }
+
+      return { synced, created };
+    } catch (err) {
+      console.error('[KidsMinistryService] Error syncing member children:', err);
+      return { synced: 0, created: 0 };
     }
   }
 

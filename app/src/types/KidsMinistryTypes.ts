@@ -113,6 +113,9 @@ export interface ChildRecord {
   guardians: AuthorizedGuardian[];
   
   notes?: string;
+  // Single Source of Truth link to Church Member registration
+  memberContactId?: string; // Doc ID from `Rhema Church/{churchId}/members`
+  isSyncedFromMember?: boolean;
   approvedByAdminId?: string;
   approvedAt?: any;
   enrolledAt: any;

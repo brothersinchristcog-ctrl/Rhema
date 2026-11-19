@@ -114,6 +114,11 @@ export default function KidsMinistryScreen({ navigation }: any) {
 
     const familyId = member.accountId || member.id;
 
+    // Automatically sync registered children from Member tab to Rhema Kids (single source of truth)
+    KidsMinistryService.syncMemberChildrenToKidsMinistry(churchId, familyId).catch(err => {
+      console.warn('[KidsMinistryScreen] Auto-sync children error:', err);
+    });
+
     // Load existing household members for seamless pre-fill (without touching existing screens)
     KidsMinistryService.getExistingFamilyMembers(churchId, familyId).then(contacts => {
       setExistingHousehold(contacts);
@@ -500,7 +505,7 @@ export default function KidsMinistryScreen({ navigation }: any) {
                     onPress={() => setActiveTab('lms')}
                     activeOpacity={0.8}
                   >
-                    <Text style={styles.gridEmoji}>🎨</Text>
+                    <Text style={styles.gridEmoji}>📖</Text>
                     <Text style={styles.gridTitle}>Bible Stories</Text>
                     <Text style={styles.gridSub}>Illustrated & Telugu Audio</Text>
                   </TouchableOpacity>

@@ -112,6 +112,11 @@ export default function AdminKidsHub({ navigation }: any) {
 
   // Load children, classes, teachers, curriculum & VBS (Realtime)
   useEffect(() => {
+    // Sync all church registered children from Member module into Kids Ministry
+    KidsMinistryService.syncMemberChildrenToKidsMinistry(churchId).catch(err => {
+      console.warn('[AdminKidsHub] Auto-sync church member children error:', err);
+    });
+
     // 1. Realtime listener for Sunday School Classes
     const unsubClasses = KidsMinistryService.subscribeToClasses(churchId, classList => {
       setClasses(classList);
