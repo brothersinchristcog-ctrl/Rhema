@@ -43,7 +43,8 @@ import KidsFaceRecognitionService from '../../services/KidsFaceRecognitionServic
 import { ChildRecord } from '../../types/KidsMinistryTypes';
 
 const { width } = Dimensions.get('window');
-const CIRCLE_SIZE = Math.min(width * 0.76, 290);
+const OVAL_WIDTH = Math.min(width * 0.72, 270);
+const OVAL_HEIGHT = Math.round(OVAL_WIDTH * 1.34); // ~360px natural egg/oval face aspect ratio
 const BARCODE_SETTINGS: { barcodeTypes: BarcodeType[] } = { barcodeTypes: ['qr'] };
 
 export default function KidsFaceScanKiosk({ route, navigation }: any) {
@@ -73,7 +74,7 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
   // Scanning & Match States
   const cameraRef = useRef<CameraView>(null);
   const [scanning, setScanning] = useState(false);
-  const [scanStatusText, setScanStatusText] = useState('Center child face in circular scanner');
+  const [scanStatusText, setScanStatusText] = useState('Center child face inside oval frame');
   const [scanState, setScanState] = useState<'idle' | 'scanning' | 'success' | 'rejected'>('idle');
   const [scanRejected, setScanRejected] = useState<{
     title: string;
@@ -153,7 +154,7 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
 
   const sweepTranslate = sweepAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [-CIRCLE_SIZE / 2 + 15, CIRCLE_SIZE / 2 - 15],
+    outputRange: [-OVAL_HEIGHT / 2 + 20, OVAL_HEIGHT / 2 - 20],
   });
 
   // Current active target child if specific child selected
@@ -439,7 +440,7 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
         >
           <Camera size={14} color={kioskMode === 'face_scan' ? '#000000' : '#9CA3AF'} />
           <Text style={[styles.modeTabText, kioskMode === 'face_scan' && styles.modeTabTextActive]}>
-            Circular Face Scan
+            Face Recognition
           </Text>
         </TouchableOpacity>
 
@@ -565,45 +566,18 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
                 onBarcodeScanned={kioskMode === 'scan_qr' ? handleQrDetected : undefined}
               />
 
-              {/* Darkened vignette overlay around the circular aperture */}
-              <View style={styles.overlayBackdrop} pointerEvents="none">
-                <View style={styles.backdropTop} />
-                <View style={styles.backdropMiddleRow}>
-                  <View style={styles.backdropSide} />
-                  {/* Empty center viewport matching CIRCLE_SIZE */}
-                  <View style={styles.centerHole} />
-                  <View style={styles.backdropSide} />
-                </View>
-                <View style={styles.backdropBottom} />
-              </View>
-
-              {/* MODERN CIRCULAR FACE SCANNER FRAME */}
+              {/* MODERN EGG-SHAPED FACE SCANNER VIEWPORT */}
               <View style={styles.circularScannerContainer} pointerEvents="box-none">
-                {/* Outer animated glow ring */}
-                <Animated.View
-                  style={[
-                    styles.circularGlowRing,
-                    {
-                      borderColor: getScannerBorderColor(),
-                      transform: [
-                        { scale: kioskMode === 'face_scan' ? pulseAnim : 1 },
-                        { rotate: kioskMode === 'face_scan' ? rotateInterpolate : '0deg' },
-                      ],
-                    },
-                  ]}
-                />
-
-                {/* Main Circular Reticle Frame */}
+                {/* Single Clean Egg-Shaped Frame */}
                 <View
                   style={[
-                    styles.circularFrame,
+                    styles.eggFrame,
                     {
                       borderColor: getScannerBorderColor(),
-                      borderRadius: CIRCLE_SIZE / 2,
                     },
                   ]}
                 >
-                  {/* Sweep Laser Beam inside the circle */}
+                  {/* Sweep Laser Beam inside the egg frame */}
                   {kioskMode === 'face_scan' && (
                     <Animated.View
                       style={[
@@ -617,13 +591,13 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
                     />
                   )}
 
-                  {/* Corner Tick Marks along circumference */}
+                  {/* Corner Tick Marks along the egg border */}
                   <View style={[styles.circleTick, styles.tickTop, { backgroundColor: getScannerBorderColor() }]} />
                   <View style={[styles.circleTick, styles.tickBottom, { backgroundColor: getScannerBorderColor() }]} />
                   <View style={[styles.circleTick, styles.tickLeft, { backgroundColor: getScannerBorderColor() }]} />
                   <View style={[styles.circleTick, styles.tickRight, { backgroundColor: getScannerBorderColor() }]} />
 
-                  {/* Subtle Face Alignment Guide */}
+                  {/* Subtle Face Alignment Target */}
                   {kioskMode === 'face_scan' && (
                     <View style={styles.faceGuideWrapper}>
                       <View style={styles.guideEyesRow}>
@@ -1106,61 +1080,27 @@ const styles = StyleSheet.create({
     flex: 1,
     position: 'relative',
   },
-  overlayBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'transparent',
-    zIndex: 1,
-  },
-  backdropTop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.72)',
-  },
-  backdropMiddleRow: {
-    height: CIRCLE_SIZE,
-    flexDirection: 'row',
-  },
-  backdropSide: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.72)',
-  },
-  centerHole: {
-    width: CIRCLE_SIZE,
-    height: CIRCLE_SIZE,
-    borderRadius: CIRCLE_SIZE / 2,
-    backgroundColor: 'transparent',
-  },
-  backdropBottom: {
-    flex: 1.4,
-    backgroundColor: 'rgba(0, 0, 0, 0.72)',
-  },
   circularScannerContainer: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 2,
   },
-  circularGlowRing: {
-    position: 'absolute',
-    width: CIRCLE_SIZE + 24,
-    height: CIRCLE_SIZE + 24,
-    borderRadius: (CIRCLE_SIZE + 24) / 2,
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    opacity: 0.55,
-  },
-  circularFrame: {
-    width: CIRCLE_SIZE,
-    height: CIRCLE_SIZE,
-    borderWidth: 3,
+  eggFrame: {
+    width: OVAL_WIDTH,
+    height: OVAL_HEIGHT,
+    borderRadius: OVAL_WIDTH / 2, // Perfect oval egg geometry: width 270, height 360
+    borderWidth: 2.5,
     position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+    backgroundColor: 'rgba(0, 0, 0, 0.08)',
   },
   circularLaserLine: {
     position: 'absolute',
     width: '100%',
-    height: 3,
+    height: 2.5,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.9,
     shadowRadius: 10,
@@ -1171,52 +1111,52 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   tickTop: {
-    top: 6,
-    width: 4,
-    height: 12,
+    top: 8,
+    width: 3.5,
+    height: 14,
   },
   tickBottom: {
-    bottom: 6,
-    width: 4,
-    height: 12,
+    bottom: 8,
+    width: 3.5,
+    height: 14,
   },
   tickLeft: {
-    left: 6,
-    width: 12,
-    height: 4,
+    left: 8,
+    width: 14,
+    height: 3.5,
   },
   tickRight: {
-    right: 6,
-    width: 12,
-    height: 4,
+    right: 8,
+    width: 14,
+    height: 3.5,
   },
   faceGuideWrapper: {
     alignItems: 'center',
-    gap: 14,
-    opacity: 0.35,
+    gap: 16,
+    opacity: 0.45,
   },
   guideEyesRow: {
     flexDirection: 'row',
-    gap: 48,
+    gap: 56,
   },
   guideDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
   },
   guideNoseDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
   },
   guideSmileArc: {
-    width: 36,
+    width: 38,
     height: 14,
     borderBottomWidth: 2.5,
     borderRadius: 10,
   },
   statusPill: {
-    marginTop: 26,
+    marginTop: 24,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.85)',
