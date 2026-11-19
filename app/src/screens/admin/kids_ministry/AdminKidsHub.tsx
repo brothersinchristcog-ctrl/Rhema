@@ -349,145 +349,120 @@ export default function AdminKidsHub({ navigation }: any) {
           {/* ==================================================== */}
           {activeTab === 'overview' && (
             <>
-              {/* 4 Redesigned Executive Metric Cards */}
+              {/* 4 Clean & Compact Executive Metric Cards */}
               <View style={styles.kpiGrid}>
                 {/* 1. Enrolled Children */}
-                <View style={[styles.kpiCard, { borderColor: '#3B82F6', backgroundColor: '#0F172A' }]}>
+                <View style={styles.kpiCard}>
                   <View style={styles.kpiHeaderRow}>
                     <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
-                      <Users size={18} color="#60A5FA" />
+                      <Users size={16} color="#60A5FA" />
                     </View>
-                    <View style={[styles.kpiTrendBadge, { backgroundColor: 'rgba(59, 130, 246, 0.2)' }]}>
-                      <Text style={[styles.kpiTrendText, { color: '#93C5FD' }]}>Roster</Text>
-                    </View>
+                    <Text style={styles.kpiNumber}>{children.length}</Text>
                   </View>
-                  <Text style={styles.kpiNumber}>{children.length}</Text>
-                  <Text style={styles.kpiTitle}>Enrolled Children</Text>
-                  <Text style={styles.kpiSub}>Registered in Sunday School</Text>
+                  <Text style={styles.kpiTitle}>Enrolled Kids</Text>
+                  <Text style={styles.kpiSub}>Total Sunday School</Text>
                 </View>
 
                 {/* 2. Checked-In Today */}
-                <View style={[styles.kpiCard, { borderColor: '#10B981', backgroundColor: '#0F172A' }]}>
+                <View style={styles.kpiCard}>
                   <View style={styles.kpiHeaderRow}>
                     <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
-                      <UserCheck size={18} color="#34D399" />
+                      <UserCheck size={16} color="#34D399" />
                     </View>
-                    <View style={[styles.kpiTrendBadge, { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]}>
-                      <Text style={[styles.kpiTrendText, { color: '#6EE7B7' }]}>Live Today</Text>
-                    </View>
+                    <Text style={[styles.kpiNumber, { color: '#34D399' }]}>
+                      {children.filter(c => c.custodyStatus === 'checked_in').length}
+                    </Text>
                   </View>
-                  <Text style={[styles.kpiNumber, { color: '#34D399' }]}>
-                    {children.filter(c => c.custodyStatus === 'checked_in').length}
-                  </Text>
-                  <Text style={styles.kpiTitle}>Checked-In Today</Text>
-                  <Text style={styles.kpiSub}>Active in Sunday classrooms</Text>
+                  <Text style={styles.kpiTitle}>Checked-In</Text>
+                  <Text style={styles.kpiSub}>Active today in class</Text>
                 </View>
 
                 {/* 3. Faculty On Duty */}
-                <View style={[styles.kpiCard, { borderColor: '#F59E0B', backgroundColor: '#0F172A' }]}>
+                <View style={styles.kpiCard}>
                   <View style={styles.kpiHeaderRow}>
                     <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
-                      <Clock size={18} color="#FBBF24" />
+                      <Clock size={16} color="#FBBF24" />
                     </View>
-                    <View style={[styles.kpiTrendBadge, { backgroundColor: 'rgba(245, 158, 11, 0.2)' }]}>
-                      <Text style={[styles.kpiTrendText, { color: '#FCD34D' }]}>Attendance</Text>
-                    </View>
+                    <Text style={[styles.kpiNumber, { color: '#FBBF24' }]}>
+                      {todayTeacherAttendance.length}/{teachers.length || 5}
+                    </Text>
                   </View>
-                  <Text style={[styles.kpiNumber, { color: '#FBBF24' }]}>
-                    {todayTeacherAttendance.length}/{teachers.length || 5}
-                  </Text>
                   <Text style={styles.kpiTitle}>Faculty On Duty</Text>
-                  <Text style={styles.kpiSub}>Clocked-in teachers & helpers</Text>
+                  <Text style={styles.kpiSub}>Clocked-in teachers</Text>
                 </View>
 
                 {/* 4. Face Scan Ready */}
-                <View style={[styles.kpiCard, { borderColor: '#8B5CF6', backgroundColor: '#0F172A' }]}>
+                <View style={styles.kpiCard}>
                   <View style={styles.kpiHeaderRow}>
                     <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(139, 92, 246, 0.15)' }]}>
-                      <Camera size={18} color="#C084FC" />
+                      <Camera size={16} color="#C084FC" />
                     </View>
-                    <View style={[styles.kpiTrendBadge, { backgroundColor: 'rgba(139, 92, 246, 0.2)' }]}>
-                      <Text style={[styles.kpiTrendText, { color: '#DDD6FE' }]}>Biometrics</Text>
-                    </View>
+                    <Text style={[styles.kpiNumber, { color: '#A78BFA' }]}>
+                      {children.filter(c => c.faceEnrolled).length}
+                    </Text>
                   </View>
-                  <Text style={[styles.kpiNumber, { color: '#A78BFA' }]}>
-                    {children.filter(c => c.faceEnrolled).length}
-                  </Text>
-                  <Text style={styles.kpiTitle}>Face Scan Ready</Text>
-                  <Text style={styles.kpiSub}>With enrolled profile photos</Text>
+                  <Text style={styles.kpiTitle}>Face Scan</Text>
+                  <Text style={styles.kpiSub}>Biometric profiles</Text>
                 </View>
               </View>
 
               {/* Sunday Morning Stations */}
-              <View style={{ gap: 10, marginTop: 10, marginBottom: 6 }}>
+              <View style={{ gap: 8, marginTop: 14, marginBottom: 4 }}>
                 <Text style={styles.sectionHeading}>SUNDAY MORNING ACTIVE STATIONS</Text>
 
                 <View style={styles.stationsRow}>
                   {/* Face Scan Kiosk */}
                   <TouchableOpacity
-                    style={[styles.stationCard, { borderColor: '#3B82F6' }]}
+                    style={styles.stationCard}
                     onPress={() => navigation.navigate('KidsFaceScanKiosk')}
-                    activeOpacity={0.88}
+                    activeOpacity={0.85}
                   >
-                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.2)' }]}>
-                      <Camera size={20} color="#60A5FA" />
+                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
+                      <Camera size={18} color="#60A5FA" />
                     </View>
-                    <Text style={styles.stationTitle}>Face Scan Kiosk</Text>
-                    <Text style={styles.stationSub}>Entrance check-in for children & parents</Text>
-                    <View style={[styles.stationPill, { backgroundColor: '#1E3A8A' }]}>
-                      <Text style={[styles.stationPillText, { color: '#93C5FD' }]}>Entrance &rsaquo;</Text>
+                    <Text style={styles.stationTitle}>Face Scan</Text>
+                    <Text style={styles.stationSub}>Entrance kiosk</Text>
+                    <View style={styles.stationArrow}>
+                      <ChevronRight size={14} color="#60A5FA" />
                     </View>
                   </TouchableOpacity>
 
                   {/* Teacher Exit */}
                   <TouchableOpacity
-                    style={[styles.stationCard, { borderColor: '#10B981' }]}
+                    style={styles.stationCard}
                     onPress={() => navigation.navigate('KidsCheckOutScanner')}
-                    activeOpacity={0.88}
+                    activeOpacity={0.85}
                   >
-                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]}>
-                      <UserCheck size={20} color="#34D399" />
+                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
+                      <UserCheck size={18} color="#34D399" />
                     </View>
                     <Text style={styles.stationTitle}>Teacher Exit</Text>
-                    <Text style={styles.stationSub}>Dismissal scanner & guardian verification</Text>
-                    <View style={[styles.stationPill, { backgroundColor: '#064E3B' }]}>
-                      <Text style={[styles.stationPillText, { color: '#34D399' }]}>Exit &rsaquo;</Text>
+                    <Text style={styles.stationSub}>Dismissal scanner</Text>
+                    <View style={styles.stationArrow}>
+                      <ChevronRight size={14} color="#34D399" />
                     </View>
                   </TouchableOpacity>
 
                   {/* Faculty Clock-In */}
                   <TouchableOpacity
-                    style={[styles.stationCard, { borderColor: '#F59E0B' }]}
+                    style={styles.stationCard}
                     onPress={() => navigation.navigate('KidsTeacherKiosk')}
-                    activeOpacity={0.88}
+                    activeOpacity={0.85}
                   >
-                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.2)' }]}>
-                      <Clock size={20} color="#FBBF24" />
+                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
+                      <Clock size={18} color="#FBBF24" />
                     </View>
-                    <Text style={styles.stationTitle}>Faculty Clock-In</Text>
-                    <Text style={styles.stationSub}>Teacher arrival & classroom duty recording</Text>
-                    <View style={[styles.stationPill, { backgroundColor: '#451A03' }]}>
-                      <Text style={[styles.stationPillText, { color: '#FBBF24' }]}>Clock In &rsaquo;</Text>
+                    <Text style={styles.stationTitle}>Clock-In</Text>
+                    <Text style={styles.stationSub}>Teacher arrival</Text>
+                    <View style={styles.stationArrow}>
+                      <ChevronRight size={14} color="#FBBF24" />
                     </View>
                   </TouchableOpacity>
                 </View>
-
-                {/* Faculty Clock-In Explanation Banner */}
-                <View style={styles.clockInExplainBanner}>
-                  <View style={styles.clockInExplainIcon}>
-                    <Clock size={16} color="#60A5FA" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.clockInExplainTitle}>Faculty Arrival & Duty Recording</Text>
-                    <Text style={styles.clockInExplainText}>
-                      Sunday School educators and volunteers clock in here prior to service to log arrival time, confirm active classroom assignments, and ensure required safeguarding ratios.
-                    </Text>
-                  </View>
-                </View>
               </View>
 
-              {/* Management Portals - Clean 2x2 Grid Layout */}
-              <View style={{ gap: 10, marginTop: 4 }}>
+              {/* Management Portals - Clean Compact 2x2 Grid */}
+              <View style={{ gap: 8, marginTop: 12 }}>
                 <Text style={styles.sectionHeading}>MANAGEMENT PORTALS</Text>
 
                 <View style={styles.portalGrid2x2}>
@@ -497,16 +472,16 @@ export default function AdminKidsHub({ navigation }: any) {
                     onPress={() => setActiveTab('children')}
                     activeOpacity={0.82}
                   >
-                    <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
-                      <Users size={20} color="#60A5FA" />
+                    <View style={styles.portalCardHeader}>
+                      <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.12)' }]}>
+                        <Users size={18} color="#60A5FA" />
+                      </View>
+                      <ChevronRight size={15} color="#64748B" />
                     </View>
                     <Text style={styles.portalGridTitle}>Children Roster</Text>
                     <Text style={styles.portalGridSub}>
-                      {children.length} registered · Medical alerts, allergy flags & emergency pickup list
+                      {children.length} enrolled · Medical & emergency list
                     </Text>
-                    <View style={styles.portalActionRow}>
-                      <Text style={styles.portalActionText}>Manage Roster &rsaquo;</Text>
-                    </View>
                   </TouchableOpacity>
 
                   {/* Grid 2: Classrooms & Capacities */}
@@ -515,16 +490,16 @@ export default function AdminKidsHub({ navigation }: any) {
                     onPress={() => setActiveTab('classes')}
                     activeOpacity={0.82}
                   >
-                    <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
-                      <Calendar size={20} color="#34D399" />
+                    <View style={styles.portalCardHeader}>
+                      <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
+                        <Calendar size={18} color="#34D399" />
+                      </View>
+                      <ChevronRight size={15} color="#64748B" />
                     </View>
-                    <Text style={styles.portalGridTitle}>Classrooms & Limits</Text>
+                    <Text style={styles.portalGridTitle}>Classrooms</Text>
                     <Text style={styles.portalGridSub}>
-                      {classes.length} rooms · Nursery to Teens capacities, lead teachers & annual promotions
+                      {classes.length} rooms · Capacities & age tiers
                     </Text>
-                    <View style={styles.portalActionRow}>
-                      <Text style={[styles.portalActionText, { color: '#34D399' }]}>View Classes &rsaquo;</Text>
-                    </View>
                   </TouchableOpacity>
 
                   {/* Grid 3: Sunday School Faculty */}
@@ -533,16 +508,16 @@ export default function AdminKidsHub({ navigation }: any) {
                     onPress={() => setShowTeachersModal(true)}
                     activeOpacity={0.82}
                   >
-                    <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
-                      <ShieldCheck size={20} color="#FBBF24" />
+                    <View style={styles.portalCardHeader}>
+                      <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.12)' }]}>
+                        <ShieldCheck size={18} color="#FBBF24" />
+                      </View>
+                      <ChevronRight size={15} color="#64748B" />
                     </View>
-                    <Text style={styles.portalGridTitle}>Faculty & Volunteers</Text>
+                    <Text style={styles.portalGridTitle}>Faculty & Helpers</Text>
                     <Text style={styles.portalGridSub}>
-                      {teachers.length} team members · {todayTeacherAttendance.length} clocked in today · Member lookup
+                      {teachers.length} members · {todayTeacherAttendance.length} on duty
                     </Text>
-                    <View style={styles.portalActionRow}>
-                      <Text style={[styles.portalActionText, { color: '#FBBF24' }]}>Faculty Hub &rsaquo;</Text>
-                    </View>
                   </TouchableOpacity>
 
                   {/* Grid 4: Bible Learning Center CMS */}
@@ -551,54 +526,54 @@ export default function AdminKidsHub({ navigation }: any) {
                     onPress={() => setShowContentManagerModal(true)}
                     activeOpacity={0.82}
                   >
-                    <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(168, 85, 247, 0.15)' }]}>
-                      <BookOpen size={20} color="#C084FC" />
+                    <View style={styles.portalCardHeader}>
+                      <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(168, 85, 247, 0.12)' }]}>
+                        <BookOpen size={18} color="#C084FC" />
+                      </View>
+                      <ChevronRight size={15} color="#64748B" />
                     </View>
-                    <Text style={styles.portalGridTitle}>Bible Learning CMS</Text>
+                    <Text style={styles.portalGridTitle}>Bible LMS CMS</Text>
                     <Text style={styles.portalGridSub}>
-                      {stories.length} stories · {quizzes.length} quizzes · {songs.length} action songs · Full CMS
+                      {stories.length} stories · {quizzes.length} quizzes · {songs.length} songs
                     </Text>
-                    <View style={styles.portalActionRow}>
-                      <Text style={[styles.portalActionText, { color: '#C084FC' }]}>Open CMS &rsaquo;</Text>
-                    </View>
                   </TouchableOpacity>
                 </View>
 
                 {/* Additional Specialized Portals */}
                 <View style={styles.additionalPortalsRow}>
                   <TouchableOpacity
-                    style={[styles.smallPortalPill, { borderColor: '#F472B6' }]}
+                    style={styles.smallPortalPill}
                     onPress={() => setActiveTab('curriculum')}
                     activeOpacity={0.8}
                   >
-                    <Sparkles size={14} color="#F472B6" />
-                    <Text style={styles.smallPortalPillText}>52-Wk Curriculum</Text>
+                    <Sparkles size={13} color="#F472B6" />
+                    <Text style={styles.smallPortalPillText}>Curriculum</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.smallPortalPill, { borderColor: '#8B5CF6' }]}
+                    style={styles.smallPortalPill}
                     onPress={() => setShowAICopilotModal(true)}
                     activeOpacity={0.8}
                   >
-                    <Sparkles size={14} color="#C084FC" />
-                    <Text style={styles.smallPortalPillText}>Claude AI Studio</Text>
+                    <Sparkles size={13} color="#C084FC" />
+                    <Text style={styles.smallPortalPillText}>AI Studio</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.smallPortalPill, { borderColor: '#EF4444' }]}
+                    style={styles.smallPortalPill}
                     onPress={() => setShowVBSModal(true)}
                     activeOpacity={0.8}
                   >
-                    <Award size={14} color="#EF4444" />
-                    <Text style={styles.smallPortalPillText}>VBS & Camps</Text>
+                    <Award size={13} color="#EF4444" />
+                    <Text style={styles.smallPortalPillText}>VBS Camps</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.smallPortalPill, { borderColor: '#10B981' }]}
+                    style={styles.smallPortalPill}
                     onPress={() => setShowReportsModal(true)}
                     activeOpacity={0.8}
                   >
-                    <TrendingUp size={14} color="#10B981" />
+                    <TrendingUp size={13} color="#10B981" />
                     <Text style={styles.smallPortalPillText}>Reports</Text>
                   </TouchableOpacity>
                 </View>
@@ -1226,52 +1201,41 @@ const styles = StyleSheet.create({
   kpiGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    gap: 8,
   },
   kpiCard: {
-    width: (width - 50) / 2,
+    width: (width - 48) / 2,
     backgroundColor: '#0F172A',
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1.5,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderWidth: 1,
     borderColor: '#1E293B',
-    gap: 2,
   },
   kpiHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   kpiIconBox: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
+    width: 28,
+    height: 28,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  kpiTrendBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  kpiTrendText: {
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
   kpiNumber: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: '900',
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     color: '#FFFFFF',
-    marginTop: 2,
   },
   kpiTitle: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#F1F5F9',
     fontWeight: '700',
-    marginTop: 4,
+    marginTop: 2,
   },
   kpiSub: {
     fontSize: 10,
@@ -1279,150 +1243,107 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   sectionHeading: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     fontWeight: '800',
     color: '#94A3B8',
-    letterSpacing: 1.5,
-    marginBottom: 4,
+    letterSpacing: 1.2,
+    marginBottom: 2,
   },
   stationsRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
   },
   stationCard: {
     flex: 1,
     backgroundColor: '#0F172A',
-    borderRadius: 18,
-    padding: 14,
-    borderWidth: 1.5,
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderWidth: 1,
     borderColor: '#1E293B',
+    position: 'relative',
   },
   stationIconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
+    marginBottom: 6,
   },
   stationTitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
     color: '#FFFFFF',
-    marginBottom: 2,
+    marginBottom: 1,
   },
   stationSub: {
-    fontSize: 10,
+    fontSize: 9.5,
     color: '#94A3B8',
-    lineHeight: 14,
-    minHeight: 28,
+    lineHeight: 13,
   },
-  stationPill: {
-    marginTop: 8,
-    paddingVertical: 5,
-    paddingHorizontal: 8,
-    borderRadius: 6,
-    alignSelf: 'flex-start',
+  stationArrow: {
+    position: 'absolute',
+    top: 10,
+    right: 8,
   },
-  stationPillText: {
-    fontSize: 10,
-    fontWeight: '800',
+  portalGrid2x2: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
   },
-  clockInExplainBanner: {
+  portalGridCard: {
+    width: (width - 48) / 2,
     backgroundColor: '#0F172A',
     borderRadius: 14,
     padding: 12,
     borderWidth: 1,
     borderColor: '#1E293B',
+  },
+  portalCardHeader: {
     flexDirection: 'row',
-    gap: 10,
-    alignItems: 'flex-start',
-    marginTop: 6,
-  },
-  clockInExplainIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(59, 130, 246, 0.15)',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 1,
-  },
-  clockInExplainTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#93C5FD',
-    marginBottom: 2,
-  },
-  clockInExplainText: {
-    fontSize: 11,
-    color: '#94A3B8',
-    lineHeight: 16,
-  },
-  portalGrid2x2: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  portalGridCard: {
-    width: (width - 52) / 2,
-    backgroundColor: '#0F172A',
-    borderRadius: 20,
-    padding: 14,
-    borderWidth: 1.5,
-    borderColor: '#1E293B',
-    gap: 4,
-  },
-  portalGridIconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     marginBottom: 6,
   },
+  portalGridIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   portalGridTitle: {
-    fontSize: 14,
+    fontSize: 12.5,
     fontWeight: '800',
     color: '#FFFFFF',
   },
   portalGridSub: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#94A3B8',
-    lineHeight: 15,
-    minHeight: 45,
+    lineHeight: 14,
     marginTop: 2,
-  },
-  portalActionRow: {
-    marginTop: 6,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#1E293B',
-  },
-  portalActionText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#60A5FA',
   },
   additionalPortalsRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
     flexWrap: 'wrap',
     marginTop: 6,
   },
   smallPortalPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
     backgroundColor: '#0F172A',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
+    borderColor: '#1E293B',
   },
   smallPortalPillText: {
-    fontSize: 11,
+    fontSize: 10.5,
     color: '#E2E8F0',
     fontWeight: '700',
   },

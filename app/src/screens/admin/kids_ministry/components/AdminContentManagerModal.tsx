@@ -501,26 +501,26 @@ export default function AdminContentManagerModal({
       <View style={[styles.container, { paddingTop: insets.top }]}>
         {/* ── TOP HEADER (FULL-SCREEN LMS/CMS) ── */}
         <View style={styles.topHeader}>
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, marginRight: 8 }}>
             <View style={styles.hubBadgeRow}>
               <View style={styles.hubBadge}>
-                <BookOpen size={12} color="#93C5FD" />
+                <BookOpen size={11} color="#93C5FD" />
                 <Text style={styles.hubBadgeText}>BIBLE LEARNING CENTER</Text>
               </View>
               <View style={styles.statsBadge}>
                 <Text style={styles.statsBadgeText}>
-                  {stories.length} Stories · {quizzes.length} Quizzes · {songs.length} Songs
+                  {stories.length}S · {quizzes.length}Q · {songs.length}M
                 </Text>
               </View>
             </View>
-            <Text style={styles.headerTitle}>Sunday School LMS Studio</Text>
-            <Text style={styles.headerSubtitle}>
-              Bilingual Telugu & English Bible stories, interactive quizzes, and praise songs.
+            <Text style={styles.headerTitle}>Bible Learning Center</Text>
+            <Text style={styles.headerSubtitle} numberOfLines={1}>
+              Bilingual stories, interactive quizzes & praise songs
             </Text>
           </View>
 
           <TouchableOpacity onPress={onClose} style={styles.closeHeaderBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <X size={20} color="#94A3B8" />
+            <X size={18} color="#94A3B8" />
           </TouchableOpacity>
         </View>
 
@@ -602,20 +602,20 @@ export default function AdminContentManagerModal({
                     {s.coverImageUrl ? (
                       <Image source={{ uri: s.coverImageUrl }} style={styles.cardImage} />
                     ) : (
-                      <Text style={{ fontSize: 32 }}>{s.coverEmoji || '📖'}</Text>
+                      <Text style={{ fontSize: 20 }}>{s.coverEmoji || '📖'}</Text>
                     )}
                   </View>
 
-                  <View style={{ flex: 1, gap: 2 }}>
+                  <View style={{ flex: 1, justifyContent: 'center' }}>
                     <View style={styles.cardTitleRow}>
-                      <Text style={styles.cardTitle}>{s.title}</Text>
+                      <Text style={styles.cardTitle} numberOfLines={1}>{s.title}</Text>
                       <View style={[styles.statusPill, s.isPublished !== false ? styles.publishedPill : styles.draftPill]}>
                         <Text style={[styles.statusPillText, s.isPublished !== false ? styles.publishedPillText : styles.draftPillText]}>
-                          {s.isPublished !== false ? 'Published' : 'Draft'}
+                          {s.isPublished !== false ? 'Live' : 'Draft'}
                         </Text>
                       </View>
                     </View>
-                    <Text style={styles.cardTeluguTitle}>{s.titleTelugu}</Text>
+                    {s.titleTelugu ? <Text style={styles.cardTeluguTitle} numberOfLines={1}>{s.titleTelugu}</Text> : null}
                     <Text style={styles.cardRef}>{s.scriptureRef || 'Genesis'} · {s.pages?.length || 1} Pages</Text>
                   </View>
 
@@ -624,13 +624,13 @@ export default function AdminContentManagerModal({
                       style={styles.editBtn}
                       onPress={() => openEditStoryForm(s)}
                     >
-                      <Edit3 size={15} color="#3B82F6" />
+                      <Edit3 size={14} color="#3B82F6" />
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.deleteBtn}
                       onPress={() => handleDeleteStory(s.id, s.title)}
                     >
-                      <Trash2 size={15} color="#EF4444" />
+                      <Trash2 size={14} color="#EF4444" />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -644,21 +644,21 @@ export default function AdminContentManagerModal({
               {filteredQuizzes.map(q => (
                 <View key={q.id} style={styles.contentCard}>
                   <View style={[styles.cardCoverBox, { backgroundColor: 'rgba(251, 191, 36, 0.15)' }]}>
-                    <Text style={{ fontSize: 30 }}>{q.coverEmoji || '🏆'}</Text>
+                    <Text style={{ fontSize: 20 }}>{q.coverEmoji || '🏆'}</Text>
                   </View>
 
-                  <View style={{ flex: 1, gap: 2 }}>
+                  <View style={{ flex: 1, justifyContent: 'center' }}>
                     <View style={styles.cardTitleRow}>
-                      <Text style={styles.cardTitle}>{q.title}</Text>
+                      <Text style={styles.cardTitle} numberOfLines={1}>{q.title}</Text>
                       <View style={[styles.statusPill, q.isPublished !== false ? styles.publishedPill : styles.draftPill]}>
                         <Text style={[styles.statusPillText, q.isPublished !== false ? styles.publishedPillText : styles.draftPillText]}>
-                          {q.isPublished !== false ? 'Active' : 'Unpublished'}
+                          {q.isPublished !== false ? 'Active' : 'Draft'}
                         </Text>
                       </View>
                     </View>
-                    <Text style={styles.cardTeluguTitle}>{q.titleTelugu}</Text>
+                    {q.titleTelugu ? <Text style={styles.cardTeluguTitle} numberOfLines={1}>{q.titleTelugu}</Text> : null}
                     <Text style={styles.cardRef}>
-                      {q.questions?.length || 0} Questions · +{q.pointsReward || 50} pts · Badge: {q.badgeReward || 'Star'}
+                      {q.questions?.length || 0} Qs · +{q.pointsReward || 50} pts
                     </Text>
                   </View>
 
@@ -667,13 +667,13 @@ export default function AdminContentManagerModal({
                       style={styles.editBtn}
                       onPress={() => openEditQuizForm(q)}
                     >
-                      <Edit3 size={15} color="#3B82F6" />
+                      <Edit3 size={14} color="#3B82F6" />
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.deleteBtn}
                       onPress={() => handleDeleteQuiz(q.id, q.title)}
                     >
-                      <Trash2 size={15} color="#EF4444" />
+                      <Trash2 size={14} color="#EF4444" />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -690,25 +690,25 @@ export default function AdminContentManagerModal({
                     {song.thumbnailUrl ? (
                       <Image source={{ uri: song.thumbnailUrl }} style={styles.cardImage} />
                     ) : (
-                      <Text style={{ fontSize: 30 }}>{song.coverEmoji || '🎵'}</Text>
+                      <Text style={{ fontSize: 20 }}>{song.coverEmoji || '🎵'}</Text>
                     )}
                   </View>
 
-                  <View style={{ flex: 1, gap: 2 }}>
+                  <View style={{ flex: 1, justifyContent: 'center' }}>
                     <View style={styles.cardTitleRow}>
-                      <Text style={styles.cardTitle}>{song.title}</Text>
+                      <Text style={styles.cardTitle} numberOfLines={1}>{song.title}</Text>
                       <View style={[styles.statusPill, song.isPublished !== false ? styles.publishedPill : styles.draftPill]}>
                         <Text style={[styles.statusPillText, song.isPublished !== false ? styles.publishedPillText : styles.draftPillText]}>
                           {song.isPublished !== false ? 'Ready' : 'Draft'}
                         </Text>
                       </View>
                     </View>
-                    <Text style={styles.cardTeluguTitle}>{song.titleTelugu}</Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                      <Video size={12} color="#EF4444" />
+                    {song.titleTelugu ? <Text style={styles.cardTeluguTitle} numberOfLines={1}>{song.titleTelugu}</Text> : null}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 1 }}>
+                      <Video size={10} color="#EF4444" />
                       <Text style={styles.cardRef}>ID: {song.youtubeVideoId || 'N/A'}</Text>
                       {song.audioUrl ? (
-                        <Text style={[styles.cardRef, { color: '#34D399' }]}>· Audio Attached</Text>
+                        <Text style={[styles.cardRef, { color: '#34D399' }]}>· MP3</Text>
                       ) : null}
                     </View>
                   </View>
@@ -718,13 +718,13 @@ export default function AdminContentManagerModal({
                       style={styles.editBtn}
                       onPress={() => openEditSongForm(song)}
                     >
-                      <Edit3 size={15} color="#3B82F6" />
+                      <Edit3 size={14} color="#3B82F6" />
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.deleteBtn}
                       onPress={() => handleDeleteSong(song.id, song.title)}
                     >
-                      <Trash2 size={15} color="#EF4444" />
+                      <Trash2 size={14} color="#EF4444" />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -1174,60 +1174,60 @@ const styles = StyleSheet.create({
   },
   topHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#1E293B',
   },
   hubBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 6,
+    gap: 6,
+    marginBottom: 2,
   },
   hubBadge: {
     backgroundColor: '#1E3A8A',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
   },
   hubBadgeText: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '800',
     color: '#93C5FD',
-    letterSpacing: 1.2,
+    letterSpacing: 0.8,
   },
   statsBadge: {
     backgroundColor: 'rgba(52, 211, 153, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
   },
   statsBadgeText: {
-    fontSize: 10,
+    fontSize: 9.5,
     color: '#34D399',
     fontWeight: '700',
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 17,
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     fontWeight: '800',
     color: '#FFFFFF',
   },
   headerSubtitle: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#94A3B8',
-    marginTop: 2,
+    marginTop: 1,
   },
   closeHeaderBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: '#1E293B',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1236,22 +1236,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#1E293B',
-    gap: 12,
+    gap: 8,
   },
   tabsRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
   },
   tab: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 999,
     backgroundColor: '#1E293B',
     borderWidth: 1,
@@ -1262,7 +1262,7 @@ const styles = StyleSheet.create({
     borderColor: '#3B82F6',
   },
   tabText: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#94A3B8',
     fontWeight: '600',
   },
@@ -1272,27 +1272,27 @@ const styles = StyleSheet.create({
   },
   createBtn: {
     backgroundColor: '#1E40AF',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 999,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
     borderWidth: 1,
     borderColor: '#3B82F6',
   },
   createBtnText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
   },
   searchBarBox: {
     backgroundColor: '#1E293B',
-    marginHorizontal: 20,
-    marginVertical: 10,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    marginHorizontal: 16,
+    marginVertical: 8,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     borderWidth: 1,
     borderColor: '#334155',
     flexDirection: 'row',
@@ -1301,31 +1301,31 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 12,
     padding: 0,
   },
   contentScroll: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingBottom: 40,
-    gap: 10,
+    gap: 8,
   },
   itemsGrid: {
-    gap: 10,
+    gap: 8,
   },
   contentCard: {
     backgroundColor: '#131C31',
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 12,
+    padding: 10,
     borderWidth: 1,
     borderColor: '#1E293B',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    gap: 10,
   },
   cardCoverBox: {
-    width: 52,
-    height: 52,
-    borderRadius: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 8,
     backgroundColor: '#1E293B',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1339,30 +1339,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 8,
+    gap: 6,
   },
   cardTitle: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '700',
     color: '#FFFFFF',
     flex: 1,
   },
   cardTeluguTitle: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#93C5FD',
+    marginTop: 1,
   },
   cardRef: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#94A3B8',
-    marginTop: 2,
+    marginTop: 1,
   },
   statusPill: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
   },
   statusPillText: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '700',
   },
   publishedPill: {
@@ -1379,20 +1380,20 @@ const styles = StyleSheet.create({
   },
   actionButtonsCol: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
   },
   editBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 6,
     backgroundColor: 'rgba(59, 130, 246, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   deleteBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 6,
     backgroundColor: 'rgba(239, 68, 68, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
