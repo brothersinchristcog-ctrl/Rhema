@@ -492,6 +492,13 @@ class KidsMinistryService {
       const docRef = await classesRef.add(sanitizeForFirestore(item));
       results.push({ id: docRef.id, ...item });
     }
+    await this.getDb()
+      .collection(RHEMA_ROOT_COLLECTION)
+      .doc(cId)
+      .collection('kids_settings')
+      .doc('classes')
+      .set({ initialized: true, updatedAt: firestore.FieldValue.serverTimestamp() }, { merge: true })
+      .catch(() => {});
     return results;
   }
 
@@ -503,13 +510,30 @@ class KidsMinistryService {
     callback: (classes: KidsClassRecord[]) => void
   ): () => void {
     const cId = churchId || RHEMA_CHURCH_ID;
+    let seedCheckDone = false;
     return this.getClassesCollection(cId).onSnapshot(
       async snap => {
         if (!snap || snap.empty) {
-          const seeded = await this.getOrInitKidsClasses(cId);
-          callback(seeded);
+          if (!seedCheckDone) {
+            seedCheckDone = true;
+            try {
+              const metaSnap = await this.getDb()
+                .collection(RHEMA_ROOT_COLLECTION)
+                .doc(cId)
+                .collection('kids_settings')
+                .doc('classes')
+                .get();
+              if (!metaSnap.exists || !metaSnap.data()?.initialized) {
+                const seeded = await this.getOrInitKidsClasses(cId);
+                callback(seeded);
+                return;
+              }
+            } catch (_) {}
+          }
+          callback([]);
           return;
         }
+        seedCheckDone = true;
         const list = snap.docs.map(doc => ({
           id: doc.id,
           ...(doc.data() as any),
@@ -521,7 +545,11 @@ class KidsMinistryService {
           junior: 4,
           teens: 5,
         };
-        list.sort((a, b) => (tierOrder[a.tier] || 99) - (tierOrder[b.tier] || 99));
+        list.sort((a, b) => {
+          const tDiff = (tierOrder[a.tier as KidsClassTier] || 99) - (tierOrder[b.tier as KidsClassTier] || 99);
+          if (tDiff !== 0) return tDiff;
+          return (a.ageRange?.min ?? 0) - (b.ageRange?.min ?? 0);
+        });
         callback(list);
       },
       err => {
@@ -529,6 +557,66 @@ class KidsMinistryService {
         callback([]);
       }
     );
+  }
+
+  /**
+   * Creates a new Sunday School classroom in Firestore.
+   */
+  async createClass(
+    churchId: string,
+    data: {
+      name: string;
+      tier: KidsClassTier;
+      ageRange: { min: number; max: number };
+      roomNumber: string;
+      maxCapacity: number;
+      leadTeacherName: string;
+      leadTeacherPhone?: string;
+      schedule: { dayOfWeek: string; startTime: string; endTime: string };
+      academicYear?: string;
+    }
+  ): Promise<string> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const now = firestore.FieldValue.serverTimestamp();
+    const classCode = `CLASS-${data.tier.toUpperCase()}-${Date.now().toString().slice(-4)}`;
+
+    const payload = sanitizeForFirestore({
+      classId: classCode,
+      churchId: cId,
+      name: data.name.trim(),
+      tier: data.tier,
+      ageRange: {
+        min: Number(data.ageRange.min) || 0,
+        max: Number(data.ageRange.max) || 14,
+      },
+      roomNumber: data.roomNumber.trim() || 'Room TBD',
+      maxCapacity: Number(data.maxCapacity) || 25,
+      currentEnrolledCount: 0,
+      leadTeacherId: '',
+      leadTeacherName: data.leadTeacherName.trim() || 'TBD',
+      leadTeacherPhone: (data.leadTeacherPhone || '').trim(),
+      schedule: {
+        dayOfWeek: data.schedule?.dayOfWeek || 'Sunday',
+        startTime: data.schedule?.startTime || '09:30',
+        endTime: data.schedule?.endTime || '11:30',
+      },
+      academicYear: data.academicYear || '2026-2027',
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const docRef = await this.getClassesCollection(cId).add(payload);
+
+    await this.getDb()
+      .collection(RHEMA_ROOT_COLLECTION)
+      .doc(cId)
+      .collection('kids_settings')
+      .doc('classes')
+      .set({ initialized: true, updatedAt: now }, { merge: true })
+      .catch(() => {});
+
+    return docRef.id;
   }
 
   /**
@@ -548,6 +636,21 @@ class KidsMinistryService {
   }
 
   /**
+   * Permanently deletes a Sunday School classroom.
+   */
+  async deleteClass(churchId: string, classDocId: string): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    await this.getDb()
+      .collection(RHEMA_ROOT_COLLECTION)
+      .doc(cId)
+      .collection('kids_settings')
+      .doc('classes')
+      .set({ initialized: true, updatedAt: firestore.FieldValue.serverTimestamp() }, { merge: true })
+      .catch(() => {});
+    await this.getClassesCollection(cId).doc(classDocId).delete();
+  }
+
+  /**
    * Promotes or transfers a child to a target class tier.
    */
   async promoteChild(params: {
@@ -556,6 +659,7 @@ class KidsMinistryService {
     childName: string;
     previousTier?: KidsClassTier;
     targetTier: KidsClassTier;
+    targetClassId?: string;
     targetClassName: string;
     promotedByAdminId?: string;
     notes?: string;
@@ -563,12 +667,17 @@ class KidsMinistryService {
     const cId = params.churchId || RHEMA_CHURCH_ID;
     const now = firestore.FieldValue.serverTimestamp();
 
-    await this.getKidsCollection(cId).doc(params.childDocId).update({
+    const childUpdate: Record<string, any> = {
       assignedTier: params.targetTier,
       assignedClassName: params.targetClassName,
       lastPromotedAt: now,
       updatedAt: now,
-    });
+    };
+    if (params.targetClassId) {
+      childUpdate.assignedClassId = params.targetClassId;
+    }
+
+    await this.getKidsCollection(cId).doc(params.childDocId).update(childUpdate);
 
     await this.getAuditLogsCollection(cId).add({
       action: 'CLASS_PROMOTION',

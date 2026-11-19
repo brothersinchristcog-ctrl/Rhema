@@ -69,6 +69,7 @@ export default function ClassRosterModal({
         childName: transferringChild.fullName,
         previousTier: transferringChild.assignedTier,
         targetTier: targetClass.tier,
+        targetClassId: targetClass.id,
         targetClassName: targetClass.name,
         notes: `Manual classroom transfer from ${classData.name} to ${targetClass.name}`,
       });

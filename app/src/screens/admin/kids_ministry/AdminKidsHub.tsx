@@ -30,6 +30,7 @@ import {
   CheckCircle,
   GraduationCap,
   Edit3,
+  Trash2,
   ShieldCheck,
   Clock,
   BookOpen,
@@ -90,6 +91,7 @@ export default function AdminKidsHub({ navigation }: any) {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [showEnrollModal, setShowEnrollModal] = useState(false);
+  const [showClassModal, setShowClassModal] = useState(false);
   const [selectedClassForEdit, setSelectedClassForEdit] = useState<KidsClassRecord | null>(null);
   const [selectedClassForRoster, setSelectedClassForRoster] = useState<KidsClassRecord | null>(null);
   const [showPromotionModal, setShowPromotionModal] = useState(false);
@@ -209,6 +211,49 @@ export default function AdminKidsHub({ navigation }: any) {
     );
   };
 
+  const getChildrenInClass = (cls: KidsClassRecord) => {
+    return children.filter(c =>
+      c.assignedClassId ? c.assignedClassId === cls.id : c.assignedTier === cls.tier
+    );
+  };
+
+  const handleOpenCreateClass = () => {
+    setSelectedClassForEdit(null);
+    setShowClassModal(true);
+  };
+
+  const handleOpenEditClass = (cls: KidsClassRecord) => {
+    setSelectedClassForEdit(cls);
+    setShowClassModal(true);
+  };
+
+  const handleDeleteClass = (cls: KidsClassRecord, enrolledCount: number) => {
+    const childWarning =
+      enrolledCount > 0
+        ? `\n\nNote: ${enrolledCount} enrolled ${enrolledCount === 1 ? 'child is' : 'children are'} currently linked to this class. Their profiles will NOT be deleted and can be reassigned anytime.`
+        : '';
+
+    Alert.alert(
+      'Delete Classroom?',
+      `Are you sure you want to permanently delete "${cls.name}"?${childWarning}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await KidsMinistryService.deleteClass(churchId, cls.id);
+              Alert.alert('Deleted', `"${cls.name}" has been removed.`);
+            } catch (e: any) {
+              Alert.alert('Delete Failed', e.message || 'Could not delete classroom');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="light-content" backgroundColor="#000000" />
@@ -238,43 +283,52 @@ export default function AdminKidsHub({ navigation }: any) {
         </TouchableOpacity>
       </View>
 
-      {/* ── TAB PILLS (MATCHING CARE CELLS PILLS) ── */}
-      <View style={styles.tabsRow}>
-        <TouchableOpacity
-          style={[styles.tabPill, activeTab === 'overview' && styles.tabPillActive]}
-          onPress={() => setActiveTab('overview')}
+      {/* ── TAB PILLS (HORIZONTALLY SCROLLABLE SO NO TAB IS CLIPPED) ── */}
+      <View style={styles.tabsRowWrapper}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabsRow}
+          keyboardShouldPersistTaps="handled"
+          bounces={true}
+          overScrollMode="never"
         >
-          <Text style={[styles.tabPillText, activeTab === 'overview' && styles.tabPillTextActive]}>
-            Overview
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabPill, activeTab === 'overview' && styles.tabPillActive]}
+            onPress={() => setActiveTab('overview')}
+          >
+            <Text style={[styles.tabPillText, activeTab === 'overview' && styles.tabPillTextActive]}>
+              Overview
+            </Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.tabPill, activeTab === 'children' && styles.tabPillActive]}
-          onPress={() => setActiveTab('children')}
-        >
-          <Text style={[styles.tabPillText, activeTab === 'children' && styles.tabPillTextActive]}>
-            Children ({children.length})
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabPill, activeTab === 'children' && styles.tabPillActive]}
+            onPress={() => setActiveTab('children')}
+          >
+            <Text style={[styles.tabPillText, activeTab === 'children' && styles.tabPillTextActive]}>
+              Children ({children.length})
+            </Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.tabPill, activeTab === 'classes' && styles.tabPillActive]}
-          onPress={() => setActiveTab('classes')}
-        >
-          <Text style={[styles.tabPillText, activeTab === 'classes' && styles.tabPillTextActive]}>
-            Classes ({classes.length}){promotionCandidates.length > 0 ? ` · 🎓 ${promotionCandidates.length}` : ''}
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabPill, activeTab === 'classes' && styles.tabPillActive]}
+            onPress={() => setActiveTab('classes')}
+          >
+            <Text style={[styles.tabPillText, activeTab === 'classes' && styles.tabPillTextActive]}>
+              Classes ({classes.length}){promotionCandidates.length > 0 ? ` · 🎓 ${promotionCandidates.length}` : ''}
+            </Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.tabPill, activeTab === 'curriculum' && styles.tabPillActive]}
-          onPress={() => setActiveTab('curriculum')}
-        >
-          <Text style={[styles.tabPillText, activeTab === 'curriculum' && styles.tabPillTextActive]}>
-            Curriculum
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabPill, activeTab === 'curriculum' && styles.tabPillActive]}
+            onPress={() => setActiveTab('curriculum')}
+          >
+            <Text style={[styles.tabPillText, activeTab === 'curriculum' && styles.tabPillTextActive]}>
+              Curriculum
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
       </View>
 
       {/* ── CONTENT BODY ── */}
@@ -635,82 +689,131 @@ export default function AdminKidsHub({ navigation }: any) {
                 </View>
               </View>
 
-              {classes.map(cls => {
-                const enrolledInClass = children.filter(c => c.assignedTier === cls.tier).length;
-                const capacity = cls.maxCapacity || 25;
-                const percent = Math.min(100, Math.round((enrolledInClass / capacity) * 100));
-                const barColor =
-                  enrolledInClass >= capacity
-                    ? '#EF4444'
-                    : percent > 75
-                    ? '#FBBF24'
-                    : '#10B981';
+              {/* Classes Action Header Bar */}
+              <View style={styles.classesActionBar}>
+                <View style={{ flex: 1, marginRight: 10 }}>
+                  <Text style={styles.classesHeaderTitle} numberOfLines={1}>
+                    Sunday School Classes ({classes.length})
+                  </Text>
+                  <Text style={styles.classesHeaderSub} numberOfLines={2}>
+                    Create, edit, or delete classrooms
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.createClassBtn}
+                  onPress={handleOpenCreateClass}
+                  activeOpacity={0.85}
+                >
+                  <Plus size={14} color="#000000" strokeWidth={2.8} />
+                  <Text style={styles.createClassBtnText}>Create Class</Text>
+                </TouchableOpacity>
+              </View>
 
-                return (
-                  <View key={cls.id} style={styles.classCard}>
-                    <View style={styles.classCardHeader}>
-                      <View style={{ flex: 1 }}>
-                        <View style={styles.tierTag}>
-                          <Text style={styles.tierTagText}>
-                            Age {cls.ageRange.min}–{cls.ageRange.max} yrs
+              {classes.length === 0 ? (
+                <View style={styles.emptyClassesCard}>
+                  <GraduationCap size={34} color="#71717A" />
+                  <Text style={styles.emptyClassesTitle}>No Sunday School Classes Yet</Text>
+                  <Text style={styles.emptyClassesSub}>
+                    Create your first classroom to start assigning children and teachers.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.createClassBtn}
+                    onPress={handleOpenCreateClass}
+                    activeOpacity={0.85}
+                  >
+                    <Plus size={14} color="#000000" strokeWidth={2.8} />
+                    <Text style={styles.createClassBtnText}>Create First Class</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                classes.map(cls => {
+                  const enrolledInClass = getChildrenInClass(cls).length;
+                  const capacity = cls.maxCapacity || 25;
+                  const percent = Math.min(100, Math.round((enrolledInClass / capacity) * 100));
+                  const barColor =
+                    enrolledInClass >= capacity
+                      ? '#EF4444'
+                      : percent > 75
+                      ? '#FBBF24'
+                      : '#10B981';
+
+                  return (
+                    <View key={cls.id} style={styles.classCard}>
+                      <View style={styles.classCardHeader}>
+                        <View style={{ flex: 1 }}>
+                          <View style={styles.tierTag}>
+                            <Text style={styles.tierTagText}>
+                              Age {cls.ageRange?.min ?? 0}–{cls.ageRange?.max ?? 14} yrs
+                            </Text>
+                          </View>
+                          <Text style={styles.classTitle}>{cls.name}</Text>
+                          <Text style={styles.classSchedule}>
+                            {cls.roomNumber} · {cls.schedule?.dayOfWeek || 'Sunday'}s {cls.schedule?.startTime || '09:30'}–{cls.schedule?.endTime || '11:30'}
                           </Text>
                         </View>
-                        <Text style={styles.classTitle}>{cls.name}</Text>
-                        <Text style={styles.classSchedule}>
-                          {cls.roomNumber} · {cls.schedule.dayOfWeek}s {cls.schedule.startTime}–{cls.schedule.endTime}
-                        </Text>
-                      </View>
 
-                      <View style={styles.capacityBadge}>
-                        <Text style={[styles.capacityText, { color: barColor }]}>
-                          {enrolledInClass} / {capacity}
-                        </Text>
-                        <Text style={styles.capacitySub}>{percent}% Capacity</Text>
-                      </View>
-                    </View>
-
-                    {/* Visual Capacity Bar */}
-                    <View style={styles.capacityBarTrack}>
-                      <View
-                        style={[
-                          styles.capacityBarFill,
-                          {
-                            width: `${percent}%`,
-                            backgroundColor: barColor,
-                          },
-                        ]}
-                      />
-                    </View>
-
-                    <View style={styles.childCardDivider} />
-
-                    <View style={styles.classFooter}>
-                      <Text style={styles.teacherName} numberOfLines={1}>
-                        Lead: {cls.leadTeacherName || 'Bro. Sunil Babu'}
-                      </Text>
-
-                      <View style={styles.classActionsRow}>
-                        <TouchableOpacity
-                          style={styles.editClassBtn}
-                          onPress={() => setSelectedClassForEdit(cls)}
-                        >
-                          <Edit3 size={12} color="#9CA3AF" />
-                          <Text style={styles.editClassBtnText}>Edit</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={styles.viewRosterBtn}
-                          onPress={() => setSelectedClassForRoster(cls)}
-                        >
-                          <Text style={styles.viewRosterText}>
-                            Roster ({enrolledInClass}) &rsaquo;
+                        <View style={styles.capacityBadge}>
+                          <Text style={[styles.capacityText, { color: barColor }]}>
+                            {enrolledInClass} / {capacity}
                           </Text>
-                        </TouchableOpacity>
+                          <Text style={styles.capacitySub}>{percent}% Capacity</Text>
+                        </View>
+                      </View>
+
+                      {/* Visual Capacity Bar */}
+                      <View style={styles.capacityBarTrack}>
+                        <View
+                          style={[
+                            styles.capacityBarFill,
+                            {
+                              width: `${percent}%`,
+                              backgroundColor: barColor,
+                            },
+                          ]}
+                        />
+                      </View>
+
+                      <View style={styles.childCardDivider} />
+
+                      <View style={styles.classFooter}>
+                        <Text style={styles.teacherName} numberOfLines={1}>
+                          Lead: {cls.leadTeacherName || 'TBD'}
+                        </Text>
+
+                        <View style={styles.classActionsRow}>
+                          <TouchableOpacity
+                            style={styles.deleteClassBtn}
+                            onPress={() => handleDeleteClass(cls, enrolledInClass)}
+                            activeOpacity={0.8}
+                          >
+                            <Trash2 size={12} color="#EF4444" />
+                            <Text style={styles.deleteClassBtnText}>Delete</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={styles.editClassBtn}
+                            onPress={() => handleOpenEditClass(cls)}
+                            activeOpacity={0.8}
+                          >
+                            <Edit3 size={12} color="#9CA3AF" />
+                            <Text style={styles.editClassBtnText}>Edit</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={styles.viewRosterBtn}
+                            onPress={() => setSelectedClassForRoster(cls)}
+                            activeOpacity={0.8}
+                          >
+                            <Text style={styles.viewRosterText}>
+                              Roster ({enrolledInClass}) &rsaquo;
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
                       </View>
                     </View>
-                  </View>
-                );
-              })}
+                  );
+                })
+              )}
             </View>
           )}
 
@@ -847,13 +950,17 @@ export default function AdminKidsHub({ navigation }: any) {
         />
       )}
 
-      {/* ── EDIT CLASS MODAL ── */}
-      {selectedClassForEdit && (
+      {/* ── CREATE / EDIT CLASS MODAL ── */}
+      {showClassModal && (
         <EditClassModal
-          visible={!!selectedClassForEdit}
+          visible={showClassModal}
           classData={selectedClassForEdit}
           churchId={churchId}
-          onClose={() => setSelectedClassForEdit(null)}
+          enrolledCount={selectedClassForEdit ? getChildrenInClass(selectedClassForEdit).length : 0}
+          onClose={() => {
+            setShowClassModal(false);
+            setSelectedClassForEdit(null);
+          }}
         />
       )}
 
@@ -862,7 +969,7 @@ export default function AdminKidsHub({ navigation }: any) {
         <ClassRosterModal
           visible={!!selectedClassForRoster}
           classData={selectedClassForRoster}
-          childrenInClass={children.filter(c => c.assignedTier === selectedClassForRoster.tier)}
+          childrenInClass={getChildrenInClass(selectedClassForRoster)}
           allClasses={classes}
           churchId={churchId}
           onClose={() => setSelectedClassForRoster(null)}
@@ -1025,13 +1132,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
   },
-  tabsRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    gap: 8,
+  tabsRowWrapper: {
+    width: '100%',
     borderBottomWidth: 1,
     borderBottomColor: '#121215',
+    backgroundColor: '#000000',
+  },
+  tabsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 16,
+    paddingRight: 40,
+    paddingVertical: 10,
+    gap: 8,
   },
   tabPill: {
     paddingHorizontal: 14,
@@ -1389,6 +1502,8 @@ const styles = StyleSheet.create({
   classActionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'flex-end',
+    flexWrap: 'wrap',
     gap: 8,
   },
   editClassBtn: {
@@ -1460,9 +1575,8 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
   },
   classFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: 'column',
+    gap: 10,
   },
   teacherName: {
     fontSize: 11,
@@ -1538,5 +1652,83 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     lineHeight: 18,
     marginTop: 4,
+  },
+  classesActionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    backgroundColor: '#18181B',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: '#27272A',
+    overflow: 'hidden',
+  },
+  classesHeaderTitle: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  classesHeaderSub: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  createClassBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    gap: 5,
+    backgroundColor: '#FBBF24',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 10,
+  },
+  createClassBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  emptyClassesCard: {
+    backgroundColor: '#18181B',
+    borderRadius: 16,
+    padding: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    gap: 8,
+  },
+  emptyClassesTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginTop: 4,
+  },
+  emptyClassesSub: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  deleteClassBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  deleteClassBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#EF4444',
   },
 });
