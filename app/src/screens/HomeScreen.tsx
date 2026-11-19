@@ -100,6 +100,7 @@ import ServiceRosterService from '../services/ServiceRosterService';
 import {
   RHEMA_YOUTUBE_CHANNEL_URL,
   RHEMA_YOUTUBE_STREAMS_URL,
+  RHEMA_YOUTUBE_CHANNEL_ID,
   resolveRhemaYoutubeUrl,
   findActiveLiveStream,
   checkVideoLiveStatus,
@@ -2270,13 +2271,14 @@ export default function HomeScreen() {
         .get();
 
       let churchData: any = null;
+      const expectedChannelId = targetChurchId === 'rhema' ? RHEMA_YOUTUBE_CHANNEL_ID : undefined;
       if (churchDoc.exists) {
         churchData = churchDoc.data();
         const lData = churchData?.youtubeLiveState;
-        const liveVid = lData?.videoId || lData?.lastNotifiedVideoId;
+        const liveVid = lData?.videoId;
         if (lData?.isLive && liveVid) {
-          const vCheck = await checkVideoLiveStatus(liveVid);
-          if (vCheck.status === 'live' || vCheck.isLiveNow) {
+          const vCheck = await checkVideoLiveStatus(liveVid, expectedChannelId);
+          if (!vCheck.channelMismatch && (vCheck.status === 'live' || vCheck.isLiveNow)) {
             setHomeLiveVideoId(liveVid);
             setHomeLiveTitle(lData.title || vCheck.title || 'Live Worship Service');
             setHomeIsLive(true);
@@ -2286,12 +2288,12 @@ export default function HomeScreen() {
       }
 
       const targetUrl = resolveRhemaYoutubeUrl(
-        churchData?.youtubeLiveUrl ||
+        churchData?.socialLinks?.youtube ||
           churchData?.youtubeChannelUrl ||
-          churchData?.socialLinks?.youtube ||
+          churchData?.youtubeLiveUrl ||
           activeChurch?.socialLinks?.youtube
       );
-      const liveResult = await findActiveLiveStream(targetUrl);
+      const liveResult = await findActiveLiveStream(targetUrl, expectedChannelId);
       if (liveResult.status === 'live' && liveResult.isLiveNow && liveResult.videoId) {
         setHomeLiveVideoId(liveResult.videoId);
         setHomeLiveTitle(liveResult.title || 'Live Worship Service');
@@ -2308,6 +2310,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     const targetChurchId = activeChurch?.id || 'rhema';
+    const expectedChannelId = targetChurchId === 'rhema' ? RHEMA_YOUTUBE_CHANNEL_ID : undefined;
     const unsubChurch = firestore()
       .collection('Rhema Church')
       .doc(targetChurchId)
@@ -2315,14 +2318,14 @@ export default function HomeScreen() {
         async (snapshot) => {
           if (!snapshot.exists) return;
           const lData = snapshot.data()?.youtubeLiveState;
-          const liveVid = lData?.videoId || lData?.lastNotifiedVideoId;
+          const liveVid = lData?.videoId;
           if (lData?.isLive && liveVid) {
-            const vCheck = await checkVideoLiveStatus(liveVid);
-            if (vCheck.status === 'live' || vCheck.isLiveNow) {
+            const vCheck = await checkVideoLiveStatus(liveVid, expectedChannelId);
+            if (!vCheck.channelMismatch && (vCheck.status === 'live' || vCheck.isLiveNow)) {
               setHomeLiveVideoId(liveVid);
               setHomeLiveTitle(lData.title || vCheck.title || 'Live Worship Service');
               setHomeIsLive(true);
-            } else if (vCheck.status === 'completed' || vCheck.hasEnded) {
+            } else if (vCheck.channelMismatch || vCheck.status === 'completed' || vCheck.hasEnded) {
               setHomeIsLive(false);
               setHomeLiveVideoId(null);
             }
