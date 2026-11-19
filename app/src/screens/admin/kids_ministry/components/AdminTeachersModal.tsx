@@ -22,7 +22,6 @@ import {
   Phone,
   Mail,
   Trash2,
-  KeyRound,
   Users,
   Search,
   Check,
@@ -61,7 +60,6 @@ export default function AdminTeachersModal({
   const [newEmail, setNewEmail] = useState('');
   const [newRole, setNewRole] = useState<KidsTeacherRole>('lead_teacher');
   const [newTier, setNewTier] = useState<KidsClassTier>('primary');
-  const [newPin, setNewPin] = useState('2026');
   const [submitting, setSubmitting] = useState(false);
 
   // Member search dropdown
@@ -134,7 +132,7 @@ export default function AdminTeachersModal({
         role: newRole,
         assignedClassTier: newTier,
         assignedClassName: tierNames[newTier],
-        pinCode: newPin.trim() || '2026',
+        pinCode: '',
         backgroundCheckPassed: false,
         safeguardingStatus: 'verified',
       });
@@ -323,30 +321,16 @@ export default function AdminTeachersModal({
                     </View>
                   )}
 
-                  <View style={styles.rowTwoCols}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.inputLabel}>Mobile / WhatsApp Number *</Text>
-                      <TextInput
-                        style={styles.inputField}
-                        value={newPhone}
-                        onChangeText={setNewPhone}
-                        keyboardType="phone-pad"
-                        placeholder="e.g. +91 98765 43210"
-                        placeholderTextColor="#6B7280"
-                      />
-                    </View>
-                    <View style={{ width: 110 }}>
-                      <Text style={styles.inputLabel}>Clock-In PIN</Text>
-                      <TextInput
-                        style={styles.inputField}
-                        value={newPin}
-                        onChangeText={setNewPin}
-                        keyboardType="numeric"
-                        maxLength={4}
-                        placeholder="2026"
-                        placeholderTextColor="#6B7280"
-                      />
-                    </View>
+                  <View style={{ marginTop: 10 }}>
+                    <Text style={styles.inputLabel}>Mobile / WhatsApp Number *</Text>
+                    <TextInput
+                      style={styles.inputField}
+                      value={newPhone}
+                      onChangeText={setNewPhone}
+                      keyboardType="phone-pad"
+                      placeholder="e.g. +91 98765 43210"
+                      placeholderTextColor="#6B7280"
+                    />
                   </View>
 
                   <View style={{ marginTop: 10 }}>
@@ -487,11 +471,12 @@ export default function AdminTeachersModal({
                               <Text style={styles.contactItemText}>{teacher.phone}</Text>
                             </TouchableOpacity>
                           ) : null}
-
-                          <View style={styles.pinBadge}>
-                            <KeyRound size={11} color="#FBBF24" />
-                            <Text style={styles.pinBadgeText}>PIN: {teacher.pinCode || '2026'}</Text>
-                          </View>
+                          {teacher.email ? (
+                            <View style={styles.contactItem}>
+                              <Mail size={12} color="#94A3B8" />
+                              <Text style={[styles.contactItemText, { color: '#94A3B8' }]}>{teacher.email}</Text>
+                            </View>
+                          ) : null}
                         </View>
 
                         <View style={styles.cardActionsRow}>
