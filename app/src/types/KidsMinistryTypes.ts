@@ -3,7 +3,7 @@
  * Kids Ministry & Sunday School Management Types
  */
 
-export type KidsClassTier = 'nursery' | 'beginners' | 'primary' | 'junior' | 'teens';
+export type KidsClassTier = 'nursery' | 'beginners' | 'primary' | 'junior' | 'teens' | 'mixed';
 export type KidsEnrollmentStatus = 'pending' | 'approved' | 'active' | 'inactive' | 'graduated';
 export type KidsCustodyStatus = 'checked_out' | 'checked_in' | 'emergency_hold';
 export type KidsGender = 'male' | 'female';
@@ -116,6 +116,14 @@ export interface ChildRecord {
   // Single Source of Truth link to Church Member registration
   memberContactId?: string; // Doc ID from `Rhema Church/{churchId}/members`
   isSyncedFromMember?: boolean;
+  enrollmentSource?: 'parent_self' | 'admin' | 'teacher_direct' | 'member_sync';
+  enrolledByTeacherId?: string;
+  enrolledByTeacherName?: string;
+  enrolledByRole?: 'teacher' | 'admin';
+  parentConsentStatus?: 'confirmed' | 'pending_review';
+  parentConsentConfirmed?: boolean;
+  parentConsentConfirmedAt?: any;
+  parentConsentConfirmedBy?: string;
   approvedByAdminId?: string;
   approvedAt?: any;
   enrolledAt: any;
@@ -220,6 +228,36 @@ export function getRecommendedClassTier(age: number): {
   } else {
     return { tier: 'teens', displayName: 'Teens for Christ', ageRange: '13–17 yrs', roomDefault: 'Youth Hall' };
   }
+}
+
+/**
+ * Checks whether a child of a given age is eligible to join a Sunday School classroom.
+ * Mixed Age Group ('mixed') classrooms accept children of all age groups.
+ */
+export function isChildEligibleForClass(
+  childAge: number,
+  cls: Pick<KidsClassRecord, 'tier' | 'ageRange'>
+): boolean {
+  if (cls.tier === 'mixed') return true;
+  if (cls.ageRange && typeof cls.ageRange.min === 'number' && typeof cls.ageRange.max === 'number') {
+    return childAge >= cls.ageRange.min && childAge <= cls.ageRange.max;
+  }
+  return getRecommendedClassTier(childAge).tier === cls.tier;
+}
+
+/**
+ * Resolves the lesson tierGuide key for a child.
+ * Mixed Age Group students receive the age-matched curriculum guide for their age.
+ */
+export function resolveLessonTierKey(
+  assignedTier: KidsClassTier | undefined,
+  childAge: number
+): Exclude<KidsClassTier, 'mixed'> {
+  if (assignedTier && assignedTier !== 'mixed') {
+    return assignedTier;
+  }
+  const rec = getRecommendedClassTier(childAge).tier;
+  return rec === 'mixed' ? 'primary' : rec;
 }
 
 /**
@@ -344,6 +382,7 @@ export interface KidsMemoryVerse {
 // ─── PHASE 6: 52-WEEK BILINGUAL CURRICULUM TYPES ───────────────
 
 export type CurriculumQuarter = 'Q1' | 'Q2' | 'Q3' | 'Q4';
+export type CurriculumMode = '52_week' | 'custom';
 
 export interface KidsCurriculumTierGuide {
   tier: KidsClassTier;
@@ -358,8 +397,10 @@ export interface KidsCurriculumTierGuide {
 }
 
 export interface KidsCurriculumLesson {
-  id: string; // Document ID e.g. "week_42"
-  weekNumber: number; // 1 to 52
+  id: string; // Document ID e.g. "week_42" or "custom_..."
+  type?: CurriculumMode; // '52_week' (default) | 'custom'
+  weekNumber: number; // 1 to 52 for 52_week, or sequence number for custom
+  scheduledDate?: string; // "YYYY-MM-DD" for custom lessons or cached calculated date
   quarter: CurriculumQuarter;
   quarterTheme: string; // e.g. "Q3: Courage & Great Kings"
   title: string; // e.g. "David and Goliath: Giant-Slaying Faith"
@@ -381,6 +422,8 @@ export interface KidsCurriculumLesson {
   storyId?: string;
   quizId?: string;
   songId?: string;
+  customStorySummary?: string;
+  customActivityNotes?: string;
 
   // Teacher preparation schedule
   teacherPrep: {
@@ -401,6 +444,7 @@ export interface KidsCurriculumLesson {
     primary: KidsCurriculumTierGuide;
     junior: KidsCurriculumTierGuide;
     teens: KidsCurriculumTierGuide;
+    mixed?: KidsCurriculumTierGuide;
   };
 
   isCurrentWeek?: boolean;
@@ -464,10 +508,93 @@ export interface KidsCertificateData {
 }
 
 export interface KidsCurriculumConfig {
+  mode?: CurriculumMode; // '52_week' | 'custom'
+  is52WeekEnabled?: boolean; // Toggle to enable/disable the 52-Week Curriculum Plan
   officialLaunchDate?: string | null; // "YYYY-MM-DD" e.g. "2026-12-06"
   isLaunched: boolean;
   manualOverrideWeek?: number | null; // Admin can manually override any week if needed
+  customActiveLessonId?: string | null; // Admin-selected active custom lesson ID
   updatedAt?: any;
+}
+
+/**
+ * Formats a Date object as "YYYY-MM-DD" in local timezone.
+ */
+export function toIsoDateString(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Returns today (if Sunday) or the upcoming Sunday as "YYYY-MM-DD".
+ */
+export function getNextSundayDateString(fromDate: Date = new Date()): string {
+  const d = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
+  const dayOfWeek = d.getDay(); // 0 = Sunday
+  if (dayOfWeek !== 0) {
+    d.setDate(d.getDate() + (7 - dayOfWeek));
+  }
+  return toIsoDateString(d);
+}
+
+/**
+ * Calculates the calendar date ("YYYY-MM-DD") for a given week number (1-52)
+ * based on the confirmed curriculum start date.
+ */
+export function getCurriculumWeekDate(
+  startDateStr?: string | null,
+  weekNumber: number = 1
+): string | null {
+  if (!startDateStr) return null;
+  const parts = startDateStr.split('-').map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return null;
+  const date = new Date(parts[0], parts[1] - 1, parts[2]);
+  date.setDate(date.getDate() + Math.max(0, weekNumber - 1) * 7);
+  return toIsoDateString(date);
+}
+
+/**
+ * Formats "YYYY-MM-DD" into "DD MMM YYYY" (e.g. "22 Nov 2026") for clean display.
+ */
+export function formatCurriculumDateDisplay(dateStr?: string | null): string {
+  if (!dateStr) return 'Not Scheduled';
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const [year, month, day] = parts;
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthLabel = months[parseInt(month, 10) - 1] || month;
+  return `${day} ${monthLabel} ${year}`;
+}
+
+/**
+ * Separates the curriculum list into 52-week lessons and custom weekly lessons.
+ */
+export function splitCurriculumLessons(lessons: KidsCurriculumLesson[]): {
+  fiftyTwoWeekLessons: KidsCurriculumLesson[];
+  customLessons: KidsCurriculumLesson[];
+} {
+  const fiftyTwoWeekLessons: KidsCurriculumLesson[] = [];
+  const customLessons: KidsCurriculumLesson[] = [];
+
+  for (const l of lessons) {
+    if (l.type === 'custom') {
+      customLessons.push(l);
+    } else {
+      fiftyTwoWeekLessons.push(l);
+    }
+  }
+
+  fiftyTwoWeekLessons.sort((a, b) => (a.weekNumber || 0) - (b.weekNumber || 0));
+  customLessons.sort((a, b) => {
+    const dateA = a.scheduledDate || '9999-12-31';
+    const dateB = b.scheduledDate || '9999-12-31';
+    if (dateA !== dateB) return dateA.localeCompare(dateB);
+    return (a.weekNumber || 0) - (b.weekNumber || 0);
+  });
+
+  return { fiftyTwoWeekLessons, customLessons };
 }
 
 /**
@@ -485,15 +612,78 @@ export function calculateCurriculumWeek(config?: KidsCurriculumConfig | null): n
   }
 
   const parts = config.officialLaunchDate.split('-').map(Number);
-  if (parts.length !== 3) return 1;
+  if (parts.length !== 3 || parts.some(isNaN)) return 1;
   const launchDate = new Date(parts[0], parts[1] - 1, parts[2]);
-  const today = new Date();
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
   // If today is before launch date, stay on Week 1 standby
   if (today < launchDate) return 1;
 
   const diffMs = today.getTime() - launchDate.getTime();
-  const diffWeeks = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000));
+  const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+  const diffWeeks = Math.floor(diffDays / 7);
   const weekNumber = 1 + diffWeeks;
   return Math.min(Math.max(1, weekNumber), 52);
+}
+
+/**
+ * Resolves the single active lesson & mode to display in Admin summary and Member View.
+ */
+export function resolveActiveCurriculumLesson(params: {
+  config?: KidsCurriculumConfig | null;
+  lessons: KidsCurriculumLesson[];
+}): {
+  lesson: KidsCurriculumLesson | null;
+  mode: CurriculumMode;
+  activeDate: string | null;
+} {
+  const { config, lessons } = params;
+  const { fiftyTwoWeekLessons, customLessons } = splitCurriculumLessons(lessons);
+  const is52WeekActive =
+    config?.is52WeekEnabled !== undefined
+      ? config.is52WeekEnabled
+      : config?.mode !== 'custom';
+
+  if (!is52WeekActive) {
+    let activeCustom: KidsCurriculumLesson | null = null;
+    if (config?.customActiveLessonId) {
+      activeCustom = customLessons.find(l => l.id === config.customActiveLessonId) || null;
+    }
+    if (!activeCustom) {
+      activeCustom = customLessons.find(l => l.isCurrentWeek) || null;
+    }
+    if (!activeCustom && customLessons.length > 0) {
+      const todayIso = toIsoDateString(new Date());
+      // Exact match for today first, else nearest upcoming, else latest past
+      activeCustom =
+        customLessons.find(l => l.scheduledDate === todayIso) ||
+        customLessons.find(l => (l.scheduledDate || '') >= todayIso) ||
+        customLessons[customLessons.length - 1] ||
+        null;
+    }
+    return {
+      lesson: activeCustom,
+      mode: 'custom',
+      activeDate: activeCustom?.scheduledDate || null,
+    };
+  }
+
+  const weekNum = calculateCurriculumWeek(config);
+  const active52 =
+    fiftyTwoWeekLessons.find(l => l.weekNumber === weekNum) ||
+    fiftyTwoWeekLessons.find(l => l.isCurrentWeek) ||
+    fiftyTwoWeekLessons[0] ||
+    null;
+
+  const activeDate =
+    active52 && config?.officialLaunchDate
+      ? getCurriculumWeekDate(config.officialLaunchDate, active52.weekNumber)
+      : null;
+
+  return {
+    lesson: active52,
+    mode: '52_week',
+    activeDate,
+  };
 }

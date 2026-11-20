@@ -73,7 +73,7 @@ import storage from '@react-native-firebase/storage';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import { formatDateDisplay } from '../utils/DateUtils';
 import { CHURCH_SKILL_CATEGORIES, ALL_PREDEFINED_SKILLS } from '../constants/churchSkills';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView as ModalSafeAreaView, initialWindowMetrics, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, Path, Pattern, Rect } from 'react-native-svg';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import MemberLocationService from '../services/MemberLocationService';
@@ -1191,11 +1191,13 @@ export default function ProfileScreen({
       <Modal
         visible={isLocationModalVisible}
         animationType="slide"
-        presentationStyle="pageSheet"
+        presentationStyle={Platform.OS === 'ios' ? 'pageSheet' : 'fullScreen'}
         onRequestClose={() => setIsLocationModalVisible(false)}
       >
-        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-          <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={colors.background} />
+        <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+          <ModalSafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={['top', 'bottom']}>
+            <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={colors.surface} />
+            <View style={{ flex: 1, backgroundColor: colors.background }}>
 
           {/* Modal Header */}
           <View style={{
@@ -1475,7 +1477,9 @@ export default function ProfileScreen({
               </TouchableOpacity>
             )}
           </ScrollView>
-        </SafeAreaView>
+            </View>
+          </ModalSafeAreaView>
+        </SafeAreaProvider>
       </Modal>
 
       {/* ── Edit Profile Screen (Full Screen, Theme-Styled) ── */}

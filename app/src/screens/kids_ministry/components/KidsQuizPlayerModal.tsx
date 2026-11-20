@@ -8,7 +8,9 @@ import {
   ScrollView,
   Platform,
   Alert,
+  StatusBar,
 } from 'react-native';
+import { SafeAreaProvider, SafeAreaView, initialWindowMetrics } from 'react-native-safe-area-context';
 import {
   X,
   Award,
@@ -20,6 +22,7 @@ import {
   Trophy,
 } from 'lucide-react-native';
 import { KidsQuiz, KidsQuizQuestion } from '../../../types/KidsMinistryTypes';
+import { useTheme } from '../../../context/ThemeContext';
 
 interface KidsQuizPlayerModalProps {
   visible: boolean;
@@ -32,16 +35,28 @@ export default function KidsQuizPlayerModal({
   quiz,
   onClose,
 }: KidsQuizPlayerModalProps) {
-  if (!quiz) return null;
-
-  const questions = quiz.questions || [];
-  const totalQuestions = questions.length;
-
+  const { isDark, colors: themeColors } = useTheme();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [score, setScore] = useState(0);
   const [quizFinished, setQuizFinished] = useState(false);
 
+  if (!quiz) return null;
+
+  const screenBg = isDark ? '#000000' : (themeColors.background || '#FAF7F2');
+  const cardBg = isDark ? '#18181B' : (themeColors.surface || '#FFFFFF');
+  const innerBg = isDark ? '#09090B' : '#F1F5F9';
+  const border = isDark ? '#27272A' : (themeColors.border || '#E2E8F0');
+  const textPrimary = isDark ? '#FFFFFF' : (themeColors.text || '#0F172A');
+  const textSecondary = isDark ? '#9CA3AF' : (themeColors.textSecondary || '#64748B');
+  const textBody = isDark ? '#E4E4E7' : '#334155';
+  const goldAccent = isDark ? '#FBBF24' : '#D97706';
+  const nextBtnBg = isDark ? '#FFFFFF' : '#0F172A';
+  const nextBtnText = isDark ? '#000000' : '#FFFFFF';
+  const barStyle = isDark ? 'light-content' : 'dark-content';
+
+  const questions = quiz.questions || [];
+  const totalQuestions = questions.length;
   const currentQ: KidsQuizQuestion | undefined = questions[currentIndex];
 
   const handleSelectOption = (idx: number) => {
@@ -69,170 +84,189 @@ export default function KidsQuizPlayerModal({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
-      <View style={styles.container}>
-        {/* Header */}
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-            <X size={20} color="#FFFFFF" />
-          </TouchableOpacity>
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+        <SafeAreaView style={[styles.container, { backgroundColor: screenBg }]} edges={['top', 'bottom']}>
+          <StatusBar barStyle={barStyle} backgroundColor={screenBg} />
 
-          <View style={styles.headerTitles}>
-            <Text style={styles.headerTitleSerif}>{quiz.title}</Text>
-            <Text style={styles.headerTeluguSub}>{quiz.titleTelugu}</Text>
-          </View>
+          {/* Header */}
+          <View style={[styles.headerRow, { borderBottomColor: border }]}>
+            <TouchableOpacity onPress={onClose} style={[styles.closeBtn, { backgroundColor: isDark ? '#18181B' : '#F1F5F9' }]}>
+              <X size={20} color={textPrimary} />
+            </TouchableOpacity>
 
-          <View style={styles.scoreBadge}>
-            <Text style={styles.scoreBadgeText}>{score * 10} pts</Text>
-          </View>
-        </View>
-
-        {!quizFinished && currentQ ? (
-          <>
-            {/* Progress Bar */}
-            <View style={styles.progressContainer}>
-              <View style={styles.progressTrack}>
-                <View
-                  style={[
-                    styles.progressFill,
-                    { width: `${((currentIndex + 1) / totalQuestions) * 100}%` },
-                  ]}
-                />
-              </View>
-              <Text style={styles.progressText}>
-                Question {currentIndex + 1} of {totalQuestions}
+            <View style={styles.headerTitles}>
+              <Text style={[styles.headerTitleSerif, { color: textPrimary }]} numberOfLines={1}>
+                {quiz.title}
+              </Text>
+              <Text style={[styles.headerTeluguSub, { color: textSecondary }]} numberOfLines={1}>
+                {quiz.titleTelugu}
               </Text>
             </View>
 
-            {/* Question Card */}
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-              <View style={styles.questionCard}>
-                <View style={styles.qEmojiBubble}>
-                  <Text style={{ fontSize: 32 }}>{quiz.coverEmoji || '❓'}</Text>
-                </View>
-
-                <Text style={styles.qEnglishText}>{currentQ.questionEnglish}</Text>
-                {currentQ.questionTelugu ? (
-                  <Text style={styles.qTeluguText}>{currentQ.questionTelugu}</Text>
-                ) : null}
-              </View>
-
-              {/* 4 Options */}
-              <View style={styles.optionsList}>
-                {currentQ.options.map((opt, idx) => {
-                  const isSelected = selectedOption === idx;
-                  const isCorrect = currentQ.correctIndex === idx;
-                  const showResult = selectedOption !== null;
-
-                  let optCardStyle: any = styles.optionCard;
-                  let optLetterStyle: any = styles.optionLetter;
-
-                  if (showResult) {
-                    if (isCorrect) {
-                      optCardStyle = [styles.optionCard, styles.optionCorrect];
-                      optLetterStyle = [styles.optionLetter, styles.optionLetterCorrect];
-                    } else if (isSelected) {
-                      optCardStyle = [styles.optionCard, styles.optionWrong];
-                      optLetterStyle = [styles.optionLetter, styles.optionLetterWrong];
-                    }
-                  }
-
-                  const letters = ['A', 'B', 'C', 'D'];
-
-                  return (
-                    <TouchableOpacity
-                      key={idx}
-                      style={optCardStyle}
-                      onPress={() => handleSelectOption(idx)}
-                      disabled={showResult}
-                      activeOpacity={0.85}
-                    >
-                      <View style={optLetterStyle}>
-                        <Text style={styles.letterText}>{letters[idx]}</Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.optText}>{opt}</Text>
-                        {currentQ.optionsTelugu && currentQ.optionsTelugu[idx] ? (
-                          <Text style={styles.optSubTelugu}>
-                            {currentQ.optionsTelugu[idx]}
-                          </Text>
-                        ) : null}
-                      </View>
-
-                      {showResult && isCorrect && <CheckCircle size={18} color="#10B981" />}
-                      {showResult && isSelected && !isCorrect && <XCircle size={18} color="#EF4444" />}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              {/* Explanation Box */}
-              {selectedOption !== null && (
-                <View style={styles.explanationBox}>
-                  <Text style={styles.explanationTitle}>SCRIPTURE CONTEXT:</Text>
-                  <Text style={styles.explanationText}>{currentQ.explanation}</Text>
-                </View>
-              )}
-            </ScrollView>
-
-            {/* Bottom Next Button */}
-            {selectedOption !== null && (
-              <View style={styles.footerNav}>
-                <TouchableOpacity style={styles.nextBtn} onPress={handleNext}>
-                  <Text style={styles.nextBtnText}>
-                    {currentIndex === totalQuestions - 1 ? 'Show My Results' : 'Next Question &rsaquo;'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </>
-        ) : (
-          /* Quiz Results Trophy Screen */
-          <View style={styles.resultsContainer}>
-            <View style={styles.trophyBubble}>
-              <Trophy size={48} color="#FBBF24" />
-            </View>
-
-            <Text style={styles.congratsTitle}>Quiz Completed!</Text>
-            <Text style={styles.congratsSub}>
-              You answered {score} out of {totalQuestions} questions correctly!
-            </Text>
-
-            {/* Points Award Card */}
-            <View style={styles.rewardCard}>
-              <View style={styles.rewardRow}>
-                <Text style={{ fontSize: 24 }}>⭐</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.rewardTitle}>+{score * 10} Bible Star Points</Text>
-                  <Text style={styles.rewardSub}>Added to your Rhema Kids profile</Text>
-                </View>
-              </View>
-
-              <View style={styles.divider} />
-
-              <View style={styles.rewardRow}>
-                <Text style={{ fontSize: 24 }}>{quiz.badgeReward.split(' ')[0]}</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.rewardTitle}>{quiz.badgeReward}</Text>
-                  <Text style={styles.rewardSub}>Unlocked badge for memory verses</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Actions */}
-            <View style={styles.resultsActions}>
-              <TouchableOpacity style={styles.finishQuizBtn} onPress={onClose}>
-                <Text style={styles.finishQuizBtnText}>Claim Rewards & Close</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.retryBtn} onPress={handleRestart}>
-                <RefreshCw size={14} color="#9CA3AF" />
-                <Text style={styles.retryBtnText}>Play Again</Text>
-              </TouchableOpacity>
+            <View style={[styles.scoreBadge, { backgroundColor: isDark ? 'rgba(251, 191, 36, 0.15)' : '#FEF3C7' }]}>
+              <Text style={[styles.scoreBadgeText, { color: goldAccent }]}>{score * 10} pts</Text>
             </View>
           </View>
-        )}
-      </View>
+
+          {!quizFinished && currentQ ? (
+            <>
+              {/* Progress Bar */}
+              <View style={[styles.progressContainer, { borderBottomColor: border }]}>
+                <View style={[styles.progressTrack, { backgroundColor: isDark ? '#18181B' : '#E2E8F0' }]}>
+                  <View
+                    style={[
+                      styles.progressFill,
+                      { width: `${((currentIndex + 1) / (totalQuestions || 1)) * 100}%`, backgroundColor: goldAccent },
+                    ]}
+                  />
+                </View>
+                <Text style={[styles.progressText, { color: textSecondary }]}>
+                  Question {currentIndex + 1} of {totalQuestions}
+                </Text>
+              </View>
+
+              {/* Question Card */}
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+                <View style={[styles.questionCard, { backgroundColor: cardBg, borderColor: border }, !isDark && styles.lightShadow]}>
+                  <View style={[styles.qEmojiBubble, { backgroundColor: innerBg, borderColor: border }]}>
+                    <Text style={{ fontSize: 32 }}>{quiz.coverEmoji || '❓'}</Text>
+                  </View>
+
+                  <Text style={[styles.qEnglishText, { color: textPrimary }]}>{currentQ.questionEnglish}</Text>
+                  {currentQ.questionTelugu ? (
+                    <Text style={[styles.qTeluguText, { color: textSecondary }]}>{currentQ.questionTelugu}</Text>
+                  ) : null}
+                </View>
+
+                {/* 4 Options */}
+                <View style={styles.optionsList}>
+                  {currentQ.options.map((opt, idx) => {
+                    const isSelected = selectedOption === idx;
+                    const isCorrect = currentQ.correctIndex === idx;
+                    const showResult = selectedOption !== null;
+
+                    let optCardStyle: any = [styles.optionCard, { backgroundColor: cardBg, borderColor: border }];
+                    let optLetterStyle: any = [styles.optionLetter, { backgroundColor: isDark ? '#27272A' : '#E2E8F0' }];
+                    let letterColor = textPrimary;
+
+                    if (showResult) {
+                      if (isCorrect) {
+                        optCardStyle = [styles.optionCard, styles.optionCorrect];
+                        optLetterStyle = [styles.optionLetter, styles.optionLetterCorrect];
+                        letterColor = '#FFFFFF';
+                      } else if (isSelected) {
+                        optCardStyle = [styles.optionCard, styles.optionWrong];
+                        optLetterStyle = [styles.optionLetter, styles.optionLetterWrong];
+                        letterColor = '#FFFFFF';
+                      }
+                    }
+
+                    const letters = ['A', 'B', 'C', 'D'];
+
+                    return (
+                      <TouchableOpacity
+                        key={idx}
+                        style={optCardStyle}
+                        onPress={() => handleSelectOption(idx)}
+                        disabled={showResult}
+                        activeOpacity={0.85}
+                      >
+                        <View style={optLetterStyle}>
+                          <Text style={[styles.letterText, { color: letterColor }]}>{letters[idx]}</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.optText, { color: textPrimary }]}>{opt}</Text>
+                          {currentQ.optionsTelugu && currentQ.optionsTelugu[idx] ? (
+                            <Text style={[styles.optSubTelugu, { color: textSecondary }]}>
+                              {currentQ.optionsTelugu[idx]}
+                            </Text>
+                          ) : null}
+                        </View>
+
+                        {showResult && isCorrect && <CheckCircle size={18} color="#10B981" />}
+                        {showResult && isSelected && !isCorrect && <XCircle size={18} color="#EF4444" />}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {/* Explanation Box */}
+                {selectedOption !== null && (
+                  <View
+                    style={[
+                      styles.explanationBox,
+                      {
+                        backgroundColor: isDark ? 'rgba(251, 191, 36, 0.08)' : '#FFFBEB',
+                        borderColor: isDark ? 'rgba(251, 191, 36, 0.25)' : '#FDE68A',
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.explanationTitle, { color: goldAccent }]}>SCRIPTURE CONTEXT:</Text>
+                    <Text style={[styles.explanationText, { color: textBody }]}>{currentQ.explanation}</Text>
+                  </View>
+                )}
+              </ScrollView>
+
+              {/* Bottom Next Button */}
+              {selectedOption !== null && (
+                <View style={[styles.footerNav, { backgroundColor: screenBg, borderTopColor: border }]}>
+                  <TouchableOpacity style={[styles.nextBtn, { backgroundColor: nextBtnBg }]} onPress={handleNext}>
+                    <Text style={[styles.nextBtnText, { color: nextBtnText }]}>
+                      {currentIndex === totalQuestions - 1 ? 'Show My Results' : 'Next Question &rsaquo;'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
+          ) : (
+            /* Quiz Results Trophy Screen */
+            <View style={styles.resultsContainer}>
+              <View style={styles.trophyBubble}>
+                <Trophy size={48} color={goldAccent} />
+              </View>
+
+              <Text style={[styles.congratsTitle, { color: textPrimary }]}>Quiz Completed!</Text>
+              <Text style={[styles.congratsSub, { color: textSecondary }]}>
+                You answered {score} out of {totalQuestions} questions correctly!
+              </Text>
+
+              {/* Points Award Card */}
+              <View style={[styles.rewardCard, { backgroundColor: cardBg, borderColor: border }, !isDark && styles.lightShadow]}>
+                <View style={styles.rewardRow}>
+                  <Text style={{ fontSize: 24 }}>⭐</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.rewardTitle, { color: textPrimary }]}>+{score * 10} Bible Star Points</Text>
+                    <Text style={[styles.rewardSub, { color: textSecondary }]}>Added to your Rhema Kids profile</Text>
+                  </View>
+                </View>
+
+                <View style={[styles.divider, { backgroundColor: border }]} />
+
+                <View style={styles.rewardRow}>
+                  <Text style={{ fontSize: 24 }}>{quiz.badgeReward?.split(' ')[0] || '🏅'}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.rewardTitle, { color: textPrimary }]}>{quiz.badgeReward}</Text>
+                    <Text style={[styles.rewardSub, { color: textSecondary }]}>Unlocked badge for memory verses</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Actions */}
+              <View style={styles.resultsActions}>
+                <TouchableOpacity style={styles.finishQuizBtn} onPress={onClose}>
+                  <Text style={styles.finishQuizBtnText}>Claim Rewards & Close</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.retryBtn} onPress={handleRestart}>
+                  <RefreshCw size={14} color={textSecondary} />
+                  <Text style={[styles.retryBtnText, { color: textSecondary }]}>Play Again</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </SafeAreaView>
+      </SafeAreaProvider>
     </Modal>
   );
 }
@@ -247,10 +281,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 54 : 20,
+    paddingTop: 10,
     paddingBottom: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#18181B',
+  },
+  lightShadow: {
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 1,
   },
   closeBtn: {
     width: 36,

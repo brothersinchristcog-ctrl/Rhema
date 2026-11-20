@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
   Dimensions,
   Image,
+  StatusBar,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -33,10 +34,12 @@ import {
   ChevronRight,
   Layers,
   Video,
+  Search,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import KidsMinistryService from '../../../../services/KidsMinistryService';
+import { useAdminTheme } from '../../../../utils/adminThemeHelper';
 import {
   KidsBibleStory,
   KidsQuiz,
@@ -64,7 +67,23 @@ export default function AdminContentManagerModal({
   churchId,
   onClose,
 }: AdminContentManagerModalProps) {
+  const {
+    isDark,
+    screenBg,
+    cardSurface,
+    secondarySurface,
+    primaryText,
+    secondaryText,
+    borderColor,
+    barStyle,
+  } = useAdminTheme();
+
   const insets = useSafeAreaInsets();
+  const safeTop = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight || 28) : 44) + 6;
+  const safeBottom = Math.max(insets.bottom, 12);
+  const accentBlue = isDark ? '#93C5FD' : '#2563EB';
+  const placeholderColor = isDark ? '#64748B' : '#94A3B8';
+
   const [activeTab, setActiveTab] = useState<'stories' | 'quizzes' | 'songs'>('stories');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -496,74 +515,46 @@ export default function AdminContentManagerModal({
     return s.title.toLowerCase().includes(term) || (s.titleTelugu || '').toLowerCase().includes(term);
   });
 
+  const themedInputStyle = [
+    styles.formInput,
+    {
+      backgroundColor: secondarySurface,
+      borderColor,
+      color: primaryText,
+    },
+  ];
+  const themedCardStyle = [
+    styles.formCardSection,
+    {
+      backgroundColor: cardSurface,
+      borderColor,
+    },
+  ];
+
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        {/* ── TOP HEADER (FULL-SCREEN LMS/CMS) ── */}
-        <View style={styles.topHeader}>
-          <View style={{ flex: 1, marginRight: 12 }}>
-            <View style={styles.hubBadgeRow}>
-              <View style={styles.hubBadge}>
-                <BookOpen size={12} color="#93C5FD" />
-                <Text style={styles.hubBadgeText}>BIBLE LEARNING CENTER</Text>
-              </View>
-              <View style={styles.statsBadge}>
-                <Text style={styles.statsBadgeText}>
-                  {stories.length} Stories · {quizzes.length} Quizzes · {songs.length} Songs
-                </Text>
-              </View>
-            </View>
-            <Text style={styles.headerTitle}>Bible Learning Center</Text>
-            <Text style={styles.headerSubtitle} numberOfLines={1}>
-              Bilingual stories, interactive quizzes & praise songs
+      <View style={[styles.container, { backgroundColor: screenBg, paddingTop: safeTop }]}>
+        <StatusBar barStyle={barStyle} backgroundColor={screenBg} />
+
+        {/* ── TOP HEADER (CLEAN, SAFE-AREA AWARE) ── */}
+        <View style={[styles.topHeader, { borderBottomColor: borderColor }]}>
+          <TouchableOpacity
+            onPress={onClose}
+            style={[styles.closeHeaderBtn, { backgroundColor: secondarySurface, borderColor }]}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <X size={20} color={primaryText} />
+          </TouchableOpacity>
+
+          <View style={styles.headerCenter}>
+            <Text style={[styles.headerTitle, { color: primaryText }]} numberOfLines={1}>
+              Bible Learning Center
+            </Text>
+            <Text style={[styles.headerSubtitle, { color: secondaryText }]} numberOfLines={1}>
+              {stories.length} Stories · {quizzes.length} Quizzes · {songs.length} Songs
             </Text>
           </View>
 
-          <TouchableOpacity onPress={onClose} style={styles.closeHeaderBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <X size={20} color="#94A3B8" />
-          </TouchableOpacity>
-        </View>
-
-        {/* ── SEGMENT TABS (STORIES / QUIZZES / SONGS) & ACTION BUTTON ── */}
-        <View style={styles.navBar}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.tabsRow}
-            style={{ flex: 1 }}
-          >
-            <TouchableOpacity
-              style={[styles.tab, activeTab === 'stories' && styles.tabActive]}
-              onPress={() => setActiveTab('stories')}
-            >
-              <BookOpen size={15} color={activeTab === 'stories' ? '#FFFFFF' : '#94A3B8'} />
-              <Text style={[styles.tabText, activeTab === 'stories' && styles.tabTextActive]}>
-                Stories ({stories.length})
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.tab, activeTab === 'quizzes' && styles.tabActive]}
-              onPress={() => setActiveTab('quizzes')}
-            >
-              <Award size={15} color={activeTab === 'quizzes' ? '#FFFFFF' : '#94A3B8'} />
-              <Text style={[styles.tabText, activeTab === 'quizzes' && styles.tabTextActive]}>
-                Quizzes ({quizzes.length})
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.tab, activeTab === 'songs' && styles.tabActive]}
-              onPress={() => setActiveTab('songs')}
-            >
-              <Music size={15} color={activeTab === 'songs' ? '#FFFFFF' : '#94A3B8'} />
-              <Text style={[styles.tabText, activeTab === 'songs' && styles.tabTextActive]}>
-                Songs ({songs.length})
-              </Text>
-            </TouchableOpacity>
-          </ScrollView>
-
-          {/* Create Button: Visible & styled cleanly */}
           <TouchableOpacity
             style={styles.createBtn}
             onPress={() => {
@@ -575,23 +566,71 @@ export default function AdminContentManagerModal({
           >
             <Plus size={15} color="#FFFFFF" strokeWidth={2.8} />
             <Text style={styles.createBtnText}>
-              {activeTab === 'stories' ? 'New Story' : activeTab === 'quizzes' ? 'New Quiz' : 'New Song'}
+              {activeTab === 'stories' ? 'Story' : activeTab === 'quizzes' ? 'Quiz' : 'Song'}
             </Text>
           </TouchableOpacity>
         </View>
 
+        {/* ── SEGMENT TABS (ALL 3 TABS VISIBLE WITHOUT CLIPPING) ── */}
+        <View style={[styles.navBar, { borderBottomColor: borderColor }]}>
+          <View style={[styles.segmentedTrack, { backgroundColor: secondarySurface, borderColor }]}>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'stories' && styles.tabActive]}
+              onPress={() => setActiveTab('stories')}
+              activeOpacity={0.85}
+            >
+              <BookOpen size={14} color={activeTab === 'stories' ? '#FFFFFF' : secondaryText} />
+              <Text
+                style={[styles.tabText, { color: secondaryText }, activeTab === 'stories' && styles.tabTextActive]}
+                numberOfLines={1}
+              >
+                Stories ({stories.length})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'quizzes' && styles.tabActive]}
+              onPress={() => setActiveTab('quizzes')}
+              activeOpacity={0.85}
+            >
+              <Award size={14} color={activeTab === 'quizzes' ? '#FFFFFF' : secondaryText} />
+              <Text
+                style={[styles.tabText, { color: secondaryText }, activeTab === 'quizzes' && styles.tabTextActive]}
+                numberOfLines={1}
+              >
+                Quizzes ({quizzes.length})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'songs' && styles.tabActive]}
+              onPress={() => setActiveTab('songs')}
+              activeOpacity={0.85}
+            >
+              <Music size={14} color={activeTab === 'songs' ? '#FFFFFF' : secondaryText} />
+              <Text
+                style={[styles.tabText, { color: secondaryText }, activeTab === 'songs' && styles.tabTextActive]}
+                numberOfLines={1}
+              >
+                Songs ({songs.length})
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* ── SEARCH BAR ── */}
-        <View style={styles.searchBarBox}>
+        <View style={[styles.searchBarBox, { backgroundColor: cardSurface, borderColor }]}>
+          <Search size={16} color={secondaryText} style={{ marginRight: 8 }} />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: primaryText }]}
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder={`Search ${activeTab}...`}
-            placeholderTextColor="#64748B"
+            placeholderTextColor={placeholderColor}
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <X size={16} color="#94A3B8" />
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <X size={16} color={secondaryText} />
             </TouchableOpacity>
           )}
         </View>
@@ -601,139 +640,214 @@ export default function AdminContentManagerModal({
           {/* STORIES TAB */}
           {activeTab === 'stories' && (
             <View style={styles.itemsGrid}>
-              {filteredStories.map(s => (
-                <View key={s.id} style={styles.contentCard}>
-                  <View style={styles.cardCoverBox}>
-                    {s.coverImageUrl ? (
-                      <Image source={{ uri: s.coverImageUrl }} style={styles.cardImage} />
-                    ) : (
-                      <Text style={{ fontSize: 20 }}>{s.coverEmoji || '📖'}</Text>
-                    )}
-                  </View>
-
-                  <View style={{ flex: 1, justifyContent: 'center' }}>
-                    <View style={styles.cardTitleRow}>
-                      <Text style={styles.cardTitle} numberOfLines={1}>{s.title}</Text>
-                      <View style={[styles.statusPill, s.isPublished !== false ? styles.publishedPill : styles.draftPill]}>
-                        <Text style={[styles.statusPillText, s.isPublished !== false ? styles.publishedPillText : styles.draftPillText]}>
-                          {s.isPublished !== false ? 'Live' : 'Draft'}
-                        </Text>
-                      </View>
-                    </View>
-                    {s.titleTelugu ? <Text style={styles.cardTeluguTitle} numberOfLines={1}>{s.titleTelugu}</Text> : null}
-                    <Text style={styles.cardRef}>{s.scriptureRef || 'Genesis'} · {s.pages?.length || 1} Pages</Text>
-                  </View>
-
-                  <View style={styles.actionButtonsCol}>
-                    <TouchableOpacity
-                      style={styles.editBtn}
-                      onPress={() => openEditStoryForm(s)}
-                    >
-                      <Edit3 size={14} color="#3B82F6" />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.deleteBtn}
-                      onPress={() => handleDeleteStory(s.id, s.title)}
-                    >
-                      <Trash2 size={14} color="#EF4444" />
-                    </TouchableOpacity>
-                  </View>
+              {filteredStories.length === 0 ? (
+                <View style={[styles.emptyBox, { backgroundColor: cardSurface, borderColor }]}>
+                  <BookOpen size={28} color={secondaryText} />
+                  <Text style={[styles.emptyTitle, { color: primaryText }]}>No Bible Stories Found</Text>
+                  <Text style={[styles.emptySub, { color: secondaryText }]}>
+                    Tap + Story above to add a bilingual illustrated story.
+                  </Text>
                 </View>
-              ))}
+              ) : (
+                filteredStories.map(s => (
+                  <View
+                    key={s.id}
+                    style={[
+                      styles.contentCard,
+                      { backgroundColor: cardSurface, borderColor },
+                      !isDark && styles.cardShadowLight,
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.cardCoverBox,
+                        { backgroundColor: isDark ? '#1E293B' : '#F1F5F9' },
+                      ]}
+                    >
+                      {s.coverImageUrl ? (
+                        <Image source={{ uri: s.coverImageUrl }} style={styles.cardImage} />
+                      ) : (
+                        <Text style={{ fontSize: 22 }}>{s.coverEmoji || '📖'}</Text>
+                      )}
+                    </View>
+
+                    <View style={{ flex: 1, justifyContent: 'center' }}>
+                      <View style={styles.cardTitleRow}>
+                        <Text style={[styles.cardTitle, { color: primaryText }]} numberOfLines={1}>
+                          {s.title}
+                        </Text>
+                        <View style={[styles.statusPill, s.isPublished !== false ? styles.publishedPill : styles.draftPill]}>
+                          <Text
+                            style={[
+                              styles.statusPillText,
+                              s.isPublished !== false ? styles.publishedPillText : styles.draftPillText,
+                            ]}
+                          >
+                            {s.isPublished !== false ? 'Live' : 'Draft'}
+                          </Text>
+                        </View>
+                      </View>
+                      {s.titleTelugu ? (
+                        <Text style={[styles.cardTeluguTitle, { color: accentBlue }]} numberOfLines={1}>
+                          {s.titleTelugu}
+                        </Text>
+                      ) : null}
+                      <Text style={[styles.cardRef, { color: secondaryText }]}>
+                        {s.scriptureRef || 'Genesis'} · {s.pages?.length || 1} Pages
+                      </Text>
+                    </View>
+
+                    <View style={styles.actionButtonsCol}>
+                      <TouchableOpacity style={styles.editBtn} onPress={() => openEditStoryForm(s)}>
+                        <Edit3 size={15} color="#2563EB" />
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDeleteStory(s.id, s.title)}>
+                        <Trash2 size={15} color="#EF4444" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))
+              )}
             </View>
           )}
 
           {/* QUIZZES TAB */}
           {activeTab === 'quizzes' && (
             <View style={styles.itemsGrid}>
-              {filteredQuizzes.map(q => (
-                <View key={q.id} style={styles.contentCard}>
-                  <View style={[styles.cardCoverBox, { backgroundColor: 'rgba(251, 191, 36, 0.15)' }]}>
-                    <Text style={{ fontSize: 20 }}>{q.coverEmoji || '🏆'}</Text>
-                  </View>
-
-                  <View style={{ flex: 1, justifyContent: 'center' }}>
-                    <View style={styles.cardTitleRow}>
-                      <Text style={styles.cardTitle} numberOfLines={1}>{q.title}</Text>
-                      <View style={[styles.statusPill, q.isPublished !== false ? styles.publishedPill : styles.draftPill]}>
-                        <Text style={[styles.statusPillText, q.isPublished !== false ? styles.publishedPillText : styles.draftPillText]}>
-                          {q.isPublished !== false ? 'Active' : 'Draft'}
-                        </Text>
-                      </View>
-                    </View>
-                    {q.titleTelugu ? <Text style={styles.cardTeluguTitle} numberOfLines={1}>{q.titleTelugu}</Text> : null}
-                    <Text style={styles.cardRef}>
-                      {q.questions?.length || 0} Qs · +{q.pointsReward || 50} pts
-                    </Text>
-                  </View>
-
-                  <View style={styles.actionButtonsCol}>
-                    <TouchableOpacity
-                      style={styles.editBtn}
-                      onPress={() => openEditQuizForm(q)}
-                    >
-                      <Edit3 size={14} color="#3B82F6" />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.deleteBtn}
-                      onPress={() => handleDeleteQuiz(q.id, q.title)}
-                    >
-                      <Trash2 size={14} color="#EF4444" />
-                    </TouchableOpacity>
-                  </View>
+              {filteredQuizzes.length === 0 ? (
+                <View style={[styles.emptyBox, { backgroundColor: cardSurface, borderColor }]}>
+                  <Award size={28} color={secondaryText} />
+                  <Text style={[styles.emptyTitle, { color: primaryText }]}>No Bible Quizzes Found</Text>
+                  <Text style={[styles.emptySub, { color: secondaryText }]}>
+                    Tap + Quiz above to create an interactive kids quiz.
+                  </Text>
                 </View>
-              ))}
+              ) : (
+                filteredQuizzes.map(q => (
+                  <View
+                    key={q.id}
+                    style={[
+                      styles.contentCard,
+                      { backgroundColor: cardSurface, borderColor },
+                      !isDark && styles.cardShadowLight,
+                    ]}
+                  >
+                    <View style={[styles.cardCoverBox, { backgroundColor: 'rgba(245, 158, 11, 0.14)' }]}>
+                      <Text style={{ fontSize: 22 }}>{q.coverEmoji || '🏆'}</Text>
+                    </View>
+
+                    <View style={{ flex: 1, justifyContent: 'center' }}>
+                      <View style={styles.cardTitleRow}>
+                        <Text style={[styles.cardTitle, { color: primaryText }]} numberOfLines={1}>
+                          {q.title}
+                        </Text>
+                        <View style={[styles.statusPill, q.isPublished !== false ? styles.publishedPill : styles.draftPill]}>
+                          <Text
+                            style={[
+                              styles.statusPillText,
+                              q.isPublished !== false ? styles.publishedPillText : styles.draftPillText,
+                            ]}
+                          >
+                            {q.isPublished !== false ? 'Active' : 'Draft'}
+                          </Text>
+                        </View>
+                      </View>
+                      {q.titleTelugu ? (
+                        <Text style={[styles.cardTeluguTitle, { color: accentBlue }]} numberOfLines={1}>
+                          {q.titleTelugu}
+                        </Text>
+                      ) : null}
+                      <Text style={[styles.cardRef, { color: secondaryText }]}>
+                        {q.questions?.length || 0} Qs · +{q.pointsReward || 50} pts
+                      </Text>
+                    </View>
+
+                    <View style={styles.actionButtonsCol}>
+                      <TouchableOpacity style={styles.editBtn} onPress={() => openEditQuizForm(q)}>
+                        <Edit3 size={15} color="#2563EB" />
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDeleteQuiz(q.id, q.title)}>
+                        <Trash2 size={15} color="#EF4444" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))
+              )}
             </View>
           )}
 
           {/* SONGS TAB */}
           {activeTab === 'songs' && (
             <View style={styles.itemsGrid}>
-              {filteredSongs.map(song => (
-                <View key={song.id} style={styles.contentCard}>
-                  <View style={[styles.cardCoverBox, { backgroundColor: 'rgba(244, 114, 182, 0.15)' }]}>
-                    {song.thumbnailUrl ? (
-                      <Image source={{ uri: song.thumbnailUrl }} style={styles.cardImage} />
-                    ) : (
-                      <Text style={{ fontSize: 20 }}>{song.coverEmoji || '🎵'}</Text>
-                    )}
-                  </View>
+              {filteredSongs.length === 0 ? (
+                <View style={[styles.emptyBox, { backgroundColor: cardSurface, borderColor }]}>
+                  <Music size={28} color={secondaryText} />
+                  <Text style={[styles.emptyTitle, { color: primaryText }]}>No Worship Songs Found</Text>
+                  <Text style={[styles.emptySub, { color: secondaryText }]}>
+                    Tap + Song above to add an action or praise song.
+                  </Text>
+                </View>
+              ) : (
+                filteredSongs.map(song => (
+                  <View
+                    key={song.id}
+                    style={[
+                      styles.contentCard,
+                      { backgroundColor: cardSurface, borderColor },
+                      !isDark && styles.cardShadowLight,
+                    ]}
+                  >
+                    <View style={[styles.cardCoverBox, { backgroundColor: 'rgba(236, 72, 153, 0.14)' }]}>
+                      {song.thumbnailUrl ? (
+                        <Image source={{ uri: song.thumbnailUrl }} style={styles.cardImage} />
+                      ) : (
+                        <Text style={{ fontSize: 22 }}>{song.coverEmoji || '🎵'}</Text>
+                      )}
+                    </View>
 
-                  <View style={{ flex: 1, justifyContent: 'center' }}>
-                    <View style={styles.cardTitleRow}>
-                      <Text style={styles.cardTitle} numberOfLines={1}>{song.title}</Text>
-                      <View style={[styles.statusPill, song.isPublished !== false ? styles.publishedPill : styles.draftPill]}>
-                        <Text style={[styles.statusPillText, song.isPublished !== false ? styles.publishedPillText : styles.draftPillText]}>
-                          {song.isPublished !== false ? 'Ready' : 'Draft'}
+                    <View style={{ flex: 1, justifyContent: 'center' }}>
+                      <View style={styles.cardTitleRow}>
+                        <Text style={[styles.cardTitle, { color: primaryText }]} numberOfLines={1}>
+                          {song.title}
                         </Text>
+                        <View style={[styles.statusPill, song.isPublished !== false ? styles.publishedPill : styles.draftPill]}>
+                          <Text
+                            style={[
+                              styles.statusPillText,
+                              song.isPublished !== false ? styles.publishedPillText : styles.draftPillText,
+                            ]}
+                          >
+                            {song.isPublished !== false ? 'Ready' : 'Draft'}
+                          </Text>
+                        </View>
+                      </View>
+                      {song.titleTelugu ? (
+                        <Text style={[styles.cardTeluguTitle, { color: accentBlue }]} numberOfLines={1}>
+                          {song.titleTelugu}
+                        </Text>
+                      ) : null}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
+                        <Video size={11} color="#EF4444" />
+                        <Text style={[styles.cardRef, { color: secondaryText, marginTop: 0 }]}>
+                          ID: {song.youtubeVideoId || 'N/A'}
+                        </Text>
+                        {song.audioUrl ? (
+                          <Text style={[styles.cardRef, { color: '#10B981', marginTop: 0, fontWeight: '700' }]}>· MP3</Text>
+                        ) : null}
                       </View>
                     </View>
-                    {song.titleTelugu ? <Text style={styles.cardTeluguTitle} numberOfLines={1}>{song.titleTelugu}</Text> : null}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 1 }}>
-                      <Video size={10} color="#EF4444" />
-                      <Text style={styles.cardRef}>ID: {song.youtubeVideoId || 'N/A'}</Text>
-                      {song.audioUrl ? (
-                        <Text style={[styles.cardRef, { color: '#34D399' }]}>· MP3</Text>
-                      ) : null}
+
+                    <View style={styles.actionButtonsCol}>
+                      <TouchableOpacity style={styles.editBtn} onPress={() => openEditSongForm(song)}>
+                        <Edit3 size={15} color="#2563EB" />
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDeleteSong(song.id, song.title)}>
+                        <Trash2 size={15} color="#EF4444" />
+                      </TouchableOpacity>
                     </View>
                   </View>
-
-                  <View style={styles.actionButtonsCol}>
-                    <TouchableOpacity
-                      style={styles.editBtn}
-                      onPress={() => openEditSongForm(song)}
-                    >
-                      <Edit3 size={14} color="#3B82F6" />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.deleteBtn}
-                      onPress={() => handleDeleteSong(song.id, song.title)}
-                    >
-                      <Trash2 size={14} color="#EF4444" />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))}
+                ))
+              )}
             </View>
           )}
         </ScrollView>
@@ -742,79 +856,81 @@ export default function AdminContentManagerModal({
         {/* STORY CREATE / EDIT MODAL                                    */}
         {/* ══════════════════════════════════════════════════════════════ */}
         <Modal visible={showStoryModal} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setShowStoryModal(false)}>
-          <View style={[styles.container, { paddingTop: insets.top }]}>
-            <View style={styles.topHeader}>
-              <View style={{ flex: 1, marginRight: 12 }}>
-                <View style={styles.hubBadgeRow}>
-                  <View style={styles.hubBadge}>
-                    <BookOpen size={11} color="#93C5FD" />
-                    <Text style={styles.hubBadgeText}>BIBLE STORY EDITOR</Text>
-                  </View>
-                </View>
-                <Text style={styles.headerTitle}>{editingStoryId ? 'Edit Bible Story' : 'Create New Bible Story'}</Text>
-                <Text style={styles.headerSubtitle} numberOfLines={1}>
-                  Scripture-based or thematic story with bilingual pages
+          <View style={[styles.container, { backgroundColor: screenBg, paddingTop: safeTop }]}>
+            <StatusBar barStyle={barStyle} backgroundColor={screenBg} />
+            <View style={[styles.topHeader, { borderBottomColor: borderColor }]}>
+              <TouchableOpacity
+                onPress={() => setShowStoryModal(false)}
+                style={[styles.closeHeaderBtn, { backgroundColor: secondarySurface, borderColor }]}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <X size={20} color={primaryText} />
+              </TouchableOpacity>
+              <View style={styles.headerCenter}>
+                <Text style={[styles.headerTitle, { color: primaryText }]} numberOfLines={1}>
+                  {editingStoryId ? 'Edit Bible Story' : 'Create Bible Story'}
+                </Text>
+                <Text style={[styles.headerSubtitle, { color: secondaryText }]} numberOfLines={1}>
+                  Bilingual Scripture & thematic story pages
                 </Text>
               </View>
-              <TouchableOpacity onPress={() => setShowStoryModal(false)} style={styles.closeHeaderBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <X size={20} color="#94A3B8" />
-              </TouchableOpacity>
+              <View style={{ width: 36 }} />
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.editorFullScroll}>
               {/* Section 1: Titles & Scripture */}
-              <View style={styles.formCardSection}>
-                <Text style={styles.formSectionHeading}>1. STORY TITLES & SCRIPTURE REFERENCE</Text>
-                <Text style={styles.formSectionHelper}>
+              <View style={themedCardStyle}>
+                <Text style={[styles.formSectionHeading, { color: accentBlue }]}>1. STORY TITLES & SCRIPTURE REFERENCE</Text>
+                <Text style={[styles.formSectionHelper, { color: secondaryText }]}>
                   You can write a direct Scripture passage (e.g. Genesis 1) or an adapted Sunday school thematic story (e.g. "Jesus Loves the Children").
                 </Text>
 
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.inputMiniLabel}>English Story Title *</Text>
+                  <Text style={[styles.inputMiniLabel, { color: primaryText }]}>English Story Title *</Text>
                   <TextInput
-                    style={styles.formInput}
+                    style={themedInputStyle}
                     value={storyTitle}
                     onChangeText={setStoryTitle}
                     placeholder="e.g. David and Goliath / The Good Samaritan"
-                    placeholderTextColor="#64748B"
+                    placeholderTextColor={placeholderColor}
                   />
                 </View>
 
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.inputMiniLabel}>Telugu Story Title (తెలుగు శీర్షిక)</Text>
+                  <Text style={[styles.inputMiniLabel, { color: primaryText }]}>Telugu Story Title (తెలుగు శీర్షిక)</Text>
                   <TextInput
-                    style={styles.formInput}
+                    style={themedInputStyle}
                     value={storyTelugu}
                     onChangeText={setStoryTelugu}
                     placeholder="e.g. దావీదు మరియు గొల్యాతు / మంచి సమరయుడు"
-                    placeholderTextColor="#64748B"
+                    placeholderTextColor={placeholderColor}
                   />
                 </View>
 
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.inputMiniLabel}>Scripture Reference (Bible Book & Chapter/Verse)</Text>
+                  <Text style={[styles.inputMiniLabel, { color: primaryText }]}>Scripture Reference (Bible Book & Chapter/Verse)</Text>
                   <TextInput
-                    style={styles.formInput}
+                    style={themedInputStyle}
                     value={storyRef}
                     onChangeText={setStoryRef}
                     placeholder="e.g. 1 Samuel 17:1-50 or Luke 10:25-37"
-                    placeholderTextColor="#64748B"
+                    placeholderTextColor={placeholderColor}
                   />
                 </View>
               </View>
 
               {/* Section 2: Cover Emoji & Upload Illustration */}
-              <View style={styles.formCardSection}>
-                <Text style={styles.formSectionHeading}>2. COVER EMOJI & ILLUSTRATION IMAGE</Text>
-                <Text style={styles.formSectionHelper}>
+              <View style={themedCardStyle}>
+                <Text style={[styles.formSectionHeading, { color: accentBlue }]}>2. COVER EMOJI & ILLUSTRATION IMAGE</Text>
+                <Text style={[styles.formSectionHelper, { color: secondaryText }]}>
                   Choose a display emoji and/or upload a colorful illustration photo for kids.
                 </Text>
 
                 <View style={styles.coverRow}>
                   <View style={{ alignItems: 'center', gap: 4 }}>
-                    <Text style={styles.inputMiniLabel}>Cover Emoji</Text>
+                    <Text style={[styles.inputMiniLabel, { color: primaryText }]}>Cover Emoji</Text>
                     <TextInput
-                      style={[styles.formInput, styles.emojiInputBox]}
+                      style={[themedInputStyle, styles.emojiInputBox]}
                       value={storyEmoji}
                       onChangeText={setStoryEmoji}
                       maxLength={2}
@@ -822,16 +938,23 @@ export default function AdminContentManagerModal({
                   </View>
 
                   <View style={{ flex: 1, gap: 6 }}>
-                    <Text style={styles.inputMiniLabel}>Custom Illustration Image</Text>
-                    <TouchableOpacity style={styles.uploadImageBtn} onPress={handlePickStoryCover} activeOpacity={0.8}>
-                      <Upload size={16} color="#93C5FD" />
-                      <Text style={styles.uploadImageBtnText}>
+                    <Text style={[styles.inputMiniLabel, { color: primaryText }]}>Custom Illustration Image</Text>
+                    <TouchableOpacity
+                      style={[
+                        styles.uploadImageBtn,
+                        { backgroundColor: isDark ? '#1E3A8A' : 'rgba(37, 99, 235, 0.1)', borderColor: '#3B82F6' },
+                      ]}
+                      onPress={handlePickStoryCover}
+                      activeOpacity={0.8}
+                    >
+                      <Upload size={16} color={accentBlue} />
+                      <Text style={[styles.uploadImageBtnText, { color: accentBlue }]}>
                         {storyCoverUrl ? 'Change Uploaded Image' : 'Pick Image from Device'}
                       </Text>
                     </TouchableOpacity>
                     {storyCoverUrl ? (
                       <View style={styles.uploadedPreviewRow}>
-                        <CheckCircle size={14} color="#34D399" />
+                        <CheckCircle size={14} color="#10B981" />
                         <Text style={styles.uploadedSuccessText} numberOfLines={1}>
                           Image successfully selected
                         </Text>
@@ -840,29 +963,29 @@ export default function AdminContentManagerModal({
                         </TouchableOpacity>
                       </View>
                     ) : (
-                      <Text style={styles.noImageHint}>No image selected (default emoji will be used)</Text>
+                      <Text style={[styles.noImageHint, { color: secondaryText }]}>No image selected (default emoji will be used)</Text>
                     )}
                   </View>
                 </View>
 
                 {storyCoverUrl ? (
-                  <View style={styles.imagePreviewBox}>
+                  <View style={[styles.imagePreviewBox, { borderColor }]}>
                     <Image source={{ uri: storyCoverUrl }} style={styles.imagePreviewImg} resizeMode="cover" />
                   </View>
                 ) : null}
               </View>
 
               {/* Section 3: Bilingual Story Pages */}
-              <View style={styles.formCardSection}>
+              <View style={themedCardStyle}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Text style={styles.formSectionHeading}>3. BILINGUAL STORY NARRATIVE PAGES ({storyPages.length})</Text>
+                  <Text style={[styles.formSectionHeading, { color: accentBlue }]}>3. BILINGUAL STORY NARRATIVE PAGES ({storyPages.length})</Text>
                 </View>
-                <Text style={styles.formSectionHelper}>
+                <Text style={[styles.formSectionHelper, { color: secondaryText }]}>
                   Break the story into bite-sized pages with English & Telugu paragraphs for children to read or listen.
                 </Text>
 
                 {storyPages.map((page, idx) => (
-                  <View key={idx} style={styles.pageCard}>
+                  <View key={idx} style={[styles.pageCard, { backgroundColor: secondarySurface, borderColor }]}>
                     <View style={styles.pageCardTopRow}>
                       <View style={styles.pageNumBadge}>
                         <Text style={styles.pageNumBadgeText}>PAGE {idx + 1}</Text>
@@ -881,9 +1004,9 @@ export default function AdminContentManagerModal({
                     </View>
 
                     <View style={styles.fieldGroup}>
-                      <Text style={styles.inputMiniLabel}>Page Heading</Text>
+                      <Text style={[styles.inputMiniLabel, { color: primaryText }]}>Page Heading</Text>
                       <TextInput
-                        style={styles.formInput}
+                        style={[themedInputStyle, { backgroundColor: cardSurface }]}
                         value={page.heading}
                         onChangeText={txt => {
                           const updated = [...storyPages];
@@ -891,14 +1014,14 @@ export default function AdminContentManagerModal({
                           setStoryPages(updated);
                         }}
                         placeholder="e.g. Part 1: The Young Shepherd / భాగం 1"
-                        placeholderTextColor="#64748B"
+                        placeholderTextColor={placeholderColor}
                       />
                     </View>
 
                     <View style={styles.fieldGroup}>
-                      <Text style={styles.inputMiniLabel}>English Narrative (Page {idx + 1})</Text>
+                      <Text style={[styles.inputMiniLabel, { color: primaryText }]}>English Narrative (Page {idx + 1})</Text>
                       <TextInput
-                        style={[styles.formInput, styles.narrativeInput]}
+                        style={[themedInputStyle, styles.narrativeInput, { backgroundColor: cardSurface }]}
                         value={page.textEnglish}
                         onChangeText={txt => {
                           const updated = [...storyPages];
@@ -906,15 +1029,15 @@ export default function AdminContentManagerModal({
                           setStoryPages(updated);
                         }}
                         placeholder="Write the English story text for this page..."
-                        placeholderTextColor="#64748B"
+                        placeholderTextColor={placeholderColor}
                         multiline
                       />
                     </View>
 
                     <View style={styles.fieldGroup}>
-                      <Text style={styles.inputMiniLabel}>Telugu Narrative (తెలుగు కథనం)</Text>
+                      <Text style={[styles.inputMiniLabel, { color: primaryText }]}>Telugu Narrative (తెలుగు కథనం)</Text>
                       <TextInput
-                        style={[styles.formInput, styles.narrativeInput]}
+                        style={[themedInputStyle, styles.narrativeInput, { backgroundColor: cardSurface }]}
                         value={page.textTelugu}
                         onChangeText={txt => {
                           const updated = [...storyPages];
@@ -922,7 +1045,7 @@ export default function AdminContentManagerModal({
                           setStoryPages(updated);
                         }}
                         placeholder="ఈ పేజీకి సంబంధించిన తెలుగు వివరణ ఇక్కడ రాయండి..."
-                        placeholderTextColor="#64748B"
+                        placeholderTextColor={placeholderColor}
                         multiline
                       />
                     </View>
@@ -930,7 +1053,7 @@ export default function AdminContentManagerModal({
                 ))}
 
                 <TouchableOpacity
-                  style={styles.addPageBtn}
+                  style={[styles.addPageBtn, { backgroundColor: secondarySurface, borderColor: '#3B82F6' }]}
                   onPress={() => {
                     setStoryPages([
                       ...storyPages,
@@ -945,27 +1068,31 @@ export default function AdminContentManagerModal({
                   }}
                   activeOpacity={0.8}
                 >
-                  <Plus size={16} color="#60A5FA" />
-                  <Text style={styles.addPageBtnText}>Add Another Story Page (+ Page {storyPages.length + 1})</Text>
+                  <Plus size={16} color={accentBlue} />
+                  <Text style={[styles.addPageBtnText, { color: accentBlue }]}>Add Another Story Page (+ Page {storyPages.length + 1})</Text>
                 </TouchableOpacity>
               </View>
 
               {/* Section 4: Publishing Status */}
-              <View style={[styles.formCardSection, styles.toggleRowCard]}>
+              <View style={[themedCardStyle, styles.toggleRowCard]}>
                 <View style={{ flex: 1, marginRight: 10 }}>
-                  <Text style={styles.toggleTitle}>Publish to Rhema Kids App</Text>
-                  <Text style={styles.toggleDesc}>
+                  <Text style={[styles.toggleTitle, { color: primaryText }]}>Publish to Rhema Kids App</Text>
+                  <Text style={[styles.toggleDesc, { color: secondaryText }]}>
                     {storyPublished
                       ? 'Live: Children and parents can read and listen to this story immediately.'
                       : 'Draft: Saved privately for Sunday School teachers to review before release.'}
                   </Text>
                 </View>
                 <TouchableOpacity
-                  style={[styles.toggleBtn, storyPublished && styles.toggleBtnActive]}
+                  style={[
+                    styles.toggleBtn,
+                    { backgroundColor: secondarySurface, borderColor },
+                    storyPublished && styles.toggleBtnActive,
+                  ]}
                   onPress={() => setStoryPublished(!storyPublished)}
                   activeOpacity={0.85}
                 >
-                  <Text style={[styles.toggleBtnText, storyPublished && styles.toggleBtnTextActive]}>
+                  <Text style={[styles.toggleBtnText, { color: secondaryText }, storyPublished && styles.toggleBtnTextActive]}>
                     {storyPublished ? 'Published' : 'Draft Only'}
                   </Text>
                 </TouchableOpacity>
@@ -973,9 +1100,13 @@ export default function AdminContentManagerModal({
             </ScrollView>
 
             {/* Bottom Actions Bar */}
-            <View style={styles.editorBottomBar}>
-              <TouchableOpacity style={styles.cancelActionBtn} onPress={() => setShowStoryModal(false)} activeOpacity={0.8}>
-                <Text style={styles.cancelActionText}>Cancel</Text>
+            <View style={[styles.editorBottomBar, { backgroundColor: screenBg, borderTopColor: borderColor, paddingBottom: safeBottom }]}>
+              <TouchableOpacity
+                style={[styles.cancelActionBtn, { backgroundColor: secondarySurface, borderColor, borderWidth: 1 }]}
+                onPress={() => setShowStoryModal(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.cancelActionText, { color: primaryText }]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.saveActionBtn} onPress={handleSaveStory} disabled={saving} activeOpacity={0.85}>
                 {saving ? (
@@ -993,71 +1124,74 @@ export default function AdminContentManagerModal({
         {/* ══════════════════════════════════════════════════════════════ */}
         <Modal visible={showQuizModal} animationType="slide" transparent onRequestClose={() => setShowQuizModal(false)}>
           <View style={styles.editorBackdrop}>
-            <View style={styles.editorCard}>
-              <View style={styles.editorHeader}>
+            <View style={[styles.editorCard, { backgroundColor: screenBg, borderColor, paddingBottom: safeBottom }]}>
+              <View style={[styles.editorHeader, { borderBottomColor: borderColor }]}>
                 <View>
-                  <Text style={styles.editorTag}>INTERACTIVE BIBLE QUIZ</Text>
-                  <Text style={styles.editorTitle}>{editingQuizId ? 'Edit Quiz' : 'Create New Bible Quiz'}</Text>
+                  <Text style={[styles.editorTag, { color: accentBlue }]}>INTERACTIVE BIBLE QUIZ</Text>
+                  <Text style={[styles.editorTitle, { color: primaryText }]}>{editingQuizId ? 'Edit Quiz' : 'Create New Bible Quiz'}</Text>
                 </View>
-                <TouchableOpacity onPress={() => setShowQuizModal(false)} style={styles.editorCloseBtn}>
-                  <X size={18} color="#94A3B8" />
+                <TouchableOpacity
+                  onPress={() => setShowQuizModal(false)}
+                  style={[styles.editorCloseBtn, { backgroundColor: secondarySurface }]}
+                >
+                  <X size={18} color={primaryText} />
                 </TouchableOpacity>
               </View>
 
               <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.editorFormScroll}>
-                <Text style={styles.formSectionHeading}>1. QUIZ OVERVIEW</Text>
+                <Text style={[styles.formSectionHeading, { color: accentBlue }]}>1. QUIZ OVERVIEW</Text>
                 <TextInput
-                  style={styles.formInput}
+                  style={themedInputStyle}
                   value={quizTitle}
                   onChangeText={setQuizTitle}
                   placeholder="Quiz Title (e.g. Life of Moses Quiz)"
-                  placeholderTextColor="#64748B"
+                  placeholderTextColor={placeholderColor}
                 />
                 <TextInput
-                  style={styles.formInput}
+                  style={themedInputStyle}
                   value={quizTelugu}
                   onChangeText={setQuizTelugu}
                   placeholder="Telugu Title (e.g. మోషే జీవిత చరిత్ర క్విజ్)"
-                  placeholderTextColor="#64748B"
+                  placeholderTextColor={placeholderColor}
                 />
                 <TextInput
-                  style={styles.formInput}
+                  style={themedInputStyle}
                   value={quizRef}
                   onChangeText={setQuizRef}
                   placeholder="Scripture Reference (e.g. Exodus 1-14)"
-                  placeholderTextColor="#64748B"
+                  placeholderTextColor={placeholderColor}
                 />
 
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.inputMiniLabel}>Star Points Reward</Text>
+                    <Text style={[styles.inputMiniLabel, { color: primaryText }]}>Star Points Reward</Text>
                     <TextInput
-                      style={styles.formInput}
+                      style={themedInputStyle}
                       value={quizReward}
                       onChangeText={setQuizReward}
                       keyboardType="numeric"
                       placeholder="50"
-                      placeholderTextColor="#64748B"
+                      placeholderTextColor={placeholderColor}
                     />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.inputMiniLabel}>Badge Title</Text>
+                    <Text style={[styles.inputMiniLabel, { color: primaryText }]}>Badge Title</Text>
                     <TextInput
-                      style={styles.formInput}
+                      style={themedInputStyle}
                       value={quizBadge}
                       onChangeText={setQuizBadge}
                       placeholder="Torah Champion"
-                      placeholderTextColor="#64748B"
+                      placeholderTextColor={placeholderColor}
                     />
                   </View>
                 </View>
 
-                <Text style={styles.formSectionHeading}>2. MULTIPLE CHOICE QUESTIONS</Text>
+                <Text style={[styles.formSectionHeading, { color: accentBlue }]}>2. MULTIPLE CHOICE QUESTIONS</Text>
                 {quizQuestions.map((q, qIdx) => (
-                  <View key={qIdx} style={styles.questionCard}>
-                    <Text style={styles.pageCardTitle}>Question {qIdx + 1}</Text>
+                  <View key={qIdx} style={[styles.questionCard, { backgroundColor: cardSurface, borderColor }]}>
+                    <Text style={[styles.pageCardTitle, { color: '#D97706' }]}>Question {qIdx + 1}</Text>
                     <TextInput
-                      style={styles.formInput}
+                      style={themedInputStyle}
                       value={q.questionEnglish}
                       onChangeText={txt => {
                         const updated = [...quizQuestions];
@@ -1065,10 +1199,10 @@ export default function AdminContentManagerModal({
                         setQuizQuestions(updated);
                       }}
                       placeholder="Question in English..."
-                      placeholderTextColor="#64748B"
+                      placeholderTextColor={placeholderColor}
                     />
                     <TextInput
-                      style={styles.formInput}
+                      style={themedInputStyle}
                       value={q.questionTelugu}
                       onChangeText={txt => {
                         const updated = [...quizQuestions];
@@ -1076,10 +1210,10 @@ export default function AdminContentManagerModal({
                         setQuizQuestions(updated);
                       }}
                       placeholder="ప్రశ్న తెలుగులో..."
-                      placeholderTextColor="#64748B"
+                      placeholderTextColor={placeholderColor}
                     />
 
-                    <Text style={[styles.inputMiniLabel, { marginTop: 6 }]}>
+                    <Text style={[styles.inputMiniLabel, { color: primaryText, marginTop: 6 }]}>
                       Answer Options (Tap circle to mark correct answer):
                     </Text>
                     {q.options.map((opt, oIdx) => (
@@ -1095,7 +1229,7 @@ export default function AdminContentManagerModal({
                           {q.correctIndex === oIdx && <View style={styles.radioDot} />}
                         </TouchableOpacity>
                         <TextInput
-                          style={[styles.formInput, { flex: 1, marginBottom: 0 }]}
+                          style={[themedInputStyle, { flex: 1, marginBottom: 0 }]}
                           value={opt}
                           onChangeText={txt => {
                             const updated = [...quizQuestions];
@@ -1103,13 +1237,13 @@ export default function AdminContentManagerModal({
                             setQuizQuestions(updated);
                           }}
                           placeholder={`Option ${String.fromCharCode(65 + oIdx)}`}
-                          placeholderTextColor="#64748B"
+                          placeholderTextColor={placeholderColor}
                         />
                       </View>
                     ))}
 
                     <TextInput
-                      style={[styles.formInput, { marginTop: 8 }]}
+                      style={[themedInputStyle, { marginTop: 8 }]}
                       value={q.explanation}
                       onChangeText={txt => {
                         const updated = [...quizQuestions];
@@ -1117,13 +1251,13 @@ export default function AdminContentManagerModal({
                         setQuizQuestions(updated);
                       }}
                       placeholder="Bible Verse Explanation / Answer Note"
-                      placeholderTextColor="#64748B"
+                      placeholderTextColor={placeholderColor}
                     />
                   </View>
                 ))}
 
                 <TouchableOpacity
-                  style={styles.addPageBtn}
+                  style={[styles.addPageBtn, { backgroundColor: secondarySurface, borderColor: '#3B82F6' }]}
                   onPress={() => {
                     setQuizQuestions([
                       ...quizQuestions,
@@ -1138,14 +1272,17 @@ export default function AdminContentManagerModal({
                     ]);
                   }}
                 >
-                  <Plus size={14} color="#93C5FD" />
-                  <Text style={styles.addPageBtnText}>Add Another Question</Text>
+                  <Plus size={14} color={accentBlue} />
+                  <Text style={[styles.addPageBtnText, { color: accentBlue }]}>Add Another Question</Text>
                 </TouchableOpacity>
               </ScrollView>
 
-              <View style={styles.editorActionsRow}>
-                <TouchableOpacity style={styles.cancelActionBtn} onPress={() => setShowQuizModal(false)}>
-                  <Text style={styles.cancelActionText}>Cancel</Text>
+              <View style={[styles.editorActionsRow, { borderTopColor: borderColor }]}>
+                <TouchableOpacity
+                  style={[styles.cancelActionBtn, { backgroundColor: secondarySurface, borderColor, borderWidth: 1 }]}
+                  onPress={() => setShowQuizModal(false)}
+                >
+                  <Text style={[styles.cancelActionText, { color: primaryText }]}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.saveActionBtn} onPress={handleSaveQuiz} disabled={saving}>
                   {saving ? (
@@ -1163,62 +1300,60 @@ export default function AdminContentManagerModal({
         {/* WORSHIP SONG CREATE / EDIT MODAL (FULL SCREEN SCROLLABLE)      */}
         {/* ══════════════════════════════════════════════════════════════ */}
         <Modal visible={showSongModal} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setShowSongModal(false)}>
-          <View style={[styles.container, { paddingTop: insets.top }]}>
+          <View style={[styles.container, { backgroundColor: screenBg, paddingTop: safeTop }]}>
+            <StatusBar barStyle={barStyle} backgroundColor={screenBg} />
             {/* Top Header */}
-            <View style={styles.topHeader}>
-              <View style={{ flex: 1, marginRight: 12 }}>
-                <View style={styles.hubBadgeRow}>
-                  <View style={styles.hubBadge}>
-                    <Music size={11} color="#93C5FD" />
-                    <Text style={styles.hubBadgeText}>PRAISE & ACTION SONGS</Text>
-                  </View>
-                </View>
-                <Text style={styles.headerTitle}>{editingSongId ? 'Edit Worship Song' : 'Add Worship Song'}</Text>
-                <Text style={styles.headerSubtitle} numberOfLines={1}>
-                  Action songs, bilingual lyrics, YouTube & audio accompaniment
-                </Text>
-              </View>
+            <View style={[styles.topHeader, { borderBottomColor: borderColor }]}>
               <TouchableOpacity
                 onPress={() => setShowSongModal(false)}
-                style={styles.closeHeaderBtn}
+                style={[styles.closeHeaderBtn, { backgroundColor: secondarySurface, borderColor }]}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <X size={20} color="#94A3B8" />
+                <X size={20} color={primaryText} />
               </TouchableOpacity>
+              <View style={styles.headerCenter}>
+                <Text style={[styles.headerTitle, { color: primaryText }]} numberOfLines={1}>
+                  {editingSongId ? 'Edit Worship Song' : 'Add Worship Song'}
+                </Text>
+                <Text style={[styles.headerSubtitle, { color: secondaryText }]} numberOfLines={1}>
+                  Action songs, bilingual lyrics, YouTube & audio
+                </Text>
+              </View>
+              <View style={{ width: 36 }} />
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.editorFullScroll}>
               {/* Section 1: Titles & Category */}
-              <View style={styles.formCardSection}>
-                <Text style={styles.formSectionHeading}>1. SONG TITLES & CATEGORY</Text>
-                <Text style={styles.formSectionHelper}>
+              <View style={themedCardStyle}>
+                <Text style={[styles.formSectionHeading, { color: accentBlue }]}>1. SONG TITLES & CATEGORY</Text>
+                <Text style={[styles.formSectionHelper, { color: secondaryText }]}>
                   Enter the song title in English and Telugu, and select the song type for Sunday School children.
                 </Text>
 
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.inputMiniLabel}>English Song Title *</Text>
+                  <Text style={[styles.inputMiniLabel, { color: primaryText }]}>English Song Title *</Text>
                   <TextInput
-                    style={styles.formInput}
+                    style={themedInputStyle}
                     value={songTitle}
                     onChangeText={setSongTitle}
                     placeholder="e.g. Read Your Bible, Pray Every Day / Father Abraham"
-                    placeholderTextColor="#64748B"
+                    placeholderTextColor={placeholderColor}
                   />
                 </View>
 
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.inputMiniLabel}>Telugu Song Title (తెలుగు పాట శీర్షిక)</Text>
+                  <Text style={[styles.inputMiniLabel, { color: primaryText }]}>Telugu Song Title (తెలుగు పాట శీర్షిక)</Text>
                   <TextInput
-                    style={styles.formInput}
+                    style={themedInputStyle}
                     value={songTelugu}
                     onChangeText={setSongTelugu}
                     placeholder="e.g. బైబిల్ చదువు ప్రార్థన చేయి"
-                    placeholderTextColor="#64748B"
+                    placeholderTextColor={placeholderColor}
                   />
                 </View>
 
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.inputMiniLabel}>Song Category</Text>
+                  <Text style={[styles.inputMiniLabel, { color: primaryText }]}>Song Category</Text>
                   <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
                     {[
                       { key: 'action_song', label: 'Action Song' },
@@ -1227,11 +1362,21 @@ export default function AdminContentManagerModal({
                     ].map(c => (
                       <TouchableOpacity
                         key={c.key}
-                        style={[styles.categoryChip, songCategory === c.key && styles.categoryChipActive]}
+                        style={[
+                          styles.categoryChip,
+                          { backgroundColor: secondarySurface, borderColor },
+                          songCategory === c.key && styles.categoryChipActive,
+                        ]}
                         onPress={() => setSongCategory(c.key as any)}
                         activeOpacity={0.8}
                       >
-                        <Text style={[styles.categoryChipText, songCategory === c.key && styles.categoryChipTextActive]}>
+                        <Text
+                          style={[
+                            styles.categoryChipText,
+                            { color: secondaryText },
+                            songCategory === c.key && styles.categoryChipTextActive,
+                          ]}
+                        >
                           {c.label}
                         </Text>
                       </TouchableOpacity>
@@ -1241,36 +1386,50 @@ export default function AdminContentManagerModal({
               </View>
 
               {/* Section 2: Media Attachments */}
-              <View style={styles.formCardSection}>
-                <Text style={styles.formSectionHeading}>2. MEDIA ATTACHMENTS (YOUTUBE / AUDIO / THUMBNAIL)</Text>
-                <Text style={styles.formSectionHelper}>
+              <View style={themedCardStyle}>
+                <Text style={[styles.formSectionHeading, { color: accentBlue }]}>2. MEDIA ATTACHMENTS (YOUTUBE / AUDIO / THUMBNAIL)</Text>
+                <Text style={[styles.formSectionHelper, { color: secondaryText }]}>
                   Attach a YouTube video ID or full link, an MP3 audio track, or a colorful video thumbnail.
                 </Text>
 
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.inputMiniLabel}>YouTube Video ID or Link</Text>
+                  <Text style={[styles.inputMiniLabel, { color: primaryText }]}>YouTube Video ID or Link</Text>
                   <TextInput
-                    style={styles.formInput}
+                    style={themedInputStyle}
                     value={songVideoId}
                     onChangeText={setSongVideoId}
                     placeholder="e.g. AyKSwGvUbcY or https://youtu.be/..."
-                    placeholderTextColor="#64748B"
+                    placeholderTextColor={placeholderColor}
                   />
                 </View>
 
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.inputMiniLabel}>Audio Track & Custom Artwork</Text>
+                  <Text style={[styles.inputMiniLabel, { color: primaryText }]}>Audio Track & Custom Artwork</Text>
                   <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
-                    <TouchableOpacity style={[styles.uploadImageBtn, { flex: 1 }]} onPress={handlePickAudioFile} activeOpacity={0.8}>
-                      <Upload size={14} color="#93C5FD" />
-                      <Text style={styles.uploadImageBtnText} numberOfLines={1}>
+                    <TouchableOpacity
+                      style={[
+                        styles.uploadImageBtn,
+                        { flex: 1, backgroundColor: isDark ? '#1E3A8A' : 'rgba(37, 99, 235, 0.1)', borderColor: '#3B82F6' },
+                      ]}
+                      onPress={handlePickAudioFile}
+                      activeOpacity={0.8}
+                    >
+                      <Upload size={14} color={accentBlue} />
+                      <Text style={[styles.uploadImageBtnText, { color: accentBlue }]} numberOfLines={1}>
                         {songAudioName ? `Audio: ${songAudioName}` : 'Attach Audio (MP3)'}
                       </Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity style={[styles.uploadImageBtn, { flex: 1 }]} onPress={handlePickSongThumbnail} activeOpacity={0.8}>
-                      <Upload size={14} color="#93C5FD" />
-                      <Text style={styles.uploadImageBtnText} numberOfLines={1}>
+                    <TouchableOpacity
+                      style={[
+                        styles.uploadImageBtn,
+                        { flex: 1, backgroundColor: isDark ? '#1E3A8A' : 'rgba(37, 99, 235, 0.1)', borderColor: '#3B82F6' },
+                      ]}
+                      onPress={handlePickSongThumbnail}
+                      activeOpacity={0.8}
+                    >
+                      <Upload size={14} color={accentBlue} />
+                      <Text style={[styles.uploadImageBtnText, { color: accentBlue }]} numberOfLines={1}>
                         {songThumbnailUrl ? 'Change Thumbnail' : 'Pick Thumbnail'}
                       </Text>
                     </TouchableOpacity>
@@ -1278,7 +1437,7 @@ export default function AdminContentManagerModal({
 
                   {songAudioName ? (
                     <View style={[styles.uploadedPreviewRow, { marginTop: 6 }]}>
-                      <CheckCircle size={14} color="#34D399" />
+                      <CheckCircle size={14} color="#10B981" />
                       <Text style={styles.uploadedSuccessText} numberOfLines={1}>Audio track linked: {songAudioName}</Text>
                       <TouchableOpacity onPress={() => { setSongAudioUrl(''); setSongAudioName(''); }} style={{ marginLeft: 'auto' }}>
                         <Text style={styles.removeImageText}>Remove</Text>
@@ -1288,7 +1447,7 @@ export default function AdminContentManagerModal({
 
                   {songThumbnailUrl ? (
                     <View style={[styles.uploadedPreviewRow, { marginTop: 6 }]}>
-                      <CheckCircle size={14} color="#34D399" />
+                      <CheckCircle size={14} color="#10B981" />
                       <Text style={styles.uploadedSuccessText} numberOfLines={1}>Custom thumbnail attached</Text>
                       <TouchableOpacity onPress={() => setSongThumbnailUrl('')} style={{ marginLeft: 'auto' }}>
                         <Text style={styles.removeImageText}>Remove</Text>
@@ -1299,53 +1458,57 @@ export default function AdminContentManagerModal({
               </View>
 
               {/* Section 3: Bilingual Lyrics */}
-              <View style={styles.formCardSection}>
-                <Text style={styles.formSectionHeading}>3. BILINGUAL LYRICS</Text>
-                <Text style={styles.formSectionHelper}>
+              <View style={themedCardStyle}>
+                <Text style={[styles.formSectionHeading, { color: accentBlue }]}>3. BILINGUAL LYRICS</Text>
+                <Text style={[styles.formSectionHelper, { color: secondaryText }]}>
                   Provide the lyrics with motion guides or verse lines for children and teachers.
                 </Text>
 
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.inputMiniLabel}>English Lyrics & Action Motions</Text>
+                  <Text style={[styles.inputMiniLabel, { color: primaryText }]}>English Lyrics & Action Motions</Text>
                   <TextInput
-                    style={[styles.formInput, { height: 120, textAlignVertical: 'top' }]}
+                    style={[themedInputStyle, { height: 120, textAlignVertical: 'top' }]}
                     value={songLyricsEng}
                     onChangeText={setSongLyricsEng}
                     placeholder="English lyrics with action choreography (e.g. Clap hands, Jump up)..."
-                    placeholderTextColor="#64748B"
+                    placeholderTextColor={placeholderColor}
                     multiline
                   />
                 </View>
 
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.inputMiniLabel}>Telugu Lyrics (తెలుగు పాట సాహిత్యం)</Text>
+                  <Text style={[styles.inputMiniLabel, { color: primaryText }]}>Telugu Lyrics (తెలుగు పాట సాహిత్యం)</Text>
                   <TextInput
-                    style={[styles.formInput, { height: 120, textAlignVertical: 'top' }]}
+                    style={[themedInputStyle, { height: 120, textAlignVertical: 'top' }]}
                     value={songLyricsTel}
                     onChangeText={setSongLyricsTel}
                     placeholder="ఈ పాట యొక్క తెలుగు సాహిత్యం..."
-                    placeholderTextColor="#64748B"
+                    placeholderTextColor={placeholderColor}
                     multiline
                   />
                 </View>
               </View>
 
               {/* Section 4: Publishing Status */}
-              <View style={[styles.formCardSection, styles.toggleRowCard]}>
+              <View style={[themedCardStyle, styles.toggleRowCard]}>
                 <View style={{ flex: 1, marginRight: 10 }}>
-                  <Text style={styles.toggleTitle}>Publish to Rhema Kids App</Text>
-                  <Text style={styles.toggleDesc}>
+                  <Text style={[styles.toggleTitle, { color: primaryText }]}>Publish to Rhema Kids App</Text>
+                  <Text style={[styles.toggleDesc, { color: secondaryText }]}>
                     {songPublished
                       ? 'Live: Children and parents can sing along and practice actions immediately.'
                       : 'Draft: Saved privately for Sunday School teachers to review before release.'}
                   </Text>
                 </View>
                 <TouchableOpacity
-                  style={[styles.toggleBtn, songPublished && styles.toggleBtnActive]}
+                  style={[
+                    styles.toggleBtn,
+                    { backgroundColor: secondarySurface, borderColor },
+                    songPublished && styles.toggleBtnActive,
+                  ]}
                   onPress={() => setSongPublished(!songPublished)}
                   activeOpacity={0.85}
                 >
-                  <Text style={[styles.toggleBtnText, songPublished && styles.toggleBtnTextActive]}>
+                  <Text style={[styles.toggleBtnText, { color: secondaryText }, songPublished && styles.toggleBtnTextActive]}>
                     {songPublished ? 'Published' : 'Draft Only'}
                   </Text>
                 </TouchableOpacity>
@@ -1353,9 +1516,13 @@ export default function AdminContentManagerModal({
             </ScrollView>
 
             {/* Bottom Actions Bar */}
-            <View style={styles.editorBottomBar}>
-              <TouchableOpacity style={styles.cancelActionBtn} onPress={() => setShowSongModal(false)} activeOpacity={0.8}>
-                <Text style={styles.cancelActionText}>Cancel</Text>
+            <View style={[styles.editorBottomBar, { backgroundColor: screenBg, borderTopColor: borderColor, paddingBottom: safeBottom }]}>
+              <TouchableOpacity
+                style={[styles.cancelActionBtn, { backgroundColor: secondarySurface, borderColor, borderWidth: 1 }]}
+                onPress={() => setShowSongModal(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.cancelActionText, { color: primaryText }]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.saveActionBtn} onPress={handleSaveSong} disabled={saving} activeOpacity={0.85}>
                 {saving ? (
@@ -1382,9 +1549,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 10,
+    paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#1E293B',
+    gap: 10,
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
   },
   hubBadgeRow: {
     flexDirection: 'row',
@@ -1419,13 +1592,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   headerTitle: {
-    fontSize: 19,
+    fontSize: 18,
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     fontWeight: '800',
     color: '#FFFFFF',
   },
   headerSubtitle: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: '#94A3B8',
     marginTop: 2,
   },
@@ -1440,14 +1613,18 @@ const styles = StyleSheet.create({
     borderColor: '#334155',
   },
   navBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#1E293B',
-    gap: 10,
+  },
+  segmentedTrack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 4,
+    gap: 4,
   },
   tabsRow: {
     flexDirection: 'row',
@@ -1456,24 +1633,22 @@ const styles = StyleSheet.create({
     paddingRight: 6,
   },
   tab: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 13,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#1E293B',
-    borderWidth: 1,
-    borderColor: '#334155',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 9,
+    borderRadius: 9,
   },
   tabActive: {
     backgroundColor: '#2563EB',
-    borderColor: '#3B82F6',
   },
   tabText: {
     fontSize: 12,
     color: '#94A3B8',
-    fontWeight: '600',
+    fontWeight: '700',
   },
   tabTextActive: {
     color: '#FFFFFF',
@@ -1483,18 +1658,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#2563EB',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 999,
+    borderRadius: 18,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
-    borderWidth: 1,
-    borderColor: '#60A5FA',
+    gap: 4,
     shadowColor: '#2563EB',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.25,
     shadowRadius: 4,
-    elevation: 3,
+    elevation: 2,
   },
   createBtnText: {
     color: '#FFFFFF',
@@ -1536,6 +1709,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+  },
+  cardShadowLight: {
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  emptyBox: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 28,
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
+  emptyTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  emptySub: {
+    fontSize: 12,
+    textAlign: 'center',
   },
   cardCoverBox: {
     width: 44,

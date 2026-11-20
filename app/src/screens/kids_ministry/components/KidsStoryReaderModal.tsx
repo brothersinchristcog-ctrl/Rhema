@@ -12,7 +12,7 @@ import {
   StatusBar,
   Image,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView, initialWindowMetrics } from 'react-native-safe-area-context';
 import {
   X,
   BookOpen,
@@ -23,6 +23,7 @@ import {
   Sparkles,
 } from 'lucide-react-native';
 import { KidsBibleStory } from '../../../types/KidsMinistryTypes';
+import { useTheme } from '../../../context/ThemeContext';
 
 const { width } = Dimensions.get('window');
 
@@ -37,11 +38,23 @@ export default function KidsStoryReaderModal({
   story,
   onClose,
 }: KidsStoryReaderModalProps) {
-  if (!story) return null;
-
-  const insets = useSafeAreaInsets();
+  const { isDark, colors: themeColors } = useTheme();
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [langMode, setLangMode] = useState<'both' | 'english' | 'telugu'>('both');
+
+  if (!story) return null;
+
+  const screenBg = isDark ? '#000000' : (themeColors.background || '#FAF7F2');
+  const cardBg = isDark ? '#18181B' : (themeColors.surface || '#FFFFFF');
+  const innerBg = isDark ? '#09090B' : '#F1F5F9';
+  const border = isDark ? '#27272A' : (themeColors.border || '#E2E8F0');
+  const textPrimary = isDark ? '#FFFFFF' : (themeColors.text || '#0F172A');
+  const textSecondary = isDark ? '#9CA3AF' : (themeColors.textSecondary || '#64748B');
+  const textBody = isDark ? '#E4E4E7' : '#334155';
+  const goldAccent = isDark ? '#FBBF24' : '#D97706';
+  const pillActiveBg = isDark ? '#FFFFFF' : '#0F172A';
+  const pillActiveText = isDark ? '#000000' : '#FFFFFF';
+  const barStyle = isDark ? 'light-content' : 'dark-content';
 
   const pages = story.pages || [];
   const totalPages = pages.length;
@@ -69,146 +82,185 @@ export default function KidsStoryReaderModal({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
-      <View style={[styles.container, { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) }]}>
-        <StatusBar barStyle="light-content" backgroundColor="#000000" />
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+        <SafeAreaView style={[styles.container, { backgroundColor: screenBg }]} edges={['top', 'bottom']}>
+          <StatusBar barStyle={barStyle} backgroundColor={screenBg} />
 
-        {/* ── TOP NAV HEADER ── */}
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <X size={20} color="#FFFFFF" />
-          </TouchableOpacity>
+          {/* ── TOP NAV HEADER ── */}
+          <View style={[styles.headerRow, { borderBottomColor: border }]}>
+            <TouchableOpacity
+              onPress={onClose}
+              style={[styles.closeBtn, { backgroundColor: isDark ? '#18181B' : '#F1F5F9' }]}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <X size={20} color={textPrimary} />
+            </TouchableOpacity>
 
-          <View style={styles.headerTitles}>
-            <Text style={styles.headerTitleSerif} numberOfLines={1}>{story.title}</Text>
-            <Text style={styles.headerTeluguSub} numberOfLines={1}>{story.titleTelugu}</Text>
-          </View>
-
-          {/* Spacer to keep center title balanced without audio button */}
-          <View style={styles.headerSpacer} />
-        </View>
-
-        {/* ── LANGUAGE FILTER BAR & PROGRESS ── */}
-        <View style={styles.controlBar}>
-          {/* Page Progress Indicator */}
-          <View style={styles.pageIndicator}>
-            <Text style={styles.pageIndicatorText}>
-              Page {currentPageIndex + 1} of {totalPages}
-            </Text>
-          </View>
-
-          {/* Lang Selector */}
-          <View style={styles.langPillsRow}>
-            {(['both', 'english', 'telugu'] as const).map(m => (
-              <TouchableOpacity
-                key={m}
-                style={[styles.langPill, langMode === m && styles.langPillActive]}
-                onPress={() => setLangMode(m)}
-              >
-                <Text style={[styles.langPillText, langMode === m && styles.langPillTextActive]}>
-                  {m === 'both' ? 'Bilingual' : m.toUpperCase()}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* ── MAIN STORY PAGE CONTENT ── */}
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-          {currentPage && (
-            <View style={styles.pageCard}>
-              {/* Illustration: Show Uploaded Image if available, otherwise display bubble */}
-              {(currentPage.imageUrl || story.coverImageUrl) ? (
-                <View style={styles.illustrationImageBox}>
-                  <Image
-                    source={{ uri: currentPage.imageUrl || story.coverImageUrl }}
-                    style={styles.illustrationImage}
-                    resizeMode="cover"
-                  />
-                </View>
-              ) : (
-                <View style={styles.illustrationBubble}>
-                  <Text style={styles.illustrationEmoji}>{currentPage.illustrationEmoji || story.coverEmoji || '📖'}</Text>
-                </View>
-              )}
-
-              {/* Page Heading */}
-              {currentPage.heading ? <Text style={styles.pageHeading}>{currentPage.heading}</Text> : null}
-              {story.scriptureRef ? <Text style={styles.scriptureRefBadge}>{story.scriptureRef}</Text> : null}
-
-              <View style={styles.divider} />
-
-              {/* English Narrative */}
-              {(langMode === 'both' || langMode === 'english') && (
-                <View style={styles.textSection}>
-                  <Text style={styles.langTag}>ENGLISH</Text>
-                  <Text style={styles.englishParagraph}>{currentPage.textEnglish}</Text>
-                </View>
-              )}
-
-              {/* Telugu Narrative */}
-              {(langMode === 'both' || langMode === 'telugu') && (
-                <View style={styles.textSection}>
-                  <Text style={[styles.langTag, { color: '#FBBF24' }]}>తెలుగు (TELUGU)</Text>
-                  <Text style={styles.teluguParagraph}>{currentPage.textTelugu}</Text>
-                </View>
-              )}
+            <View style={styles.headerTitles}>
+              <Text style={[styles.headerTitleSerif, { color: textPrimary }]} numberOfLines={1}>
+                {story.title}
+              </Text>
+              <Text style={[styles.headerTeluguSub, { color: textSecondary }]} numberOfLines={1}>
+                {story.titleTelugu}
+              </Text>
             </View>
-          )}
 
-          {/* If last page: show reflection questions */}
-          {isLastPage && story.reflectionQuestions && story.reflectionQuestions.length > 0 && (
-            <View style={styles.reflectionCard}>
-              <View style={styles.reflectionHeader}>
-                <HelpCircle size={18} color="#FBBF24" />
-                <Text style={styles.reflectionTitle}>Family Discussion Questions</Text>
-              </View>
-              {story.reflectionQuestions.map((q, idx) => (
-                <View key={idx} style={styles.questionItem}>
-                  <Text style={styles.questionEng}>Q{idx + 1}. {q.questionEnglish}</Text>
-                  <Text style={styles.questionTel}>— {q.questionTelugu}</Text>
-                </View>
+            {/* Spacer to keep center title balanced without audio button */}
+            <View style={styles.headerSpacer} />
+          </View>
+
+          {/* ── LANGUAGE FILTER BAR & PROGRESS ── */}
+          <View style={[styles.controlBar, { borderBottomColor: border }]}>
+            {/* Page Progress Indicator */}
+            <View style={[styles.pageIndicator, { backgroundColor: isDark ? '#18181B' : '#FEF3C7' }]}>
+              <Text style={[styles.pageIndicatorText, { color: goldAccent }]}>
+                Page {currentPageIndex + 1} of {totalPages}
+              </Text>
+            </View>
+
+            {/* Lang Selector */}
+            <View style={[styles.langPillsRow, { backgroundColor: isDark ? '#18181B' : '#F1F5F9', borderWidth: 1, borderColor: border }]}>
+              {(['both', 'english', 'telugu'] as const).map(m => (
+                <TouchableOpacity
+                  key={m}
+                  style={[styles.langPill, langMode === m && { backgroundColor: pillActiveBg }]}
+                  onPress={() => setLangMode(m)}
+                >
+                  <Text
+                    style={[
+                      styles.langPillText,
+                      { color: textSecondary },
+                      langMode === m && { color: pillActiveText },
+                    ]}
+                  >
+                    {m === 'both' ? 'Bilingual' : m.toUpperCase()}
+                  </Text>
+                </TouchableOpacity>
               ))}
             </View>
-          )}
-        </ScrollView>
-
-        {/* ── BOTTOM PAGINATION NAVIGATION ── */}
-        <View style={styles.footerNav}>
-          <TouchableOpacity
-            style={[styles.navBtn, currentPageIndex === 0 && styles.navBtnDisabled]}
-            onPress={handlePrev}
-            disabled={currentPageIndex === 0}
-          >
-            <ChevronLeft size={18} color={currentPageIndex === 0 ? '#52525B' : '#FFFFFF'} />
-            <Text style={[styles.navBtnText, currentPageIndex === 0 && { color: '#52525B' }]}>
-              Previous
-            </Text>
-          </TouchableOpacity>
-
-          {/* Page Dots */}
-          <View style={styles.dotsRow}>
-            {pages.map((_, i) => (
-              <View
-                key={i}
-                style={[styles.dot, i === currentPageIndex && styles.dotActive]}
-              />
-            ))}
           </View>
 
-          {isLastPage ? (
-            <TouchableOpacity style={styles.finishBtn} onPress={handleCompleteStory}>
-              <Sparkles size={16} color="#000000" />
-              <Text style={styles.finishBtnText}>Finish Story</Text>
+          {/* ── MAIN STORY PAGE CONTENT ── */}
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+            {currentPage && (
+              <View style={[styles.pageCard, { backgroundColor: cardBg, borderColor: border }, !isDark && styles.lightShadow]}>
+                {/* Illustration: Show Uploaded Image if available, otherwise display bubble */}
+                {(currentPage.imageUrl || story.coverImageUrl) ? (
+                  <View style={[styles.illustrationImageBox, { borderColor: border, backgroundColor: innerBg }]}>
+                    <Image
+                      source={{ uri: currentPage.imageUrl || story.coverImageUrl }}
+                      style={styles.illustrationImage}
+                      resizeMode="cover"
+                    />
+                  </View>
+                ) : (
+                  <View style={[styles.illustrationBubble, { backgroundColor: innerBg, borderColor: goldAccent }]}>
+                    <Text style={styles.illustrationEmoji}>{currentPage.illustrationEmoji || story.coverEmoji || '📖'}</Text>
+                  </View>
+                )}
+
+                {/* Page Heading */}
+                {currentPage.heading ? (
+                  <Text style={[styles.pageHeading, { color: textPrimary }]}>{currentPage.heading}</Text>
+                ) : null}
+                {story.scriptureRef ? (
+                  <Text style={[styles.scriptureRefBadge, { color: textSecondary }]}>{story.scriptureRef}</Text>
+                ) : null}
+
+                <View style={[styles.divider, { backgroundColor: border }]} />
+
+                {/* English Narrative */}
+                {(langMode === 'both' || langMode === 'english') && (
+                  <View style={styles.textSection}>
+                    <Text style={[styles.langTag, { color: textSecondary }]}>ENGLISH</Text>
+                    <Text style={[styles.englishParagraph, { color: textBody }]}>{currentPage.textEnglish}</Text>
+                  </View>
+                )}
+
+                {/* Telugu Narrative */}
+                {(langMode === 'both' || langMode === 'telugu') && (
+                  <View style={styles.textSection}>
+                    <Text style={[styles.langTag, { color: goldAccent }]}>తెలుగు (TELUGU)</Text>
+                    <Text style={[styles.teluguParagraph, { color: textPrimary }]}>{currentPage.textTelugu}</Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* If last page: show reflection questions */}
+            {isLastPage && story.reflectionQuestions && story.reflectionQuestions.length > 0 && (
+              <View
+                style={[
+                  styles.reflectionCard,
+                  {
+                    backgroundColor: isDark ? 'rgba(251, 191, 36, 0.08)' : '#FFFBEB',
+                    borderColor: isDark ? 'rgba(251, 191, 36, 0.25)' : '#FDE68A',
+                  },
+                ]}
+              >
+                <View style={styles.reflectionHeader}>
+                  <HelpCircle size={18} color={goldAccent} />
+                  <Text style={[styles.reflectionTitle, { color: goldAccent }]}>Family Discussion Questions</Text>
+                </View>
+                {story.reflectionQuestions.map((q, idx) => (
+                  <View key={idx} style={styles.questionItem}>
+                    <Text style={[styles.questionEng, { color: textPrimary }]}>Q{idx + 1}. {q.questionEnglish}</Text>
+                    <Text style={[styles.questionTel, { color: textSecondary }]}>— {q.questionTelugu}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </ScrollView>
+
+          {/* ── BOTTOM PAGINATION NAVIGATION ── */}
+          <View style={[styles.footerNav, { backgroundColor: screenBg, borderTopColor: border }]}>
+            <TouchableOpacity
+              style={[
+                styles.navBtn,
+                { backgroundColor: isDark ? '#18181B' : '#F1F5F9', borderWidth: 1, borderColor: border },
+                currentPageIndex === 0 && styles.navBtnDisabled,
+              ]}
+              onPress={handlePrev}
+              disabled={currentPageIndex === 0}
+            >
+              <ChevronLeft size={18} color={currentPageIndex === 0 ? textSecondary : textPrimary} />
+              <Text style={[styles.navBtnText, { color: currentPageIndex === 0 ? textSecondary : textPrimary }]}>
+                Previous
+              </Text>
             </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={styles.navBtn} onPress={handleNext}>
-              <Text style={styles.navBtnText}>Next</Text>
-              <ChevronRight size={18} color="#FFFFFF" />
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
+
+            {/* Page Dots */}
+            <View style={styles.dotsRow}>
+              {pages.map((_, i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.dot,
+                    { backgroundColor: isDark ? '#27272A' : '#CBD5E1' },
+                    i === currentPageIndex && [styles.dotActive, { backgroundColor: goldAccent }],
+                  ]}
+                />
+              ))}
+            </View>
+
+            {isLastPage ? (
+              <TouchableOpacity style={styles.finishBtn} onPress={handleCompleteStory}>
+                <Sparkles size={16} color="#000000" />
+                <Text style={styles.finishBtnText}>Finish Story</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.navBtn, { backgroundColor: isDark ? '#18181B' : '#F1F5F9', borderWidth: 1, borderColor: border }]}
+                onPress={handleNext}
+              >
+                <Text style={[styles.navBtnText, { color: textPrimary }]}>Next</Text>
+                <ChevronRight size={18} color={textPrimary} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </SafeAreaView>
+      </SafeAreaProvider>
     </Modal>
   );
 }
@@ -314,6 +366,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#27272A',
     alignItems: 'center',
+  },
+  lightShadow: {
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
   illustrationBubble: {
     width: 90,

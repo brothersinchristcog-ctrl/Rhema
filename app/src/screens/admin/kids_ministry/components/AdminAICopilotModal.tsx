@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -10,26 +10,26 @@ import {
   ActivityIndicator,
   Alert,
   Share,
+  Platform,
+  StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   X,
   Sparkles,
   BookOpen,
   Award,
   Calendar,
-  Check,
   Share2,
   Save,
-  RefreshCw,
-  Layers,
   Heart,
-  ChevronRight,
-  Send,
   Zap,
 } from 'lucide-react-native';
 import KidsAIService, { AIGeneratedLessonPlan } from '../../../../services/KidsAIService';
 import KidsMinistryService from '../../../../services/KidsMinistryService';
 import { KidsClassTier, KidsQuiz, KidsBibleStory } from '../../../../types/KidsMinistryTypes';
+import { useAdminTheme } from '../../../../utils/adminThemeHelper';
+import BibleReferencePickerModal, { BiblePickerResult } from '../../quiz/BibleReferencePickerModal';
 
 interface Props {
   visible: boolean;
@@ -57,11 +57,55 @@ export default function AdminAICopilotModal({
   onClose,
   onContentSaved,
 }: Props) {
+  const {
+    isDark,
+    screenBg,
+    cardSurface,
+    secondarySurface,
+    primaryText,
+    secondaryText,
+    borderColor,
+    barStyle,
+  } = useAdminTheme();
+
+  const insets = useSafeAreaInsets();
+  const safeTop = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight || 28) : 44) + 6;
+
   const [mode, setMode] = useState<AIMode>('lesson');
   const [topicInput, setTopicInput] = useState('David and Goliath (1 Samuel 17)');
-  const [selectedTier, setSelectedTier] = useState<KidsClassTier | 'all'>('all');
+  const [selectedTier] = useState<KidsClassTier | 'all'>('all');
   const [loading, setLoading] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [showBiblePicker, setShowBiblePicker] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (!loading) {
+      setElapsedSeconds(0);
+      return;
+    }
+    const timer = setInterval(() => {
+      setElapsedSeconds(prev => prev + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [loading]);
+
+  useEffect(() => {
+    if (!visible && abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setLoading(false);
+    }
+  }, [visible]);
+
+  const handleCancelGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setLoading(false);
+  };
 
   // Results State
   const [generatedLesson, setGeneratedLesson] = useState<AIGeneratedLessonPlan | null>(null);
@@ -75,35 +119,50 @@ export default function AdminAICopilotModal({
       return;
     }
 
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       setLoading(true);
+      setElapsedSeconds(0);
       if (mode === 'lesson') {
         const result = await KidsAIService.generateLessonPlan(
           topicInput.trim(),
           selectedTier === 'all' ? undefined : selectedTier,
-          45
+          45,
+          controller.signal
         );
         setGeneratedLesson(result);
       } else if (mode === 'quiz') {
-        const result = await KidsAIService.generateQuiz(topicInput.trim(), 4, 'medium');
+        const result = await KidsAIService.generateQuiz(topicInput.trim(), 4, 'medium', controller.signal);
         setGeneratedQuiz(result);
       } else if (mode === 'story') {
-        const result = await KidsAIService.generateStory(topicInput.trim());
+        const result = await KidsAIService.generateStory(topicInput.trim(), controller.signal);
         setGeneratedStory(result);
       } else if (mode === 'verse_actions') {
         const result = await KidsAIService.generateMemoryVerseAids(
           topicInput.trim(),
-          'Key Scripture'
+          topicInput.trim(),
+          controller.signal
         );
         setGeneratedVerseAids(result);
       }
     } catch (e: any) {
-      console.error('Claude AI Generation Error:', e);
+      if (e?.isUserCancelled || controller.signal.aborted) {
+        return;
+      }
+      console.error('Rhema AI Generation Error:', e);
       Alert.alert(
         'Generation Notice',
-        e.message || 'Could not generate with Claude. Please check internet connection.'
+        e.message || 'Could not generate content. Please check your internet connection.'
       );
     } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
       setLoading(false);
     }
   };
@@ -162,22 +221,23 @@ export default function AdminAICopilotModal({
   const handleShareLesson = async () => {
     if (!generatedLesson) return;
     try {
-      const scheduleText = generatedLesson.schedule
+      const scheduleText = (generatedLesson.schedule || [])
         .map(s => `• ${s.timeMinutes}m - ${s.segment}: ${s.description}`)
         .join('\n');
 
-      const message = `🌟 *AI SUNDAY SCHOOL LESSON BRIEF*\n` +
+      const message =
+        `🌟 *AI SUNDAY SCHOOL LESSON BRIEF*\n` +
         `━━━━━━━━━━━━━━━━━━━━\n` +
         `*Lesson*: ${generatedLesson.title}\n` +
         `*తెలుగు*: ${generatedLesson.titleTelugu}\n` +
         `*Scripture*: ${generatedLesson.scriptureRef} (${generatedLesson.scriptureRefTelugu})\n\n` +
         `🎯 *BIG TRUTH*:\n${generatedLesson.bigIdea}\n${generatedLesson.bigIdeaTelugu}\n\n` +
-        `⭐ *MEMORY VERSE*:\n"${generatedLesson.memoryVerse.verseEnglish}" — ${generatedLesson.memoryVerse.reference}\n` +
-        `"${generatedLesson.memoryVerse.verseTelugu}" — ${generatedLesson.memoryVerse.referenceTelugu}\n\n` +
-        `🙏 *TEACHER PRAYER*:\n${generatedLesson.teacherPrayer.english}\n${generatedLesson.teacherPrayer.telugu}\n\n` +
-        `📦 *SUPPLIES*:\n${generatedLesson.suppliesNeeded.join(', ')}\n\n` +
+        `⭐ *MEMORY VERSE*:\n"${generatedLesson.memoryVerse?.verseEnglish || ''}" — ${generatedLesson.memoryVerse?.reference || ''}\n` +
+        `"${generatedLesson.memoryVerse?.verseTelugu || ''}" — ${generatedLesson.memoryVerse?.referenceTelugu || ''}\n\n` +
+        `🙏 *TEACHER PRAYER*:\n${generatedLesson.teacherPrayer?.english || ''}\n${generatedLesson.teacherPrayer?.telugu || ''}\n\n` +
+        `📦 *SUPPLIES*:\n${(generatedLesson.suppliesNeeded || []).join(', ')}\n\n` +
         `⏰ *SCHEDULE*:\n${scheduleText}\n\n` +
-        `_Generated via Rhema AI Kids Assistant (Claude 3.5 Sonnet)_`;
+        `_Generated via Rhema AI Kids Assistant_`;
 
       await Share.share({ message });
     } catch (e) {
@@ -187,25 +247,35 @@ export default function AdminAICopilotModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: screenBg, paddingTop: safeTop }]}>
+        <StatusBar barStyle={barStyle} backgroundColor={screenBg} />
+
         {/* Header */}
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <X size={20} color="#FFFFFF" />
+        <View style={[styles.headerRow, { borderBottomColor: borderColor }]}>
+          <TouchableOpacity
+            onPress={onClose}
+            style={[styles.closeBtn, { backgroundColor: secondarySurface }]}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <X size={20} color={primaryText} />
           </TouchableOpacity>
           <View style={styles.headerTitles}>
-            <View style={styles.aiBadgeRow}>
-              <Sparkles size={14} color="#FBBF24" />
-              <Text style={styles.aiBadgeText}>CLAUDE 3.5 SONNET CO-PILOT</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Sparkles size={16} color="#D97706" />
+              <Text style={[styles.titleSerif, { color: primaryText }]} numberOfLines={1} adjustsFontSizeToFit>
+                Rhema AI Studio
+              </Text>
             </View>
-            <Text style={styles.titleSerif}>AI Kids Ministry Studio</Text>
+            <Text style={{ fontSize: 11.5, color: secondaryText, marginTop: 2 }} numberOfLines={1}>
+              Bilingual Kids Ministry Content Creator
+            </Text>
           </View>
           <View style={{ width: 36 }} />
         </View>
 
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-          {/* Mode Selector Tabs */}
-          <View style={styles.modeTabsRow}>
+          {/* Mode Selector Tabs (Clean 2x2 Grid so labels never clip or overlap) */}
+          <View style={[styles.modeTabsGrid, { backgroundColor: cardSurface, borderColor }]}>
             {(
               [
                 { id: 'lesson', label: 'Lesson Plan', icon: Calendar },
@@ -219,13 +289,23 @@ export default function AdminAICopilotModal({
               return (
                 <TouchableOpacity
                   key={tab.id}
-                  style={[styles.modeTab, active && styles.modeTabActive]}
-                  onPress={() => {
-                    setMode(tab.id);
-                  }}
+                  style={[
+                    styles.modeTab,
+                    { backgroundColor: secondarySurface, borderColor },
+                    active && styles.modeTabActive,
+                  ]}
+                  onPress={() => setMode(tab.id)}
+                  activeOpacity={0.85}
                 >
-                  <IconComp size={14} color={active ? '#000000' : '#9CA3AF'} />
-                  <Text style={[styles.modeTabText, active && styles.modeTabTextActive]}>
+                  <IconComp size={15} color={active ? '#000000' : secondaryText} />
+                  <Text
+                    style={[
+                      styles.modeTabText,
+                      { color: secondaryText },
+                      active && styles.modeTabTextActive,
+                    ]}
+                    numberOfLines={1}
+                  >
                     {tab.label}
                   </Text>
                 </TouchableOpacity>
@@ -234,13 +314,23 @@ export default function AdminAICopilotModal({
           </View>
 
           {/* Topic Input Box */}
-          <View style={styles.inputCard}>
-            <Text style={styles.inputLabel}>SCRIPTURE PASSAGE OR BIBLE TOPIC</Text>
+          <View style={[styles.inputCard, { backgroundColor: cardSurface, borderColor }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <Text style={styles.inputLabel}>SCRIPTURE PASSAGE OR BIBLE TOPIC</Text>
+              <TouchableOpacity
+                style={[styles.bibleSelectBtn, { backgroundColor: 'rgba(245, 158, 11, 0.14)', borderColor: 'rgba(245, 158, 11, 0.4)' }]}
+                onPress={() => setShowBiblePicker(true)}
+                activeOpacity={0.85}
+              >
+                <BookOpen size={13} color="#D97706" />
+                <Text style={styles.bibleSelectBtnText}>Select from Bible</Text>
+              </TouchableOpacity>
+            </View>
             <View style={styles.inputRow}>
               <TextInput
-                style={styles.textInput}
+                style={[styles.textInput, { backgroundColor: secondarySurface, borderColor, color: primaryText }]}
                 placeholder="e.g. David & Goliath (1 Samuel 17), Fruit of the Spirit..."
-                placeholderTextColor="#6B7280"
+                placeholderTextColor={secondaryText}
                 value={topicInput}
                 onChangeText={setTopicInput}
               />
@@ -262,15 +352,15 @@ export default function AdminAICopilotModal({
             </View>
 
             {/* Quick Suggestion Chips */}
-            <Text style={styles.chipsLabel}>Quick suggestions:</Text>
+            <Text style={[styles.chipsLabel, { color: secondaryText }]}>Quick suggestions:</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
               {SUGGESTION_CHIPS.map((chip, idx) => (
                 <TouchableOpacity
                   key={idx}
-                  style={styles.chip}
+                  style={[styles.chip, { backgroundColor: secondarySurface, borderColor }]}
                   onPress={() => setTopicInput(chip)}
                 >
-                  <Text style={styles.chipText}>{chip}</Text>
+                  <Text style={[styles.chipText, { color: primaryText }]}>{chip}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -278,66 +368,79 @@ export default function AdminAICopilotModal({
 
           {/* Loading Indicator */}
           {loading && (
-            <View style={styles.loadingCard}>
-              <ActivityIndicator size="large" color="#FBBF24" />
-              <Text style={styles.loadingTitle}>Claude 3.5 Sonnet is thinking...</Text>
-              <Text style={styles.loadingSub}>
-                Generating scriptural, bilingual Telugu & English material with teaching adaptations.
+            <View style={[styles.loadingCard, { backgroundColor: cardSurface, borderColor }]}>
+              <ActivityIndicator size="large" color="#F59E0B" />
+              <Text style={[styles.loadingTitle, { color: primaryText }]}>
+                Creating with Rhema AI... ({elapsedSeconds}s)
               </Text>
+              <Text style={[styles.loadingSub, { color: secondaryText }]}>
+                Crafting scriptural, bilingual Telugu & English Kids Ministry content.
+              </Text>
+              <TouchableOpacity
+                onPress={handleCancelGeneration}
+                style={[styles.cancelGenBtn, { borderColor }]}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.cancelGenBtnText, { color: secondaryText }]}>Cancel</Text>
+              </TouchableOpacity>
             </View>
           )}
 
           {/* RESULTS: MODE 1 LESSON PLAN */}
           {mode === 'lesson' && generatedLesson && !loading && (
-            <View style={styles.resultCard}>
+            <View style={[styles.resultCard, { backgroundColor: cardSurface, borderColor }]}>
               <View style={styles.resultHeader}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.resultBadge}>AI GENERATED BILINGUAL LESSON</Text>
-                  <Text style={styles.resultTitle}>{generatedLesson.title}</Text>
+                  <Text style={[styles.resultTitle, { color: primaryText }]}>{generatedLesson.title}</Text>
                   <Text style={styles.resultTitleTe}>{generatedLesson.titleTelugu}</Text>
-                  <Text style={styles.resultRef}>
+                  <Text style={[styles.resultRef, { color: secondaryText }]}>
                     📖 {generatedLesson.scriptureRef} ({generatedLesson.scriptureRefTelugu})
                   </Text>
                 </View>
                 <TouchableOpacity style={styles.shareActionBtn} onPress={handleShareLesson}>
-                  <Share2 size={16} color="#FBBF24" />
+                  <Share2 size={16} color="#D97706" />
                 </TouchableOpacity>
               </View>
 
               {/* Big Idea */}
               <View style={styles.highlightBox}>
                 <Text style={styles.highlightLabel}>BIG TRUTH / ప్రధాన సత్యం:</Text>
-                <Text style={styles.highlightEn}>{generatedLesson.bigIdea}</Text>
-                <Text style={styles.highlightTe}>{generatedLesson.bigIdeaTelugu}</Text>
+                <Text style={[styles.highlightEn, { color: primaryText }]}>{generatedLesson.bigIdea}</Text>
+                <Text style={[styles.highlightTe, { color: secondaryText }]}>{generatedLesson.bigIdeaTelugu}</Text>
               </View>
 
               {/* Memory Verse */}
-              <View style={styles.verseBox}>
-                <Text style={styles.verseBoxLabel}>⭐ MEMORY VERSE:</Text>
-                <Text style={styles.verseEn}>"{generatedLesson.memoryVerse.verseEnglish}"</Text>
-                <Text style={styles.verseRefTag}>— {generatedLesson.memoryVerse.reference}</Text>
-                <Text style={styles.verseTe}>"{generatedLesson.memoryVerse.verseTelugu}"</Text>
-                <Text style={styles.verseRefTag}>— {generatedLesson.memoryVerse.referenceTelugu}</Text>
-              </View>
+              {!!generatedLesson.memoryVerse && (
+                <View style={[styles.verseBox, { backgroundColor: secondarySurface }]}>
+                  <Text style={styles.verseBoxLabel}>⭐ MEMORY VERSE:</Text>
+                  <Text style={[styles.verseEn, { color: primaryText }]}>"{generatedLesson.memoryVerse.verseEnglish}"</Text>
+                  <Text style={styles.verseRefTag}>— {generatedLesson.memoryVerse.reference}</Text>
+                  <Text style={[styles.verseTe, { color: secondaryText }]}>"{generatedLesson.memoryVerse.verseTelugu}"</Text>
+                  <Text style={styles.verseRefTag}>— {generatedLesson.memoryVerse.referenceTelugu}</Text>
+                </View>
+              )}
 
               {/* Teacher Prayer Focus */}
-              <View style={styles.prepBox}>
-                <Text style={styles.prepLabel}>🙏 TEACHER PRAYER:</Text>
-                <Text style={styles.prepEn}>{generatedLesson.teacherPrayer.english}</Text>
-                <Text style={styles.prepTe}>{generatedLesson.teacherPrayer.telugu}</Text>
-                <Text style={[styles.prepLabel, { marginTop: 8 }]}>📦 SUPPLIES:</Text>
-                <Text style={styles.suppliesText}>{generatedLesson.suppliesNeeded.join(', ')}</Text>
+              <View style={[styles.prepBox, { backgroundColor: secondarySurface }]}>
+                <Text style={[styles.prepLabel, { color: secondaryText }]}>🙏 TEACHER PRAYER:</Text>
+                <Text style={[styles.prepEn, { color: primaryText }]}>{generatedLesson.teacherPrayer?.english}</Text>
+                <Text style={[styles.prepTe, { color: secondaryText }]}>{generatedLesson.teacherPrayer?.telugu}</Text>
+                <Text style={[styles.prepLabel, { color: secondaryText, marginTop: 8 }]}>📦 SUPPLIES:</Text>
+                <Text style={[styles.suppliesText, { color: primaryText }]}>
+                  {(generatedLesson.suppliesNeeded || []).join(', ')}
+                </Text>
               </View>
 
               {/* 45 Min Schedule */}
-              <View style={styles.scheduleBox}>
-                <Text style={styles.scheduleBoxLabel}>⏰ 45-MINUTE SCHEDULE:</Text>
-                {generatedLesson.schedule.map((item, idx) => (
+              <View style={[styles.scheduleBox, { backgroundColor: secondarySurface }]}>
+                <Text style={[styles.scheduleBoxLabel, { color: secondaryText }]}>⏰ 45-MINUTE SCHEDULE:</Text>
+                {(generatedLesson.schedule || []).map((item, idx) => (
                   <View key={idx} style={styles.schedItem}>
                     <Text style={styles.schedTime}>{item.timeMinutes}m</Text>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.schedName}>{item.segment}</Text>
-                      <Text style={styles.schedDesc}>{item.description}</Text>
+                      <Text style={[styles.schedName, { color: primaryText }]}>{item.segment}</Text>
+                      <Text style={[styles.schedDesc, { color: secondaryText }]}>{item.description}</Text>
                     </View>
                   </View>
                 ))}
@@ -347,13 +450,13 @@ export default function AdminAICopilotModal({
 
           {/* RESULTS: MODE 2 QUIZ */}
           {mode === 'quiz' && generatedQuiz && !loading && (
-            <View style={styles.resultCard}>
+            <View style={[styles.resultCard, { backgroundColor: cardSurface, borderColor }]}>
               <View style={styles.resultHeader}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.resultBadge}>AI GENERATED BIBLE QUIZ</Text>
-                  <Text style={styles.resultTitle}>{generatedQuiz.title}</Text>
+                  <Text style={[styles.resultTitle, { color: primaryText }]}>{generatedQuiz.title}</Text>
                   <Text style={styles.resultTitleTe}>{generatedQuiz.titleTelugu}</Text>
-                  <Text style={styles.resultRef}>📖 {generatedQuiz.scriptureRef}</Text>
+                  <Text style={[styles.resultRef, { color: secondaryText }]}>📖 {generatedQuiz.scriptureRef}</Text>
                 </View>
                 <TouchableOpacity
                   style={styles.saveActionBtn}
@@ -368,22 +471,24 @@ export default function AdminAICopilotModal({
               {/* Questions List */}
               <View style={{ gap: 10, marginTop: 10 }}>
                 {generatedQuiz.questions?.map((q: any, idx: number) => (
-                  <View key={idx} style={styles.qCard}>
+                  <View key={idx} style={[styles.qCard, { backgroundColor: secondarySurface }]}>
                     <Text style={styles.qIndex}>QUESTION {idx + 1}</Text>
-                    <Text style={styles.qTextEn}>{q.questionEnglish}</Text>
-                    <Text style={styles.qTextTe}>{q.questionTelugu}</Text>
+                    <Text style={[styles.qTextEn, { color: primaryText }]}>{q.questionEnglish}</Text>
+                    <Text style={[styles.qTextTe, { color: secondaryText }]}>{q.questionTelugu}</Text>
                     <View style={styles.optionsWrap}>
                       {q.options?.map((opt: string, optIdx: number) => (
                         <View
                           key={optIdx}
                           style={[
                             styles.optPill,
+                            { backgroundColor: cardSurface },
                             optIdx === q.correctIndex && styles.optPillCorrect,
                           ]}
                         >
                           <Text
                             style={[
                               styles.optPillText,
+                              { color: primaryText },
                               optIdx === q.correctIndex && styles.optPillTextCorrect,
                             ]}
                           >
@@ -392,7 +497,7 @@ export default function AdminAICopilotModal({
                         </View>
                       ))}
                     </View>
-                    <Text style={styles.qExplanation}>💡 {q.explanation}</Text>
+                    <Text style={[styles.qExplanation, { color: secondaryText }]}>💡 {q.explanation}</Text>
                   </View>
                 ))}
               </View>
@@ -401,13 +506,13 @@ export default function AdminAICopilotModal({
 
           {/* RESULTS: MODE 3 STORY */}
           {mode === 'story' && generatedStory && !loading && (
-            <View style={styles.resultCard}>
+            <View style={[styles.resultCard, { backgroundColor: cardSurface, borderColor }]}>
               <View style={styles.resultHeader}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.resultBadge}>AI GENERATED STORYBOOK</Text>
-                  <Text style={styles.resultTitle}>{generatedStory.title}</Text>
+                  <Text style={[styles.resultTitle, { color: primaryText }]}>{generatedStory.title}</Text>
                   <Text style={styles.resultTitleTe}>{generatedStory.titleTelugu}</Text>
-                  <Text style={styles.resultRef}>
+                  <Text style={[styles.resultRef, { color: secondaryText }]}>
                     📖 {generatedStory.scriptureRef} · {generatedStory.readTime}
                   </Text>
                 </View>
@@ -424,15 +529,15 @@ export default function AdminAICopilotModal({
               {/* Pages Preview */}
               <View style={{ gap: 10, marginTop: 10 }}>
                 {generatedStory.pages?.map((p: any, idx: number) => (
-                  <View key={idx} style={styles.storyPageCard}>
+                  <View key={idx} style={[styles.storyPageCard, { backgroundColor: secondarySurface }]}>
                     <View style={styles.storyPageHead}>
                       <Text style={styles.storyPageNum}>PAGE {p.pageNumber}</Text>
                       <Text style={styles.storyEmoji}>{p.emoji}</Text>
                     </View>
-                    <Text style={styles.storyHeaderEn}>{p.headerEnglish}</Text>
+                    <Text style={[styles.storyHeaderEn, { color: primaryText }]}>{p.headerEnglish}</Text>
                     <Text style={styles.storyHeaderTe}>{p.headerTelugu}</Text>
-                    <Text style={styles.storyTextEn}>{p.textEnglish}</Text>
-                    <Text style={styles.storyTextTe}>{p.textTelugu}</Text>
+                    <Text style={[styles.storyTextEn, { color: primaryText }]}>{p.textEnglish}</Text>
+                    <Text style={[styles.storyTextTe, { color: secondaryText }]}>{p.textTelugu}</Text>
                   </View>
                 ))}
               </View>
@@ -441,18 +546,18 @@ export default function AdminAICopilotModal({
 
           {/* RESULTS: MODE 4 VERSE ACTIONS */}
           {mode === 'verse_actions' && generatedVerseAids && !loading && (
-            <View style={styles.resultCard}>
+            <View style={[styles.resultCard, { backgroundColor: cardSurface, borderColor }]}>
               <Text style={styles.resultBadge}>MEMORY VERSE HAND ACTIONS & RHYMES</Text>
 
               {/* Hand actions */}
-              <View style={styles.actionsWrap}>
+              <View style={[styles.actionsWrap, { backgroundColor: secondarySurface }]}>
                 <Text style={styles.actionsHeading}>🤲 HAND MOTIONS FOR KIDS:</Text>
                 {generatedVerseAids.handActions?.map((item: any, idx: number) => (
-                  <View key={idx} style={styles.motionRow}>
-                    <Text style={styles.motionWord}>{item.word}</Text>
+                  <View key={idx} style={[styles.motionRow, { borderBottomColor: borderColor }]}>
+                    <Text style={[styles.motionWord, { color: primaryText }]}>{item.word}</Text>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.motionGesture}>{item.gesture}</Text>
-                      <Text style={styles.motionGestureTe}>{item.gestureTelugu}</Text>
+                      <Text style={[styles.motionGesture, { color: primaryText }]}>{item.gesture}</Text>
+                      <Text style={[styles.motionGestureTe, { color: secondaryText }]}>{item.gestureTelugu}</Text>
                     </View>
                   </View>
                 ))}
@@ -461,19 +566,28 @@ export default function AdminAICopilotModal({
               {/* Catchy Rhyme */}
               <View style={styles.rhymeBox}>
                 <Text style={styles.rhymeHeading}>🎵 CATCHY RHYME TO REMEMBER:</Text>
-                <Text style={styles.rhymeEn}>"{generatedVerseAids.mnemonicRhyme}"</Text>
-                <Text style={styles.rhymeTe}>"{generatedVerseAids.mnemonicRhymeTelugu}"</Text>
+                <Text style={[styles.rhymeEn, { color: primaryText }]}>"{generatedVerseAids.mnemonicRhyme}"</Text>
+                <Text style={[styles.rhymeTe, { color: secondaryText }]}>"{generatedVerseAids.mnemonicRhymeTelugu}"</Text>
               </View>
 
               {/* Family Talk Question */}
-              <View style={styles.familyBox}>
+              <View style={[styles.familyBox, { backgroundColor: secondarySurface }]}>
                 <Text style={styles.familyHeading}>🏡 BEDTIME FAMILY TALK PROMPT:</Text>
-                <Text style={styles.familyEn}>{generatedVerseAids.familyTalkPrompt}</Text>
-                <Text style={styles.familyTe}>{generatedVerseAids.familyTalkPromptTelugu}</Text>
+                <Text style={[styles.familyEn, { color: primaryText }]}>{generatedVerseAids.familyTalkPrompt}</Text>
+                <Text style={[styles.familyTe, { color: secondaryText }]}>{generatedVerseAids.familyTalkPromptTelugu}</Text>
               </View>
             </View>
           )}
         </ScrollView>
+
+        <BibleReferencePickerModal
+          visible={showBiblePicker}
+          onClose={() => setShowBiblePicker(false)}
+          mode="reference"
+          onSelectReference={(res: BiblePickerResult) => {
+            setTopicInput(res.referenceString);
+          }}
+        />
       </View>
     </Modal>
   );
@@ -489,7 +603,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: 10,
     paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#18181B',
@@ -504,74 +618,96 @@ const styles = StyleSheet.create({
   },
   headerTitles: {
     alignItems: 'center',
+    flex: 1,
+    paddingHorizontal: 8,
   },
   aiBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+    backgroundColor: 'rgba(251, 191, 36, 0.16)',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 6,
-    marginBottom: 2,
+    marginBottom: 3,
   },
   aiBadgeText: {
     fontSize: 9,
     fontWeight: '800',
-    color: '#FBBF24',
+    color: '#D97706',
     letterSpacing: 0.5,
   },
   titleSerif: {
-    fontFamily: 'Georgia',
-    fontSize: 19,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#FFFFFF',
+    textAlign: 'center',
   },
   scroll: {
     padding: 16,
     gap: 14,
     paddingBottom: 40,
   },
-  modeTabsRow: {
+  modeTabsGrid: {
     flexDirection: 'row',
-    backgroundColor: '#18181B',
-    borderRadius: 12,
-    padding: 4,
-    gap: 4,
+    flexWrap: 'wrap',
+    borderRadius: 14,
+    padding: 8,
+    gap: 8,
+    borderWidth: 1,
   },
   modeTab: {
-    flex: 1,
+    width: '48.5%',
+    flexGrow: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
-    paddingVertical: 8,
-    borderRadius: 8,
+    gap: 6,
+    paddingVertical: 11,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: 1,
   },
   modeTabActive: {
     backgroundColor: '#FBBF24',
+    borderColor: '#FBBF24',
   },
   modeTabText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#9CA3AF',
   },
   modeTabTextActive: {
     color: '#000000',
+    fontWeight: '800',
   },
   inputCard: {
-    backgroundColor: '#18181B',
     borderRadius: 14,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#27272A',
     gap: 10,
   },
   inputLabel: {
+    flexShrink: 1,
     fontSize: 10,
     fontWeight: '800',
-    color: '#FBBF24',
+    color: '#D97706',
     letterSpacing: 0.5,
+  },
+  bibleSelectBtn: {
+    flexShrink: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  bibleSelectBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#D97706',
   },
   inputRow: {
     flexDirection: 'row',
@@ -580,14 +716,11 @@ const styles = StyleSheet.create({
   },
   textInput: {
     flex: 1,
-    backgroundColor: '#09090B',
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: '#FFFFFF',
     fontSize: 13,
     borderWidth: 1,
-    borderColor: '#27272A',
   },
   generateBtn: {
     flexDirection: 'row',
@@ -605,48 +738,52 @@ const styles = StyleSheet.create({
   },
   chipsLabel: {
     fontSize: 10,
-    color: '#6B7280',
   },
   chipsRow: {
     gap: 8,
   },
   chip: {
-    backgroundColor: '#27272A',
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingVertical: 6,
     borderRadius: 8,
+    borderWidth: 1,
   },
   chipText: {
     fontSize: 11,
-    color: '#D1D5DB',
+    fontWeight: '600',
   },
   loadingCard: {
-    backgroundColor: '#18181B',
     borderRadius: 14,
     padding: 24,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#27272A',
     gap: 8,
   },
   loadingTitle: {
     fontSize: 15,
     fontWeight: 'bold',
-    color: '#FFFFFF',
     marginTop: 4,
   },
   loadingSub: {
     fontSize: 12,
-    color: '#9CA3AF',
     textAlign: 'center',
     lineHeight: 18,
   },
+  cancelGenBtn: {
+    marginTop: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  cancelGenBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
   resultCard: {
-    backgroundColor: '#18181B',
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#27272A',
     gap: 12,
   },
   resultHeader: {
@@ -664,23 +801,21 @@ const styles = StyleSheet.create({
   resultTitle: {
     fontSize: 17,
     fontWeight: 'bold',
-    color: '#FFFFFF',
   },
   resultTitleTe: {
     fontSize: 14,
-    color: '#FBBF24',
+    color: '#D97706',
     marginTop: 2,
   },
   resultRef: {
     fontSize: 12,
-    color: '#9CA3AF',
     marginTop: 4,
   },
   shareActionBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+    backgroundColor: 'rgba(251, 191, 36, 0.16)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -699,86 +834,75 @@ const styles = StyleSheet.create({
     color: '#000000',
   },
   highlightBox: {
-    backgroundColor: 'rgba(251, 191, 36, 0.08)',
+    backgroundColor: 'rgba(251, 191, 36, 0.1)',
     borderRadius: 10,
     padding: 12,
     borderLeftWidth: 3,
-    borderLeftColor: '#FBBF24',
+    borderLeftColor: '#F59E0B',
   },
   highlightLabel: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#FBBF24',
+    color: '#D97706',
     letterSpacing: 0.5,
     marginBottom: 2,
   },
   highlightEn: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#FFFFFF',
   },
   highlightTe: {
     fontSize: 12,
-    color: '#D1D5DB',
     marginTop: 2,
   },
   verseBox: {
-    backgroundColor: '#09090B',
     borderRadius: 10,
     padding: 12,
   },
   verseBoxLabel: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#FBBF24',
+    color: '#D97706',
     letterSpacing: 0.5,
     marginBottom: 4,
   },
   verseEn: {
     fontSize: 13,
-    color: '#FFFFFF',
     fontStyle: 'italic',
     lineHeight: 18,
   },
   verseRefTag: {
     fontSize: 11,
-    color: '#FBBF24',
+    color: '#D97706',
     fontWeight: '700',
     marginBottom: 4,
   },
   verseTe: {
     fontSize: 12,
-    color: '#E5E7EB',
     lineHeight: 17,
   },
   prepBox: {
-    backgroundColor: '#09090B',
     borderRadius: 10,
     padding: 12,
   },
   prepLabel: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#9CA3AF',
     letterSpacing: 0.5,
     marginBottom: 2,
   },
   prepEn: {
     fontSize: 12,
-    color: '#E5E7EB',
     lineHeight: 17,
   },
   prepTe: {
     fontSize: 11,
-    color: '#9CA3AF',
     marginTop: 2,
   },
   suppliesText: {
     fontSize: 11,
-    color: '#D1D5DB',
   },
   scheduleBox: {
-    backgroundColor: '#09090B',
     borderRadius: 10,
     padding: 12,
     gap: 6,
@@ -786,7 +910,6 @@ const styles = StyleSheet.create({
   scheduleBoxLabel: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#9CA3AF',
     letterSpacing: 0.5,
     marginBottom: 4,
   },
@@ -798,20 +921,17 @@ const styles = StyleSheet.create({
   schedTime: {
     fontSize: 11,
     fontWeight: '800',
-    color: '#FBBF24',
+    color: '#D97706',
     width: 28,
   },
   schedName: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#FFFFFF',
   },
   schedDesc: {
     fontSize: 11,
-    color: '#9CA3AF',
   },
   qCard: {
-    backgroundColor: '#09090B',
     borderRadius: 10,
     padding: 12,
     gap: 6,
@@ -819,35 +939,31 @@ const styles = StyleSheet.create({
   qIndex: {
     fontSize: 9,
     fontWeight: '800',
-    color: '#FBBF24',
+    color: '#D97706',
   },
   qTextEn: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#FFFFFF',
   },
   qTextTe: {
     fontSize: 12,
-    color: '#D1D5DB',
   },
   optionsWrap: {
     gap: 4,
     marginTop: 4,
   },
   optPill: {
-    backgroundColor: '#18181B',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 6,
   },
   optPillCorrect: {
-    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    backgroundColor: 'rgba(16, 185, 129, 0.16)',
     borderColor: '#10B981',
     borderWidth: 1,
   },
   optPillText: {
     fontSize: 12,
-    color: '#D1D5DB',
   },
   optPillTextCorrect: {
     color: '#10B981',
@@ -855,12 +971,10 @@ const styles = StyleSheet.create({
   },
   qExplanation: {
     fontSize: 11,
-    color: '#9CA3AF',
     marginTop: 4,
     fontStyle: 'italic',
   },
   storyPageCard: {
-    backgroundColor: '#09090B',
     borderRadius: 10,
     padding: 12,
     gap: 4,
@@ -873,7 +987,7 @@ const styles = StyleSheet.create({
   storyPageNum: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#FBBF24',
+    color: '#D97706',
   },
   storyEmoji: {
     fontSize: 18,
@@ -881,25 +995,21 @@ const styles = StyleSheet.create({
   storyHeaderEn: {
     fontSize: 13,
     fontWeight: 'bold',
-    color: '#FFFFFF',
   },
   storyHeaderTe: {
     fontSize: 12,
-    color: '#FBBF24',
+    color: '#D97706',
   },
   storyTextEn: {
     fontSize: 12,
-    color: '#D1D5DB',
     lineHeight: 18,
     marginTop: 2,
   },
   storyTextTe: {
     fontSize: 11,
-    color: '#9CA3AF',
     lineHeight: 16,
   },
   actionsWrap: {
-    backgroundColor: '#09090B',
     borderRadius: 10,
     padding: 12,
     gap: 6,
@@ -907,7 +1017,7 @@ const styles = StyleSheet.create({
   actionsHeading: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#FBBF24',
+    color: '#D97706',
     marginBottom: 4,
   },
   motionRow: {
@@ -916,24 +1026,20 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingVertical: 4,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
   },
   motionWord: {
     fontSize: 12,
     fontWeight: '800',
-    color: '#FFFFFF',
     width: 90,
   },
   motionGesture: {
     fontSize: 12,
-    color: '#D1D5DB',
   },
   motionGestureTe: {
     fontSize: 11,
-    color: '#9CA3AF',
   },
   rhymeBox: {
-    backgroundColor: 'rgba(251, 191, 36, 0.08)',
+    backgroundColor: 'rgba(251, 191, 36, 0.1)',
     borderRadius: 10,
     padding: 12,
     gap: 4,
@@ -941,19 +1047,16 @@ const styles = StyleSheet.create({
   rhymeHeading: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#FBBF24',
+    color: '#D97706',
   },
   rhymeEn: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#FFFFFF',
   },
   rhymeTe: {
     fontSize: 12,
-    color: '#D1D5DB',
   },
   familyBox: {
-    backgroundColor: '#09090B',
     borderRadius: 10,
     padding: 12,
     gap: 4,
@@ -965,10 +1068,8 @@ const styles = StyleSheet.create({
   },
   familyEn: {
     fontSize: 12,
-    color: '#FFFFFF',
   },
   familyTe: {
     fontSize: 11,
-    color: '#9CA3AF',
   },
 });

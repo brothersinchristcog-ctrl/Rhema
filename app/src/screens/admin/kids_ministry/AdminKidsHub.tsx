@@ -12,6 +12,7 @@ import {
   Platform,
   Alert,
   Modal,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -40,6 +41,8 @@ import {
 import { useAuth } from '../../../context/AuthContext';
 import { AdminTabContext } from '../../../context/AdminTabContext';
 import KidsMinistryService from '../../../services/KidsMinistryService';
+import { CustomAlert } from '../../../components/CustomAlert';
+import { useAdminTheme } from '../../../utils/adminThemeHelper';
 import {
   ChildRecord,
   KidsClassRecord,
@@ -48,10 +51,15 @@ import {
   KidsQuiz,
   KidsWorshipSong,
   KidsCurriculumLesson,
+  KidsCurriculumConfig,
   KidsVBSEventRecord,
   KidsCertificateData,
+  resolveActiveCurriculumLesson,
+  splitCurriculumLessons,
+  formatCurriculumDateDisplay,
+  getCurriculumWeekDate,
 } from '../../../types/KidsMinistryTypes';
-import EnrollChildModal from '../../kids_ministry/components/EnrollChildModal';
+import TeacherEnrollChildModal from '../../kids_ministry/components/TeacherEnrollChildModal';
 import EditClassModal from './components/EditClassModal';
 import ClassRosterModal from './components/ClassRosterModal';
 import PromotionManagerModal from './components/PromotionManagerModal';
@@ -62,11 +70,13 @@ import AdminAICopilotModal from './components/AdminAICopilotModal';
 import AdminVBSManagerModal from './components/AdminVBSManagerModal';
 import KidsCertificateModal from '../../kids_ministry/components/KidsCertificateModal';
 import AdminKidsReportsModal from './components/AdminKidsReportsModal';
+import ChildProfileDetailModal from './components/ChildProfileDetailModal';
 
 const { width } = Dimensions.get('window');
 
 export default function AdminKidsHub({ navigation }: any) {
   const insets = useSafeAreaInsets();
+  const { isDark, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor, barStyle } = useAdminTheme();
   const { member } = useAuth();
   const churchId = member?.churchId || 'rhema';
   const adminTabCtx = useContext(AdminTabContext);
@@ -103,6 +113,7 @@ export default function AdminKidsHub({ navigation }: any) {
   const [showVBSModal, setShowVBSModal] = useState(false);
   const [showReportsModal, setShowReportsModal] = useState(false);
   const [selectedCertData, setSelectedCertData] = useState<KidsCertificateData | null>(null);
+  const [selectedChildProfile, setSelectedChildProfile] = useState<ChildRecord | null>(null);
 
   // Beautiful Delete Confirmation Modal state
   const [childToDelete, setChildToDelete] = useState<{ id: string; name: string; childId?: string; parentName?: string; assignedClassName?: string } | null>(null);
@@ -113,6 +124,7 @@ export default function AdminKidsHub({ navigation }: any) {
   const [quizzes, setQuizzes] = useState<KidsQuiz[]>([]);
   const [songs, setSongs] = useState<KidsWorshipSong[]>([]);
   const [curriculum, setCurriculum] = useState<KidsCurriculumLesson[]>([]);
+  const [curriculumConfig, setCurriculumConfig] = useState<KidsCurriculumConfig | null>(null);
   const [vbsEvent, setVbsEvent] = useState<KidsVBSEventRecord | null>(null);
 
   // Load children, classes, teachers, curriculum & VBS (Realtime)
@@ -158,15 +170,23 @@ export default function AdminKidsHub({ navigation }: any) {
       setSongs(list);
     });
 
-    // 8. Realtime listener for 52-Week Curriculum
+    // 8. Realtime listener for 52-Week & Custom Curriculum
     const unsubCurriculum = KidsMinistryService.subscribeToCurriculum(churchId, list => {
       setCurriculum(list);
+    });
+
+    // 8b. Realtime listener for Curriculum Config (52-Week vs Custom Weekly)
+    const unsubCurConfig = KidsMinistryService.subscribeToCurriculumConfig(churchId, cfg => {
+      setCurriculumConfig(cfg);
     });
 
     // 9. Realtime listener for VBS Events
     const unsubVBS = KidsMinistryService.subscribeToVBSEvent(churchId, ev => {
       setVbsEvent(ev);
     });
+
+    // Reconcile any unlinked household member profile photos onto Kids records
+    KidsMinistryService.reconcileAllChildPhotos(churchId).catch(() => {});
 
     return () => {
       unsubClasses();
@@ -177,6 +197,7 @@ export default function AdminKidsHub({ navigation }: any) {
       unsubQuizzes();
       unsubSongs();
       unsubCurriculum();
+      unsubCurConfig();
       unsubVBS();
     };
   }, [churchId]);
@@ -257,36 +278,36 @@ export default function AdminKidsHub({ navigation }: any) {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#000000" />
+    <View style={[styles.container, { backgroundColor: screenBg, paddingTop: insets.top }]}>
+      <StatusBar barStyle={barStyle} backgroundColor={screenBg} />
 
       {/* ── TOP NAV HEADER ── */}
-      <View style={styles.headerRow}>
+      <View style={[styles.headerRow, { backgroundColor: screenBg, borderBottomColor: borderColor }]}>
         <TouchableOpacity
-          style={styles.backBtn}
+          style={[styles.backBtn, { backgroundColor: secondarySurface }]}
           onPress={handleBack}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />
+          <ArrowLeft size={20} color={primaryText} strokeWidth={2.4} />
         </TouchableOpacity>
 
         <View style={styles.headerTitles}>
-          <Text style={styles.headerTitleSerif}>Kids Ministry Hub</Text>
-          <Text style={styles.headerSubtitle}>Sunday School & Child Safety Administration</Text>
+          <Text style={[styles.headerTitleSerif, { color: primaryText }]}>Kids Ministry Hub</Text>
+          <Text style={[styles.headerSubtitle, { color: secondaryText }]}>Sunday School & Child Safety Administration</Text>
         </View>
 
         <TouchableOpacity
-          style={styles.addBtn}
+          style={[styles.addBtn, { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }]}
           onPress={() => setShowEnrollModal(true)}
           activeOpacity={0.8}
         >
-          <Plus size={14} color="#000000" strokeWidth={2.8} />
-          <Text style={styles.addBtnText}>Enroll</Text>
+          <Plus size={14} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.8} />
+          <Text style={[styles.addBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>Enroll</Text>
         </TouchableOpacity>
       </View>
 
       {/* ── TAB PILLS (HORIZONTALLY SCROLLABLE SO NO TAB IS CLIPPED) ── */}
-      <View style={styles.tabsRowWrapper}>
+      <View style={[styles.tabsRowWrapper, { backgroundColor: screenBg, borderBottomColor: borderColor }]}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -296,37 +317,69 @@ export default function AdminKidsHub({ navigation }: any) {
           overScrollMode="never"
         >
           <TouchableOpacity
-            style={[styles.tabPill, activeTab === 'overview' && styles.tabPillActive]}
+            style={[
+              styles.tabPill,
+              { backgroundColor: secondarySurface, borderColor: borderColor },
+              activeTab === 'overview' && { backgroundColor: isDark ? '#FFFFFF' : '#0F172A', borderColor: isDark ? '#FFFFFF' : '#0F172A' }
+            ]}
             onPress={() => setActiveTab('overview')}
           >
-            <Text style={[styles.tabPillText, activeTab === 'overview' && styles.tabPillTextActive]}>
+            <Text style={[
+              styles.tabPillText,
+              { color: secondaryText },
+              activeTab === 'overview' && { color: isDark ? '#000000' : '#FFFFFF', fontWeight: '800' }
+            ]}>
               Overview
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabPill, activeTab === 'children' && styles.tabPillActive]}
+            style={[
+              styles.tabPill,
+              { backgroundColor: secondarySurface, borderColor: borderColor },
+              activeTab === 'children' && { backgroundColor: isDark ? '#FFFFFF' : '#0F172A', borderColor: isDark ? '#FFFFFF' : '#0F172A' }
+            ]}
             onPress={() => setActiveTab('children')}
           >
-            <Text style={[styles.tabPillText, activeTab === 'children' && styles.tabPillTextActive]}>
+            <Text style={[
+              styles.tabPillText,
+              { color: secondaryText },
+              activeTab === 'children' && { color: isDark ? '#000000' : '#FFFFFF', fontWeight: '800' }
+            ]}>
               Children ({children.length})
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabPill, activeTab === 'classes' && styles.tabPillActive]}
+            style={[
+              styles.tabPill,
+              { backgroundColor: secondarySurface, borderColor: borderColor },
+              activeTab === 'classes' && { backgroundColor: isDark ? '#FFFFFF' : '#0F172A', borderColor: isDark ? '#FFFFFF' : '#0F172A' }
+            ]}
             onPress={() => setActiveTab('classes')}
           >
-            <Text style={[styles.tabPillText, activeTab === 'classes' && styles.tabPillTextActive]}>
+            <Text style={[
+              styles.tabPillText,
+              { color: secondaryText },
+              activeTab === 'classes' && { color: isDark ? '#000000' : '#FFFFFF', fontWeight: '800' }
+            ]}>
               Classes ({classes.length}){promotionCandidates.length > 0 ? ` · 🎓 ${promotionCandidates.length}` : ''}
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabPill, activeTab === 'curriculum' && styles.tabPillActive]}
+            style={[
+              styles.tabPill,
+              { backgroundColor: secondarySurface, borderColor: borderColor },
+              activeTab === 'curriculum' && { backgroundColor: isDark ? '#FFFFFF' : '#0F172A', borderColor: isDark ? '#FFFFFF' : '#0F172A' }
+            ]}
             onPress={() => setActiveTab('curriculum')}
           >
-            <Text style={[styles.tabPillText, activeTab === 'curriculum' && styles.tabPillTextActive]}>
+            <Text style={[
+              styles.tabPillText,
+              { color: secondaryText },
+              activeTab === 'curriculum' && { color: isDark ? '#000000' : '#FFFFFF', fontWeight: '800' }
+            ]}>
               Curriculum
             </Text>
           </TouchableOpacity>
@@ -349,19 +402,19 @@ export default function AdminKidsHub({ navigation }: any) {
               {/* 4 Clean & Compact Executive Metric Cards */}
               <View style={styles.kpiGrid}>
                 {/* 1. Enrolled Children */}
-                <View style={styles.kpiCard}>
+                <View style={[styles.kpiCard, { backgroundColor: cardSurface, borderColor }]}>
                   <View style={styles.kpiHeaderRow}>
                     <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
                       <Users size={16} color="#60A5FA" />
                     </View>
-                    <Text style={styles.kpiNumber}>{children.length}</Text>
+                    <Text style={[styles.kpiNumber, { color: primaryText }]}>{children.length}</Text>
                   </View>
-                  <Text style={styles.kpiTitle}>Enrolled Kids</Text>
-                  <Text style={styles.kpiSub}>Total Sunday School</Text>
+                  <Text style={[styles.kpiTitle, { color: primaryText }]}>Enrolled Kids</Text>
+                  <Text style={[styles.kpiSub, { color: secondaryText }]}>Total Sunday School</Text>
                 </View>
 
                 {/* 2. Checked-In Today */}
-                <View style={styles.kpiCard}>
+                <View style={[styles.kpiCard, { backgroundColor: cardSurface, borderColor }]}>
                   <View style={styles.kpiHeaderRow}>
                     <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
                       <UserCheck size={16} color="#34D399" />
@@ -370,12 +423,12 @@ export default function AdminKidsHub({ navigation }: any) {
                       {children.filter(c => c.custodyStatus === 'checked_in').length}
                     </Text>
                   </View>
-                  <Text style={styles.kpiTitle}>Checked-In</Text>
-                  <Text style={styles.kpiSub}>Active today in class</Text>
+                  <Text style={[styles.kpiTitle, { color: primaryText }]}>Checked-In</Text>
+                  <Text style={[styles.kpiSub, { color: secondaryText }]}>Active today in class</Text>
                 </View>
 
                 {/* 3. Faculty On Duty */}
-                <View style={styles.kpiCard}>
+                <View style={[styles.kpiCard, { backgroundColor: cardSurface, borderColor }]}>
                   <View style={styles.kpiHeaderRow}>
                     <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
                       <Clock size={16} color="#FBBF24" />
@@ -384,12 +437,12 @@ export default function AdminKidsHub({ navigation }: any) {
                       {todayTeacherAttendance.length}/{teachers.length || 5}
                     </Text>
                   </View>
-                  <Text style={styles.kpiTitle}>Faculty On Duty</Text>
-                  <Text style={styles.kpiSub}>Clocked-in teachers</Text>
+                  <Text style={[styles.kpiTitle, { color: primaryText }]}>Faculty On Duty</Text>
+                  <Text style={[styles.kpiSub, { color: secondaryText }]}>Clocked-in teachers</Text>
                 </View>
 
                 {/* 4. Face Scan Ready */}
-                <View style={styles.kpiCard}>
+                <View style={[styles.kpiCard, { backgroundColor: cardSurface, borderColor }]}>
                   <View style={styles.kpiHeaderRow}>
                     <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(139, 92, 246, 0.15)' }]}>
                       <Camera size={16} color="#C084FC" />
@@ -398,27 +451,27 @@ export default function AdminKidsHub({ navigation }: any) {
                       {children.filter(c => c.faceEnrolled).length}
                     </Text>
                   </View>
-                  <Text style={styles.kpiTitle}>Face Scan</Text>
-                  <Text style={styles.kpiSub}>Biometric profiles</Text>
+                  <Text style={[styles.kpiTitle, { color: primaryText }]}>Face Scan</Text>
+                  <Text style={[styles.kpiSub, { color: secondaryText }]}>Biometric profiles</Text>
                 </View>
               </View>
 
               {/* Sunday Morning Stations */}
               <View style={{ gap: 8, marginTop: 14, marginBottom: 4 }}>
-                <Text style={styles.sectionHeading}>SUNDAY MORNING ACTIVE STATIONS</Text>
+                <Text style={[styles.sectionHeading, { color: secondaryText }]}>SUNDAY MORNING ACTIVE STATIONS</Text>
 
                 <View style={styles.stationsRow}>
                   {/* Face Scan Kiosk */}
                   <TouchableOpacity
-                    style={styles.stationCard}
+                    style={[styles.stationCard, { backgroundColor: cardSurface, borderColor }]}
                     onPress={() => navigation.navigate('KidsFaceScanKiosk')}
                     activeOpacity={0.85}
                   >
                     <View style={[styles.stationIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
                       <Camera size={18} color="#60A5FA" />
                     </View>
-                    <Text style={styles.stationTitle}>Face Scan</Text>
-                    <Text style={styles.stationSub}>Entrance kiosk</Text>
+                    <Text style={[styles.stationTitle, { color: primaryText }]}>Face Scan</Text>
+                    <Text style={[styles.stationSub, { color: secondaryText }]}>Entrance kiosk</Text>
                     <View style={styles.stationArrow}>
                       <ChevronRight size={14} color="#60A5FA" />
                     </View>
@@ -426,15 +479,15 @@ export default function AdminKidsHub({ navigation }: any) {
 
                   {/* Teacher Exit */}
                   <TouchableOpacity
-                    style={styles.stationCard}
+                    style={[styles.stationCard, { backgroundColor: cardSurface, borderColor }]}
                     onPress={() => navigation.navigate('KidsCheckOutScanner')}
                     activeOpacity={0.85}
                   >
                     <View style={[styles.stationIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
                       <UserCheck size={18} color="#34D399" />
                     </View>
-                    <Text style={styles.stationTitle}>Teacher Exit</Text>
-                    <Text style={styles.stationSub}>Dismissal scanner</Text>
+                    <Text style={[styles.stationTitle, { color: primaryText }]}>Teacher Exit</Text>
+                    <Text style={[styles.stationSub, { color: secondaryText }]}>Dismissal scanner</Text>
                     <View style={styles.stationArrow}>
                       <ChevronRight size={14} color="#34D399" />
                     </View>
@@ -442,15 +495,15 @@ export default function AdminKidsHub({ navigation }: any) {
 
                   {/* Faculty Clock-In */}
                   <TouchableOpacity
-                    style={styles.stationCard}
+                    style={[styles.stationCard, { backgroundColor: cardSurface, borderColor }]}
                     onPress={() => navigation.navigate('KidsTeacherKiosk')}
                     activeOpacity={0.85}
                   >
                     <View style={[styles.stationIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
                       <Clock size={18} color="#FBBF24" />
                     </View>
-                    <Text style={styles.stationTitle}>Clock-In</Text>
-                    <Text style={styles.stationSub}>Teacher arrival</Text>
+                    <Text style={[styles.stationTitle, { color: primaryText }]}>Clock-In</Text>
+                    <Text style={[styles.stationSub, { color: secondaryText }]}>Teacher arrival</Text>
                     <View style={styles.stationArrow}>
                       <ChevronRight size={14} color="#FBBF24" />
                     </View>
@@ -460,12 +513,12 @@ export default function AdminKidsHub({ navigation }: any) {
 
               {/* Management Portals - Clean 2x4 Grid (All 8 Portals in uniform card design) */}
               <View style={{ gap: 8, marginTop: 12 }}>
-                <Text style={styles.sectionHeading}>MANAGEMENT PORTALS</Text>
+                <Text style={[styles.sectionHeading, { color: secondaryText }]}>MANAGEMENT PORTALS</Text>
 
                 <View style={styles.portalGrid2x2}>
                   {/* Grid 1: Children Roster */}
                   <TouchableOpacity
-                    style={styles.portalGridCard}
+                    style={[styles.portalGridCard, { backgroundColor: cardSurface, borderColor }]}
                     onPress={() => setActiveTab('children')}
                     activeOpacity={0.82}
                   >
@@ -473,17 +526,17 @@ export default function AdminKidsHub({ navigation }: any) {
                       <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.12)' }]}>
                         <Users size={18} color="#60A5FA" />
                       </View>
-                      <ChevronRight size={15} color="#64748B" />
+                      <ChevronRight size={15} color={secondaryText} />
                     </View>
-                    <Text style={styles.portalGridTitle}>Children Roster</Text>
-                    <Text style={styles.portalGridSub}>
+                    <Text style={[styles.portalGridTitle, { color: primaryText }]}>Children Roster</Text>
+                    <Text style={[styles.portalGridSub, { color: secondaryText }]}>
                       {children.length} enrolled · Medical & alerts
                     </Text>
                   </TouchableOpacity>
 
                   {/* Grid 2: Classrooms & Capacities */}
                   <TouchableOpacity
-                    style={styles.portalGridCard}
+                    style={[styles.portalGridCard, { backgroundColor: cardSurface, borderColor }]}
                     onPress={() => setActiveTab('classes')}
                     activeOpacity={0.82}
                   >
@@ -491,17 +544,17 @@ export default function AdminKidsHub({ navigation }: any) {
                       <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
                         <Calendar size={18} color="#34D399" />
                       </View>
-                      <ChevronRight size={15} color="#64748B" />
+                      <ChevronRight size={15} color={secondaryText} />
                     </View>
-                    <Text style={styles.portalGridTitle}>Classrooms</Text>
-                    <Text style={styles.portalGridSub}>
+                    <Text style={[styles.portalGridTitle, { color: primaryText }]}>Classrooms</Text>
+                    <Text style={[styles.portalGridSub, { color: secondaryText }]}>
                       {classes.length} rooms · Capacities & age tiers
                     </Text>
                   </TouchableOpacity>
 
                   {/* Grid 3: Sunday School Faculty */}
                   <TouchableOpacity
-                    style={styles.portalGridCard}
+                    style={[styles.portalGridCard, { backgroundColor: cardSurface, borderColor }]}
                     onPress={() => setShowTeachersModal(true)}
                     activeOpacity={0.82}
                   >
@@ -509,17 +562,17 @@ export default function AdminKidsHub({ navigation }: any) {
                       <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.12)' }]}>
                         <ShieldCheck size={18} color="#FBBF24" />
                       </View>
-                      <ChevronRight size={15} color="#64748B" />
+                      <ChevronRight size={15} color={secondaryText} />
                     </View>
-                    <Text style={styles.portalGridTitle}>Faculty & Helpers</Text>
-                    <Text style={styles.portalGridSub}>
+                    <Text style={[styles.portalGridTitle, { color: primaryText }]}>Faculty & Helpers</Text>
+                    <Text style={[styles.portalGridSub, { color: secondaryText }]}>
                       {teachers.length} members · {todayTeacherAttendance.length} on duty
                     </Text>
                   </TouchableOpacity>
 
                   {/* Grid 4: Bible Learning Center CMS */}
                   <TouchableOpacity
-                    style={styles.portalGridCard}
+                    style={[styles.portalGridCard, { backgroundColor: cardSurface, borderColor }]}
                     onPress={() => setShowContentManagerModal(true)}
                     activeOpacity={0.82}
                   >
@@ -527,35 +580,35 @@ export default function AdminKidsHub({ navigation }: any) {
                       <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(168, 85, 247, 0.12)' }]}>
                         <BookOpen size={18} color="#C084FC" />
                       </View>
-                      <ChevronRight size={15} color="#64748B" />
+                      <ChevronRight size={15} color={secondaryText} />
                     </View>
-                    <Text style={styles.portalGridTitle}>Bible LMS CMS</Text>
-                    <Text style={styles.portalGridSub}>
+                    <Text style={[styles.portalGridTitle, { color: primaryText }]}>Bible LMS CMS</Text>
+                    <Text style={[styles.portalGridSub, { color: secondaryText }]}>
                       {stories.length} stories · {quizzes.length} quizzes · {songs.length} songs
                     </Text>
                   </TouchableOpacity>
 
                   {/* Grid 5: 52-Week Curriculum */}
                   <TouchableOpacity
-                    style={styles.portalGridCard}
-                    onPress={() => setActiveTab('curriculum')}
+                    style={[styles.portalGridCard, { backgroundColor: cardSurface, borderColor }]}
+                    onPress={() => setShowCurriculumModal(true)}
                     activeOpacity={0.82}
                   >
                     <View style={styles.portalCardHeader}>
                       <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(244, 114, 182, 0.12)' }]}>
                         <Sparkles size={18} color="#F472B6" />
                       </View>
-                      <ChevronRight size={15} color="#64748B" />
+                      <ChevronRight size={15} color={secondaryText} />
                     </View>
-                    <Text style={styles.portalGridTitle}>52-Wk Curriculum</Text>
-                    <Text style={styles.portalGridSub}>
+                    <Text style={[styles.portalGridTitle, { color: primaryText }]}>52-Wk Curriculum</Text>
+                    <Text style={[styles.portalGridSub, { color: secondaryText }]}>
                       52 weekly scripture & memory plans
                     </Text>
                   </TouchableOpacity>
 
                   {/* Grid 6: AI Lesson Studio */}
                   <TouchableOpacity
-                    style={styles.portalGridCard}
+                    style={[styles.portalGridCard, { backgroundColor: cardSurface, borderColor }]}
                     onPress={() => setShowAICopilotModal(true)}
                     activeOpacity={0.82}
                   >
@@ -563,17 +616,17 @@ export default function AdminKidsHub({ navigation }: any) {
                       <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(147, 51, 234, 0.12)' }]}>
                         <Sparkles size={18} color="#A855F7" />
                       </View>
-                      <ChevronRight size={15} color="#64748B" />
+                      <ChevronRight size={15} color={secondaryText} />
                     </View>
-                    <Text style={styles.portalGridTitle}>Claude AI Studio</Text>
-                    <Text style={styles.portalGridSub}>
+                    <Text style={[styles.portalGridTitle, { color: primaryText }]}>Rhema AI Studio</Text>
+                    <Text style={[styles.portalGridSub, { color: secondaryText }]}>
                       Automated crafts, stories & quiz maker
                     </Text>
                   </TouchableOpacity>
 
                   {/* Grid 7: VBS & Special Camps */}
                   <TouchableOpacity
-                    style={styles.portalGridCard}
+                    style={[styles.portalGridCard, { backgroundColor: cardSurface, borderColor }]}
                     onPress={() => setShowVBSModal(true)}
                     activeOpacity={0.82}
                   >
@@ -581,17 +634,17 @@ export default function AdminKidsHub({ navigation }: any) {
                       <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(239, 68, 68, 0.12)' }]}>
                         <Award size={18} color="#EF4444" />
                       </View>
-                      <ChevronRight size={15} color="#64748B" />
+                      <ChevronRight size={15} color={secondaryText} />
                     </View>
-                    <Text style={styles.portalGridTitle}>VBS & Camps</Text>
-                    <Text style={styles.portalGridSub}>
+                    <Text style={[styles.portalGridTitle, { color: primaryText }]}>VBS & Camps</Text>
+                    <Text style={[styles.portalGridSub, { color: secondaryText }]}>
                       Vacation Bible School registrations
                     </Text>
                   </TouchableOpacity>
 
                   {/* Grid 8: Analytics & Safety Reports */}
                   <TouchableOpacity
-                    style={styles.portalGridCard}
+                    style={[styles.portalGridCard, { backgroundColor: cardSurface, borderColor }]}
                     onPress={() => setShowReportsModal(true)}
                     activeOpacity={0.82}
                   >
@@ -599,10 +652,10 @@ export default function AdminKidsHub({ navigation }: any) {
                       <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
                         <TrendingUp size={18} color="#34D399" />
                       </View>
-                      <ChevronRight size={15} color="#64748B" />
+                      <ChevronRight size={15} color={secondaryText} />
                     </View>
-                    <Text style={styles.portalGridTitle}>Safety Reports</Text>
-                    <Text style={styles.portalGridSub}>
+                    <Text style={[styles.portalGridTitle, { color: primaryText }]}>Safety Reports</Text>
+                    <Text style={[styles.portalGridSub, { color: secondaryText }]}>
                       Attendance logs, incident records & PDF
                     </Text>
                   </TouchableOpacity>
@@ -617,53 +670,66 @@ export default function AdminKidsHub({ navigation }: any) {
           {activeTab === 'children' && (
             <>
               {/* Search Bar */}
-              <View style={styles.searchBar}>
-                <Search size={16} color="#9CA3AF" />
+              <View style={[styles.searchBar, { backgroundColor: secondarySurface, borderColor }]}>
+                <Search size={16} color={secondaryText} />
                 <TextInput
-                  style={styles.searchInput}
+                  style={[styles.searchInput, { color: primaryText }]}
                   value={searchQuery}
                   onChangeText={setSearchQuery}
                   placeholder="Filter children by name, phone, or ID..."
-                  placeholderTextColor="#6B7280"
+                  placeholderTextColor={secondaryText}
                 />
                 {searchQuery.length > 0 && (
                   <TouchableOpacity onPress={() => setSearchQuery('')}>
-                    <X size={16} color="#9CA3AF" />
+                    <X size={16} color={secondaryText} />
                   </TouchableOpacity>
                 )}
               </View>
 
               {filteredChildren.length === 0 ? (
-                <View style={styles.emptyCard}>
-                  <Text style={styles.emptyCardText}>No children found matching "{searchQuery}"</Text>
+                <View style={[styles.emptyCard, { backgroundColor: cardSurface, borderColor }]}>
+                  <Text style={[styles.emptyCardText, { color: secondaryText }]}>No children found matching "{searchQuery}"</Text>
                 </View>
               ) : (
                 filteredChildren.map(c => (
-                  <View key={c.id} style={styles.childCard}>
+                  <TouchableOpacity
+                    key={c.id}
+                    style={[styles.childCard, { backgroundColor: cardSurface, borderColor }]}
+                    onPress={() => setSelectedChildProfile(c)}
+                    activeOpacity={0.82}
+                  >
                     <View style={styles.childCardHeader}>
                       <View style={styles.avatarWrap}>
-                        <View style={styles.avatarCircle}>
-                          <Text style={styles.avatarInitials}>
-                            {c.firstName.charAt(0)}{c.lastName ? c.lastName.charAt(0) : ''}
-                          </Text>
+                        <View style={[styles.avatarCircle, { overflow: 'hidden' }]}>
+                          {c.photoUrl ? (
+                            <Image
+                              source={{ uri: c.photoUrl }}
+                              style={{ width: '100%', height: '100%' }}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <Text style={styles.avatarInitials}>
+                              {c.firstName.charAt(0)}{c.lastName ? c.lastName.charAt(0) : ''}
+                            </Text>
+                          )}
                         </View>
                         {c.faceEnrolled && (
-                          <View style={styles.faceCheckDot}>
+                          <View style={[styles.faceCheckDot, { borderColor: cardSurface }]}>
                             <Text style={{ fontSize: 8, color: '#FFFFFF' }}>✓</Text>
                           </View>
                         )}
                       </View>
 
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.childNameSerif}>{c.fullName}</Text>
+                        <Text style={[styles.childNameSerif, { color: primaryText }]}>{c.fullName}</Text>
 
-                        <Text style={styles.childMeta}>
+                        <Text style={[styles.childMeta, { color: secondaryText }]}>
                           Age: {c.age} · {c.gender === 'male' ? 'Boy' : 'Girl'} · {c.assignedClassName || 'Class'}
                         </Text>
 
                         {/* Kid ID Badge shown below Age */}
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                          <View style={styles.idBadge}>
+                          <View style={[styles.idBadge, { backgroundColor: secondarySurface, borderColor }]}>
                             <Text style={styles.idBadgeText}>ID: {c.childId}</Text>
                           </View>
                         </View>
@@ -698,19 +764,19 @@ export default function AdminKidsHub({ navigation }: any) {
                       </TouchableOpacity>
                     </View>
 
-                    <View style={styles.childCardDivider} />
+                    <View style={[styles.childCardDivider, { backgroundColor: borderColor }]} />
 
                     <View style={styles.guardianRow}>
-                      <Text style={styles.guardianText} numberOfLines={1}>
+                      <Text style={[styles.guardianText, { color: secondaryText }]} numberOfLines={1}>
                         Parent: {c.parentName} ({c.parentPhone || 'No phone'})
                       </Text>
-                      <View style={styles.pickupPill}>
-                        <Text style={styles.pickupPillText}>
-                          {c.guardians ? c.guardians.length : 1} Pickups
+                      <View style={[styles.pickupPill, { backgroundColor: secondarySurface }]}>
+                        <Text style={[styles.pickupPillText, { color: primaryText }]}>
+                          {c.guardians ? c.guardians.length : 1} Pickups · View ›
                         </Text>
                       </View>
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 ))
               )}
             </>
@@ -722,14 +788,14 @@ export default function AdminKidsHub({ navigation }: any) {
           {activeTab === 'classes' && (
             <View style={{ gap: 14 }}>
               {/* Annual Age Promotion Center Banner */}
-              <View style={styles.promotionBannerCard}>
+              <View style={[styles.promotionBannerCard, { backgroundColor: cardSurface, borderColor }]}>
                 <View style={styles.promotionBannerHeader}>
                   <View style={styles.gradIconBox}>
                     <GraduationCap size={22} color="#FBBF24" />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.promotionBannerTitle}>Annual Age Promotion Center</Text>
-                    <Text style={styles.promotionBannerSub}>
+                    <Text style={[styles.promotionBannerTitle, { color: primaryText }]}>Annual Age Promotion Center</Text>
+                    <Text style={[styles.promotionBannerSub, { color: secondaryText }]}>
                       {promotionCandidates.length > 0
                         ? `${promotionCandidates.length} children ready to graduate to next Sunday School tier`
                         : 'All children currently in their age-appropriate classes'}
@@ -748,12 +814,12 @@ export default function AdminKidsHub({ navigation }: any) {
               </View>
 
               {/* Classes Action Header Bar */}
-              <View style={styles.classesActionBar}>
+              <View style={[styles.classesActionBar, { backgroundColor: cardSurface, borderColor }]}>
                 <View style={{ flex: 1, marginRight: 10 }}>
-                  <Text style={styles.classesHeaderTitle} numberOfLines={1}>
+                  <Text style={[styles.classesHeaderTitle, { color: primaryText }]} numberOfLines={1}>
                     Sunday School Classes ({classes.length})
                   </Text>
-                  <Text style={styles.classesHeaderSub} numberOfLines={2}>
+                  <Text style={[styles.classesHeaderSub, { color: secondaryText }]} numberOfLines={2}>
                     Create, edit, or delete classrooms
                   </Text>
                 </View>
@@ -768,10 +834,10 @@ export default function AdminKidsHub({ navigation }: any) {
               </View>
 
               {classes.length === 0 ? (
-                <View style={styles.emptyClassesCard}>
-                  <GraduationCap size={34} color="#71717A" />
-                  <Text style={styles.emptyClassesTitle}>No Sunday School Classes Yet</Text>
-                  <Text style={styles.emptyClassesSub}>
+                <View style={[styles.emptyClassesCard, { backgroundColor: cardSurface, borderColor }]}>
+                  <GraduationCap size={34} color={secondaryText} />
+                  <Text style={[styles.emptyClassesTitle, { color: primaryText }]}>No Sunday School Classes Yet</Text>
+                  <Text style={[styles.emptyClassesSub, { color: secondaryText }]}>
                     Create your first classroom to start assigning children and teachers.
                   </Text>
                   <TouchableOpacity
@@ -796,16 +862,18 @@ export default function AdminKidsHub({ navigation }: any) {
                       : '#10B981';
 
                   return (
-                    <View key={cls.id} style={styles.classCard}>
+                    <View key={cls.id} style={[styles.classCard, { backgroundColor: cardSurface, borderColor }]}>
                       <View style={styles.classCardHeader}>
                         <View style={{ flex: 1 }}>
                           <View style={styles.tierTag}>
                             <Text style={styles.tierTagText}>
-                              Age {cls.ageRange?.min ?? 0}–{cls.ageRange?.max ?? 14} yrs
+                              {cls.tier === 'mixed'
+                                ? 'Mixed Age Group · All Ages'
+                                : `Age ${cls.ageRange?.min ?? 0}–${cls.ageRange?.max ?? 14} yrs`}
                             </Text>
                           </View>
-                          <Text style={styles.classTitle}>{cls.name}</Text>
-                          <Text style={styles.classSchedule}>
+                          <Text style={[styles.classTitle, { color: primaryText }]}>{cls.name}</Text>
+                          <Text style={[styles.classSchedule, { color: secondaryText }]}>
                             {cls.roomNumber} · {cls.schedule?.dayOfWeek || 'Sunday'}s {cls.schedule?.startTime || '09:30'}–{cls.schedule?.endTime || '11:30'}
                           </Text>
                         </View>
@@ -814,12 +882,12 @@ export default function AdminKidsHub({ navigation }: any) {
                           <Text style={[styles.capacityText, { color: barColor }]}>
                             {enrolledInClass} / {capacity}
                           </Text>
-                          <Text style={styles.capacitySub}>{percent}% Capacity</Text>
+                          <Text style={[styles.capacitySub, { color: secondaryText }]}>{percent}% Capacity</Text>
                         </View>
                       </View>
 
                       {/* Visual Capacity Bar */}
-                      <View style={styles.capacityBarTrack}>
+                      <View style={[styles.capacityBarTrack, { backgroundColor: secondarySurface }]}>
                         <View
                           style={[
                             styles.capacityBarFill,
@@ -831,10 +899,10 @@ export default function AdminKidsHub({ navigation }: any) {
                         />
                       </View>
 
-                      <View style={styles.childCardDivider} />
+                      <View style={[styles.childCardDivider, { backgroundColor: borderColor }]} />
 
                       <View style={styles.classFooter}>
-                        <Text style={styles.teacherName} numberOfLines={1}>
+                        <Text style={[styles.teacherName, { color: primaryText }]} numberOfLines={1}>
                           Lead: {cls.leadTeacherName || 'TBD'}
                         </Text>
 
@@ -849,12 +917,12 @@ export default function AdminKidsHub({ navigation }: any) {
                           </TouchableOpacity>
 
                           <TouchableOpacity
-                            style={styles.editClassBtn}
+                            style={[styles.editClassBtn, { backgroundColor: secondarySurface }]}
                             onPress={() => handleOpenEditClass(cls)}
                             activeOpacity={0.8}
                           >
-                            <Edit3 size={12} color="#9CA3AF" />
-                            <Text style={styles.editClassBtnText}>Edit</Text>
+                            <Edit3 size={12} color={secondaryText} />
+                            <Text style={[styles.editClassBtnText, { color: secondaryText }]}>Edit</Text>
                           </TouchableOpacity>
 
                           <TouchableOpacity
@@ -876,132 +944,184 @@ export default function AdminKidsHub({ navigation }: any) {
           )}
 
           {/* ==================================================== */}
-          {/* TAB 4: 52-WEEK CURRICULUM                            */}
+          {/* TAB 4: CURRICULUM (52-WEEK OR CUSTOM WEEKLY)         */}
           {/* ==================================================== */}
-          {activeTab === 'curriculum' && (
-            <View style={{ gap: 12 }}>
-              <View style={styles.curriculumHero}>
-                <Sparkles size={20} color="#FBBF24" />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.curriculumHeroTitle}>52-Week Bilingual Curriculum</Text>
-                  <Text style={styles.curriculumHeroSub}>
-                    {curriculum.length || 52} Weeks · Telugu & English Syllabus for 2026-2027
-                  </Text>
-                </View>
-              </View>
+          {activeTab === 'curriculum' && (() => {
+            const { fiftyTwoWeekLessons, customLessons } = splitCurriculumLessons(curriculum);
+            const { lesson: activeLesson, mode: activeMode, activeDate } = resolveActiveCurriculumLesson({
+              config: curriculumConfig,
+              lessons: curriculum,
+            });
 
-              {/* 52-Week Full Syllabus Launcher */}
-              <TouchableOpacity
-                style={[styles.portalCard, { borderColor: '#10B981', borderWidth: 1 }]}
-                onPress={() => setShowCurriculumModal(true)}
-                activeOpacity={0.88}
-              >
-                <View style={[styles.portalIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]}>
-                  <Calendar size={22} color="#10B981" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.portalTitle, { color: '#10B981' }]}>
-                    Open 52-Week Curriculum Syllabus
-                  </Text>
-                  <Text style={styles.portalSub}>
-                    Browse Q1-Q4 schedules, set live Sunday active week & export to WhatsApp
-                  </Text>
-                </View>
-                <ChevronRight size={18} color="#10B981" />
-              </TouchableOpacity>
+            // Compute next upcoming lesson dynamically
+            let nextLesson: KidsCurriculumLesson | null = null;
+            let nextLessonDate: string | null = null;
+            if (activeMode === '52_week' && activeLesson) {
+              nextLesson = fiftyTwoWeekLessons.find(l => l.weekNumber === activeLesson.weekNumber + 1) || null;
+              if (nextLesson && curriculumConfig?.officialLaunchDate) {
+                nextLessonDate = getCurriculumWeekDate(curriculumConfig.officialLaunchDate, nextLesson.weekNumber);
+              }
+            } else if (activeMode === 'custom' && activeLesson) {
+              const idx = customLessons.findIndex(l => l.id === activeLesson.id);
+              nextLesson = idx >= 0 && idx + 1 < customLessons.length ? customLessons[idx + 1] : null;
+              nextLessonDate = nextLesson?.scheduledDate || null;
+            }
 
-              {/* Learning Content CMS Quick Launcher */}
-              <TouchableOpacity
-                style={[styles.portalCard, { borderColor: '#FBBF24', borderWidth: 1 }]}
-                onPress={() => setShowContentManagerModal(true)}
-                activeOpacity={0.88}
-              >
-                <View style={[styles.portalIconBox, { backgroundColor: 'rgba(251, 191, 36, 0.2)' }]}>
-                  <BookOpen size={22} color="#FBBF24" />
+            return (
+              <View style={{ gap: 12 }}>
+                <View style={[styles.curriculumHero, { backgroundColor: cardSurface, borderColor }]}>
+                  <Sparkles size={20} color="#FBBF24" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.curriculumHeroTitle, { color: primaryText }]}>
+                      {activeMode === '52_week' ? '52-Week Bilingual Curriculum' : 'Custom Weekly Curriculum'}
+                    </Text>
+                    <Text style={[styles.curriculumHeroSub, { color: secondaryText }]}>
+                      {activeMode === '52_week'
+                        ? `${fiftyTwoWeekLessons.length || 52} Weeks · ${
+                            curriculumConfig?.officialLaunchDate
+                              ? `Starts ${formatCurriculumDateDisplay(curriculumConfig.officialLaunchDate)}`
+                              : 'Start date not confirmed yet'
+                          }`
+                        : `${customLessons.length} Custom Weekly Lessons · Admin Scheduled Dates`}
+                    </Text>
+                  </View>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.portalTitle, { color: '#FBBF24' }]}>
-                    Open Bible Learning Center CMS
-                  </Text>
-                  <Text style={styles.portalSub}>
-                    Manage {stories.length} stories, {quizzes.length} interactive quizzes & {songs.length} action songs
-                  </Text>
-                </View>
-                <ChevronRight size={18} color="#FBBF24" />
-              </TouchableOpacity>
 
-              {/* Claude 3.5 Sonnet AI Studio Launcher */}
-              <TouchableOpacity
-                style={[styles.portalCard, { borderColor: '#8B5CF6', borderWidth: 1 }]}
-                onPress={() => setShowAICopilotModal(true)}
-                activeOpacity={0.88}
-              >
-                <View style={[styles.portalIconBox, { backgroundColor: 'rgba(139, 92, 246, 0.2)' }]}>
-                  <Sparkles size={22} color="#C084FC" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.portalTitle, { color: '#C084FC' }]}>
-                    Launch Claude 3.5 Sonnet AI Studio
-                  </Text>
-                  <Text style={styles.portalSub}>
-                    Generate bilingual lesson plans, 4-choice quizzes, storybooks & craft ideas
-                  </Text>
-                </View>
-                <ChevronRight size={18} color="#C084FC" />
-              </TouchableOpacity>
+                {/* Curriculum Manager Launcher (52-Week Toggle + Custom Builder) */}
+                <TouchableOpacity
+                  style={[styles.portalCard, { backgroundColor: cardSurface, borderColor: '#10B981', borderWidth: 1 }]}
+                  onPress={() => setShowCurriculumModal(true)}
+                  activeOpacity={0.88}
+                >
+                  <View style={[styles.portalIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]}>
+                    <Calendar size={22} color="#10B981" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.portalTitle, { color: '#10B981' }]}>
+                      Manage 52-Week & Custom Curriculum
+                    </Text>
+                    <Text style={[styles.portalSub, { color: secondaryText }]}>
+                      Toggle 52-Week Plan, confirm start date, or create custom weekly schedules
+                    </Text>
+                  </View>
+                  <ChevronRight size={18} color="#10B981" />
+                </TouchableOpacity>
 
-              {/* Active Lesson Card (Dynamic from Firestore) */}
-              {(() => {
-                const activeLesson = curriculum.find(l => l.isCurrentWeek) || curriculum[0];
-                if (!activeLesson) return null;
-                return (
-                  <View style={[styles.lessonCard, { borderColor: '#10B981' }]}>
+                {/* Learning Content CMS Quick Launcher */}
+                <TouchableOpacity
+                  style={[styles.portalCard, { backgroundColor: cardSurface, borderColor: '#FBBF24', borderWidth: 1 }]}
+                  onPress={() => setShowContentManagerModal(true)}
+                  activeOpacity={0.88}
+                >
+                  <View style={[styles.portalIconBox, { backgroundColor: 'rgba(251, 191, 36, 0.2)' }]}>
+                    <BookOpen size={22} color="#FBBF24" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.portalTitle, { color: '#FBBF24' }]}>
+                      Open Bible Learning Center CMS
+                    </Text>
+                    <Text style={[styles.portalSub, { color: secondaryText }]}>
+                      Manage {stories.length} stories, {quizzes.length} interactive quizzes & {songs.length} action songs
+                    </Text>
+                  </View>
+                  <ChevronRight size={18} color="#FBBF24" />
+                </TouchableOpacity>
+
+                {/* Rhema AI Studio Launcher */}
+                <TouchableOpacity
+                  style={[styles.portalCard, { backgroundColor: cardSurface, borderColor: '#8B5CF6', borderWidth: 1 }]}
+                  onPress={() => setShowAICopilotModal(true)}
+                  activeOpacity={0.88}
+                >
+                  <View style={[styles.portalIconBox, { backgroundColor: 'rgba(139, 92, 246, 0.2)' }]}>
+                    <Sparkles size={22} color="#C084FC" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.portalTitle, { color: '#C084FC' }]}>
+                      Launch Rhema AI Studio
+                    </Text>
+                    <Text style={[styles.portalSub, { color: secondaryText }]}>
+                      Generate bilingual lesson plans, 4-choice quizzes, storybooks & craft ideas
+                    </Text>
+                  </View>
+                  <ChevronRight size={18} color="#C084FC" />
+                </TouchableOpacity>
+
+                {/* Active Lesson Card (Dynamic from Firestore) */}
+                {activeLesson ? (
+                  <View style={[styles.lessonCard, { backgroundColor: cardSurface, borderColor: '#10B981' }]}>
                     <View style={styles.lessonHeader}>
                       <Text style={[styles.lessonWeek, { color: '#10B981' }]}>
-                        WEEK {activeLesson.weekNumber} · CURRENT ACTIVE SUNDAY
+                        {activeMode === '52_week' ? `WEEK ${activeLesson.weekNumber}` : 'CUSTOM SCHEDULE'}
+                        {activeDate ? ` · ${formatCurriculumDateDisplay(activeDate).toUpperCase()}` : ' · ACTIVE SUNDAY'}
                       </Text>
                       <Text style={styles.approvedBadge}>✓ Live Across App</Text>
                     </View>
-                    <Text style={styles.lessonTitle}>{activeLesson.title}</Text>
+                    <Text style={[styles.lessonTitle, { color: primaryText }]}>{activeLesson.title}</Text>
                     <Text style={[styles.lessonRef, { color: '#FBBF24' }]}>
                       {activeLesson.titleTelugu}
                     </Text>
-                    <Text style={styles.lessonRef}>
+                    <Text style={[styles.lessonRef, { color: secondaryText }]}>
                       {activeLesson.scriptureRef} · {activeLesson.scriptureRefTelugu}
                     </Text>
-                    <Text style={styles.lessonVerse}>
+                    <Text style={[styles.lessonVerse, { color: primaryText }]}>
                       "{activeLesson.memoryVerse.verseEnglish}"
                     </Text>
-                    <Text style={[styles.lessonVerse, { color: '#9CA3AF', fontStyle: 'normal' }]}>
-                      "{activeLesson.memoryVerse.verseTelugu}" — {activeLesson.memoryVerse.reference}
+                    {!!activeLesson.memoryVerse.verseTelugu && (
+                      <Text style={[styles.lessonVerse, { color: secondaryText, fontStyle: 'normal' }]}>
+                        "{activeLesson.memoryVerse.verseTelugu}" — {activeLesson.memoryVerse.reference}
+                      </Text>
+                    )}
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.lessonCard, { backgroundColor: cardSurface, borderColor: '#F59E0B' }]}
+                    onPress={() => setShowCurriculumModal(true)}
+                  >
+                    <Text style={[styles.lessonTitle, { color: primaryText }]}>
+                      No Custom Weekly Lesson Scheduled Yet
+                    </Text>
+                    <Text style={[styles.lessonRef, { color: secondaryText, marginTop: 4 }]}>
+                      Tap "Manage 52-Week & Custom Curriculum" above to create your first custom lesson.
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Next Upcoming Lesson Preview (Dynamic) */}
+                {nextLesson && (
+                  <View style={[styles.lessonCard, { backgroundColor: cardSurface, borderColor }]}>
+                    <View style={styles.lessonHeader}>
+                      <Text style={styles.lessonWeek}>
+                        {activeMode === '52_week' ? `WEEK ${nextLesson.weekNumber}` : 'UPCOMING'}
+                        {nextLessonDate ? ` · ${formatCurriculumDateDisplay(nextLessonDate).toUpperCase()}` : ' · NEXT SUNDAY'}
+                      </Text>
+                      <Text style={styles.approvedBadge}>✓ Upcoming</Text>
+                    </View>
+                    <Text style={[styles.lessonTitle, { color: primaryText }]}>
+                      {nextLesson.title} ({nextLesson.titleTelugu})
+                    </Text>
+                    <Text style={[styles.lessonRef, { color: secondaryText }]}>
+                      {nextLesson.scriptureRef} · {nextLesson.scriptureRefTelugu}
+                    </Text>
+                    <Text style={[styles.lessonVerse, { color: primaryText }]}>
+                      "{nextLesson.memoryVerse.verseEnglish}" — {nextLesson.memoryVerse.reference}
                     </Text>
                   </View>
-                );
-              })()}
-
-              <View style={styles.lessonCard}>
-                <View style={styles.lessonHeader}>
-                  <Text style={styles.lessonWeek}>WEEK 43 · NEXT SUNDAY</Text>
-                  <Text style={styles.approvedBadge}>✓ Approved</Text>
-                </View>
-                <Text style={styles.lessonTitle}>Daniel in the Lions' Den (విశ్వాసము / Faith)</Text>
-                <Text style={styles.lessonRef}>Daniel 6 · దానియేలు 6</Text>
-                <Text style={styles.lessonVerse}>
-                  "నా దేవుడు తన దూతను పంపి సింహముల నోళ్లు మూయించెను." — Dan 6:22
-                </Text>
+                )}
               </View>
-            </View>
-          )}
+            );
+          })()}
         </ScrollView>
       )}
 
-      {/* ── ENROLL CHILD MODAL ── */}
+      {/* ── ENROLL CHILD MODAL (WITH FATHER / PARENT CHURCH MEMBER SEARCH) ── */}
       {showEnrollModal && (
-        <EnrollChildModal
+        <TeacherEnrollChildModal
           visible={showEnrollModal}
           onClose={() => setShowEnrollModal(false)}
           churchId={churchId}
-          member={member}
+          actingMember={member}
+          allClasses={classes}
           onChildEnrolled={() => {
             // Realtime updates
           }}
@@ -1068,12 +1188,15 @@ export default function AdminKidsHub({ navigation }: any) {
         />
       )}
 
-      {/* ── 52-WEEK CURRICULUM SYLLABUS MODAL ── */}
+      {/* ── 52-WEEK & CUSTOM CURRICULUM SYLLABUS MODAL ── */}
       {showCurriculumModal && (
         <AdminCurriculumModal
           visible={showCurriculumModal}
           curriculum={curriculum}
           churchId={churchId}
+          stories={stories}
+          quizzes={quizzes}
+          songs={songs}
           onClose={() => setShowCurriculumModal(false)}
         />
       )}
@@ -1114,6 +1237,25 @@ export default function AdminKidsHub({ navigation }: any) {
         />
       )}
 
+      {/* ── CHILD PROFILE DETAIL MODAL ── */}
+      {selectedChildProfile && (
+        <ChildProfileDetailModal
+          visible={!!selectedChildProfile}
+          child={selectedChildProfile}
+          onClose={() => setSelectedChildProfile(null)}
+          onDeleteRequest={c => {
+            setSelectedChildProfile(null);
+            setChildToDelete({
+              id: c.id,
+              name: c.fullName,
+              childId: c.childId,
+              parentName: c.parentName,
+              assignedClassName: c.assignedClassName,
+            });
+          }}
+        />
+      )}
+
       {/* ── BILINGUAL GRADUATION & VBS CERTIFICATE MODAL ── */}
       {selectedCertData && (
         <KidsCertificateModal
@@ -1133,32 +1275,32 @@ export default function AdminKidsHub({ navigation }: any) {
         }}
       >
         <View style={styles.confirmBackdrop}>
-          <View style={styles.confirmCard}>
+          <View style={[styles.confirmCard, { backgroundColor: cardSurface, borderColor }]}>
             <View style={styles.confirmIconBubble}>
               <Trash2 size={24} color="#EF4444" />
             </View>
 
-            <Text style={styles.confirmTitle}>Remove Registration?</Text>
-            <Text style={styles.confirmSubtitle}>
-              Are you sure you want to remove <Text style={{ color: '#FFFFFF', fontWeight: '800' }}>{childToDelete?.name}</Text> from Sunday School?
+            <Text style={[styles.confirmTitle, { color: primaryText }]}>Remove Registration?</Text>
+            <Text style={[styles.confirmSubtitle, { color: secondaryText }]}>
+              Are you sure you want to remove <Text style={{ color: primaryText, fontWeight: '800' }}>{childToDelete?.name}</Text> from Sunday School?
             </Text>
 
             {/* Information Summary Box */}
-            <View style={styles.confirmChildInfoBox}>
+            <View style={[styles.confirmChildInfoBox, { backgroundColor: secondarySurface, borderColor }]}>
               <View style={styles.confirmInfoRow}>
-                <Text style={styles.confirmInfoLabel}>Child ID</Text>
-                <Text style={styles.confirmInfoVal}>{childToDelete?.childId || 'N/A'}</Text>
+                <Text style={[styles.confirmInfoLabel, { color: secondaryText }]}>Child ID</Text>
+                <Text style={[styles.confirmInfoVal, { color: primaryText }]}>{childToDelete?.childId || 'N/A'}</Text>
               </View>
               {childToDelete?.assignedClassName && (
                 <View style={styles.confirmInfoRow}>
-                  <Text style={styles.confirmInfoLabel}>Classroom</Text>
-                  <Text style={styles.confirmInfoVal}>{childToDelete?.assignedClassName}</Text>
+                  <Text style={[styles.confirmInfoLabel, { color: secondaryText }]}>Classroom</Text>
+                  <Text style={[styles.confirmInfoVal, { color: primaryText }]}>{childToDelete?.assignedClassName}</Text>
                 </View>
               )}
               {childToDelete?.parentName && (
                 <View style={styles.confirmInfoRow}>
-                  <Text style={styles.confirmInfoLabel}>Parent</Text>
-                  <Text style={styles.confirmInfoVal}>{childToDelete?.parentName}</Text>
+                  <Text style={[styles.confirmInfoLabel, { color: secondaryText }]}>Parent</Text>
+                  <Text style={[styles.confirmInfoVal, { color: primaryText }]}>{childToDelete?.parentName}</Text>
                 </View>
               )}
             </View>
@@ -1172,12 +1314,12 @@ export default function AdminKidsHub({ navigation }: any) {
 
             <View style={styles.confirmActionsRow}>
               <TouchableOpacity
-                style={styles.confirmCancelBtn}
+                style={[styles.confirmCancelBtn, { backgroundColor: secondarySurface, borderColor }]}
                 onPress={() => setChildToDelete(null)}
                 disabled={deletingChild}
                 activeOpacity={0.8}
               >
-                <Text style={styles.confirmCancelText}>Cancel</Text>
+                <Text style={[styles.confirmCancelText, { color: primaryText }]}>Cancel</Text>
               </TouchableOpacity>
 
               <TouchableOpacity

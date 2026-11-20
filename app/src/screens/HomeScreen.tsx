@@ -2622,95 +2622,8 @@ export default function HomeScreen() {
     };
   }, [activeChurch?.id, refreshHomeLiveStream]);
 
-  const renderInlineLiveYouTubeCard = () => {
-    if (!homeIsLive || !homeLiveVideoId) return null;
-    const playerHeight = Math.round(Math.max(screenWidth - 48, 220) * (9 / 16));
-    const yUrl = resolveRhemaYoutubeUrl(activeChurch?.socialLinks?.youtube);
-    const openInAppLive = () =>
-      navigation.navigate('YouTubeLive', {
-        channelUrl: yUrl,
-        videoId: homeLiveVideoId,
-        title: homeLiveTitle || 'Rhema Ministry Live',
-      });
-
-    return (
-      <View
-        style={[
-          styles.inlineLiveYoutubeOuter,
-          { borderColor: screenTheme.bentoYoutubeBorder },
-        ]}
-      >
-        <LinearGradient
-          colors={screenTheme.bentoYoutubeGradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.inlineLiveYoutubeCard}
-        >
-          <View style={styles.inlineLiveHeaderRow}>
-            <View style={styles.inlineLiveHeaderLeft}>
-              <Image
-                source={require('../../assets/3d_youtube.png')}
-                style={{ width: 28, height: 24, marginRight: 8 }}
-                resizeMode="contain"
-              />
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <View style={styles.bentoLiveBadgeWrap}>
-                    <View style={styles.bentoLiveDot} />
-                    <Text style={styles.bentoLiveTag}>LIVE NOW</Text>
-                  </View>
-                  <Text
-                    style={[styles.inlineLiveChannelTxt, { color: screenTheme.bentoYoutubeSub }]}
-                    numberOfLines={1}
-                  >
-                    Rhema Ministry Live
-                  </Text>
-                </View>
-                <Text
-                  style={[styles.inlineLiveTitleTxt, { color: screenTheme.bentoYoutubeText }]}
-                  numberOfLines={1}
-                >
-                  {homeLiveTitle || 'Live Worship Service'}
-                </Text>
-              </View>
-            </View>
-
-            <TouchableOpacity
-              style={styles.inlineLiveExpandBtn}
-              activeOpacity={0.85}
-              onPress={openInAppLive}
-            >
-              <Maximize2 size={13} color="#FFFFFF" />
-              <Text style={styles.inlineLiveExpandTxt}>Full View</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={[styles.inlineLivePlayerWrap, { height: playerHeight }]}>
-            {isHomeFocused ? (
-              <RhemaYouTubePlayer
-                height={playerHeight}
-                play={isHomeFocused}
-                autoPlay={true}
-                isLive={true}
-                videoId={homeLiveVideoId}
-                title={homeLiveTitle || 'Rhema Ministry Live'}
-                showExternalButton={false}
-              />
-            ) : (
-              <TouchableOpacity
-                style={styles.inlineLivePausedBox}
-                activeOpacity={0.85}
-                onPress={openInAppLive}
-              >
-                <Radio size={24} color="#EF4444" />
-                <Text style={styles.inlineLivePausedTxt}>Tap to Watch Live In-App</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </LinearGradient>
-      </View>
-    );
-  };
+  // Inline YouTube live player removed per user preference; users access the stream via the dedicated YouTube Live screen.
+  const renderInlineLiveYouTubeCard = () => null;
 
   useEffect(() => {
     const cId = activeChurch?.id || 'rhema';
@@ -4514,35 +4427,52 @@ export default function HomeScreen() {
                               {
                                 borderColor: screenTheme.promiseCardBorder,
                                 borderWidth: 1,
+                                overflow: 'hidden',
                                 shadowColor: screenTheme.isDark ? '#000' : '#0F172A',
-                                shadowOpacity: screenTheme.isDark ? 0.35 : 0.06,
+                                shadowOpacity: screenTheme.isDark ? 0.35 : 0.08,
                                 shadowRadius: 10,
-                                elevation: screenTheme.isDark ? 4 : 2,
+                                elevation: screenTheme.isDark ? 4 : 3,
                               }
                             ]}
                             imageStyle={{ borderRadius: 24 }}
                             resizeMode="cover"
                           >
                             <LinearGradient
-                              colors={['rgba(15, 23, 42, 0.45)', 'rgba(15, 23, 42, 0.88)']}
-                              style={StyleSheet.absoluteFillObject}
+                              colors={['rgba(15, 23, 42, 0.58)', 'rgba(15, 23, 42, 0.90)']}
+                              style={[StyleSheet.absoluteFillObject, { borderRadius: 24 }]}
                             />
 
-                            <Text style={[styles.phLabel, { color: screenTheme.promiseLabel }]} maxFontSizeMultiplier={1.15}>
-                              {greeting}
-                            </Text>
+                            <View style={{
+                              alignSelf: 'center',
+                              backgroundColor: 'rgba(15, 23, 42, 0.55)',
+                              borderWidth: 1,
+                              borderColor: 'rgba(255, 255, 255, 0.22)',
+                              paddingHorizontal: 14,
+                              paddingVertical: 4,
+                              borderRadius: 999,
+                              marginBottom: 12,
+                            }}>
+                              <Text style={[styles.phLabel, { color: '#FDE68A', marginBottom: 0 }]} maxFontSizeMultiplier={1.15}>
+                                {greeting}
+                              </Text>
+                            </View>
 
                             {/* Main Verse Block */}
                             <View style={styles.vdVerseBlock}>
                               
                               <View style={styles.vdVerseTextContainer}>
-                                <Text style={[styles.vdTopRightQuote, { color: screenTheme.promiseQuote }]} pointerEvents="none">”</Text>
+                                <Text style={[styles.vdTopRightQuote, { color: 'rgba(255, 255, 255, 0.18)' }]} pointerEvents="none">”</Text>
 
                                 {/* Primary localized verse (Telugu / Primary) */}
                                 <Text 
                                   style={[
                                     styles.vdVerseTe, 
-                                    { color: screenTheme.promiseVerseTe },
+                                    {
+                                      color: '#FFFFFF',
+                                      textShadowColor: 'rgba(0, 0, 0, 0.65)',
+                                      textShadowOffset: { width: 0, height: 1 },
+                                      textShadowRadius: 3,
+                                    },
                                     !loc.secondaryVerse && { fontSize: 17, lineHeight: 26 }
                                   ]} 
                                   maxFontSizeMultiplier={1.15}
@@ -4552,20 +4482,31 @@ export default function HomeScreen() {
 
                                 {/* Secondary verse (English) if distinct */}
                                 {loc.secondaryVerse && loc.secondaryVerse !== loc.primaryVerse ? (
-                                  <Text style={[styles.vdVerseEn, { color: screenTheme.promiseVerseEn }]} maxFontSizeMultiplier={1.15}>
+                                  <Text
+                                    style={[
+                                      styles.vdVerseEn,
+                                      {
+                                        color: 'rgba(241, 245, 249, 0.95)',
+                                        textShadowColor: 'rgba(0, 0, 0, 0.55)',
+                                        textShadowOffset: { width: 0, height: 1 },
+                                        textShadowRadius: 2,
+                                      },
+                                    ]}
+                                    maxFontSizeMultiplier={1.15}
+                                  >
                                     {stripHtml(loc.secondaryVerse)}
                                   </Text>
                                 ) : null}
 
                                 {/* Reference Line inside Scripture column */}
                                 <View style={styles.vdReferenceRow}>
-                                  <Text style={[styles.vdRefPrimary, { color: screenTheme.promiseRefPrimary }]} maxFontSizeMultiplier={1.15}>
+                                  <Text style={[styles.vdRefPrimary, { color: '#FCD34D' }]} maxFontSizeMultiplier={1.15}>
                                     {loc.primaryReference}
                                   </Text>
                                   {loc.secondaryReference && loc.secondaryReference !== loc.primaryReference ? (
                                     <>
-                                      <Text style={[styles.vdRefDivider, { color: screenTheme.promiseRefDivider }]} maxFontSizeMultiplier={1.15}>|</Text>
-                                      <Text style={[styles.vdRefSecondary, { color: screenTheme.promiseRefSecondary }]} maxFontSizeMultiplier={1.15}>
+                                      <Text style={[styles.vdRefDivider, { color: 'rgba(255, 255, 255, 0.45)' }]} maxFontSizeMultiplier={1.15}>|</Text>
+                                      <Text style={[styles.vdRefSecondary, { color: '#E2E8F0' }]} maxFontSizeMultiplier={1.15}>
                                         {loc.secondaryReference}
                                       </Text>
                                     </>
@@ -4806,7 +4747,7 @@ export default function HomeScreen() {
                     </View>
                   );
                 })}
-                {homeIsLive && homeLiveVideoId ? renderInlineLiveYouTubeCard() : null}
+                {/* Render inline live youtube player card removed per user request (users use dedicated YouTube Live screen) */}
               </View>
             ) : (
               /* ── Bento Grid: Asymmetric Floating Cards ── */
@@ -5277,8 +5218,7 @@ export default function HomeScreen() {
               </LinearGradient>
             </TouchableOpacity>
 
-            {/* ── LIVE YOUTUBE PLAYER DIRECTLY IN BENTO HOME SECTION WHEN LIVE ── */}
-            {homeIsLive && homeLiveVideoId ? renderInlineLiveYouTubeCard() : null}
+            {/* ── LIVE YOUTUBE PLAYER DIRECTLY IN BENTO HOME SECTION REMOVED (DEDICATED YOUTUBE LIVE SCREEN USED) ── */}
 
             {/* ── EXPANDABLE BENTO SECTION (Rows 6, 7 & 8) ── */}
             {showAllBento && (
@@ -5288,11 +5228,10 @@ export default function HomeScreen() {
               style={styles.bentoRow6}
               onLayout={(e) => setOnlineMeetingsY(e.nativeEvent.layout.y)}
             >
-              {/* When inline live video is already active above, lay out Meetings & Members side-by-side */}
-              <View style={homeIsLive && homeLiveVideoId ? styles.bentoRow6Horizontal : styles.bentoRow6LeftCol}>
+              <View style={styles.bentoRow6LeftCol}>
                 {/* 1. Online Meetings */}
                 <TouchableOpacity
-                  style={[styles.clayMeetingsTouch, homeIsLive && homeLiveVideoId && { flex: 1 }]}
+                  style={styles.clayMeetingsTouch}
                   activeOpacity={0.85}
                   onPress={() => navigation.navigate('OnlineMeetings')}
                 >
@@ -5334,7 +5273,7 @@ export default function HomeScreen() {
 
                 {/* 2. Members */}
                 <TouchableOpacity
-                  style={[styles.clayMembersTouch, homeIsLive && homeLiveVideoId && { flex: 1 }]}
+                  style={styles.clayMembersTouch}
                   activeOpacity={0.85}
                   onPress={handleOpenMembers}
                 >
@@ -5375,8 +5314,7 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               </View>
 
-              {/* Right Column: Big YouTube Card (shown when stream is not already playing inline above) */}
-              {!(homeIsLive && homeLiveVideoId) && (
+              {/* Right Column: Big YouTube Card */}
               <TouchableOpacity
                 style={styles.clayYoutubeBigTouch}
                 activeOpacity={0.88}
@@ -5430,7 +5368,6 @@ export default function HomeScreen() {
                   </View>
                 </LinearGradient>
               </TouchableOpacity>
-              )}
             </View>
 
             {/* ── ROW 7: Service Roster Banner Card (matches 4-in-a-Row Quick Access items) ── */}

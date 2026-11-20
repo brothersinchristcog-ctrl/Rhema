@@ -12,9 +12,12 @@ import {
   Linking, 
   Alert, 
   TextInput, 
-  Modal 
+  Modal,
+  Image
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as ImagePicker from 'expo-image-picker';
+import storage from '@react-native-firebase/storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { 
   Users, 
@@ -30,7 +33,9 @@ import {
   Calendar as CalendarIcon, 
   Edit3, 
   Trash2,
-  Search
+  Search,
+  Camera,
+  Image as ImageIcon
 } from 'lucide-react-native';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import { useAuth } from '../context/AuthContext';
@@ -78,8 +83,11 @@ export default function MembersScreen({ navigation }: any) {
     email: '',
     phone: '',
     referencePhone: '',
+    profilePhoto: '',
     isKidMember: false
   });
+  const [uploadingPhotoForId, setUploadingPhotoForId] = useState<string | null>(null);
+  const [pickingModalPhoto, setPickingModalPhoto] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [showRelationPicker, setShowRelationPicker] = useState(false);
@@ -189,6 +197,136 @@ export default function MembersScreen({ navigation }: any) {
     }));
   };
 
+  const pickOrCaptureImage = async (source: 'gallery' | 'camera'): Promise<string | null> => {
+    try {
+      if (source === 'camera') {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Camera Permission', 'Please allow camera access to take a child photo.');
+          return null;
+        }
+        const result = await ImagePicker.launchCameraAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.65,
+        });
+        if (!result.canceled && result.assets && result.assets.length > 0) {
+          return result.assets[0].uri;
+        }
+        return null;
+      } else {
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.65,
+        });
+        if (!result.canceled && result.assets && result.assets.length > 0) {
+          return result.assets[0].uri;
+        }
+        return null;
+      }
+    } catch (err: any) {
+      Alert.alert('Photo Error', err?.message || 'Could not select or capture image.');
+      return null;
+    }
+  };
+
+  const uploadChildPhotoToStorage = async (churchId: string, localUri: string): Promise<string> => {
+    if (localUri.startsWith('http://') || localUri.startsWith('https://')) {
+      return localUri;
+    }
+    const cleanPath = localUri.split('?')[0];
+    const ext = cleanPath.includes('.') ? cleanPath.split('.').pop() || 'jpg' : 'jpg';
+    const storageRef = storage().ref(`churches/${churchId}/children/${Date.now()}_child.${ext}`);
+    await storageRef.putFile(localUri);
+    return await storageRef.getDownloadURL();
+  };
+
+  const handleChildCardPhotoUpload = async (
+    contactId: string,
+    contactName: string,
+    source: 'gallery' | 'camera'
+  ) => {
+    const localUri = await pickOrCaptureImage(source);
+    if (!localUri) return;
+
+    setUploadingPhotoForId(contactId);
+    try {
+      const churchId = member?.churchId || (await FirestoreService.getChurchId());
+      const targetAccountId = member?.accountId || member?.id;
+      if (!churchId) throw new Error('Missing church context');
+
+      const downloadUrl = await uploadChildPhotoToStorage(churchId, localUri);
+
+      // 1. Update single-source member profilePhoto in Household Directory
+      await FirestoreService.updateMemberProfile(churchId, contactId, {
+        profilePhoto: downloadUrl,
+      });
+
+      // Optimistic local state update for immediate visual reflection
+      setRelatedContacts(prev =>
+        prev.map(item =>
+          (item.id || item.Id) === contactId
+            ? { ...item, profilePhoto: downloadUrl, photoUrl: downloadUrl }
+            : item
+        )
+      );
+
+      // 2. Sync onto the existing ChildRecord in Rhema Kids (zero duplicates)
+      const syncResult = await KidsMinistryService.syncChildPhotoFromMember(churchId, {
+        memberContactId: contactId,
+        familyId: targetAccountId,
+        fullName: contactName,
+        photoUrl: downloadUrl,
+      });
+
+      if (!syncResult.matched && targetAccountId) {
+        await KidsMinistryService.syncMemberChildrenToKidsMinistry(churchId, targetAccountId);
+      }
+
+      Alert.alert(
+        'Photo Updated & Synced',
+        `${contactName}'s profile picture has been updated across the Household Card and Rhema Kids.`
+      );
+    } catch (err: any) {
+      Alert.alert('Upload Failed', err?.message || 'Could not upload profile photo.');
+    } finally {
+      setUploadingPhotoForId(null);
+    }
+  };
+
+  const openChildPhotoChooser = (contactId: string, contactName: string) => {
+    Alert.alert(
+      `${contactName}'s Profile Picture`,
+      'Choose how you would like to add or update the photo:',
+      [
+        {
+          text: 'Upload from Gallery',
+          onPress: () => handleChildCardPhotoUpload(contactId, contactName, 'gallery'),
+        },
+        {
+          text: 'Take Photo using Camera',
+          onPress: () => handleChildCardPhotoUpload(contactId, contactName, 'camera'),
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
+
+  const handleModalPickPhoto = async (source: 'gallery' | 'camera') => {
+    setPickingModalPhoto(true);
+    try {
+      const uri = await pickOrCaptureImage(source);
+      if (uri) {
+        setNewMember((prev: any) => ({ ...prev, profilePhoto: uri }));
+      }
+    } finally {
+      setPickingModalPhoto(false);
+    }
+  };
+
   const handleAddMember = async () => {
     if (!newMember.firstName || !newMember.lastName) {
       Alert.alert(t('members.validation'), t('members.nameRequired'));
@@ -233,14 +371,34 @@ export default function MembersScreen({ navigation }: any) {
       }
       
       const isKidMember = KID_RELATIONS.includes(newMember.relation);
+      let finalProfilePhoto = newMember.profilePhoto || '';
+      if (
+        isKidMember &&
+        finalProfilePhoto &&
+        !finalProfilePhoto.startsWith('http://') &&
+        !finalProfilePhoto.startsWith('https://')
+      ) {
+        finalProfilePhoto = await uploadChildPhotoToStorage(churchId!, finalProfilePhoto);
+      }
+
       const memberData = {
         ...newMember,
         isKidMember,
+        profilePhoto: finalProfilePhoto,
         phone: newMember.phone || ''
       };
 
       if (editingMemberId) {
         await FirestoreService.updateMemberProfile(churchId!, editingMemberId, memberData);
+        if (isKidMember && finalProfilePhoto) {
+          const editedFullName = `${newMember.firstName || ''} ${newMember.lastName || ''}`.trim();
+          await KidsMinistryService.syncChildPhotoFromMember(churchId!, {
+            memberContactId: editingMemberId,
+            familyId: targetAccountId,
+            fullName: editedFullName,
+            photoUrl: finalProfilePhoto,
+          }).catch(() => {});
+        }
         setSuccessMessage(t('members.memberUpdatedSuccess'));
       } else {
         await FirestoreService.addFamilyMember(churchId!, targetAccountId, memberData);
@@ -249,7 +407,7 @@ export default function MembersScreen({ navigation }: any) {
 
       // Automatically sync to Rhema Kids if this family member is a child
       if (isKidMember) {
-        KidsMinistryService.syncMemberChildrenToKidsMinistry(churchId!, targetAccountId).catch(e => {
+        await KidsMinistryService.syncMemberChildrenToKidsMinistry(churchId!, targetAccountId).catch(e => {
           console.warn('[MembersScreen] Sync to Rhema Kids error:', e);
         });
       }
@@ -258,7 +416,7 @@ export default function MembersScreen({ navigation }: any) {
       setShowAddModal(false);
       setEditingMemberId(null);
       setNewMember({
-        firstName: '', lastName: '', relation: 'Husband', gender: 'Male', dob: '', anniversaryDate: '', email: '', phone: '', referencePhone: '', isKidMember: false
+        firstName: '', lastName: '', relation: 'Husband', gender: 'Male', dob: '', anniversaryDate: '', email: '', phone: '', referencePhone: '', profilePhoto: '', isKidMember: false
       });
       fetchFamily();
     } catch (err: any) {
@@ -463,6 +621,9 @@ export default function MembersScreen({ navigation }: any) {
               const rawRole = (c.userType || c.User_Type__c || 'Member').toString();
               const displayRole = rawRole.toLowerCase() === 'member' ? t('members.memberRole') : (rawRole.charAt(0).toUpperCase() + rawRole.slice(1).toLowerCase());
               const displayRelation = getRelationLabel(c.relation || c.Relation || '');
+              const isCardKid = Boolean(c.isKidMember || KID_RELATIONS.includes(c.relation || c.Relation || ''));
+              const contactPhoto = c.profilePhoto || c.photoUrl || '';
+              const isUploadingThisKid = uploadingPhotoForId === contactId;
 
               return (
                 <View 
@@ -477,9 +638,51 @@ export default function MembersScreen({ navigation }: any) {
                   ]}
                 >
                   <View style={styles.cardHeader}>
-                    <View style={[styles.avatarCircle, isCurrentUser && styles.avatarCircleActive]}>
-                      <Text style={styles.avatarText}>{getInitials(contactName)}</Text>
-                    </View>
+                    <TouchableOpacity
+                      disabled={!isCardKid || isUploadingThisKid}
+                      onPress={() => isCardKid && openChildPhotoChooser(contactId, contactName)}
+                      activeOpacity={0.8}
+                      style={{ position: 'relative', marginRight: 16 }}
+                    >
+                      <View
+                        style={[
+                          styles.avatarCircle,
+                          { marginRight: 0, overflow: 'hidden' },
+                          isCurrentUser && styles.avatarCircleActive,
+                        ]}
+                      >
+                        {isUploadingThisKid ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : contactPhoto ? (
+                          <Image
+                            source={{ uri: contactPhoto }}
+                            style={{ width: '100%', height: '100%' }}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <Text style={styles.avatarText}>{getInitials(contactName)}</Text>
+                        )}
+                      </View>
+                      {isCardKid && (
+                        <View
+                          style={{
+                            position: 'absolute',
+                            bottom: -2,
+                            right: -2,
+                            width: 22,
+                            height: 22,
+                            borderRadius: 11,
+                            backgroundColor: '#F59E0B',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            borderWidth: 2,
+                            borderColor: cardSurface,
+                          }}
+                        >
+                          <Camera size={11} color="#000000" />
+                        </View>
+                      )}
+                    </TouchableOpacity>
 
                     <View style={styles.memberMeta}>
                       <View style={styles.nameRow}>
@@ -520,6 +723,7 @@ export default function MembersScreen({ navigation }: any) {
                             gender: c.gender || c.Gender || 'Male',
                             dob: c.dob || '',
                             anniversaryDate: c.anniversaryDate || c.AnniversaryDate || '',
+                            profilePhoto: c.profilePhoto || c.photoUrl || '',
                             isKidMember: KID_RELATIONS.includes(c.relation || c.Relation || '')
                           });
                           setShowAddModal(true);
@@ -603,6 +807,68 @@ export default function MembersScreen({ navigation }: any) {
                               year: 'numeric'
                             })}
                           </Text>
+                        </View>
+                      </View>
+                    )}
+
+                    {/* Direct Child Profile Picture Upload & Rhema Kids Sync */}
+                    {isCardKid && (
+                      <View
+                        style={{
+                          marginTop: 4,
+                          paddingTop: 12,
+                          borderTopWidth: 1,
+                          borderTopColor: secondarySurface,
+                        }}
+                      >
+                        <Text style={[styles.detailLabel, { marginBottom: 8 }]}>
+                          Child Profile Photo (Synced with Rhema Kids)
+                        </Text>
+                        <View style={{ flexDirection: 'row', gap: 10 }}>
+                          <TouchableOpacity
+                            disabled={isUploadingThisKid}
+                            onPress={() => handleChildCardPhotoUpload(contactId, contactName, 'gallery')}
+                            style={{
+                              flex: 1,
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 6,
+                              paddingVertical: 10,
+                              paddingHorizontal: 12,
+                              borderRadius: 12,
+                              backgroundColor: isDark ? '#1E293B' : '#EFF6FF',
+                              borderWidth: 1,
+                              borderColor: isDark ? '#334155' : '#BFDBFE',
+                            }}
+                          >
+                            <ImageIcon size={15} color="#2563EB" />
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#93C5FD' : '#1D4ED8' }}>
+                              Upload Gallery
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            disabled={isUploadingThisKid}
+                            onPress={() => handleChildCardPhotoUpload(contactId, contactName, 'camera')}
+                            style={{
+                              flex: 1,
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 6,
+                              paddingVertical: 10,
+                              paddingHorizontal: 12,
+                              borderRadius: 12,
+                              backgroundColor: isDark ? '#272012' : '#FFFBEB',
+                              borderWidth: 1,
+                              borderColor: isDark ? '#78350F' : '#FDE68A',
+                            }}
+                          >
+                            <Camera size={15} color="#D97706" />
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#FBBF24' : '#B45309' }}>
+                              Take Photo
+                            </Text>
+                          </TouchableOpacity>
                         </View>
                       </View>
                     )}
@@ -694,6 +960,85 @@ export default function MembersScreen({ navigation }: any) {
             </View>
             
             <ScrollView showsVerticalScrollIndicator={false}>
+              {/* Child Profile Picture Picker inside Add/Edit Modal */}
+              {KID_RELATIONS.includes(newMember.relation) && (
+                <View style={[styles.inputGroup, { alignItems: 'center', marginBottom: 18 }]}>
+                  <Text style={[styles.inputLabel, { alignSelf: 'flex-start' }]}>
+                    Child Profile Picture (Synced with Rhema Kids)
+                  </Text>
+                  <View
+                    style={{
+                      width: 82,
+                      height: 82,
+                      borderRadius: 41,
+                      backgroundColor: inputBg,
+                      borderWidth: 2,
+                      borderColor: '#F59E0B',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      overflow: 'hidden',
+                      marginBottom: 10,
+                    }}
+                  >
+                    {pickingModalPhoto ? (
+                      <ActivityIndicator size="small" color="#F59E0B" />
+                    ) : newMember.profilePhoto ? (
+                      <Image
+                        source={{ uri: newMember.profilePhoto }}
+                        style={{ width: '100%', height: '100%' }}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <Camera size={26} color="#F59E0B" />
+                    )}
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 10, width: '100%' }}>
+                    <TouchableOpacity
+                      disabled={pickingModalPhoto}
+                      onPress={() => handleModalPickPhoto('gallery')}
+                      style={{
+                        flex: 1,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        paddingVertical: 10,
+                        borderRadius: 12,
+                        borderWidth: 1,
+                        borderColor: inputBorder,
+                        backgroundColor: inputBg,
+                      }}
+                    >
+                      <ImageIcon size={15} color="#2563EB" />
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: primaryText }}>
+                        Gallery
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      disabled={pickingModalPhoto}
+                      onPress={() => handleModalPickPhoto('camera')}
+                      style={{
+                        flex: 1,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        paddingVertical: 10,
+                        borderRadius: 12,
+                        borderWidth: 1,
+                        borderColor: inputBorder,
+                        backgroundColor: inputBg,
+                      }}
+                    >
+                      <Camera size={15} color="#D97706" />
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: primaryText }}>
+                        Camera
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>{t('members.firstName')}</Text>
                 <TextInput 

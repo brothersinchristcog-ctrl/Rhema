@@ -37,6 +37,7 @@ import {
   ShieldAlert,
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
+import { useAdminTheme } from '../../utils/adminThemeHelper';
 import KidsMinistryService from '../../services/KidsMinistryService';
 import { ChildRecord, AuthorizedGuardian } from '../../types/KidsMinistryTypes';
 
@@ -46,6 +47,16 @@ const BARCODE_SETTINGS: { barcodeTypes: BarcodeType[] } = { barcodeTypes: ['qr']
 export default function KidsCheckOutScanner({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const { member } = useAuth();
+  const {
+    isDark,
+    screenBg,
+    cardSurface,
+    secondarySurface,
+    primaryText,
+    secondaryText,
+    borderColor,
+    barStyle,
+  } = useAdminTheme();
   const churchId = member?.churchId || 'rhema';
 
   // Camera permissions
@@ -283,23 +294,27 @@ export default function KidsCheckOutScanner({ navigation }: any) {
     );
   });
 
+  const activePillBg = isDark ? '#FFFFFF' : '#0F172A';
+  const activePillText = isDark ? '#000000' : '#FFFFFF';
+  const iconButtonBg = isDark ? '#18181B' : secondarySurface;
+
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#000000" />
+    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: screenBg }]}>
+      <StatusBar barStyle={barStyle} backgroundColor={screenBg} />
 
       {/* ── TOP HEADER ── */}
-      <View style={styles.headerRow}>
+      <View style={[styles.headerRow, { backgroundColor: screenBg, borderBottomColor: borderColor }]}>
         <TouchableOpacity
-          style={styles.iconBtn}
+          style={[styles.iconBtn, { backgroundColor: iconButtonBg, borderWidth: isDark ? 0 : 1, borderColor }]}
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />
+          <ArrowLeft size={20} color={primaryText} strokeWidth={2.4} />
         </TouchableOpacity>
 
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitleSerif}>Sunday School Dismissal</Text>
-          <Text style={styles.headerSubtitle}>
+          <Text style={[styles.headerTitleSerif, { color: primaryText }]}>Sunday School Dismissal</Text>
+          <Text style={[styles.headerSubtitle, { color: secondaryText }]}>
             Safeguarding Exit & Guardian Match Verification
           </Text>
         </View>
@@ -311,42 +326,72 @@ export default function KidsCheckOutScanner({ navigation }: any) {
       </View>
 
       {/* ── MODE TABS (RHEMA PILLS) ── */}
-      <View style={styles.modeTabsRow}>
+      <View style={[styles.modeTabsRow, { backgroundColor: screenBg, borderBottomColor: borderColor }]}>
         <TouchableOpacity
-          style={[styles.modeTab, activeMode === 'scan' && styles.modeTabActive]}
+          style={[
+            styles.modeTab,
+            { backgroundColor: secondarySurface, borderColor },
+            activeMode === 'scan' && { backgroundColor: activePillBg, borderColor: activePillBg },
+          ]}
           onPress={() => {
             setActiveMode('scan');
             setMatchedCandidate(null);
           }}
         >
-          <QrCode size={14} color={activeMode === 'scan' ? '#000000' : '#9CA3AF'} />
-          <Text style={[styles.modeTabText, activeMode === 'scan' && styles.modeTabTextActive]}>
+          <QrCode size={14} color={activeMode === 'scan' ? activePillText : secondaryText} />
+          <Text
+            style={[
+              styles.modeTabText,
+              { color: secondaryText },
+              activeMode === 'scan' && { color: activePillText, fontWeight: '800' },
+            ]}
+          >
             Scan Pass QR
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.modeTab, activeMode === 'manual_code' && styles.modeTabActive]}
+          style={[
+            styles.modeTab,
+            { backgroundColor: secondarySurface, borderColor },
+            activeMode === 'manual_code' && { backgroundColor: activePillBg, borderColor: activePillBg },
+          ]}
           onPress={() => {
             setActiveMode('manual_code');
             setMatchedCandidate(null);
           }}
         >
-          <KeyRound size={14} color={activeMode === 'manual_code' ? '#000000' : '#9CA3AF'} />
-          <Text style={[styles.modeTabText, activeMode === 'manual_code' && styles.modeTabTextActive]}>
+          <KeyRound size={14} color={activeMode === 'manual_code' ? activePillText : secondaryText} />
+          <Text
+            style={[
+              styles.modeTabText,
+              { color: secondaryText },
+              activeMode === 'manual_code' && { color: activePillText, fontWeight: '800' },
+            ]}
+          >
             Enter Code
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.modeTab, activeMode === 'roster' && styles.modeTabActive]}
+          style={[
+            styles.modeTab,
+            { backgroundColor: secondarySurface, borderColor },
+            activeMode === 'roster' && { backgroundColor: activePillBg, borderColor: activePillBg },
+          ]}
           onPress={() => {
             setActiveMode('roster');
             setMatchedCandidate(null);
           }}
         >
-          <Users size={14} color={activeMode === 'roster' ? '#000000' : '#9CA3AF'} />
-          <Text style={[styles.modeTabText, activeMode === 'roster' && styles.modeTabTextActive]}>
+          <Users size={14} color={activeMode === 'roster' ? activePillText : secondaryText} />
+          <Text
+            style={[
+              styles.modeTabText,
+              { color: secondaryText },
+              activeMode === 'roster' && { color: activePillText, fontWeight: '800' },
+            ]}
+          >
             Live Roster ({activeSessions.length})
           </Text>
         </TouchableOpacity>
@@ -354,16 +399,19 @@ export default function KidsCheckOutScanner({ navigation }: any) {
 
       {/* ── MODE 1: CAMERA BARCODE SCANNER ── */}
       {activeMode === 'scan' && (
-        <View style={styles.scannerContainer}>
+        <View style={[styles.scannerContainer, { backgroundColor: screenBg }]}>
           {!permission?.granted ? (
-            <View style={styles.permissionBox}>
-              <QrCode size={40} color="#FBBF24" />
-              <Text style={styles.permissionTitle}>Camera Access Needed</Text>
-              <Text style={styles.permissionSub}>
+            <View style={[styles.permissionBox, { backgroundColor: screenBg }]}>
+              <QrCode size={40} color="#D97706" />
+              <Text style={[styles.permissionTitle, { color: primaryText }]}>Camera Access Needed</Text>
+              <Text style={[styles.permissionSub, { color: secondaryText }]}>
                 Allow camera permission to scan parent custody pass QR codes at exit.
               </Text>
-              <TouchableOpacity style={styles.permissionBtn} onPress={requestPermission}>
-                <Text style={styles.permissionBtnText}>Enable Camera</Text>
+              <TouchableOpacity
+                style={[styles.permissionBtn, { backgroundColor: activePillBg }]}
+                onPress={requestPermission}
+              >
+                <Text style={[styles.permissionBtnText, { color: activePillText }]}>Enable Camera</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -413,24 +461,28 @@ export default function KidsCheckOutScanner({ navigation }: any) {
 
       {/* ── MODE 2: MANUAL PICKUP CODE ENTRY ── */}
       {activeMode === 'manual_code' && (
-        <ScrollView contentContainerStyle={styles.manualEntryContainer} keyboardShouldPersistTaps="handled">
-          <View style={styles.codeEntryCard}>
+        <ScrollView
+          style={{ backgroundColor: screenBg }}
+          contentContainerStyle={styles.manualEntryContainer}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={[styles.codeEntryCard, { backgroundColor: cardSurface, borderColor }]}>
             <View style={styles.keyIconBubble}>
-              <KeyRound size={28} color="#FBBF24" />
+              <KeyRound size={28} color="#D97706" />
             </View>
-            <Text style={styles.codeEntryTitle}>Enter Custody Release Code</Text>
-            <Text style={styles.codeEntrySub}>
+            <Text style={[styles.codeEntryTitle, { color: primaryText }]}>Enter Custody Release Code</Text>
+            <Text style={[styles.codeEntrySub, { color: secondaryText }]}>
               Parents see this 4-digit security code on their Rhema Kids pass.
             </Text>
 
-            <View style={styles.codeDigitsRow}>
+            <View style={[styles.codeDigitsRow, { backgroundColor: secondarySurface, borderColor }]}>
               <Text style={styles.prefixDigits}>RK - </Text>
               <TextInput
-                style={styles.codeInput}
+                style={[styles.codeInput, { color: primaryText }]}
                 value={manualCodeInput}
                 onChangeText={t => setManualCodeInput(t.toUpperCase())}
                 placeholder="7942"
-                placeholderTextColor="#52525B"
+                placeholderTextColor={secondaryText}
                 maxLength={6}
                 autoCapitalize="characters"
                 autoCorrect={false}
@@ -439,14 +491,14 @@ export default function KidsCheckOutScanner({ navigation }: any) {
             </View>
 
             <TouchableOpacity
-              style={[styles.verifyCodeBtn, searching && { opacity: 0.7 }]}
+              style={[styles.verifyCodeBtn, { backgroundColor: activePillBg }, searching && { opacity: 0.7 }]}
               onPress={handleVerifyManualCode}
               disabled={searching}
             >
               {searching ? (
-                <ActivityIndicator size="small" color="#000000" />
+                <ActivityIndicator size="small" color={activePillText} />
               ) : (
-                <Text style={styles.verifyCodeBtnText}>Verify Security Code</Text>
+                <Text style={[styles.verifyCodeBtnText, { color: activePillText }]}>Verify Security Code</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -455,34 +507,34 @@ export default function KidsCheckOutScanner({ navigation }: any) {
 
       {/* ── MODE 3: LIVE ACTIVE ROSTER ── */}
       {activeMode === 'roster' && (
-        <View style={styles.rosterContainer}>
-          <View style={styles.rosterSearchBar}>
-            <Search size={16} color="#9CA3AF" />
+        <View style={[styles.rosterContainer, { backgroundColor: screenBg }]}>
+          <View style={[styles.rosterSearchBar, { backgroundColor: cardSurface, borderColor }]}>
+            <Search size={16} color={secondaryText} />
             <TextInput
-              style={styles.rosterSearchInput}
+              style={[styles.rosterSearchInput, { color: primaryText }]}
               value={rosterQuery}
               onChangeText={setRosterQuery}
               placeholder="Filter active children by name or code..."
-              placeholderTextColor="#6B7280"
+              placeholderTextColor={secondaryText}
             />
             {rosterQuery.length > 0 && (
               <TouchableOpacity onPress={() => setRosterQuery('')}>
-                <X size={16} color="#9CA3AF" />
+                <X size={16} color={secondaryText} />
               </TouchableOpacity>
             )}
           </View>
 
           {loadingSessions ? (
             <View style={styles.centerBox}>
-              <ActivityIndicator size="small" color="#FBBF24" />
-              <Text style={styles.loadingText}>Syncing Sunday School Roster...</Text>
+              <ActivityIndicator size="small" color="#D97706" />
+              <Text style={[styles.loadingText, { color: secondaryText }]}>Syncing Sunday School Roster...</Text>
             </View>
           ) : filteredRoster.length === 0 ? (
             <View style={styles.emptyRosterCard}>
-              <Text style={styles.emptyRosterTitle}>
+              <Text style={[styles.emptyRosterTitle, { color: primaryText }]}>
                 {rosterQuery.trim() ? 'No Matching Child' : 'No Active Children in Class'}
               </Text>
-              <Text style={styles.emptyRosterSub}>
+              <Text style={[styles.emptyRosterSub, { color: secondaryText }]}>
                 {rosterQuery.trim()
                   ? `No child in today's session matches "${rosterQuery}"`
                   : 'All children have been safely checked out or class has not started yet.'}
@@ -493,18 +545,26 @@ export default function KidsCheckOutScanner({ navigation }: any) {
               {filteredRoster.map(s => (
                 <TouchableOpacity
                   key={s.id}
-                  style={styles.rosterCard}
+                  style={[styles.rosterCard, { backgroundColor: cardSurface, borderColor }]}
                   onPress={() => handleSelectFromRoster(s)}
                   activeOpacity={0.88}
                 >
-                  <View style={styles.rosterAvatar}>
-                    <Text style={styles.rosterAvatarText}>
-                      {(s.childName || 'K').charAt(0)}
-                    </Text>
+                  <View style={[styles.rosterAvatar, { overflow: 'hidden' }]}>
+                    {s.childPhotoUrl ? (
+                      <Image
+                        source={{ uri: s.childPhotoUrl }}
+                        style={{ width: '100%', height: '100%' }}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <Text style={styles.rosterAvatarText}>
+                        {(s.childName || 'K').charAt(0)}
+                      </Text>
+                    )}
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.rosterChildName}>{s.childName}</Text>
-                    <Text style={styles.rosterMeta}>
+                    <Text style={[styles.rosterChildName, { color: primaryText }]}>{s.childName}</Text>
+                    <Text style={[styles.rosterMeta, { color: secondaryText }]}>
                       {s.className || 'Sunday School'} · In since {s.checkInTime?.toDate ? s.checkInTime.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Today'}
                     </Text>
                   </View>
@@ -520,14 +580,14 @@ export default function KidsCheckOutScanner({ navigation }: any) {
 
       {/* ── GUARDIAN MATCH & CUSTODY RELEASE CARD MODAL ── */}
       {matchedCandidate && (
-        <View style={styles.candidateOverlay}>
-          <View style={styles.candidateCard}>
+        <View style={[styles.candidateOverlay, { paddingBottom: Math.max(20, insets.bottom + 12) }]}>
+          <View style={[styles.candidateCard, { backgroundColor: cardSurface, borderColor }]}>
             {/* Header */}
             <View style={styles.candidateHeader}>
               <View style={styles.verifiedTag}>
                 {matchedCandidate.codeMatched ? (
                   <>
-                    <ShieldCheck size={16} color="#34D399" />
+                    <ShieldCheck size={16} color="#10B981" />
                     <Text style={styles.verifiedTagText}>CODE MATCH CONFIRMED</Text>
                   </>
                 ) : (
@@ -539,8 +599,11 @@ export default function KidsCheckOutScanner({ navigation }: any) {
                   </>
                 )}
               </View>
-              <TouchableOpacity onPress={() => setMatchedCandidate(null)} style={styles.closeCardBtn}>
-                <X size={18} color="#9CA3AF" />
+              <TouchableOpacity
+                onPress={() => setMatchedCandidate(null)}
+                style={[styles.closeCardBtn, { backgroundColor: secondarySurface }]}
+              >
+                <X size={18} color={secondaryText} />
               </TouchableOpacity>
             </View>
 
@@ -558,8 +621,10 @@ export default function KidsCheckOutScanner({ navigation }: any) {
                 )}
 
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.childNameSerif}>{matchedCandidate.child.fullName}</Text>
-                  <Text style={styles.childClassSub}>
+                  <Text style={[styles.childNameSerif, { color: primaryText }]}>
+                    {matchedCandidate.child.fullName}
+                  </Text>
+                  <Text style={[styles.childClassSub, { color: secondaryText }]}>
                     {matchedCandidate.child.assignedClassName} · Age {matchedCandidate.child.age}
                   </Text>
                   <Text style={styles.childIdSub}>ID: {matchedCandidate.child.childId}</Text>
@@ -572,7 +637,7 @@ export default function KidsCheckOutScanner({ navigation }: any) {
                   <AlertTriangle size={16} color="#EF4444" />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.allergyTitle}>CRITICAL ALLERGY ALERT</Text>
-                    <Text style={styles.allergyDesc}>
+                    <Text style={[styles.allergyDesc, { color: isDark ? '#FCA5A5' : '#DC2626' }]}>
                       {matchedCandidate.child.medical.allergiesList.join(', ')}
                     </Text>
                   </View>
@@ -580,23 +645,25 @@ export default function KidsCheckOutScanner({ navigation }: any) {
               )}
 
               {/* SECURITY CODE COMPARISON */}
-              <View style={styles.codeComparisonBox}>
+              <View style={[styles.codeComparisonBox, { backgroundColor: secondarySurface, borderColor }]}>
                 <View style={styles.codeColumn}>
-                  <Text style={styles.codeColLabel}>PARENT CODE</Text>
-                  <Text style={styles.codeColValue}>{matchedCandidate.enteredCode}</Text>
+                  <Text style={[styles.codeColLabel, { color: secondaryText }]}>PARENT CODE</Text>
+                  <Text style={[styles.codeColValue, { color: isDark ? '#FBBF24' : '#B45309' }]}>
+                    {matchedCandidate.enteredCode}
+                  </Text>
                 </View>
-                <View style={styles.codeDivider} />
+                <View style={[styles.codeDivider, { backgroundColor: borderColor }]} />
                 <View style={styles.codeColumn}>
-                  <Text style={styles.codeColLabel}>TODAY'S ACTIVE CODE</Text>
-                  <Text style={styles.codeColValue}>
+                  <Text style={[styles.codeColLabel, { color: secondaryText }]}>TODAY'S ACTIVE CODE</Text>
+                  <Text style={[styles.codeColValue, { color: isDark ? '#FBBF24' : '#B45309' }]}>
                     {matchedCandidate.session?.pickupCode || matchedCandidate.child.activePickupCode || 'N/A'}
                   </Text>
                 </View>
               </View>
 
               {/* AUTHORIZED GUARDIAN PHOTO MATCH */}
-              <Text style={styles.sectionTitle}>AUTHORIZED PICKUP GUARDIANS</Text>
-              <Text style={styles.sectionSubtitle}>
+              <Text style={[styles.sectionTitle, { color: primaryText }]}>AUTHORIZED PICKUP GUARDIANS</Text>
+              <Text style={[styles.sectionSubtitle, { color: secondaryText }]}>
                 Compare the person standing in front of you with the authorized family members below:
               </Text>
 
@@ -607,7 +674,11 @@ export default function KidsCheckOutScanner({ navigation }: any) {
                     return (
                       <TouchableOpacity
                         key={g.id}
-                        style={[styles.guardianCard, isSelected && styles.guardianCardSelected]}
+                        style={[
+                          styles.guardianCard,
+                          { backgroundColor: secondarySurface, borderColor },
+                          isSelected && styles.guardianCardSelected,
+                        ]}
                         onPress={() => setSelectedGuardian(g)}
                         activeOpacity={0.88}
                       >
@@ -616,14 +687,14 @@ export default function KidsCheckOutScanner({ navigation }: any) {
                         </View>
                         <View style={{ flex: 1 }}>
                           <View style={styles.guardianNameRow}>
-                            <Text style={styles.guardianName}>{g.name}</Text>
+                            <Text style={[styles.guardianName, { color: primaryText }]}>{g.name}</Text>
                             {g.isPrimaryContact && (
                               <View style={styles.primaryBadge}>
                                 <Text style={styles.primaryBadgeText}>Primary</Text>
                               </View>
                             )}
                           </View>
-                          <Text style={styles.guardianRel}>
+                          <Text style={[styles.guardianRel, { color: secondaryText }]}>
                             {g.relationship} · 📞 {g.phone}
                           </Text>
                         </View>
@@ -634,8 +705,10 @@ export default function KidsCheckOutScanner({ navigation }: any) {
                     );
                   })
                 ) : (
-                  <View style={styles.guardianCard}>
-                    <Text style={styles.guardianName}>{matchedCandidate.child.parentName} (Parent)</Text>
+                  <View style={[styles.guardianCard, { backgroundColor: secondarySurface, borderColor }]}>
+                    <Text style={[styles.guardianName, { color: primaryText }]}>
+                      {matchedCandidate.child.parentName} (Parent)
+                    </Text>
                   </View>
                 )}
               </View>
@@ -645,17 +718,19 @@ export default function KidsCheckOutScanner({ navigation }: any) {
             <View style={styles.actionButtonsCol}>
               {matchedCandidate.codeMatched ? (
                 <TouchableOpacity
-                  style={[styles.releaseBtn, releasing && { opacity: 0.7 }]}
+                  style={[styles.releaseBtn, { backgroundColor: activePillBg }, releasing && { opacity: 0.7 }]}
                   onPress={() => handleConfirmRelease(false)}
                   disabled={releasing}
                   activeOpacity={0.88}
                 >
                   {releasing ? (
-                    <ActivityIndicator size="small" color="#000000" />
+                    <ActivityIndicator size="small" color={activePillText} />
                   ) : (
                     <>
-                      <UserCheck size={18} color="#000000" strokeWidth={2.6} />
-                      <Text style={styles.releaseBtnText}>Authorize Custody Release</Text>
+                      <UserCheck size={18} color={activePillText} strokeWidth={2.6} />
+                      <Text style={[styles.releaseBtnText, { color: activePillText }]}>
+                        Authorize Custody Release
+                      </Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -669,14 +744,16 @@ export default function KidsCheckOutScanner({ navigation }: any) {
 
               {/* EMERGENCY OVERRIDE BUTTON */}
               <TouchableOpacity
-                style={styles.overrideBtn}
+                style={[styles.overrideBtn, { backgroundColor: secondarySurface, borderColor }]}
                 onPress={() => {
                   setOverrideGuardianName(selectedGuardian?.name || matchedCandidate.child.parentName || '');
                   setShowOverrideModal(true);
                 }}
               >
-                <ShieldAlert size={14} color="#FBBF24" />
-                <Text style={styles.overrideBtnText}>Teacher Emergency Override</Text>
+                <ShieldAlert size={14} color="#D97706" />
+                <Text style={[styles.overrideBtnText, { color: isDark ? '#FBBF24' : '#B45309' }]}>
+                  Teacher Emergency Override
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -686,40 +763,43 @@ export default function KidsCheckOutScanner({ navigation }: any) {
       {/* ── EMERGENCY OVERRIDE MODAL ── */}
       <Modal visible={showOverrideModal} transparent animationType="fade" onRequestClose={() => setShowOverrideModal(false)}>
         <View style={styles.overrideOverlay}>
-          <View style={styles.overrideCard}>
+          <View style={[styles.overrideCard, { backgroundColor: cardSurface, borderColor }]}>
             <View style={styles.overrideHeader}>
-              <ShieldAlert size={20} color="#FBBF24" />
-              <Text style={styles.overrideTitle}>Teacher Custody Override</Text>
+              <ShieldAlert size={20} color="#D97706" />
+              <Text style={[styles.overrideTitle, { color: primaryText }]}>Teacher Custody Override</Text>
             </View>
-            <Text style={styles.overrideSubtitle}>
+            <Text style={[styles.overrideSubtitle, { color: secondaryText }]}>
               Use this safeguard override if the parent forgot their phone but physical photo identity has been verified in person.
             </Text>
 
-            <Text style={styles.inputLabel}>Guardian Claiming Child:</Text>
+            <Text style={[styles.inputLabel, { color: secondaryText }]}>Guardian Claiming Child:</Text>
             <TextInput
-              style={styles.overrideInput}
+              style={[styles.overrideInput, { backgroundColor: secondarySurface, borderColor, color: primaryText }]}
               value={overrideGuardianName}
               onChangeText={setOverrideGuardianName}
               placeholder="e.g. John Doe (Father)"
-              placeholderTextColor="#6B7280"
+              placeholderTextColor={secondaryText}
             />
 
-            <Text style={styles.inputLabel}>Verification Reason & Notes (Audited):</Text>
+            <Text style={[styles.inputLabel, { color: secondaryText }]}>Verification Reason & Notes (Audited):</Text>
             <TextInput
-              style={[styles.overrideInput, { height: 70, textAlignVertical: 'top' }]}
+              style={[
+                styles.overrideInput,
+                { backgroundColor: secondarySurface, borderColor, color: primaryText, height: 70, textAlignVertical: 'top' },
+              ]}
               value={overrideReason}
               onChangeText={setOverrideReason}
               placeholder="e.g. Physical Driver's License inspected by Bro. Rajesh"
-              placeholderTextColor="#6B7280"
+              placeholderTextColor={secondaryText}
               multiline
             />
 
             <View style={styles.overrideActionsRow}>
               <TouchableOpacity
-                style={styles.overrideCancelBtn}
+                style={[styles.overrideCancelBtn, { backgroundColor: secondarySurface, borderWidth: 1, borderColor }]}
                 onPress={() => setShowOverrideModal(false)}
               >
-                <Text style={styles.overrideCancelText}>Cancel</Text>
+                <Text style={[styles.overrideCancelText, { color: primaryText }]}>Cancel</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
