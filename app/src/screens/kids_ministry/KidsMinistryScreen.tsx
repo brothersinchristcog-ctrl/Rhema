@@ -13,7 +13,10 @@ import {
   Alert,
   Linking,
   Image,
+  Modal,
+  BackHandler,
 } from 'react-native';
+import Svg, { Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ArrowLeft,
@@ -35,6 +38,7 @@ import {
   Check,
   AlertTriangle,
   Trash2,
+  ArrowUpRight,
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -58,6 +62,7 @@ import {
 import KidsSplashScreen from './components/KidsSplashScreen';
 import EnrollChildModal from './components/EnrollChildModal';
 import KidsStoryReaderModal from './components/KidsStoryReaderModal';
+import { getFullStoryContent, estimateStoryReadTime } from './components/BibleStoryReaderContent';
 import KidsQuizPlayerModal from './components/KidsQuizPlayerModal';
 import KidsSongPlayerModal from './components/KidsSongPlayerModal';
 import KidsLessonDetailModal from './components/KidsLessonDetailModal';
@@ -72,41 +77,52 @@ export default function KidsMinistryScreen({ navigation }: any) {
   const { isDark, colors: themeColors } = useTheme();
   const churchId = member?.churchId || 'rhema';
 
-  // Dynamic Theme Palette Support (Pure White, Warm White & Dark)
+  // Dynamic Theme Palette Support (Modern Pastel White & Dark)
   const isLight = !isDark;
   const theme = useMemo(() => {
     return {
       isDark,
       isLight,
-      screenBg: isDark ? '#000000' : (themeColors.background || '#F8FAFC'),
-      headerBg: isDark ? '#000000' : (themeColors.surface || '#FFFFFF'),
-      cardBg: isDark ? '#18181B' : (themeColors.surface || '#FFFFFF'),
-      innerCardBg: isDark ? '#09090B' : '#F1F5F9',
-      border: isDark ? '#27272A' : (themeColors.border || '#E2E8F0'),
-      borderLight: isDark ? '#18181B' : '#E2E8F0',
-      textPrimary: isDark ? '#FFFFFF' : '#0F172A',
-      textSecondary: isDark ? '#9CA3AF' : '#64748B',
-      textMuted: isDark ? '#71717A' : '#94A3B8',
+      screenBg: isDark ? '#0B0F19' : '#FFFDF9',
+      headerBg: isDark ? '#0B0F19' : '#FFFDF9',
+      cardBg: isDark ? '#161C2E' : '#FFFFFF',
+      innerCardBg: isDark ? '#1E2538' : '#F8FAFC',
+      border: isDark ? '#283149' : '#E2E8F0',
+      borderLight: isDark ? '#1E2538' : '#F1F5F9',
+      textPrimary: isDark ? '#F8FAFC' : '#111827',
+      textSecondary: isDark ? '#94A3B8' : '#64748B',
+      textMuted: isDark ? '#64748B' : '#94A3B8',
       goldAccent: isDark ? '#FBBF24' : '#D97706',
       goldBg: isDark ? 'rgba(251, 191, 36, 0.15)' : '#FEF3C7',
-      tabBarBg: isDark ? '#000000' : (themeColors.surface || '#FFFFFF'),
-      tabPillInactiveBg: isDark ? '#18181B' : '#F1F5F9',
-      tabPillInactiveBorder: isDark ? '#27272A' : '#CBD5E1',
-      tabPillInactiveText: isDark ? '#9CA3AF' : '#64748B',
-      tabPillActiveBg: isDark ? '#FFFFFF' : '#0F172A',
-      tabPillActiveBorder: isDark ? '#FFFFFF' : '#0F172A',
-      tabPillActiveText: isDark ? '#000000' : '#FFFFFF',
-      backBtnBg: isDark ? '#18181B' : '#F1F5F9',
-      backBtnIcon: isDark ? '#FFFFFF' : '#0F172A',
-      addKidBtnBg: isDark ? '#FFFFFF' : '#0F172A',
-      addKidBtnText: isDark ? '#000000' : '#FFFFFF',
-      childBarBg: isDark ? '#0D0D11' : (themeColors.surface || '#FFFFFF'),
-      childBarBorder: isDark ? '#1F1F24' : '#E2E8F0',
-      childChipInactiveBg: isDark ? '#18181B' : '#F1F5F9',
-      childChipInactiveBorder: isDark ? '#27272A' : '#E2E8F0',
-      childChipActiveBg: isDark ? '#1E1B13' : '#FEF3C7',
-      childChipActiveBorder: isDark ? '#FBBF24' : '#D97706',
-      dropdownBg: isDark ? '#18181B' : '#FFFFFF',
+      coralPrimary: '#FF6B4A',
+      purpleAccent: '#7C3AED',
+      peachBg: isDark ? '#291D1B' : '#FFF0EC',
+      peachBorder: isDark ? '#422B27' : '#FED7AA',
+      skyBg: isDark ? '#13283A' : '#DCF2FF',
+      skyBorder: isDark ? '#1E3E59' : '#BAE6FD',
+      lavenderBg: isDark ? '#231B3C' : '#EFE9FE',
+      lavenderBorder: isDark ? '#382B60' : '#DDD6FE',
+      amberBg: isDark ? '#2B2212' : '#FEF3C7',
+      mintBg: isDark ? '#112A22' : '#DCFCE7',
+      roseBg: isDark ? '#2D1725' : '#FCE7F3',
+      tabBarBg: isDark ? '#161C2E' : '#FFFFFF',
+      tabPillInactiveBg: isDark ? '#1E2538' : '#F1F5F9',
+      tabPillInactiveBorder: isDark ? '#283149' : '#E2E8F0',
+      tabPillInactiveText: isDark ? '#94A3B8' : '#64748B',
+      tabPillActiveBg: '#FF6B4A',
+      tabPillActiveBorder: '#FF6B4A',
+      tabPillActiveText: '#FFFFFF',
+      backBtnBg: isDark ? '#1E2538' : '#FFFFFF',
+      backBtnIcon: isDark ? '#F8FAFC' : '#111827',
+      addKidBtnBg: isDark ? '#7C3AED' : '#111827',
+      addKidBtnText: '#FFFFFF',
+      childBarBg: isDark ? '#111726' : '#FFFFFF',
+      childBarBorder: isDark ? '#283149' : '#E2E8F0',
+      childChipInactiveBg: isDark ? '#1E2538' : '#F8FAFC',
+      childChipInactiveBorder: isDark ? '#283149' : '#E2E8F0',
+      childChipActiveBg: isDark ? '#231B3C' : '#EFE9FE',
+      childChipActiveBorder: '#7C3AED',
+      dropdownBg: isDark ? '#161C2E' : '#FFFFFF',
     };
   }, [isDark, themeColors]);
 
@@ -173,9 +189,9 @@ export default function KidsMinistryScreen({ navigation }: any) {
       setTeachers(teacherList);
     });
 
-    // Realtime subscription to Bible Stories
+    // Realtime subscription to Bible Stories (only published stories visible to members)
     const unsubStories = KidsMinistryService.subscribeToStories(churchId, storyList => {
-      setStories(storyList);
+      setStories(storyList.filter(s => s.isPublished !== false));
     });
 
     // Realtime subscription to Quizzes
@@ -226,7 +242,49 @@ export default function KidsMinistryScreen({ navigation }: any) {
     };
   }, [member?.id, member?.accountId, churchId]);
 
-  const activeChild = children[selectedChildIndex] || null;
+  const safeSelectedChildIndex =
+    children.length > 0 ? Math.min(selectedChildIndex, children.length - 1) : 0;
+  const activeChild = children[safeSelectedChildIndex] || null;
+
+  // Maintain intuitive stack on Android hardware back button:
+  // Classroom / Learn -> Home Screen -> Welcome Screen -> Exit Rhema Kids
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (
+        showEnrollModal ||
+        showChildPicker ||
+        selectedStoryForReader ||
+        selectedQuizForPlayer ||
+        selectedSongForPlayer ||
+        selectedLessonForModal ||
+        exploreCategory ||
+        selectedCertData
+      ) {
+        return false;
+      }
+      if (!showSplash && activeTab !== 'home') {
+        setActiveTab('home');
+        return true;
+      }
+      if (!showSplash) {
+        setShowSplash(true);
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+  }, [
+    showSplash,
+    activeTab,
+    showEnrollModal,
+    showChildPicker,
+    selectedStoryForReader,
+    selectedQuizForPlayer,
+    selectedSongForPlayer,
+    selectedLessonForModal,
+    exploreCategory,
+    selectedCertData,
+  ]);
 
   const assignedClass = useMemo(() => {
     if (!activeChild) return null;
@@ -427,15 +485,43 @@ export default function KidsMinistryScreen({ navigation }: any) {
     );
   };
 
-  // If splash is showing, render cinematic splash screen
+  const enrollModalEl = showEnrollModal ? (
+    <EnrollChildModal
+      visible={showEnrollModal}
+      onClose={() => setShowEnrollModal(false)}
+      churchId={churchId}
+      member={member}
+      existingFamilyMembers={existingHousehold}
+      onChildEnrolled={() => {
+        // Updated automatically via realtime subscribeToFamilyChildren + Members sync
+      }}
+    />
+  ) : null;
+
+  // Dedicated Rhema Kids Welcome / Entry Screen
   if (showSplash) {
     return (
-      <KidsSplashScreen
-        onEnter={() => setShowSplash(false)}
-        churchName={(member as any)?.churchName || 'RHEMA GLOBAL MINISTRIES'}
-      />
+      <View style={{ flex: 1 }}>
+        <KidsSplashScreen
+          childrenList={children}
+          loadingChildren={loading}
+          selectedChildIndex={safeSelectedChildIndex}
+          onSelectChild={idx => setSelectedChildIndex(idx)}
+          onContinue={() => setShowSplash(false)}
+          onAddKid={() => setShowEnrollModal(true)}
+          onBack={() => navigation.goBack()}
+          churchName={(member as any)?.churchName || 'RHEMA GLOBAL MINISTRIES'}
+        />
+        {enrollModalEl}
+      </View>
     );
   }
+
+  const goalsCompletedCount = goalChecks.filter(Boolean).length;
+  const progressPct = Math.round((goalsCompletedCount / 3) * 100);
+  const ringRadius = 26;
+  const ringCircumference = 2 * Math.PI * ringRadius;
+  const ringOffset = ringCircumference * (1 - progressPct / 100);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.screenBg, paddingTop: insets.top }]}>
@@ -444,281 +530,234 @@ export default function KidsMinistryScreen({ navigation }: any) {
         backgroundColor={theme.screenBg}
       />
 
-      {/* ── TOP APP HEADER ── */}
-      <View style={[styles.headerRow, { backgroundColor: theme.headerBg, borderBottomColor: theme.border }]}>
+      {/* ── MODERN CHILD-FRIENDLY TOP HEADER ── */}
+      <View style={[styles.modernTopBar, { backgroundColor: theme.headerBg }]}>
         <TouchableOpacity
-          style={[styles.backBtn, { backgroundColor: theme.backBtnBg }]}
-          onPress={() => navigation.goBack()}
+          style={[styles.backBtn, { backgroundColor: theme.backBtnBg, borderWidth: 1, borderColor: theme.border }]}
+          onPress={() => (activeTab !== 'home' ? setActiveTab('home') : setShowSplash(true))}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <ArrowLeft size={20} color={theme.backBtnIcon} strokeWidth={2.4} />
+          <ArrowLeft size={19} color={theme.backBtnIcon} strokeWidth={2.5} />
         </TouchableOpacity>
 
-        {/* Center: Title & Child Switcher */}
-        <View style={styles.headerCenter}>
-          <View style={styles.titleWithCrown}>
-            <Text style={styles.crownEmoji}>👑</Text>
-            <Text style={[styles.appTitleSerif, { color: theme.textPrimary }]}>Rhema Kids</Text>
-          </View>
-
-          {children.length > 0 && activeChild ? (
+        {activeTab === 'home' ? (
+          activeChild ? (
             <TouchableOpacity
               style={[
-                styles.childSwitcher,
-                children.length > 1 && [styles.childSwitcherInteractive, { backgroundColor: theme.goldBg, borderColor: theme.goldAccent }],
+                styles.greetingProfileTrigger,
+                children.length > 1 && {
+                  backgroundColor: theme.cardBg,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  paddingRight: 10,
+                },
               ]}
               onPress={() => {
                 if (children.length > 1) {
-                  setShowChildPicker(!showChildPicker);
+                  setShowChildPicker(prev => !prev);
                 }
               }}
-              activeOpacity={children.length > 1 ? 0.7 : 1}
+              activeOpacity={children.length > 1 ? 0.75 : 1}
             >
-              <Text style={[styles.childSwitcherText, { color: theme.goldAccent }]} numberOfLines={1}>
-                {activeChild.fullName} (Age {activeChild.age})
-              </Text>
-              {children.length > 1 && (
-                showChildPicker ? (
-                  <ChevronUp size={13} color={theme.goldAccent} strokeWidth={2.6} />
+              <View style={[styles.greetingAvatarCircle, { borderColor: theme.coralPrimary }]}>
+                {activeChild.photoUrl ? (
+                  <Image
+                    source={{ uri: activeChild.photoUrl }}
+                    style={{ width: '100%', height: '100%' }}
+                    resizeMode="cover"
+                  />
                 ) : (
-                  <ChevronDown size={13} color={theme.goldAccent} strokeWidth={2.6} />
-                )
-              )}
+                  <Text style={{ fontSize: 18, fontWeight: '800', color: '#7C3AED' }}>
+                    {(activeChild.firstName || activeChild.fullName || 'K').charAt(0).toUpperCase()}
+                  </Text>
+                )}
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Text
+                    style={[styles.greetingNameText, { color: theme.textPrimary }]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.82}
+                  >
+                    Hi, {activeChild.firstName || activeChild.fullName} 👋
+                  </Text>
+                  {children.length > 1 && (
+                    showChildPicker ? (
+                      <ChevronUp size={16} color={theme.coralPrimary} strokeWidth={2.8} />
+                    ) : (
+                      <ChevronDown size={16} color={theme.coralPrimary} strokeWidth={2.8} />
+                    )
+                  )}
+                </View>
+                <Text
+                  style={[styles.greetingSubText, { color: theme.textSecondary }]}
+                  numberOfLines={2}
+                >
+                  Age {activeChild.age} · {assignedClass?.name || activeChild.assignedClassName || 'Sunday School'}
+                </Text>
+              </View>
             </TouchableOpacity>
           ) : (
-            <Text style={[styles.childSwitcherSub, { color: theme.textSecondary }]}>Sunday School Ministry</Text>
-          )}
-        </View>
+            <Text style={[styles.appTitleSerif, { color: theme.textPrimary, flex: 1 }]}>Rhema Kids</Text>
+          )
+        ) : (
+          <View style={{ flex: 1, paddingHorizontal: 4 }}>
+            <Text style={[styles.subpageHeaderTitle, { color: theme.textPrimary }]} numberOfLines={1}>
+              {activeTab === 'classroom'
+                ? assignedClass?.name || activeChild?.assignedClassName || 'Classroom Details'
+                : 'Bible Learning'}
+            </Text>
+            {activeChild ? (
+              <Text style={[styles.greetingSubText, { color: theme.textSecondary }]} numberOfLines={1}>
+                {activeChild.fullName} · Age {activeChild.age}
+              </Text>
+            ) : null}
+          </View>
+        )}
 
-        {/* Right Action: Enroll Kid or Pass */}
         <TouchableOpacity
           style={[styles.topActionBtn, { backgroundColor: theme.addKidBtnBg }]}
           onPress={() => setShowEnrollModal(true)}
-          activeOpacity={0.8}
+          activeOpacity={0.85}
         >
-          <Plus size={14} color={theme.addKidBtnText} strokeWidth={2.8} />
+          <Plus size={13} color={theme.addKidBtnText} strokeWidth={2.8} />
           <Text style={[styles.topActionBtnText, { color: theme.addKidBtnText }]}>Add Kid</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Prominent Multi-Child Switcher Banner (Shows clearly when family has multiple kids) */}
-      {children.length > 1 && (
-        <View style={[styles.childBarContainer, { backgroundColor: theme.childBarBg, borderBottomColor: theme.childBarBorder }]}>
-          <View style={styles.childBarHeader}>
-            <View style={styles.childBarLabelWrap}>
-              <Users size={12} color={theme.goldAccent} />
-              <Text style={[styles.childBarLabel, { color: theme.goldAccent }]}>ACTIVE CHILD</Text>
-            </View>
-            <Text style={[styles.childBarSub, { color: theme.textMuted }]}>Tap to switch</Text>
-          </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.childChipsScroll}
+      {/* ── MULTIPLE CHILDREN DROPDOWN SELECTION PANEL ── */}
+      <Modal
+        visible={showChildPicker && children.length > 1}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowChildPicker(false)}
+      >
+        <TouchableOpacity
+          style={styles.childPickerBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowChildPicker(false)}
+        >
+          <View
+            style={[
+              styles.childPickerSheet,
+              {
+                backgroundColor: theme.dropdownBg,
+                borderColor: theme.border,
+                marginTop: insets.top + 64,
+              },
+            ]}
           >
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <Text style={[styles.dropdownHeader, { color: theme.textSecondary, marginBottom: 0 }]}>
+                SELECT CHILD PROFILE
+              </Text>
+              <TouchableOpacity
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                onPress={() => {
+                  setShowChildPicker(false);
+                  setShowEnrollModal(true);
+                }}
+              >
+                <Plus size={13} color={theme.purpleAccent} strokeWidth={2.6} />
+                <Text style={{ fontSize: 12, fontWeight: '800', color: theme.purpleAccent }}>
+                  Add Kid
+                </Text>
+              </TouchableOpacity>
+            </View>
+
             {children.map((k, idx) => {
-              const isSelected = idx === selectedChildIndex;
+              const selected = idx === safeSelectedChildIndex;
               return (
                 <TouchableOpacity
                   key={k.id}
                   style={[
-                    styles.childChip,
-                    isSelected
-                      ? [styles.childChipActive, { backgroundColor: theme.childChipActiveBg, borderColor: theme.childChipActiveBorder }]
-                      : [styles.childChipInactive, { backgroundColor: theme.childChipInactiveBg, borderColor: theme.childChipInactiveBorder }],
+                    styles.childModalRow,
+                    {
+                      backgroundColor: selected ? theme.childChipActiveBg : theme.innerCardBg,
+                      borderColor: selected ? theme.purpleAccent : theme.border,
+                    },
                   ]}
                   onPress={() => {
                     setSelectedChildIndex(idx);
                     setShowChildPicker(false);
                   }}
-                  activeOpacity={0.8}
+                  activeOpacity={0.85}
                 >
-                  {k.photoUrl ? (
-                    <Image
-                      source={{ uri: k.photoUrl }}
-                      style={{ width: 28, height: 28, borderRadius: 14 }}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <Text style={styles.childChipEmoji}>
-                      {k.gender === 'female' ? '👧' : '🧒'}
-                    </Text>
-                  )}
-                  <View style={{ flexShrink: 1 }}>
-                    <Text
-                      style={[
-                        styles.childChipName,
-                        isSelected
-                          ? [styles.childChipNameActive, { color: theme.textPrimary }]
-                          : [styles.childChipNameInactive, { color: theme.textSecondary }],
-                      ]}
-                      numberOfLines={1}
-                    >
+                  <View style={styles.childModalAvatar}>
+                    {k.photoUrl ? (
+                      <Image
+                        source={{ uri: k.photoUrl }}
+                        style={{ width: '100%', height: '100%' }}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <Text style={{ fontSize: 18, fontWeight: '800', color: '#7C3AED' }}>
+                        {(k.firstName || k.fullName || 'K').charAt(0).toUpperCase()}
+                      </Text>
+                    )}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.childModalName, { color: theme.textPrimary }]} numberOfLines={1}>
                       {k.fullName}
                     </Text>
-                    <Text
-                      style={[
-                        styles.childChipMeta,
-                        isSelected
-                          ? [styles.childChipMetaActive, { color: theme.goldAccent }]
-                          : [styles.childChipMetaInactive, { color: theme.textMuted }],
-                      ]}
-                    >
+                    <Text style={[styles.childModalMeta, { color: theme.textSecondary }]} numberOfLines={1}>
                       Age {k.age} · {k.assignedClassName || 'Sunday School'}
                     </Text>
                   </View>
-                  {isSelected && (
-                    <View style={styles.childChipActiveBadge}>
-                      <Check size={11} color="#000000" strokeWidth={3} />
+                  {selected && (
+                    <View style={styles.childModalCheck}>
+                      <Check size={13} color="#FFFFFF" strokeWidth={3} />
                     </View>
                   )}
                 </TouchableOpacity>
               );
             })}
-          </ScrollView>
-        </View>
-      )}
-
-      {/* Child Dropdown Menu (If opened from header chevron) */}
-      {showChildPicker && children.length > 1 && (
-        <View style={[styles.dropdownPicker, { backgroundColor: theme.dropdownBg, borderColor: theme.border }]}>
-          <Text style={[styles.dropdownHeader, { color: theme.textMuted }]}>SWITCH CHILD PROFILE:</Text>
-          {children.map((k, idx) => (
-            <TouchableOpacity
-              key={k.id}
-              style={[
-                styles.dropdownItem,
-                idx === selectedChildIndex && [styles.dropdownItemActive, { backgroundColor: theme.goldBg }],
-              ]}
-              onPress={() => {
-                setSelectedChildIndex(idx);
-                setShowChildPicker(false);
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                {k.photoUrl ? (
-                  <Image
-                    source={{ uri: k.photoUrl }}
-                    style={{ width: 22, height: 22, borderRadius: 11 }}
-                    resizeMode="cover"
-                  />
-                ) : (
-                  <Text style={{ fontSize: 14 }}>{k.gender === 'female' ? '👧' : '🧒'}</Text>
-                )}
-                <Text
-                  style={[
-                    styles.dropdownItemText,
-                    { color: theme.textSecondary, flex: 1 },
-                    idx === selectedChildIndex && [styles.dropdownItemTextActive, { color: theme.goldAccent }],
-                  ]}
-                >
-                  {k.fullName} · Age {k.age} ({k.assignedClassName || 'Class'})
-                </Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-
-      {/* ── TABS NAVIGATION (RHEMA PILLS - HORIZONTAL SCROLL FOR FULL VISIBILITY) ── */}
-      <View style={[styles.tabsContainer, { backgroundColor: theme.tabBarBg, borderBottomColor: theme.border }]}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.tabsRow}
-        >
-          <TouchableOpacity
-            style={[
-              styles.tabPill,
-              { backgroundColor: theme.tabPillInactiveBg, borderColor: theme.tabPillInactiveBorder },
-              activeTab === 'home' && { backgroundColor: theme.tabPillActiveBg, borderColor: theme.tabPillActiveBorder },
-            ]}
-            onPress={() => setActiveTab('home')}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                { color: theme.tabPillInactiveText },
-                activeTab === 'home' && { color: theme.tabPillActiveText, fontWeight: '800' },
-              ]}
-            >
-              Home
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.tabPill,
-              { backgroundColor: theme.tabPillInactiveBg, borderColor: theme.tabPillInactiveBorder },
-              activeTab === 'classroom' && { backgroundColor: theme.tabPillActiveBg, borderColor: theme.tabPillActiveBorder },
-            ]}
-            onPress={() => setActiveTab('classroom')}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                { color: theme.tabPillInactiveText },
-                activeTab === 'classroom' && { color: theme.tabPillActiveText, fontWeight: '800' },
-              ]}
-            >
-              Sunday School
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.tabPill,
-              { backgroundColor: theme.tabPillInactiveBg, borderColor: theme.tabPillInactiveBorder },
-              activeTab === 'lms' && { backgroundColor: theme.tabPillActiveBg, borderColor: theme.tabPillActiveBorder },
-            ]}
-            onPress={() => setActiveTab('lms')}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                { color: theme.tabPillInactiveText },
-                activeTab === 'lms' && { color: theme.tabPillActiveText, fontWeight: '800' },
-              ]}
-            >
-              Bible LMS
-            </Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* ── MAIN BODY CONTENT ── */}
       {loading ? (
         <View style={styles.centerLoading}>
-          <ActivityIndicator size="large" color={theme.goldAccent} />
+          <ActivityIndicator size="large" color={theme.coralPrimary} />
           <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Loading Rhema Kids...</Text>
         </View>
       ) : children.length === 0 ? (
         /* Empty State: No child enrolled yet */
         <View style={styles.emptyContainer}>
-          <View style={[styles.emptyIconBox, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-            <Text style={{ fontSize: 36 }}>👶</Text>
+          <View style={[styles.emptyIconBox, { backgroundColor: theme.lavenderBg, borderColor: theme.lavenderBorder }]}>
+            <Text style={{ fontSize: 36 }}>👶🏽</Text>
           </View>
           <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>Welcome to Rhema Kids!</Text>
           <Text style={[styles.emptySub, { color: theme.textSecondary }]}>
-            Register your children to access secure Sunday School attendance, live entrance face scan, and bilingual Bible learning.
+            Register your children to access Sunday School, bilingual Bible stories, quizzes, and action songs.
           </Text>
 
           <TouchableOpacity
-            style={[styles.enrollNowBtn, { backgroundColor: theme.addKidBtnBg }]}
+            style={[styles.enrollNowBtn, { backgroundColor: theme.purpleAccent }]}
             onPress={() => setShowEnrollModal(true)}
             activeOpacity={0.88}
           >
-            <Plus size={18} color={theme.addKidBtnText} strokeWidth={2.8} />
-            <Text style={[styles.enrollNowBtnText, { color: theme.addKidBtnText }]}>Enroll Child in Sunday School</Text>
+            <Plus size={18} color="#FFFFFF" strokeWidth={2.8} />
+            <Text style={[styles.enrollNowBtnText, { color: '#FFFFFF' }]}>Add Kid</Text>
           </TouchableOpacity>
         </View>
       ) : (
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.scroll, { paddingBottom: 40 }]}
+        >
           {/* ==================================================== */}
-          {/* TAB 1: HOME DASHBOARD                                */}
+          {/* TAB 1: HOME DASHBOARD (MATCHING DESIGN SCREENSHOT 2) */}
           {/* ==================================================== */}
           {activeTab === 'home' && (
             <>
+              {/* Hero Welcome Title */}
+              <Text style={[styles.heroFunHeadline, { color: theme.textPrimary }]}>
+                Let's learn something{'\n'}fun today!
+              </Text>
+
               {/* Parent Review & Consent Prompt for Teacher-Enrolled Children */}
               {activeChild?.parentConsentStatus === 'pending_review' && (
                 <View
@@ -749,7 +788,7 @@ export default function KidsMinistryScreen({ navigation }: any) {
                     style={{
                       backgroundColor: '#10B981',
                       paddingVertical: 11,
-                      borderRadius: 10,
+                      borderRadius: 12,
                       alignItems: 'center',
                       justifyContent: 'center',
                       flexDirection: 'row',
@@ -774,166 +813,317 @@ export default function KidsMinistryScreen({ navigation }: any) {
                 </View>
               )}
 
-              {/* Today's Sunday School Status Card */}
-              <View style={[styles.heroStatusCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-                <View style={styles.statusRow}>
-                  <View style={styles.liveBadge}>
-                    <View style={styles.livePulseDot} />
-                    <Text style={styles.liveBadgeText}>SUNDAY SCHOOL TODAY</Text>
-                  </View>
-                  <Text style={[styles.codeLabel, { color: theme.textSecondary }]}>{activeChild?.childId}</Text>
-                </View>
-
-                <View style={styles.statusDetailsRow}>
-                  {activeChild?.photoUrl ? (
-                    <Image
-                      source={{ uri: activeChild.photoUrl }}
-                      style={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: 24,
-                        marginRight: 12,
-                        borderWidth: 1.5,
-                        borderColor: theme.goldAccent,
-                      }}
-                      resizeMode="cover"
-                    />
-                  ) : null}
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.classTierSub, { color: theme.goldAccent }]}>
+              {/* Soft Peach Sunday School & Learning Progress Card with Ring */}
+              <TouchableOpacity
+                style={[styles.peachProgressCard, { backgroundColor: theme.peachBg, borderColor: theme.peachBorder }]}
+                onPress={() => setActiveTab('classroom')}
+                activeOpacity={0.88}
+              >
+                <View style={{ flex: 1, paddingRight: 12 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <Text style={[styles.peachTitle, { color: theme.textPrimary }]} numberOfLines={1}>
                       {activeChild?.assignedClassName || 'Sunday School'}
                     </Text>
-                    <Text style={[styles.classRoomTitle, { color: theme.textPrimary }]}>
-                      {assignedClass?.roomNumber || 'Room 204 · 2nd Floor'}
+                    {activeChild?.custodyStatus === 'checked_in' && (
+                      <View style={styles.checkedInMiniPill}>
+                        <Text style={styles.checkedInMiniText}>Checked In</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={[styles.peachMeta, { color: theme.textSecondary }]} numberOfLines={1}>
+                    🏫 {assignedClass?.roomNumber || 'Room 204'} · {assignedClass?.schedule?.dayOfWeek || 'Sunday'}s {assignedClass?.schedule?.startTime || '09:30 AM'}
+                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8 }}>
+                    <Text style={[styles.peachStat, { color: theme.textPrimary }]}>
+                      📖 {goalsCompletedCount}/3 Goals
                     </Text>
-                    <Text style={[styles.scheduleMeta, { color: theme.textSecondary }]}>
-                      {assignedClass?.schedule?.dayOfWeek || 'Sunday'}s{' '}
-                      {assignedClass?.schedule?.startTime || '09:30 AM'} –{' '}
-                      {assignedClass?.schedule?.endTime || '11:30 AM'}
+                    <Text style={[styles.peachStat, { color: theme.goldAccent }]}>
+                      🎂 Age {activeChild?.age ?? '—'} · {activeChild?.custodyStatus === 'checked_in' ? 'Present ✓' : 'Enrolled ✓'}
                     </Text>
                   </View>
                 </View>
 
-                <View style={[styles.cardFooter, { borderTopColor: theme.border }]}>
-                  <Text style={styles.allergySummary}>
-                    {activeChild?.medical?.hasAllergies ? (
-                      <Text style={{ color: '#F87171' }}>
-                        ⚠️ {activeChild.medical.allergiesList.join(', ')}
-                      </Text>
-                    ) : (
-                      <Text style={{ color: '#34D399' }}>✓ No Allergies Reported</Text>
-                    )}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => setActiveTab('classroom')}
-                    style={styles.viewPassLink}
-                  >
-                    <Text style={[styles.viewPassLinkText, { color: theme.goldAccent }]}>Class Info &rsaquo;</Text>
-                  </TouchableOpacity>
+                {/* Circular Progress Ring */}
+                <View style={styles.progressRingBox}>
+                  <Svg width={64} height={64}>
+                    <Circle
+                      cx={32}
+                      cy={32}
+                      r={ringRadius}
+                      stroke={theme.isDark ? 'rgba(255,255,255,0.14)' : 'rgba(17,24,39,0.1)'}
+                      strokeWidth={5}
+                      fill="none"
+                    />
+                    <Circle
+                      cx={32}
+                      cy={32}
+                      r={ringRadius}
+                      stroke={theme.coralPrimary}
+                      strokeWidth={5}
+                      fill="none"
+                      strokeDasharray={ringCircumference}
+                      strokeDashoffset={ringOffset}
+                      strokeLinecap="round"
+                      rotation="-90"
+                      origin="32, 32"
+                    />
+                  </Svg>
+                  <Text style={[styles.progressRingPct, { color: theme.textPrimary }]}>{progressPct}%</Text>
                 </View>
+              </TouchableOpacity>
+
+              {/* Categories — Clean 2 × 2 Grid */}
+              <View>
+                <View style={styles.sectionTitleRow}>
+                  <Text style={[styles.modernSectionTitle, { color: theme.textPrimary }]}>
+                    Categories
+                  </Text>
+                </View>
+
+                {(() => {
+                  const categoryRows = [
+                    [
+                      {
+                        key: 'stories',
+                        label: 'Bible Stories',
+                        emoji: '📖',
+                        tint: '#3B82F6',
+                        onPress: () => setExploreCategory('stories'),
+                      },
+                      {
+                        key: 'quizzes',
+                        label: 'Kids Quizzes',
+                        emoji: '🏆',
+                        tint: '#F59E0B',
+                        onPress: () => setExploreCategory('quizzes'),
+                      },
+                    ],
+                    [
+                      {
+                        key: 'lessons',
+                        label: 'Weekly Lessons',
+                        emoji: '📚',
+                        tint: '#10B981',
+                        onPress: () => setExploreCategory('lessons'),
+                      },
+                      {
+                        key: 'songs',
+                        label: 'Action Songs',
+                        emoji: '🎵',
+                        tint: '#EC4899',
+                        onPress: () => setExploreCategory('songs'),
+                      },
+                    ],
+                  ];
+
+                  return (
+                    <View style={styles.categoryGrid}>
+                      {categoryRows.map((row, rowIdx) => (
+                        <View key={rowIdx} style={styles.categoryGridRow}>
+                          {row.map(cat => (
+                            <TouchableOpacity
+                              key={cat.key}
+                              style={[
+                                styles.categoryGridTile,
+                                {
+                                  backgroundColor: theme.isDark ? '#1E2538' : '#FFFFFF',
+                                  borderColor: theme.border,
+                                },
+                              ]}
+                              onPress={cat.onPress}
+                              activeOpacity={0.85}
+                            >
+                              <View
+                                style={[
+                                  styles.categoryIconCircle,
+                                  { backgroundColor: `${cat.tint}18` },
+                                ]}
+                              >
+                                <Text style={{ fontSize: 28 }}>{cat.emoji}</Text>
+                              </View>
+                              <Text
+                                style={[styles.categoryTileLabel, { color: theme.textPrimary }]}
+                                numberOfLines={1}
+                              >
+                                {cat.label}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      ))}
+                    </View>
+                  );
+                })()}
               </View>
 
-              {/* Dynamic Sunday Bible Lesson & Memory Verse Card */}
+              {/* This Sunday's Lesson (clean full-width card without View All or duplicate card) */}
               {(() => {
                 const { lesson: activeLesson, mode: activeMode, activeDate } = resolveActiveCurriculumLesson({
                   config: curriculumConfig,
                   lessons: curriculum,
                 });
-                const verseEn = activeLesson?.memoryVerse?.verseEnglish || "In the beginning God created the heavens and the earth.";
-                const verseTe = activeLesson?.memoryVerse?.verseTelugu || "ఆదియందు దేవుడు భూమ్యాకాశములను సృజించెను.";
-                const verseRef = activeLesson?.memoryVerse?.reference || "Genesis 1:1";
-                const lessonTitle = activeLesson?.title || "In the Beginning: God Created All Things";
-                const headerTag =
-                  activeMode === 'custom'
-                    ? activeDate
-                      ? `⭐ ${formatCurriculumDateDisplay(activeDate).toUpperCase()} LESSON`
-                      : '⭐ THIS SUNDAY LESSON'
-                    : activeDate
-                    ? `⭐ WEEK ${activeLesson?.weekNumber || 1} · ${formatCurriculumDateDisplay(activeDate).toUpperCase()}`
-                    : `⭐ WEEK ${activeLesson?.weekNumber || 1} SUNDAY LESSON`;
+                const verseEn = activeLesson?.memoryVerse?.verseEnglish || 'In the beginning God created the heavens and the earth.';
+                const verseTe = activeLesson?.memoryVerse?.verseTelugu || 'ఆదియందు దేవుడు భూమ్యాకాశములను సృజించెను.';
+                const verseRef = activeLesson?.memoryVerse?.reference || 'Genesis 1:1';
+                const lessonTitle = activeLesson?.title || 'In the Beginning: God Created All Things';
+                const tagLabel =
+                  activeMode === 'custom' && activeDate
+                    ? formatCurriculumDateDisplay(activeDate)
+                    : `Week ${activeLesson?.weekNumber || 1} Lesson`;
 
                 return (
-                  <TouchableOpacity
-                    style={[styles.card, { backgroundColor: theme.cardBg, borderColor: theme.goldAccent, borderWidth: 1 }]}
-                    onPress={() => {
-                      if (activeLesson) {
-                        setSelectedLessonDate(activeDate);
-                        setSelectedLessonForModal(activeLesson);
-                      }
-                    }}
-                    activeOpacity={0.88}
-                  >
-                    <View style={styles.cardHeaderSmall}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, marginRight: 6 }}>
-                        <Text style={[styles.cardHeaderTag, { color: theme.goldAccent }]} numberOfLines={1}>
-                          {headerTag}
-                        </Text>
-                        <View style={{ backgroundColor: theme.goldBg, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                          <Text style={{ fontSize: 9, fontWeight: '800', color: theme.goldAccent }}>TAP DETAILS &rsaquo;</Text>
-                        </View>
-                      </View>
-                      <Text style={[styles.verseRef, { color: theme.textSecondary }]}>{verseRef}</Text>
+                  <View>
+                    <View style={styles.sectionTitleRow}>
+                      <Text style={[styles.modernSectionTitle, { color: theme.textPrimary }]}>
+                        This Sunday's Lesson
+                      </Text>
                     </View>
 
-                    <Text style={{ fontSize: 15, fontWeight: 'bold', color: theme.textPrimary, marginTop: 2, marginBottom: 4 }}>
-                      {lessonTitle}
-                    </Text>
+                    <TouchableOpacity
+                      style={[
+                        styles.featuredLessonCard,
+                        styles.featuredLessonFullCard,
+                        { backgroundColor: theme.skyBg, borderColor: theme.skyBorder },
+                      ]}
+                      onPress={() => {
+                        if (activeLesson) {
+                          setSelectedLessonDate(activeDate);
+                          setSelectedLessonForModal(activeLesson);
+                        }
+                      }}
+                      activeOpacity={0.88}
+                    >
+                      <View style={styles.featuredTopRow}>
+                        <View style={styles.featuredLessonIllust}>
+                          <Text style={{ fontSize: 26 }}>📖</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.featuredEyebrow, { color: theme.isDark ? '#7DD3FC' : '#0369A1' }]}>
+                            {tagLabel} · {verseRef}
+                          </Text>
+                          <Text style={[styles.featuredTitle, { color: theme.textPrimary }]} numberOfLines={2}>
+                            {lessonTitle}
+                          </Text>
+                        </View>
+                      </View>
 
-                    {!!verseTe && (
-                      <Text style={[styles.verseTelugu, { color: theme.textPrimary }]}>
-                        "{verseTe}"
+                      <Text style={[styles.featuredVerseText, { color: theme.textPrimary }]}>
+                        “{verseTe || verseEn}”
                       </Text>
-                    )}
-                    <Text style={[styles.verseEnglish, { color: theme.textSecondary }]}>
-                      "{verseEn}"
-                    </Text>
-                  </TouchableOpacity>
+                      {!!verseTe && (
+                        <Text style={[styles.featuredVerseSub, { color: theme.textSecondary }]}>
+                          “{verseEn}”
+                        </Text>
+                      )}
+
+                      <View style={styles.featuredBottomRow}>
+                        <Text style={[styles.featuredPillText, { color: theme.textPrimary }]}>
+                          3 Goals · Bilingual
+                        </Text>
+                        <View style={styles.arrowActionCircle}>
+                          <ArrowUpRight size={16} color="#FFFFFF" strokeWidth={2.5} />
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  </View>
                 );
               })()}
 
-              {/* Quick Modules 2x2 Grid */}
+              {/* Popular Lessons & Highlights matching Screenshot 2 bottom cards */}
               <View>
-                <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>EXPLORE RHEMA KIDS</Text>
-                <View style={styles.grid2x2}>
-                  <TouchableOpacity
-                    style={[styles.gridItem, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
-                    onPress={() => setExploreCategory('stories')}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.gridEmoji}>📖</Text>
-                    <Text style={[styles.gridTitle, { color: theme.textPrimary }]}>Bible Stories</Text>
-                    <Text style={[styles.gridSub, { color: theme.textSecondary }]}>Illustrated & Telugu Audio</Text>
+                <View style={styles.sectionTitleRow}>
+                  <Text style={[styles.modernSectionTitle, { color: theme.textPrimary }]}>
+                    Popular Learning
+                  </Text>
+                  <TouchableOpacity onPress={() => setActiveTab('lms')}>
+                    <Text style={[styles.viewAllText, { color: theme.textSecondary }]}>View all</Text>
                   </TouchableOpacity>
+                </View>
 
-                  <TouchableOpacity
-                    style={[styles.gridItem, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
-                    onPress={() => setExploreCategory('quizzes')}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.gridEmoji}>🏆</Text>
-                    <Text style={[styles.gridTitle, { color: theme.textPrimary }]}>Kids Quizzes</Text>
-                    <Text style={[styles.gridSub, { color: theme.textSecondary }]}>Earn Bible Star Badges</Text>
-                  </TouchableOpacity>
+                <View style={{ gap: 10 }}>
+                  {stories[0] && (
+                    <TouchableOpacity
+                      style={[styles.popularRowCard, { backgroundColor: theme.amberBg, borderColor: theme.border }]}
+                      onPress={() => setSelectedStoryForReader(stories[0])}
+                      activeOpacity={0.86}
+                    >
+                      <View style={[styles.popularStoryThumb16x9, { backgroundColor: '#FFFFFF', borderColor: theme.border }]}>
+                        {stories[0].coverImageUrl ? (
+                          <Image source={{ uri: stories[0].coverImageUrl }} style={styles.storyCoverImg} resizeMode="cover" />
+                        ) : (
+                          <Text style={{ fontSize: 26 }}>{stories[0].coverEmoji || '📖'}</Text>
+                        )}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.popularTag, { color: '#D97706' }]}>
+                          Bible Story{stories[0].scriptureRef ? ` · ${stories[0].scriptureRef}` : ''}
+                        </Text>
+                        <Text style={[styles.popularTitle, { color: theme.textPrimary }]} numberOfLines={2}>
+                          {stories[0].title}
+                        </Text>
+                        <Text style={[styles.popularSub, { color: theme.textSecondary }]} numberOfLines={1}>
+                          {stories[0].readTime || estimateStoryReadTime(getFullStoryContent(stories[0]))}
+                        </Text>
+                      </View>
+                      <View style={styles.arrowActionCircle}>
+                        <ArrowUpRight size={15} color="#FFFFFF" strokeWidth={2.5} />
+                      </View>
+                    </TouchableOpacity>
+                  )}
 
-                  <TouchableOpacity
-                    style={[styles.gridItem, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
-                    onPress={() => setExploreCategory('lessons')}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.gridEmoji}>📚</Text>
-                    <Text style={[styles.gridTitle, { color: theme.textPrimary }]}>Weekly Lessons</Text>
-                    <Text style={[styles.gridSub, { color: theme.textSecondary }]}>Telugu & English Guides</Text>
-                  </TouchableOpacity>
+                  {quizzes[0] && (
+                    <TouchableOpacity
+                      style={[styles.popularRowCard, { backgroundColor: theme.mintBg, borderColor: theme.border }]}
+                      onPress={() => setSelectedQuizForPlayer(quizzes[0])}
+                      activeOpacity={0.86}
+                    >
+                      <View style={[styles.popularThumbBox, { backgroundColor: '#FFFFFF' }]}>
+                        <Text style={{ fontSize: 26 }}>{quizzes[0].coverEmoji || '🏆'}</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.popularTag, { color: '#059669' }]}>
+                          Kids Quiz · +{quizzes[0].pointsReward} Stars
+                        </Text>
+                        <Text style={[styles.popularTitle, { color: theme.textPrimary }]} numberOfLines={1}>
+                          {quizzes[0].title}
+                        </Text>
+                        <Text style={[styles.popularSub, { color: theme.textSecondary }]} numberOfLines={1}>
+                          {quizzes[0].titleTelugu} · {quizzes[0].scriptureRef}
+                        </Text>
+                      </View>
+                      <View style={[styles.arrowActionCircle, { backgroundColor: '#059669' }]}>
+                        <ArrowUpRight size={15} color="#FFFFFF" strokeWidth={2.5} />
+                      </View>
+                    </TouchableOpacity>
+                  )}
 
-                  <TouchableOpacity
-                    style={[styles.gridItem, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
-                    onPress={() => setExploreCategory('songs')}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.gridEmoji}>🎵</Text>
-                    <Text style={[styles.gridTitle, { color: theme.textPrimary }]}>Action Songs</Text>
-                    <Text style={[styles.gridSub, { color: theme.textSecondary }]}>Worship with Lyrics</Text>
-                  </TouchableOpacity>
+                  {songs[0] && (
+                    <TouchableOpacity
+                      style={[styles.popularRowCard, { backgroundColor: theme.roseBg, borderColor: theme.border }]}
+                      onPress={() => setSelectedSongForPlayer(songs[0])}
+                      activeOpacity={0.86}
+                    >
+                      <View style={[styles.popularThumbBox, { backgroundColor: '#FFFFFF' }]}>
+                        {songs[0].thumbnailUrl ? (
+                          <Image source={{ uri: songs[0].thumbnailUrl }} style={styles.storyCoverImg} />
+                        ) : (
+                          <Text style={{ fontSize: 26 }}>{songs[0].coverEmoji || '🎵'}</Text>
+                        )}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.popularTag, { color: '#DB2777' }]}>Action Worship Song</Text>
+                        <Text style={[styles.popularTitle, { color: theme.textPrimary }]} numberOfLines={1}>
+                          {songs[0].title}
+                        </Text>
+                        <Text style={[styles.popularSub, { color: theme.textSecondary }]} numberOfLines={1}>
+                          {songs[0].titleTelugu} · {songs[0].duration || '3:00'}
+                        </Text>
+                      </View>
+                      <View style={[styles.arrowActionCircle, { backgroundColor: '#DB2777' }]}>
+                        <ArrowUpRight size={15} color="#FFFFFF" strokeWidth={2.5} />
+                      </View>
+                    </TouchableOpacity>
+                  )}
                 </View>
               </View>
             </>
@@ -944,6 +1134,22 @@ export default function KidsMinistryScreen({ navigation }: any) {
           {/* ==================================================== */}
           {activeTab === 'classroom' && (
             <>
+              <View style={styles.subpageBackRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.subpageBackBtn,
+                    { backgroundColor: theme.cardBg, borderColor: theme.border },
+                  ]}
+                  onPress={() => setActiveTab('home')}
+                  activeOpacity={0.82}
+                >
+                  <ArrowLeft size={16} color={theme.textPrimary} strokeWidth={2.5} />
+                  <Text style={[styles.subpageBackText, { color: theme.textPrimary }]}>
+                    Back to Home
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
               <View style={[styles.card, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
                 <View style={styles.classHeaderRow}>
                   <View style={{ flex: 1 }}>
@@ -1156,6 +1362,22 @@ export default function KidsMinistryScreen({ navigation }: any) {
           {/* ==================================================== */}
           {activeTab === 'lms' && (
             <>
+              <View style={styles.subpageBackRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.subpageBackBtn,
+                    { backgroundColor: theme.cardBg, borderColor: theme.border },
+                  ]}
+                  onPress={() => setActiveTab('home')}
+                  activeOpacity={0.82}
+                >
+                  <ArrowLeft size={16} color={theme.textPrimary} strokeWidth={2.5} />
+                  <Text style={[styles.subpageBackText, { color: theme.textPrimary }]}>
+                    Back to Home
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
               {/* Featured Bible Quiz Card */}
               {quizzes.length > 0 && (
                 <View style={[styles.quizCard, { backgroundColor: theme.goldBg, borderColor: theme.goldAccent }]}>
@@ -1188,48 +1410,70 @@ export default function KidsMinistryScreen({ navigation }: any) {
                 </View>
               )}
 
-              {/* Illustrated Bilingual Bible Stories */}
+              {/* Bible Stories */}
               <View style={{ marginTop: 8 }}>
                 <View style={styles.sectionHeaderRow}>
-                  <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>ILLUSTRATED BIBLE STORIES</Text>
-                  <Text style={[styles.sectionHeaderSub, { color: theme.goldAccent }]}>Telugu & English</Text>
+                  <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>BIBLE STORIES</Text>
+                  <Text style={[styles.sectionHeaderSub, { color: theme.goldAccent }]}>Tap to read</Text>
                 </View>
 
-                {stories.map(s => (
-                  <TouchableOpacity
-                    key={s.id}
-                    style={[styles.storyCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
-                    onPress={() => setSelectedStoryForReader(s)}
-                    activeOpacity={0.88}
-                  >
-                    <View style={[styles.storyEmojiBubble, { backgroundColor: theme.innerCardBg, borderColor: theme.border }]}>
-                      {s.coverImageUrl ? (
-                        <Image source={{ uri: s.coverImageUrl }} style={styles.storyCoverImg} />
-                      ) : (
-                        <Text style={{ fontSize: 26 }}>{s.coverEmoji || '📖'}</Text>
-                      )}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.storyTitle, { color: theme.textPrimary }]}>{s.title}</Text>
-                      <Text style={[styles.storyTeluguText, { color: theme.textPrimary }]}>{s.titleTelugu}</Text>
-                      <Text style={[styles.storyMeta, { color: theme.textSecondary }]}>
-                        {s.scriptureRef ? `${s.scriptureRef} · ` : ''}{s.readTime || '5 min'} · {s.pages?.length || 1} Pages
-                      </Text>
-                    </View>
-                    <View style={styles.cardActionsRow}>
-                      <View style={[styles.storyReadPill, { backgroundColor: theme.goldBg }]}>
-                        <Text style={[styles.storyReadPillText, { color: theme.goldAccent }]}>Read &rsaquo;</Text>
+                {stories.map(s => {
+                  const fullBody = getFullStoryContent(s);
+                  const readTimeLabel = s.readTime || estimateStoryReadTime(fullBody);
+                  return (
+                    <TouchableOpacity
+                      key={s.id}
+                      style={[styles.lmsStoryCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
+                      onPress={() => setSelectedStoryForReader(s)}
+                      activeOpacity={0.88}
+                    >
+                      <View style={[styles.lmsStoryThumb16x9, { backgroundColor: theme.innerCardBg, borderBottomColor: theme.border }]}>
+                        {s.coverImageUrl ? (
+                          <Image source={{ uri: s.coverImageUrl }} style={styles.storyCoverImg} resizeMode="cover" />
+                        ) : (
+                          <View style={styles.lmsStoryFallbackHero}>
+                            <Text style={{ fontSize: 38 }}>{s.coverEmoji || '📖'}</Text>
+                          </View>
+                        )}
                       </View>
-                      <TouchableOpacity
-                        style={styles.itemDeleteBtn}
-                        onPress={() => handleDeleteStory(s.id, s.title)}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      >
-                        <Trash2 size={15} color="#EF4444" />
-                      </TouchableOpacity>
-                    </View>
-                  </TouchableOpacity>
-                ))}
+                      <View style={styles.lmsStoryCardBody}>
+                        <View style={styles.lmsStoryMetaRow}>
+                          {s.scriptureRef ? (
+                            <View style={[styles.storyReadPill, { backgroundColor: theme.goldBg }]}>
+                              <Text style={[styles.storyReadPillText, { color: theme.goldAccent }]}>{s.scriptureRef}</Text>
+                            </View>
+                          ) : null}
+                          <Text style={[styles.storyMeta, { color: theme.textSecondary, marginTop: 0 }]}>{readTimeLabel}</Text>
+                        </View>
+                        <Text style={[styles.lmsStoryTitle, { color: theme.textPrimary }]} numberOfLines={2}>
+                          {s.title}
+                        </Text>
+                        {s.titleTelugu && s.titleTelugu.trim() !== s.title.trim() ? (
+                          <Text style={[styles.storyTeluguText, { color: theme.textSecondary }]} numberOfLines={1}>
+                            {s.titleTelugu}
+                          </Text>
+                        ) : null}
+                        {fullBody ? (
+                          <Text style={[styles.lmsStoryExcerpt, { color: theme.textSecondary }]} numberOfLines={2}>
+                            {fullBody}
+                          </Text>
+                        ) : null}
+                        <View style={styles.lmsStoryFooter}>
+                          <View style={[styles.storyReadPill, { backgroundColor: theme.goldBg }]}>
+                            <Text style={[styles.storyReadPillText, { color: theme.goldAccent }]}>Read Story &rsaquo;</Text>
+                          </View>
+                          <TouchableOpacity
+                            style={styles.itemDeleteBtn}
+                            onPress={() => handleDeleteStory(s.id, s.title)}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            <Trash2 size={15} color="#EF4444" />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
 
               {/* Action Worship Songs Playlist */}
@@ -1280,18 +1524,7 @@ export default function KidsMinistryScreen({ navigation }: any) {
       )}
 
       {/* ── ENROLL CHILD MODAL ── */}
-      {showEnrollModal && (
-        <EnrollChildModal
-          visible={showEnrollModal}
-          onClose={() => setShowEnrollModal(false)}
-          churchId={churchId}
-          member={member}
-          existingFamilyMembers={existingHousehold}
-          onChildEnrolled={() => {
-            // Handled via realtime subscription
-          }}
-        />
-      )}
+      {enrollModalEl}
 
       {/* ── BIBLE STORY READER MODAL ── */}
       {selectedStoryForReader && (
@@ -1567,9 +1800,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 7,
     borderRadius: 999,
+    flexShrink: 0,
   },
   topActionBtnText: {
     color: '#000000',
@@ -2800,5 +3034,362 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
     color: '#000000',
+  },
+  modernTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingTop: 8,
+    paddingBottom: 10,
+    gap: 10,
+  },
+  greetingProfileTrigger: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 5,
+    paddingHorizontal: 6,
+    borderRadius: 999,
+  },
+  greetingAvatarCircle: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 2,
+    backgroundColor: '#EDE9FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    flexShrink: 0,
+  },
+  greetingNameText: {
+    fontSize: 15,
+    fontWeight: '800',
+    flexShrink: 1,
+  },
+  greetingSubText: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    lineHeight: 15,
+    marginTop: 1,
+  },
+  subpageHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  subpageBackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  subpageBackBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  subpageBackText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  childPickerBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.35)',
+    paddingHorizontal: 18,
+  },
+  childPickerSheet: {
+    borderRadius: 22,
+    padding: 16,
+    borderWidth: 1,
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.16,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  childModalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 10,
+    borderRadius: 16,
+    borderWidth: 1.5,
+  },
+  childModalAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#EFE9FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  childModalName: {
+    fontSize: 14.5,
+    fontWeight: '800',
+  },
+  childModalMeta: {
+    fontSize: 11.5,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  childModalCheck: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#7C3AED',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroFunHeadline: {
+    fontSize: 28,
+    fontWeight: '900',
+    lineHeight: 34,
+    letterSpacing: -0.4,
+    marginTop: 2,
+  },
+  peachProgressCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 22,
+    borderWidth: 1,
+    padding: 18,
+  },
+  peachTitle: {
+    fontSize: 16.5,
+    fontWeight: '800',
+    flexShrink: 1,
+  },
+  peachMeta: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  peachStat: {
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  checkedInMiniPill: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  checkedInMiniText: {
+    color: '#FFFFFF',
+    fontSize: 9.5,
+    fontWeight: '800',
+  },
+  progressRingBox: {
+    width: 64,
+    height: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  progressRingPct: {
+    position: 'absolute',
+    fontSize: 13.5,
+    fontWeight: '800',
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  modernSectionTitle: {
+    fontSize: 17.5,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  viewAllText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  categoryGrid: {
+    gap: 12,
+  },
+  categoryGridRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  categoryGridTile: {
+    flex: 1,
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  categoryIconCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryTileLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 17,
+  },
+  featuredLessonCard: {
+    width: width - 86,
+    borderRadius: 22,
+    borderWidth: 1,
+    padding: 16,
+    gap: 8,
+  },
+  featuredLessonFullCard: {
+    width: '100%',
+  },
+  featuredTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  featuredLessonIllust: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.88)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  featuredEyebrow: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  featuredTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  featuredVerseText: {
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  featuredVerseSub: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    lineHeight: 17,
+  },
+  featuredBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  featuredPillText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  arrowActionCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#111827',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  popularRowCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 12,
+  },
+  popularThumbBox: {
+    width: 54,
+    height: 54,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  popularTag: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  popularTitle: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  popularSub: {
+    fontSize: 11.5,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  popularStoryThumb16x9: {
+    width: 112,
+    aspectRatio: 16 / 9,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  lmsStoryCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  lmsStoryThumb16x9: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+    borderBottomWidth: 1,
+    overflow: 'hidden',
+  },
+  lmsStoryFallbackHero: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lmsStoryCardBody: {
+    padding: 14,
+    gap: 6,
+  },
+  lmsStoryMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  lmsStoryTitle: {
+    fontSize: 16.5,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontWeight: '800',
+    lineHeight: 22,
+  },
+  lmsStoryExcerpt: {
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  lmsStoryFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
   },
 });
