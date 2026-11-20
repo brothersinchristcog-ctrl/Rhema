@@ -11,10 +11,11 @@ import {
   Linking,
   StatusBar,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView, initialWindowMetrics } from 'react-native-safe-area-context';
 import { X, Music, Play, ExternalLink, Heart } from 'lucide-react-native';
 import YoutubePlayer from 'react-native-youtube-iframe';
 import { KidsWorshipSong } from '../../../types/KidsMinistryTypes';
+import { useTheme } from '../../../context/ThemeContext';
 
 const { width } = Dimensions.get('window');
 
@@ -42,138 +43,162 @@ export default function KidsSongPlayerModal({
   onClose,
   onSelectSong,
 }: KidsSongPlayerModalProps) {
-  if (!song) return null;
-
-  const insets = useSafeAreaInsets();
+  const { isDark, colors: themeColors } = useTheme();
   const [lyricsTab, setLyricsTab] = useState<'both' | 'telugu' | 'english'>('both');
   const [playing, setPlaying] = useState(false);
+
+  if (!song) return null;
+
+  const screenBg = isDark ? '#000000' : (themeColors.background || '#FAF7F2');
+  const cardBg = isDark ? '#18181B' : (themeColors.surface || '#FFFFFF');
+  const innerBg = isDark ? '#09090B' : '#F1F5F9';
+  const border = isDark ? '#27272A' : (themeColors.border || '#E2E8F0');
+  const textPrimary = isDark ? '#FFFFFF' : (themeColors.text || '#0F172A');
+  const textSecondary = isDark ? '#9CA3AF' : (themeColors.textSecondary || '#64748B');
+  const goldAccent = isDark ? '#FBBF24' : '#D97706';
+  const pillActiveBg = isDark ? '#FFFFFF' : '#0F172A';
+  const pillActiveText = isDark ? '#000000' : '#FFFFFF';
+  const barStyle = isDark ? 'light-content' : 'dark-content';
+
   const videoId = extractYoutubeId(song.youtubeVideoId) || 'AyKSwGvUbcY';
 
   return (
-    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
-      <View style={[styles.container, { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) }]}>
-        <StatusBar barStyle="light-content" backgroundColor="#000000" />
-        {/* Header */}
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <X size={20} color="#FFFFFF" />
-          </TouchableOpacity>
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+        <SafeAreaView style={[styles.container, { backgroundColor: screenBg }]} edges={['top', 'bottom']}>
+          <StatusBar barStyle={barStyle} backgroundColor={screenBg} />
+          {/* Header */}
+          <View style={[styles.headerRow, { borderBottomColor: border }]}>
+            <TouchableOpacity
+              onPress={onClose}
+              style={[styles.closeBtn, { backgroundColor: isDark ? '#18181B' : '#F1F5F9' }]}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <X size={20} color={textPrimary} />
+            </TouchableOpacity>
 
-          <View style={styles.headerTitles}>
-            <Text style={styles.headerTitleSerif} numberOfLines={1}>{song.title}</Text>
-            <Text style={styles.headerTeluguSub} numberOfLines={1}>{song.titleTelugu}</Text>
+            <View style={styles.headerTitles}>
+              <Text style={[styles.headerTitleSerif, { color: textPrimary }]} numberOfLines={1}>
+                {song.title}
+              </Text>
+              <Text style={[styles.headerTeluguSub, { color: textSecondary }]} numberOfLines={1}>
+                {song.titleTelugu}
+              </Text>
+            </View>
+
+            <View style={[styles.categoryBadge, { backgroundColor: isDark ? '#18181B' : '#FEF3C7', borderColor: isDark ? '#27272A' : '#FDE68A' }]}>
+              <Text style={[styles.categoryBadgeText, { color: goldAccent }]}>Action Song</Text>
+            </View>
           </View>
 
-          <View style={styles.categoryBadge}>
-            <Text style={styles.categoryBadgeText}>Action Song</Text>
-          </View>
-        </View>
-
-        {/* Video Player */}
-        <View style={styles.playerContainer}>
-          <YoutubePlayer
-            height={220}
-            width={width}
-            videoId={videoId}
-            play={playing}
-            onChangeState={(state) => {
-              if (state === 'ended') setPlaying(false);
-            }}
-          />
-          <TouchableOpacity
-            style={styles.openYoutubeBtn}
-            onPress={() => {
-              const appUrl = `vnd.youtube://${videoId}`;
-              const webUrl = `https://www.youtube.com/watch?v=${videoId}`;
-              Linking.canOpenURL(appUrl).then(supported => {
-                if (supported) {
-                  Linking.openURL(appUrl);
-                } else {
-                  Linking.openURL(webUrl);
-                }
-              }).catch(() => Linking.openURL(webUrl));
-            }}
-            activeOpacity={0.8}
-          >
-            <ExternalLink size={13} color="#FBBF24" />
-            <Text style={styles.openYoutubeText}>Watch on YouTube App (Full Screen)</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Lyrics Language Switcher */}
-        <View style={styles.lyricsTabRow}>
-          <TouchableOpacity
-            style={[styles.lyricsTab, lyricsTab === 'both' && styles.lyricsTabActive]}
-            onPress={() => setLyricsTab('both')}
-          >
-            <Text style={[styles.lyricsTabText, lyricsTab === 'both' && styles.lyricsTabTextActive]}>
-              Bilingual Lyrics
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.lyricsTab, lyricsTab === 'telugu' && styles.lyricsTabActive]}
-            onPress={() => setLyricsTab('telugu')}
-          >
-            <Text style={[styles.lyricsTabText, lyricsTab === 'telugu' && styles.lyricsTabTextActive]}>
-              తెలుగు (Telugu)
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.lyricsTab, lyricsTab === 'english' && styles.lyricsTabActive]}
-            onPress={() => setLyricsTab('english')}
-          >
-            <Text style={[styles.lyricsTabText, lyricsTab === 'english' && styles.lyricsTabTextActive]}>
-              English
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Lyrics & Playlist Scroll */}
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-          {/* Lyrics Box */}
-          <View style={styles.lyricsCard}>
-            {(lyricsTab === 'both' || lyricsTab === 'english') && (
-              <View style={styles.lyricsBlock}>
-                <Text style={styles.lyricsLangTag}>ENGLISH LYRICS</Text>
-                <Text style={styles.lyricsTextEng}>{song.lyricsEnglish}</Text>
-              </View>
-            )}
-
-            {(lyricsTab === 'both' || lyricsTab === 'telugu') && (
-              <View style={[styles.lyricsBlock, { marginTop: lyricsTab === 'both' ? 14 : 0 }]}>
-                <Text style={[styles.lyricsLangTag, { color: '#FBBF24' }]}>తెలుగు సాహిత్యం</Text>
-                <Text style={styles.lyricsTextTel}>{song.lyricsTelugu}</Text>
-              </View>
-            )}
+          {/* Video Player */}
+          <View style={[styles.playerContainer, { backgroundColor: innerBg }]}>
+            <YoutubePlayer
+              height={220}
+              width={width}
+              videoId={videoId}
+              play={playing}
+              onChangeState={(state) => {
+                if (state === 'ended') setPlaying(false);
+              }}
+            />
+            <TouchableOpacity
+              style={[styles.openYoutubeBtn, { backgroundColor: cardBg, borderTopColor: border, borderBottomWidth: 1, borderBottomColor: border }]}
+              onPress={() => {
+                const appUrl = `vnd.youtube://${videoId}`;
+                const webUrl = `https://www.youtube.com/watch?v=${videoId}`;
+                Linking.canOpenURL(appUrl).then(supported => {
+                  if (supported) {
+                    Linking.openURL(appUrl);
+                  } else {
+                    Linking.openURL(webUrl);
+                  }
+                }).catch(() => Linking.openURL(webUrl));
+              }}
+              activeOpacity={0.8}
+            >
+              <ExternalLink size={13} color={goldAccent} />
+              <Text style={[styles.openYoutubeText, { color: goldAccent }]}>Watch on YouTube App (Full Screen)</Text>
+            </TouchableOpacity>
           </View>
 
-          {/* More Action Songs Playlist */}
-          <Text style={styles.playlistHeader}>MORE SUNDAY SCHOOL SONGS</Text>
-          <View style={styles.playlistCol}>
-            {allSongs
-              .filter(s => s.id !== song.id)
-              .map(other => (
-                <TouchableOpacity
-                  key={other.id}
-                  style={styles.playlistItem}
-                  onPress={() => onSelectSong(other)}
-                  activeOpacity={0.88}
-                >
-                  <View style={styles.songEmojiBox}>
-                    <Text style={{ fontSize: 22 }}>{other.coverEmoji || '🎵'}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.playlistTitle}>{other.title}</Text>
-                    <Text style={styles.playlistSub}>{other.titleTelugu} · {other.duration}</Text>
-                  </View>
-                  <Play size={16} color="#FBBF24" />
-                </TouchableOpacity>
-              ))}
+          {/* Lyrics Language Switcher */}
+          <View style={[styles.lyricsTabRow, { backgroundColor: isDark ? '#18181B' : '#F1F5F9', borderWidth: 1, borderColor: border }]}>
+            <TouchableOpacity
+              style={[styles.lyricsTab, lyricsTab === 'both' && { backgroundColor: pillActiveBg }]}
+              onPress={() => setLyricsTab('both')}
+            >
+              <Text style={[styles.lyricsTabText, { color: textSecondary }, lyricsTab === 'both' && { color: pillActiveText, fontWeight: '700' }]}>
+                Bilingual Lyrics
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.lyricsTab, lyricsTab === 'telugu' && { backgroundColor: pillActiveBg }]}
+              onPress={() => setLyricsTab('telugu')}
+            >
+              <Text style={[styles.lyricsTabText, { color: textSecondary }, lyricsTab === 'telugu' && { color: pillActiveText, fontWeight: '700' }]}>
+                తెలుగు (Telugu)
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.lyricsTab, lyricsTab === 'english' && { backgroundColor: pillActiveBg }]}
+              onPress={() => setLyricsTab('english')}
+            >
+              <Text style={[styles.lyricsTabText, { color: textSecondary }, lyricsTab === 'english' && { color: pillActiveText, fontWeight: '700' }]}>
+                English
+              </Text>
+            </TouchableOpacity>
           </View>
-        </ScrollView>
-      </View>
+
+          {/* Lyrics & Playlist Scroll */}
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+            {/* Lyrics Box */}
+            <View style={[styles.lyricsCard, { backgroundColor: cardBg, borderColor: border }, !isDark && styles.lightShadow]}>
+              {(lyricsTab === 'both' || lyricsTab === 'english') && (
+                <View style={styles.lyricsBlock}>
+                  <Text style={[styles.lyricsLangTag, { color: textSecondary }]}>ENGLISH LYRICS</Text>
+                  <Text style={[styles.lyricsTextEng, { color: textPrimary }]}>{song.lyricsEnglish}</Text>
+                </View>
+              )}
+
+              {(lyricsTab === 'both' || lyricsTab === 'telugu') && (
+                <View style={[styles.lyricsBlock, { marginTop: lyricsTab === 'both' ? 14 : 0 }]}>
+                  <Text style={[styles.lyricsLangTag, { color: goldAccent }]}>తెలుగు సాహిత్యం</Text>
+                  <Text style={[styles.lyricsTextTel, { color: textPrimary }]}>{song.lyricsTelugu}</Text>
+                </View>
+              )}
+            </View>
+
+            {/* More Action Songs Playlist */}
+            <Text style={[styles.playlistHeader, { color: textSecondary }]}>MORE SUNDAY SCHOOL SONGS</Text>
+            <View style={styles.playlistCol}>
+              {allSongs
+                .filter(s => s.id !== song.id)
+                .map(other => (
+                  <TouchableOpacity
+                    key={other.id}
+                    style={[styles.playlistItem, { backgroundColor: cardBg, borderColor: border }, !isDark && styles.lightShadow]}
+                    onPress={() => onSelectSong(other)}
+                    activeOpacity={0.88}
+                  >
+                    <View style={[styles.songEmojiBox, { backgroundColor: innerBg }]}>
+                      <Text style={{ fontSize: 22 }}>{other.coverEmoji || '🎵'}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.playlistTitle, { color: textPrimary }]}>{other.title}</Text>
+                      <Text style={[styles.playlistSub, { color: textSecondary }]}>
+                        {other.titleTelugu} · {other.duration}
+                      </Text>
+                    </View>
+                    <Play size={16} color={goldAccent} />
+                  </TouchableOpacity>
+                ))}
+            </View>
+          </ScrollView>
+        </SafeAreaView>
+      </SafeAreaProvider>
     </Modal>
   );
 }
@@ -289,6 +314,13 @@ const styles = StyleSheet.create({
     padding: 18,
     borderWidth: 1,
     borderColor: '#27272A',
+  },
+  lightShadow: {
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 1,
   },
   lyricsBlock: {
     gap: 6,

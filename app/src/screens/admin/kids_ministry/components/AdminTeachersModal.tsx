@@ -12,8 +12,9 @@ import {
   ActivityIndicator,
   Linking,
   Dimensions,
+  StatusBar,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView, initialWindowMetrics } from 'react-native-safe-area-context';
 import {
   X,
   Plus,
@@ -31,6 +32,7 @@ import {
 } from 'lucide-react-native';
 import KidsMinistryService from '../../../../services/KidsMinistryService';
 import { KidsTeacherRecord, KidsClassTier, KidsTeacherRole } from '../../../../types/KidsMinistryTypes';
+import { useAdminTheme } from '../../../../utils/adminThemeHelper';
 
 const { width, height } = Dimensions.get('window');
 
@@ -49,7 +51,19 @@ export default function AdminTeachersModal({
   churchId,
   onClose,
 }: AdminTeachersModalProps) {
-  const insets = useSafeAreaInsets();
+  const {
+    isDark,
+    screenBg,
+    cardSurface,
+    secondarySurface,
+    primaryText,
+    secondaryText,
+    borderColor,
+    barStyle,
+  } = useAdminTheme();
+  const placeholderColor = isDark ? '#6B7280' : '#94A3B8';
+  const blueAccent = isDark ? '#60A5FA' : '#2563EB';
+  const emeraldAccent = isDark ? '#34D399' : '#059669';
   const [showAddForm, setShowAddForm] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<'all' | 'teachers' | 'volunteers'>('all');
 
@@ -74,6 +88,7 @@ export default function AdminTeachersModal({
     primary: 'Primary Stars (6-8 yrs)',
     junior: 'Junior Champions (9-12 yrs)',
     teens: 'Teens for Christ (13-17 yrs)',
+    mixed: 'Mixed Age Group (All Ages)',
   };
 
   // Trigger search on typing in Full Name
@@ -175,27 +190,37 @@ export default function AdminTeachersModal({
   });
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <View style={[styles.modalCard, { paddingTop: Math.max(insets.top, 16) }]}>
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+        <SafeAreaView style={[styles.fullContainer, { backgroundColor: screenBg }]} edges={['top', 'bottom']}>
+          <StatusBar barStyle={barStyle} backgroundColor={screenBg} />
+
           {/* Header */}
-          <View style={styles.header}>
-            <View style={{ flex: 1 }}>
+          <View style={[styles.header, { borderBottomColor: borderColor }]}>
+            <View style={{ flex: 1, marginRight: 12 }}>
               <View style={styles.badgeRow}>
-                <View style={styles.primaryBadge}>
-                  <Text style={styles.primaryBadgeText}>SUNDAY SCHOOL ROSTER</Text>
+                <View style={[styles.primaryBadge, { backgroundColor: isDark ? '#1E3A8A' : '#DBEAFE' }]}>
+                  <Text style={[styles.primaryBadgeText, { color: isDark ? '#93C5FD' : '#1D4ED8' }]}>
+                    SUNDAY SCHOOL ROSTER
+                  </Text>
                 </View>
-                <View style={styles.countBadge}>
-                  <Text style={styles.countBadgeText}>{teachers.length} Active</Text>
+                <View style={[styles.countBadge, { backgroundColor: isDark ? 'rgba(52, 211, 153, 0.15)' : '#DCFCE7' }]}>
+                  <Text style={[styles.countBadgeText, { color: isDark ? '#34D399' : '#15803D' }]}>
+                    {teachers.length} Active
+                  </Text>
                 </View>
               </View>
-              <Text style={styles.headerTitle}>Faculty & Volunteers</Text>
-              <Text style={styles.headerSubtitle}>
+              <Text style={[styles.headerTitle, { color: primaryText }]}>Faculty & Volunteers</Text>
+              <Text style={[styles.headerSubtitle, { color: secondaryText }]}>
                 Manage approved Sunday School educators, helpers, and active service assignments.
               </Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <X size={20} color="#9CA3AF" />
+            <TouchableOpacity
+              onPress={onClose}
+              style={[styles.closeBtn, { backgroundColor: secondarySurface }]}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <X size={20} color={primaryText} />
             </TouchableOpacity>
           </View>
 
@@ -203,26 +228,56 @@ export default function AdminTeachersModal({
           <View style={styles.topActionBar}>
             <View style={styles.filterPillsRow}>
               <TouchableOpacity
-                style={[styles.filterPill, activeSubTab === 'all' && styles.filterPillActive]}
+                style={[
+                  styles.filterPill,
+                  { backgroundColor: cardSurface, borderColor },
+                  activeSubTab === 'all' && styles.filterPillActive,
+                ]}
                 onPress={() => setActiveSubTab('all')}
               >
-                <Text style={[styles.filterPillText, activeSubTab === 'all' && styles.filterPillTextActive]}>
+                <Text
+                  style={[
+                    styles.filterPillText,
+                    { color: secondaryText },
+                    activeSubTab === 'all' && styles.filterPillTextActive,
+                  ]}
+                >
                   All ({teachers.length})
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.filterPill, activeSubTab === 'teachers' && styles.filterPillActive]}
+                style={[
+                  styles.filterPill,
+                  { backgroundColor: cardSurface, borderColor },
+                  activeSubTab === 'teachers' && styles.filterPillActive,
+                ]}
                 onPress={() => setActiveSubTab('teachers')}
               >
-                <Text style={[styles.filterPillText, activeSubTab === 'teachers' && styles.filterPillTextActive]}>
+                <Text
+                  style={[
+                    styles.filterPillText,
+                    { color: secondaryText },
+                    activeSubTab === 'teachers' && styles.filterPillTextActive,
+                  ]}
+                >
                   Teachers
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.filterPill, activeSubTab === 'volunteers' && styles.filterPillActive]}
+                style={[
+                  styles.filterPill,
+                  { backgroundColor: cardSurface, borderColor },
+                  activeSubTab === 'volunteers' && styles.filterPillActive,
+                ]}
                 onPress={() => setActiveSubTab('volunteers')}
               >
-                <Text style={[styles.filterPillText, activeSubTab === 'volunteers' && styles.filterPillTextActive]}>
+                <Text
+                  style={[
+                    styles.filterPillText,
+                    { color: secondaryText },
+                    activeSubTab === 'volunteers' && styles.filterPillTextActive,
+                  ]}
+                >
                   Volunteers
                 </Text>
               </TouchableOpacity>
@@ -234,7 +289,7 @@ export default function AdminTeachersModal({
                 onPress={() => setShowAddForm(true)}
                 activeOpacity={0.88}
               >
-                <Plus size={16} color="#FFFFFF" strokeWidth={2.8} />
+                <Plus size={15} color="#FFFFFF" strokeWidth={2.8} />
                 <Text style={styles.addTeacherBtnText}>Register New</Text>
               </TouchableOpacity>
             )}
@@ -243,75 +298,84 @@ export default function AdminTeachersModal({
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
             {/* ── EXPANDABLE REGISTRATION FORM ── */}
             {showAddForm && (
-              <View style={styles.formContainer}>
-                <View style={styles.formHeader}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={[styles.formContainer, { backgroundColor: cardSurface, borderColor }]}>
+                <View style={[styles.formHeader, { borderBottomColor: borderColor }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
                     <View style={styles.formIconBox}>
-                      <UserCheck size={18} color="#FBBF24" />
+                      <UserCheck size={18} color="#D97706" />
                     </View>
-                    <View>
-                      <Text style={styles.formTitle}>Register Sunday School Faculty</Text>
-                      <Text style={styles.formSubtitle}>Link an existing church member or enter new details</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.formTitle, { color: primaryText }]}>Register Sunday School Faculty</Text>
+                      <Text style={[styles.formSubtitle, { color: secondaryText }]}>
+                        Link an existing church member or enter new details
+                      </Text>
                     </View>
                   </View>
                   <TouchableOpacity onPress={() => setShowAddForm(false)} style={styles.closeFormBtn}>
-                    <X size={18} color="#9CA3AF" />
+                    <X size={18} color={secondaryText} />
                   </TouchableOpacity>
                 </View>
 
                 {/* Section 1: Member Identity */}
                 <View style={styles.formSection}>
-                  <Text style={styles.sectionLabel}>1. CHURCH MEMBER LOOKUP & IDENTITY</Text>
+                  <Text style={[styles.sectionLabel, { color: blueAccent }]}>1. CHURCH MEMBER LOOKUP & IDENTITY</Text>
 
                   {selectedMemberId ? (
-                    <View style={styles.selectedMemberCard}>
+                    <View style={[styles.selectedMemberCard, { backgroundColor: secondarySurface }]}>
                       <View style={styles.selectedMemberAvatar}>
                         <Check size={16} color="#10B981" />
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.selectedMemberName}>{newName}</Text>
-                        <Text style={styles.selectedMemberMeta}>Linked Registered Church Member</Text>
+                        <Text style={[styles.selectedMemberName, { color: primaryText }]}>{newName}</Text>
+                        <Text style={[styles.selectedMemberMeta, { color: emeraldAccent }]}>Linked Registered Church Member</Text>
                       </View>
-                      <TouchableOpacity onPress={handleClearSelection} style={styles.clearSelectionBtn}>
-                        <Text style={styles.clearSelectionText}>Change</Text>
+                      <TouchableOpacity
+                        onPress={handleClearSelection}
+                        style={[styles.clearSelectionBtn, { backgroundColor: cardSurface, borderColor, borderWidth: 1 }]}
+                      >
+                        <Text style={[styles.clearSelectionText, { color: secondaryText }]}>Change</Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
                     <View style={{ position: 'relative', zIndex: 10 }}>
-                      <View style={styles.inputSearchBox}>
-                        <Search size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
+                      <View style={[styles.inputSearchBox, { backgroundColor: secondarySurface }]}>
+                        <Search size={16} color={secondaryText} style={{ marginRight: 8 }} />
                         <TextInput
-                          style={styles.inputSearch}
+                          style={[styles.inputSearch, { color: primaryText }]}
                           value={newName}
                           onChangeText={handleSearchMembers}
                           placeholder="Search registered members or type full name..."
-                          placeholderTextColor="#6B7280"
+                          placeholderTextColor={placeholderColor}
                         />
-                        {searchingMembers && <ActivityIndicator size="small" color="#FBBF24" />}
+                        {searchingMembers && <ActivityIndicator size="small" color="#F59E0B" />}
                       </View>
 
                       {/* Dropdown Suggestions */}
                       {showMemberDropdown && memberResults.length > 0 && (
-                        <View style={styles.dropdownList}>
-                          <Text style={styles.dropdownHeader}>EXISTING CHURCH MEMBERS (TAP TO SELECT):</Text>
+                        <View style={[styles.dropdownList, { backgroundColor: cardSurface }]}>
+                          <Text style={[styles.dropdownHeader, { color: secondaryText }]}>
+                            EXISTING CHURCH MEMBERS (TAP TO SELECT):
+                          </Text>
                           {memberResults.map(m => {
                             const displayName = (m.name || `${m.firstName || ''} ${m.lastName || ''}`).trim();
                             const phone = m.phone || m.mobileNumber || m.phoneNumber || 'No phone recorded';
                             return (
                               <TouchableOpacity
                                 key={m.id}
-                                style={styles.dropdownItem}
+                                style={[styles.dropdownItem, { borderBottomColor: borderColor }]}
                                 onPress={() => handleSelectMember(m)}
                               >
                                 <View style={styles.dropdownAvatar}>
                                   <Text style={styles.dropdownAvatarText}>{displayName.charAt(0)}</Text>
                                 </View>
                                 <View style={{ flex: 1 }}>
-                                  <Text style={styles.dropdownItemName}>{displayName}</Text>
-                                  <Text style={styles.dropdownItemPhone}>{phone}</Text>
+                                  <Text style={[styles.dropdownItemName, { color: primaryText }]}>{displayName}</Text>
+                                  <Text style={[styles.dropdownItemPhone, { color: secondaryText }]}>{phone}</Text>
                                 </View>
-                                <View style={styles.selectPill}>
-                                  <Text style={styles.selectPillText}>Select</Text>
+                                <View style={[styles.selectPill, { backgroundColor: isDark ? '#1E3A8A' : '#DBEAFE' }]}>
+                                  <Text style={[styles.selectPillText, { color: isDark ? '#93C5FD' : '#1D4ED8' }]}>
+                                    Select
+                                  </Text>
                                 </View>
                               </TouchableOpacity>
                             );
@@ -322,26 +386,26 @@ export default function AdminTeachersModal({
                   )}
 
                   <View style={{ marginTop: 10 }}>
-                    <Text style={styles.inputLabel}>Mobile / WhatsApp Number *</Text>
+                    <Text style={[styles.inputLabel, { color: primaryText }]}>Mobile / WhatsApp Number *</Text>
                     <TextInput
-                      style={styles.inputField}
+                      style={[styles.inputField, { backgroundColor: secondarySurface, borderColor, color: primaryText }]}
                       value={newPhone}
                       onChangeText={setNewPhone}
                       keyboardType="phone-pad"
                       placeholder="e.g. +91 98765 43210"
-                      placeholderTextColor="#6B7280"
+                      placeholderTextColor={placeholderColor}
                     />
                   </View>
 
                   <View style={{ marginTop: 10 }}>
-                    <Text style={styles.inputLabel}>Email Address (Optional)</Text>
+                    <Text style={[styles.inputLabel, { color: primaryText }]}>Email Address (Optional)</Text>
                     <TextInput
-                      style={styles.inputField}
+                      style={[styles.inputField, { backgroundColor: secondarySurface, borderColor, color: primaryText }]}
                       value={newEmail}
                       onChangeText={setNewEmail}
                       keyboardType="email-address"
                       placeholder="teacher@rhema.church"
-                      placeholderTextColor="#6B7280"
+                      placeholderTextColor={placeholderColor}
                       autoCapitalize="none"
                     />
                   </View>
@@ -349,9 +413,9 @@ export default function AdminTeachersModal({
 
                 {/* Section 2: Role & Class Assignment */}
                 <View style={styles.formSection}>
-                  <Text style={styles.sectionLabel}>2. MINISTRY ROLE & ASSIGNED CLASSROOM</Text>
+                  <Text style={[styles.sectionLabel, { color: blueAccent }]}>2. MINISTRY ROLE & ASSIGNED CLASSROOM</Text>
 
-                  <Text style={styles.inputLabel}>Faculty Role:</Text>
+                  <Text style={[styles.inputLabel, { color: primaryText }]}>Faculty Role:</Text>
                   <View style={styles.roleChipsRow}>
                     {[
                       { key: 'lead_teacher', label: 'Lead Teacher' },
@@ -360,28 +424,59 @@ export default function AdminTeachersModal({
                     ].map(r => (
                       <TouchableOpacity
                         key={r.key}
-                        style={[styles.roleChip, newRole === r.key && styles.roleChipActive]}
+                        style={[
+                          styles.roleChip,
+                          { backgroundColor: secondarySurface, borderColor },
+                          newRole === r.key && styles.roleChipActive,
+                        ]}
                         onPress={() => setNewRole(r.key as any)}
                       >
-                        <Text style={[styles.roleChipText, newRole === r.key && styles.roleChipTextActive]}>
+                        <Text
+                          style={[
+                            styles.roleChipText,
+                            { color: secondaryText },
+                            newRole === r.key && styles.roleChipTextActive,
+                          ]}
+                        >
                           {r.label}
                         </Text>
                       </TouchableOpacity>
                     ))}
                   </View>
 
-                  <Text style={[styles.inputLabel, { marginTop: 12 }]}>Assigned Sunday School Tier:</Text>
+                  <Text style={[styles.inputLabel, { color: primaryText, marginTop: 12 }]}>
+                    Assigned Sunday School Tier:
+                  </Text>
                   <View style={styles.tierSelectorGrid}>
-                    {(['nursery', 'beginners', 'primary', 'junior', 'teens'] as KidsClassTier[]).map(t => (
+                    {(['nursery', 'beginners', 'primary', 'junior', 'teens', 'mixed'] as KidsClassTier[]).map(t => (
                       <TouchableOpacity
                         key={t}
-                        style={[styles.tierCard, newTier === t && styles.tierCardActive]}
+                        style={[
+                          styles.tierCard,
+                          { backgroundColor: secondarySurface, borderColor },
+                          newTier === t && [
+                            styles.tierCardActive,
+                            { backgroundColor: isDark ? '#1E3A8A' : '#DBEAFE', borderColor: '#3B82F6' },
+                          ],
+                        ]}
                         onPress={() => setNewTier(t)}
                       >
-                        <Text style={[styles.tierCardTitle, newTier === t && styles.tierCardTitleActive]}>
+                        <Text
+                          style={[
+                            styles.tierCardTitle,
+                            { color: primaryText },
+                            newTier === t && { color: isDark ? '#93C5FD' : '#1D4ED8', fontWeight: '800' },
+                          ]}
+                        >
                           {tierNames[t].split(' ')[0]}
                         </Text>
-                        <Text style={[styles.tierCardSub, newTier === t && styles.tierCardSubActive]}>
+                        <Text
+                          style={[
+                            styles.tierCardSub,
+                            { color: secondaryText },
+                            newTier === t && { color: isDark ? '#BFDBFE' : '#2563EB' },
+                          ]}
+                        >
                           {tierNames[t].split('(')[1]?.replace(')', '') || t}
                         </Text>
                       </TouchableOpacity>
@@ -392,13 +487,13 @@ export default function AdminTeachersModal({
                 {/* Action Buttons */}
                 <View style={styles.formActionsRow}>
                   <TouchableOpacity
-                    style={styles.cancelBtn}
+                    style={[styles.cancelBtn, { backgroundColor: secondarySurface, borderColor, borderWidth: 1 }]}
                     onPress={() => {
                       handleClearSelection();
                       setShowAddForm(false);
                     }}
                   >
-                    <Text style={styles.cancelBtnText}>Cancel</Text>
+                    <Text style={[styles.cancelBtnText, { color: primaryText }]}>Cancel</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.submitBtn, submitting && { opacity: 0.7 }]}
@@ -406,7 +501,7 @@ export default function AdminTeachersModal({
                     disabled={submitting}
                   >
                     {submitting ? (
-                      <ActivityIndicator size="small" color="#000000" />
+                      <ActivityIndicator size="small" color="#FFFFFF" />
                     ) : (
                       <Text style={styles.submitBtnText}>Save Faculty Member</Text>
                     )}
@@ -418,9 +513,9 @@ export default function AdminTeachersModal({
             {/* ── TEACHER ROSTER LIST ── */}
             {filteredTeachers.length === 0 ? (
               <View style={styles.emptyState}>
-                <Users size={36} color="#6B7280" />
-                <Text style={styles.emptyTitle}>No Faculty Records Found</Text>
-                <Text style={styles.emptySub}>
+                <Users size={36} color={secondaryText} />
+                <Text style={[styles.emptyTitle, { color: primaryText }]}>No Faculty Records Found</Text>
+                <Text style={[styles.emptySub, { color: secondaryText }]}>
                   Register Sunday School teachers and volunteers to assign them to classrooms.
                 </Text>
               </View>
@@ -432,17 +527,48 @@ export default function AdminTeachersModal({
                   const isVolunteer = teacher.role === 'volunteer';
 
                   return (
-                    <View key={teacher.id} style={styles.teacherCard}>
+                    <View
+                      key={teacher.id}
+                      style={[
+                        styles.teacherCard,
+                        { backgroundColor: cardSurface, borderColor },
+                        !isDark && styles.cardShadowLight,
+                      ]}
+                    >
                       <View style={styles.teacherCardTop}>
-                        <View style={[styles.avatarBox, isPresent && styles.avatarBoxPresent]}>
-                          <Text style={styles.avatarText}>{teacher.name.charAt(0)}</Text>
+                        <View
+                          style={[
+                            styles.avatarBox,
+                            { backgroundColor: isDark ? '#334155' : '#E2E8F0' },
+                            isPresent && styles.avatarBoxPresent,
+                          ]}
+                        >
+                          <Text style={[styles.avatarText, { color: isPresent ? '#FFFFFF' : primaryText }]}>
+                            {teacher.name.charAt(0)}
+                          </Text>
                         </View>
 
                         <View style={{ flex: 1 }}>
                           <View style={styles.nameHeaderRow}>
-                            <Text style={styles.teacherName}>{teacher.name}</Text>
-                            <View style={[styles.dutyPill, isPresent ? styles.dutyPillPresent : styles.dutyPillScheduled]}>
-                              <Text style={[styles.dutyPillText, isPresent ? styles.dutyPillTextPresent : styles.dutyPillTextScheduled]}>
+                            <Text style={[styles.teacherName, { color: primaryText }]} numberOfLines={1}>
+                              {teacher.name}
+                            </Text>
+                            <View
+                              style={[
+                                styles.dutyPill,
+                                isPresent
+                                  ? styles.dutyPillPresent
+                                  : [styles.dutyPillScheduled, { backgroundColor: secondarySurface }],
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.dutyPillText,
+                                  isPresent
+                                    ? { color: emeraldAccent }
+                                    : { color: secondaryText },
+                                ]}
+                              >
                                 {isPresent ? 'On Duty Today ✓' : 'Scheduled'}
                               </Text>
                             </View>
@@ -450,17 +576,30 @@ export default function AdminTeachersModal({
 
                           <View style={styles.roleTagRow}>
                             <View style={[styles.roleTag, isLead ? styles.roleTagLead : isVolunteer ? styles.roleTagVol : styles.roleTagAsst]}>
-                              <Text style={styles.roleTagText}>
+                              <Text
+                                style={[
+                                  styles.roleTagText,
+                                  {
+                                    color: isLead
+                                      ? isDark ? '#93C5FD' : '#1D4ED8'
+                                      : isVolunteer
+                                      ? isDark ? '#D8B4FE' : '#7E22CE'
+                                      : isDark ? '#FDE68A' : '#B45309',
+                                  },
+                                ]}
+                              >
                                 {isLead ? 'Lead Teacher' : isVolunteer ? 'Volunteer Helper' : 'Assistant Teacher'}
                               </Text>
                             </View>
-                            <Text style={styles.classLabel}>{teacher.assignedClassName}</Text>
+                            <Text style={[styles.classLabel, { color: secondaryText }]} numberOfLines={1}>
+                              {teacher.assignedClassName}
+                            </Text>
                           </View>
                         </View>
                       </View>
 
                       {/* Contact & Status Meta */}
-                      <View style={styles.teacherCardBottom}>
+                      <View style={[styles.teacherCardBottom, { borderTopColor: borderColor }]}>
                         <View style={styles.contactDetailsCol}>
                           {teacher.phone ? (
                             <TouchableOpacity
@@ -468,13 +607,13 @@ export default function AdminTeachersModal({
                               onPress={() => Linking.openURL(`tel:${teacher.phone}`)}
                             >
                               <Phone size={13} color="#10B981" />
-                              <Text style={styles.contactItemText}>{teacher.phone}</Text>
+                              <Text style={[styles.contactItemText, { color: primaryText }]}>{teacher.phone}</Text>
                             </TouchableOpacity>
                           ) : null}
                           {teacher.email ? (
                             <View style={styles.contactItem}>
-                              <Mail size={12} color="#94A3B8" />
-                              <Text style={[styles.contactItemText, { color: '#94A3B8' }]}>{teacher.email}</Text>
+                              <Mail size={12} color={secondaryText} />
+                              <Text style={[styles.contactItemText, { color: secondaryText }]}>{teacher.email}</Text>
                             </View>
                           ) : null}
                         </View>
@@ -495,13 +634,17 @@ export default function AdminTeachersModal({
               </View>
             )}
           </ScrollView>
-        </View>
-      </View>
+        </SafeAreaView>
+      </SafeAreaProvider>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  fullContainer: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.85)',
@@ -521,7 +664,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    paddingBottom: 16,
+    paddingTop: 10,
+    paddingBottom: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#1E293B',
   },
@@ -931,6 +1075,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#334155',
     gap: 12,
+  },
+  cardShadowLight: {
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 1,
   },
   teacherCardTop: {
     flexDirection: 'row',

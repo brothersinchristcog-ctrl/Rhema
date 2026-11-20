@@ -8,7 +8,10 @@ import {
   ScrollView,
   Share,
   Alert,
+  StatusBar,
+  Platform,
 } from 'react-native';
+import { SafeAreaProvider, SafeAreaView, initialWindowMetrics } from 'react-native-safe-area-context';
 import {
   X,
   Sparkles,
@@ -23,6 +26,7 @@ import {
 } from 'lucide-react-native';
 import { KidsVBSEventRecord, KidsVBSHouse } from '../../../../types/KidsMinistryTypes';
 import KidsMinistryService from '../../../../services/KidsMinistryService';
+import { useAdminTheme } from '../../../../utils/adminThemeHelper';
 
 interface Props {
   visible: boolean;
@@ -47,6 +51,17 @@ export default function AdminVBSManagerModal({
   onClose,
   onOpenCertificateGenerator,
 }: Props) {
+  const {
+    isDark,
+    screenBg,
+    cardSurface,
+    secondarySurface,
+    primaryText,
+    secondaryText,
+    borderColor,
+    barStyle,
+  } = useAdminTheme();
+  const amberAccent = isDark ? '#FBBF24' : '#D97706';
   const [selectedHouse, setSelectedHouse] = useState<KidsVBSHouse | null>(null);
   const [awarding, setAwarding] = useState(false);
 
@@ -91,148 +106,161 @@ export default function AdminVBSManagerModal({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
-      <View style={styles.container}>
-        {/* Header */}
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <X size={20} color="#FFFFFF" />
-          </TouchableOpacity>
-          <View style={styles.headerTitles}>
-            <View style={styles.vbsBadgeRow}>
-              <Flame size={14} color="#EF4444" />
-              <Text style={styles.vbsBadgeText}>VBS 2026 HEADQUARTERS</Text>
-            </View>
-            <Text style={styles.titleSerif}>Vacation Bible School</Text>
-          </View>
-          <TouchableOpacity onPress={handleShareLeaderboard} style={styles.shareBtn}>
-            <Share2 size={16} color="#000000" />
-          </TouchableOpacity>
-        </View>
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+        <SafeAreaView style={[styles.container, { backgroundColor: screenBg }]} edges={['top', 'bottom']}>
+          <StatusBar barStyle={barStyle} backgroundColor={screenBg} />
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-          {/* VBS Hero Card */}
-          <View style={styles.heroCard}>
-            <View style={styles.heroTopRow}>
-              <View style={styles.liveStatusPill}>
-                <View style={styles.livePulseDot} />
-                <Text style={styles.liveStatusText}>VBS ACTIVE</Text>
-              </View>
-              <Text style={styles.dateMeta}>{event.startDate} – {event.endDate}</Text>
-            </View>
-
-            <Text style={styles.vbsTitleEn}>{event.title}</Text>
-            <Text style={styles.vbsTitleTe}>{event.titleTelugu}</Text>
-
-            <View style={styles.statsRow}>
-              <View style={styles.statBox}>
-                <Users size={16} color="#FBBF24" />
-                <Text style={styles.statNum}>{event.totalRegistered || 76}</Text>
-                <Text style={styles.statLabel}>Campers Registered</Text>
-              </View>
-              <View style={styles.statBox}>
-                <Trophy size={16} color="#10B981" />
-                <Text style={styles.statNum}>{sortedHouses[0]?.name.split(' ')[0]}</Text>
-                <Text style={styles.statLabel}>Current Leader</Text>
-              </View>
-            </View>
-
-            <Text style={styles.verseMeta}>"{event.themeVerse}"</Text>
-          </View>
-
-          {/* House Leaderboard */}
-          <View style={styles.sectionHeadingRow}>
-            <Trophy size={16} color="#FBBF24" />
-            <Text style={styles.sectionHeading}>4 HOUSES STANDINGS & SPIRIT SCORES</Text>
-          </View>
-
-          <View style={{ gap: 12 }}>
-            {sortedHouses.map((house, idx) => {
-              const isSelected = selectedHouse?.id === house.id;
-
-              return (
-                <View
-                  key={house.id}
-                  style={[
-                    styles.houseCard,
-                    { borderColor: house.color },
-                    isSelected && { backgroundColor: '#1C1917' },
-                  ]}
-                >
-                  <TouchableOpacity
-                    style={styles.houseTopRow}
-                    onPress={() => setSelectedHouse(isSelected ? null : house)}
-                    activeOpacity={0.88}
-                  >
-                    <View style={styles.rankBadge}>
-                      <Text style={styles.rankNum}>#{idx + 1}</Text>
-                    </View>
-
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.houseName, { color: house.color }]}>
-                        {house.name}
-                      </Text>
-                      <Text style={styles.houseNameTe}>{house.nameTelugu}</Text>
-                      <Text style={styles.houseCampers}>
-                        {house.memberCount} Campers in Team
-                      </Text>
-                    </View>
-
-                    <View style={styles.scoreBox}>
-                      <Text style={[styles.scoreNum, { color: house.color }]}>
-                        {house.score}
-                      </Text>
-                      <Text style={styles.scoreLabel}>POINTS</Text>
-                    </View>
-                  </TouchableOpacity>
-
-                  {/* Point Awarder Controls for Selected House */}
-                  {isSelected && (
-                    <View style={styles.awardPanel}>
-                      <Text style={styles.awardPanelHeading}>
-                        AWARD POINTS TO {house.name.toUpperCase()}:
-                      </Text>
-                      <View style={styles.actionPillsWrap}>
-                        {POINT_ACTIONS.map((act, actIdx) => (
-                          <TouchableOpacity
-                            key={actIdx}
-                            style={styles.actionPill}
-                            onPress={() => handleAwardPoints(house, act.points, act.label)}
-                            disabled={awarding}
-                          >
-                            <Plus size={12} color="#000000" />
-                            <Text style={styles.actionPillText}>{act.label}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    </View>
-                  )}
-                </View>
-              );
-            })}
-          </View>
-
-          {/* Certificate Generator Quick Link */}
-          {onOpenCertificateGenerator && (
+          {/* Header */}
+          <View style={[styles.headerRow, { borderBottomColor: borderColor }]}>
             <TouchableOpacity
-              style={styles.certBanner}
-              onPress={onOpenCertificateGenerator}
-              activeOpacity={0.88}
+              onPress={onClose}
+              style={[styles.closeBtn, { backgroundColor: secondarySurface }]}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Award size={22} color="#000000" />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.certBannerTitle}>Official VBS Certificate Generator</Text>
-                <Text style={styles.certBannerSub}>
-                  Preview & print bilingual certificates for all graduation campers
+              <X size={20} color={primaryText} />
+            </TouchableOpacity>
+            <View style={styles.headerTitles}>
+              <View style={styles.vbsBadgeRow}>
+                <Flame size={13} color="#EF4444" />
+                <Text style={styles.vbsBadgeText}>VBS 2026 HEADQUARTERS</Text>
+              </View>
+              <Text style={[styles.titleSerif, { color: primaryText }]} numberOfLines={1}>
+                Vacation Bible School
+              </Text>
+            </View>
+            <TouchableOpacity onPress={handleShareLeaderboard} style={styles.shareBtn}>
+              <Share2 size={16} color="#000000" />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+            {/* VBS Hero Card */}
+            <View style={[styles.heroCard, { backgroundColor: cardSurface, borderColor }, !isDark && styles.cardShadowLight]}>
+              <View style={styles.heroTopRow}>
+                <View style={styles.liveStatusPill}>
+                  <View style={styles.livePulseDot} />
+                  <Text style={styles.liveStatusText}>VBS ACTIVE</Text>
+                </View>
+                <Text style={[styles.dateMeta, { color: secondaryText }]}>
+                  {event.startDate} – {event.endDate}
                 </Text>
               </View>
-              <View style={styles.certArrow}>
-                <Text style={styles.certArrowText}>View &rsaquo;</Text>
+
+              <Text style={[styles.vbsTitleEn, { color: primaryText }]}>{event.title}</Text>
+              <Text style={[styles.vbsTitleTe, { color: amberAccent }]}>{event.titleTelugu}</Text>
+
+              <View style={styles.statsRow}>
+                <View style={[styles.statBox, { backgroundColor: secondarySurface, borderColor }]}>
+                  <Users size={16} color={amberAccent} />
+                  <Text style={[styles.statNum, { color: primaryText }]}>{event.totalRegistered || 76}</Text>
+                  <Text style={[styles.statLabel, { color: secondaryText }]}>Campers Registered</Text>
+                </View>
+                <View style={[styles.statBox, { backgroundColor: secondarySurface, borderColor }]}>
+                  <Trophy size={16} color="#10B981" />
+                  <Text style={[styles.statNum, { color: primaryText }]}>{sortedHouses[0]?.name.split(' ')[0]}</Text>
+                  <Text style={[styles.statLabel, { color: secondaryText }]}>Current Leader</Text>
+                </View>
               </View>
-            </TouchableOpacity>
-          )}
-        </ScrollView>
-      </View>
+
+              <Text style={[styles.verseMeta, { color: secondaryText }]}>"{event.themeVerse}"</Text>
+            </View>
+
+            {/* House Leaderboard */}
+            <View style={styles.sectionHeadingRow}>
+              <Trophy size={16} color={amberAccent} />
+              <Text style={[styles.sectionHeading, { color: secondaryText }]}>4 HOUSES STANDINGS & SPIRIT SCORES</Text>
+            </View>
+
+            <View style={{ gap: 12 }}>
+              {sortedHouses.map((house, idx) => {
+                const isSelected = selectedHouse?.id === house.id;
+
+                return (
+                  <View
+                    key={house.id}
+                    style={[
+                      styles.houseCard,
+                      { backgroundColor: cardSurface, borderColor: house.color },
+                      !isDark && styles.cardShadowLight,
+                      isSelected && { backgroundColor: isDark ? '#1C1917' : secondarySurface },
+                    ]}
+                  >
+                    <TouchableOpacity
+                      style={styles.houseTopRow}
+                      onPress={() => setSelectedHouse(isSelected ? null : house)}
+                      activeOpacity={0.88}
+                    >
+                      <View style={[styles.rankBadge, { backgroundColor: secondarySurface, borderColor }]}>
+                        <Text style={[styles.rankNum, { color: primaryText }]}>#{idx + 1}</Text>
+                      </View>
+
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.houseName, { color: house.color }]}>
+                          {house.name}
+                        </Text>
+                        <Text style={[styles.houseNameTe, { color: secondaryText }]}>{house.nameTelugu}</Text>
+                        <Text style={[styles.houseCampers, { color: secondaryText }]}>
+                          {house.memberCount} Campers in Team
+                        </Text>
+                      </View>
+
+                      <View style={[styles.scoreBox, { backgroundColor: secondarySurface, borderColor }]}>
+                        <Text style={[styles.scoreNum, { color: house.color }]}>
+                          {house.score}
+                        </Text>
+                        <Text style={[styles.scoreLabel, { color: secondaryText }]}>POINTS</Text>
+                      </View>
+                    </TouchableOpacity>
+
+                    {/* Point Awarder Controls for Selected House */}
+                    {isSelected && (
+                      <View style={[styles.awardPanel, { borderTopColor: borderColor }]}>
+                        <Text style={[styles.awardPanelHeading, { color: amberAccent }]}>
+                          AWARD POINTS TO {house.name.toUpperCase()}:
+                        </Text>
+                        <View style={styles.actionPillsWrap}>
+                          {POINT_ACTIONS.map((act, actIdx) => (
+                            <TouchableOpacity
+                              key={actIdx}
+                              style={styles.actionPill}
+                              onPress={() => handleAwardPoints(house, act.points, act.label)}
+                              disabled={awarding}
+                            >
+                              <Plus size={12} color="#000000" />
+                              <Text style={styles.actionPillText}>{act.label}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+
+            {/* Certificate Generator Quick Link */}
+            {onOpenCertificateGenerator && (
+              <TouchableOpacity
+                style={styles.certBanner}
+                onPress={onOpenCertificateGenerator}
+                activeOpacity={0.88}
+              >
+                <Award size={22} color="#000000" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.certBannerTitle}>Official VBS Certificate Generator</Text>
+                  <Text style={styles.certBannerSub}>
+                    Preview & print bilingual certificates for all graduation campers
+                  </Text>
+                </View>
+                <View style={styles.certArrow}>
+                  <Text style={styles.certArrowText}>View &rsaquo;</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+          </ScrollView>
+        </SafeAreaView>
+      </SafeAreaProvider>
     </Modal>
   );
 }
@@ -247,10 +275,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: 10,
     paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#18181B',
+  },
+  cardShadowLight: {
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 1,
   },
   closeBtn: {
     width: 36,
@@ -280,7 +315,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   titleSerif: {
-    fontFamily: 'Georgia',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     fontSize: 18,
     fontWeight: 'bold',
     color: '#FFFFFF',

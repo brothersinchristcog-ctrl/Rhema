@@ -10,6 +10,7 @@ import {
   Alert,
   Linking,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import {
   X,
@@ -20,9 +21,12 @@ import {
   ChevronRight,
   ArrowRight,
   Shield,
+  UserPlus,
 } from 'lucide-react-native';
+import { useAuth } from '../../../../context/AuthContext';
 import KidsMinistryService from '../../../../services/KidsMinistryService';
 import { ChildRecord, KidsClassRecord, KidsClassTier } from '../../../../types/KidsMinistryTypes';
+import TeacherEnrollChildModal from '../../../kids_ministry/components/TeacherEnrollChildModal';
 
 interface ClassRosterModalProps {
   visible: boolean;
@@ -43,10 +47,12 @@ export default function ClassRosterModal({
   onClose,
   onRosterUpdated,
 }: ClassRosterModalProps) {
-  if (!classData) return null;
-
+  const { member } = useAuth();
   const [transferringChild, setTransferringChild] = useState<ChildRecord | null>(null);
   const [processingTransfer, setProcessingTransfer] = useState(false);
+  const [showEnrollModal, setShowEnrollModal] = useState(false);
+
+  if (!classData) return null;
 
   const handleCallParent = (phone: string, name: string) => {
     if (!phone) {
@@ -93,16 +99,26 @@ export default function ClassRosterModal({
         <View style={styles.modalCard}>
           {/* Header */}
           <View style={styles.header}>
-            <View>
+            <View style={{ flex: 1, marginRight: 8 }}>
               <Text style={styles.headerTag}>CLASSROOM ROSTER</Text>
               <Text style={styles.headerTitleSerif}>{classData.name}</Text>
               <Text style={styles.headerSubtitle}>
                 {classData.roomNumber} · Ages {classData.ageRange.min}–{classData.ageRange.max} · {childrenInClass.length} Enrolled
               </Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <X size={18} color="#9CA3AF" />
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <TouchableOpacity
+                style={styles.enrollHeaderBtn}
+                onPress={() => setShowEnrollModal(true)}
+                activeOpacity={0.85}
+              >
+                <UserPlus size={13} color="#000000" strokeWidth={2.5} />
+                <Text style={styles.enrollHeaderBtnText}>Enroll</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+                <X size={18} color="#9CA3AF" />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Transfer Sub-Modal / Picker */}
@@ -119,7 +135,7 @@ export default function ClassRosterModal({
 
               <ScrollView style={{ maxHeight: 220 }}>
                 {allClasses
-                  .filter(c => c.tier !== classData.tier)
+                  .filter(c => c.id !== classData.id)
                   .map(target => (
                     <TouchableOpacity
                       key={target.id}
@@ -130,7 +146,10 @@ export default function ClassRosterModal({
                       <View style={{ flex: 1 }}>
                         <Text style={styles.targetClassName}>{target.name}</Text>
                         <Text style={styles.targetClassMeta}>
-                          Ages {target.ageRange.min}–{target.ageRange.max} · {target.roomNumber}
+                          {target.tier === 'mixed'
+                            ? 'Mixed Age Group (All Ages)'
+                            : `Ages ${target.ageRange.min}–${target.ageRange.max}`}{' '}
+                          · {target.roomNumber}
                         </Text>
                       </View>
                       <ArrowRight size={16} color="#FBBF24" />
@@ -147,15 +166,25 @@ export default function ClassRosterModal({
                 <Users size={32} color="#52525B" />
                 <Text style={styles.emptyTitle}>No Children Enrolled Yet</Text>
                 <Text style={styles.emptySub}>
-                  Children matching ages {classData.ageRange.min}–{classData.ageRange.max} will be auto-assigned here upon registration.
+                  {classData.tier === 'mixed'
+                    ? 'Mixed Age Group classroom — children of all age groups are eligible to join or transfer here.'
+                    : `Children matching ages ${classData.ageRange.min}–${classData.ageRange.max} will be auto-assigned here upon registration.`}
                 </Text>
               </View>
             ) : (
               childrenInClass.map(child => (
                 <View key={child.id} style={styles.childCard}>
                   <View style={styles.childRow}>
-                    <View style={styles.avatar}>
-                      <Text style={styles.avatarText}>{child.firstName.charAt(0)}</Text>
+                    <View style={[styles.avatar, { overflow: 'hidden' }]}>
+                      {child.photoUrl ? (
+                        <Image
+                          source={{ uri: child.photoUrl }}
+                          style={{ width: '100%', height: '100%' }}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <Text style={styles.avatarText}>{child.firstName.charAt(0)}</Text>
+                      )}
                     </View>
 
                     <View style={{ flex: 1 }}>
@@ -211,6 +240,20 @@ export default function ClassRosterModal({
           </TouchableOpacity>
         </View>
       </View>
+
+      {showEnrollModal && (
+        <TeacherEnrollChildModal
+          visible={showEnrollModal}
+          onClose={() => setShowEnrollModal(false)}
+          churchId={churchId}
+          actingMember={member}
+          defaultClass={classData}
+          allClasses={allClasses}
+          onChildEnrolled={() => {
+            onRosterUpdated?.();
+          }}
+        />
+      )}
     </Modal>
   );
 }
@@ -261,6 +304,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#27272A',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  enrollHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#FBBF24',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 9,
+  },
+  enrollHeaderBtnText: {
+    color: '#000000',
+    fontSize: 11.5,
+    fontWeight: '800',
   },
   transferBox: {
     backgroundColor: '#09090B',

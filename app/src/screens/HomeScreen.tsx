@@ -4427,35 +4427,52 @@ export default function HomeScreen() {
                               {
                                 borderColor: screenTheme.promiseCardBorder,
                                 borderWidth: 1,
+                                overflow: 'hidden',
                                 shadowColor: screenTheme.isDark ? '#000' : '#0F172A',
-                                shadowOpacity: screenTheme.isDark ? 0.35 : 0.06,
+                                shadowOpacity: screenTheme.isDark ? 0.35 : 0.08,
                                 shadowRadius: 10,
-                                elevation: screenTheme.isDark ? 4 : 2,
+                                elevation: screenTheme.isDark ? 4 : 3,
                               }
                             ]}
                             imageStyle={{ borderRadius: 24 }}
                             resizeMode="cover"
                           >
                             <LinearGradient
-                              colors={['rgba(15, 23, 42, 0.45)', 'rgba(15, 23, 42, 0.88)']}
-                              style={StyleSheet.absoluteFillObject}
+                              colors={['rgba(15, 23, 42, 0.58)', 'rgba(15, 23, 42, 0.90)']}
+                              style={[StyleSheet.absoluteFillObject, { borderRadius: 24 }]}
                             />
 
-                            <Text style={[styles.phLabel, { color: screenTheme.promiseLabel }]} maxFontSizeMultiplier={1.15}>
-                              {greeting}
-                            </Text>
+                            <View style={{
+                              alignSelf: 'center',
+                              backgroundColor: 'rgba(15, 23, 42, 0.55)',
+                              borderWidth: 1,
+                              borderColor: 'rgba(255, 255, 255, 0.22)',
+                              paddingHorizontal: 14,
+                              paddingVertical: 4,
+                              borderRadius: 999,
+                              marginBottom: 12,
+                            }}>
+                              <Text style={[styles.phLabel, { color: '#FDE68A', marginBottom: 0 }]} maxFontSizeMultiplier={1.15}>
+                                {greeting}
+                              </Text>
+                            </View>
 
                             {/* Main Verse Block */}
                             <View style={styles.vdVerseBlock}>
                               
                               <View style={styles.vdVerseTextContainer}>
-                                <Text style={[styles.vdTopRightQuote, { color: screenTheme.promiseQuote }]} pointerEvents="none">”</Text>
+                                <Text style={[styles.vdTopRightQuote, { color: 'rgba(255, 255, 255, 0.18)' }]} pointerEvents="none">”</Text>
 
                                 {/* Primary localized verse (Telugu / Primary) */}
                                 <Text 
                                   style={[
                                     styles.vdVerseTe, 
-                                    { color: screenTheme.promiseVerseTe },
+                                    {
+                                      color: '#FFFFFF',
+                                      textShadowColor: 'rgba(0, 0, 0, 0.65)',
+                                      textShadowOffset: { width: 0, height: 1 },
+                                      textShadowRadius: 3,
+                                    },
                                     !loc.secondaryVerse && { fontSize: 17, lineHeight: 26 }
                                   ]} 
                                   maxFontSizeMultiplier={1.15}
@@ -4465,20 +4482,31 @@ export default function HomeScreen() {
 
                                 {/* Secondary verse (English) if distinct */}
                                 {loc.secondaryVerse && loc.secondaryVerse !== loc.primaryVerse ? (
-                                  <Text style={[styles.vdVerseEn, { color: screenTheme.promiseVerseEn }]} maxFontSizeMultiplier={1.15}>
+                                  <Text
+                                    style={[
+                                      styles.vdVerseEn,
+                                      {
+                                        color: 'rgba(241, 245, 249, 0.95)',
+                                        textShadowColor: 'rgba(0, 0, 0, 0.55)',
+                                        textShadowOffset: { width: 0, height: 1 },
+                                        textShadowRadius: 2,
+                                      },
+                                    ]}
+                                    maxFontSizeMultiplier={1.15}
+                                  >
                                     {stripHtml(loc.secondaryVerse)}
                                   </Text>
                                 ) : null}
 
                                 {/* Reference Line inside Scripture column */}
                                 <View style={styles.vdReferenceRow}>
-                                  <Text style={[styles.vdRefPrimary, { color: screenTheme.promiseRefPrimary }]} maxFontSizeMultiplier={1.15}>
+                                  <Text style={[styles.vdRefPrimary, { color: '#FCD34D' }]} maxFontSizeMultiplier={1.15}>
                                     {loc.primaryReference}
                                   </Text>
                                   {loc.secondaryReference && loc.secondaryReference !== loc.primaryReference ? (
                                     <>
-                                      <Text style={[styles.vdRefDivider, { color: screenTheme.promiseRefDivider }]} maxFontSizeMultiplier={1.15}>|</Text>
-                                      <Text style={[styles.vdRefSecondary, { color: screenTheme.promiseRefSecondary }]} maxFontSizeMultiplier={1.15}>
+                                      <Text style={[styles.vdRefDivider, { color: 'rgba(255, 255, 255, 0.45)' }]} maxFontSizeMultiplier={1.15}>|</Text>
+                                      <Text style={[styles.vdRefSecondary, { color: '#E2E8F0' }]} maxFontSizeMultiplier={1.15}>
                                         {loc.secondaryReference}
                                       </Text>
                                     </>

@@ -13,6 +13,7 @@ import {
   KidsMemoryVerse,
   KidsCurriculumLesson,
   CurriculumQuarter,
+  CurriculumMode,
   KidsVBSEventRecord,
   KidsBadge,
   KidsCertificateData,
@@ -281,6 +282,15 @@ class KidsMinistryService {
       notes?: string;
       memberContactId?: string;
       isSyncedFromMember?: boolean;
+      assignedClassId?: string;
+      assignedClassName?: string;
+      assignedTier?: KidsClassTier;
+      enrollmentSource?: 'parent_self' | 'admin' | 'teacher_direct' | 'member_sync';
+      enrolledByTeacherId?: string;
+      enrolledByTeacherName?: string;
+      enrolledByRole?: 'teacher' | 'admin';
+      parentConsentStatus?: 'confirmed' | 'pending_review';
+      parentConsentConfirmed?: boolean;
     }
   ): Promise<ChildRecord> {
     const cId = churchId || RHEMA_CHURCH_ID;
@@ -317,8 +327,9 @@ class KidsMinistryService {
       faceEnrolled: !!data.photoUrl,
       faceEnrolledAt: data.photoUrl ? now : null,
 
-      assignedTier: recommended.tier,
-      assignedClassName: recommended.displayName,
+      assignedClassId: data.assignedClassId || undefined,
+      assignedTier: data.assignedTier || recommended.tier,
+      assignedClassName: data.assignedClassName || recommended.displayName,
       academicYear: `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`,
 
       enrollmentStatus: 'approved', // Auto-approved for verified church family
@@ -352,6 +363,12 @@ class KidsMinistryService {
       notes: data.notes || '',
       ...(data.memberContactId ? { memberContactId: data.memberContactId } : {}),
       ...(data.isSyncedFromMember ? { isSyncedFromMember: true } : {}),
+      ...(data.enrollmentSource ? { enrollmentSource: data.enrollmentSource } : {}),
+      ...(data.enrolledByTeacherId ? { enrolledByTeacherId: data.enrolledByTeacherId } : {}),
+      ...(data.enrolledByTeacherName ? { enrolledByTeacherName: data.enrolledByTeacherName } : {}),
+      ...(data.enrolledByRole ? { enrolledByRole: data.enrolledByRole } : {}),
+      ...(data.parentConsentStatus ? { parentConsentStatus: data.parentConsentStatus } : {}),
+      ...(data.parentConsentConfirmed !== undefined ? { parentConsentConfirmed: data.parentConsentConfirmed } : {}),
       enrolledAt: now,
       updatedAt: now,
     };
@@ -361,11 +378,41 @@ class KidsMinistryService {
     let linkedMemberContactId = data.memberContactId;
     if (!linkedMemberContactId && data.familyId) {
       try {
-        const memberRef = await firestore()
+        const membersRef = firestore()
           .collection(RHEMA_ROOT_COLLECTION)
           .doc(cId)
-          .collection('members')
-          .add(
+          .collection('members');
+
+        // Single-source check: link existing household member record if child already exists there
+        const existingFamSnap = await membersRef
+          .where('accountId', '==', data.familyId)
+          .get();
+        const normNewName = fullName.trim().toLowerCase().replace(/\s+/g, ' ');
+        const matchedMemberDoc = existingFamSnap.docs.find(d => {
+          if (d.id === data.parentMemberId) return false;
+          const m = d.data();
+          const mName = String(m.name || `${m.firstName || ''} ${m.lastName || ''}`)
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, ' ');
+          return mName === normNewName;
+        });
+
+        if (matchedMemberDoc) {
+          linkedMemberContactId = matchedMemberDoc.id;
+          await matchedMemberDoc.ref.update(
+            sanitizeForFirestore({
+              isKidMember: true,
+              removedFromKids: false,
+              dob: data.dob,
+              ...(data.photoUrl ? { profilePhoto: data.photoUrl } : {}),
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            })
+          );
+          (newRecord as any).memberContactId = linkedMemberContactId;
+          (newRecord as any).isSyncedFromMember = true;
+        } else {
+          const memberRef = await membersRef.add(
             sanitizeForFirestore({
               firstName: data.firstName.trim(),
               lastName: (data.lastName || '').trim(),
@@ -385,9 +432,10 @@ class KidsMinistryService {
               updatedAt: firestore.FieldValue.serverTimestamp(),
             })
           );
-        linkedMemberContactId = memberRef.id;
-        (newRecord as any).memberContactId = linkedMemberContactId;
-        (newRecord as any).isSyncedFromMember = true;
+          linkedMemberContactId = memberRef.id;
+          (newRecord as any).memberContactId = linkedMemberContactId;
+          (newRecord as any).isSyncedFromMember = true;
+        }
       } catch (memSyncErr) {
         console.warn('[KidsMinistryService] Error mirroring child to members:', memSyncErr);
       }
@@ -401,18 +449,106 @@ class KidsMinistryService {
   }
 
   /**
-   * Updates an existing child's profile or custody settings.
+   * Updates an existing child's profile or custody settings, keeping linked member photo in sync.
    */
   async updateChildProfile(
     churchId: string,
     childDocId: string,
-    updates: Partial<ChildRecord>
+    updates: Partial<ChildRecord>,
+    options?: { skipMemberMirror?: boolean }
   ): Promise<void> {
     const cleanUpdates = sanitizeForFirestore({
       ...updates,
       updatedAt: firestore.FieldValue.serverTimestamp(),
     });
-    await this.getKidsCollection(churchId).doc(childDocId).update(cleanUpdates);
+    const childRef = this.getKidsCollection(churchId).doc(childDocId);
+    await childRef.update(cleanUpdates);
+
+    // Single source of truth: mirror updated photoUrl back to linked Household member doc
+    if (!options?.skipMemberMirror && updates.photoUrl !== undefined) {
+      try {
+        const snap = await childRef.get();
+        const childData = snap.data() as ChildRecord | undefined;
+        const memberContactId = updates.memberContactId || childData?.memberContactId;
+        if (memberContactId) {
+          await firestore()
+            .collection(RHEMA_ROOT_COLLECTION)
+            .doc(churchId || RHEMA_CHURCH_ID)
+            .collection('members')
+            .doc(memberContactId)
+            .update(
+              sanitizeForFirestore({
+                profilePhoto: updates.photoUrl || '',
+                updatedAt: firestore.FieldValue.serverTimestamp(),
+              })
+            );
+        }
+      } catch (mirrorErr) {
+        console.warn('[KidsMinistryService] Could not mirror photoUrl to member doc:', mirrorErr);
+      }
+    }
+  }
+
+  /**
+   * Syncs a child's profile photo uploaded/captured in the Household Family Card
+   * directly onto the single existing ChildRecord in Rhema Kids (zero duplicates).
+   */
+  async syncChildPhotoFromMember(
+    churchId: string,
+    params: {
+      memberContactId: string;
+      familyId?: string;
+      fullName?: string;
+      photoUrl: string;
+    }
+  ): Promise<{ matched: boolean; childDocId?: string }> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const kidsCol = this.getKidsCollection(cId);
+
+    // 1. Primary lookup by linked memberContactId
+    const byContactSnap = await kidsCol
+      .where('memberContactId', '==', params.memberContactId)
+      .limit(1)
+      .get();
+
+    let matchedDoc: { id: string; data: any } | null = null;
+    if (!byContactSnap.empty) {
+      const doc = byContactSnap.docs[0];
+      matchedDoc = { id: doc.id, data: doc.data() };
+    } else if (params.familyId && params.fullName) {
+      // 2. Fallback lookup within same family by normalized child name
+      const byFamilySnap = await kidsCol
+        .where('familyId', '==', params.familyId)
+        .get();
+      const targetNorm = params.fullName.trim().toLowerCase().replace(/\s+/g, ' ');
+      const found = byFamilySnap.docs.find(d => {
+        const k = d.data();
+        const kNorm = String(k.fullName || `${k.firstName || ''} ${k.lastName || ''}`)
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, ' ');
+        return kNorm === targetNorm;
+      });
+      if (found) {
+        matchedDoc = { id: found.id, data: found.data() };
+      }
+    }
+
+    if (!matchedDoc) {
+      return { matched: false };
+    }
+
+    const updates: Partial<ChildRecord> = {
+      photoUrl: params.photoUrl,
+      faceEnrolled: Boolean(params.photoUrl),
+      faceEnrolledAt: params.photoUrl ? firestore.FieldValue.serverTimestamp() : null,
+      ...(!matchedDoc.data.memberContactId
+        ? { memberContactId: params.memberContactId, isSyncedFromMember: true }
+        : {}),
+    };
+
+    await this.updateChildProfile(cId, matchedDoc.id, updates, { skipMemberMirror: true });
+    return { matched: true, childDocId: matchedDoc.id };
   }
 
   /**
@@ -565,7 +701,7 @@ class KidsMinistryService {
         });
 
         if (existingMatch) {
-          // Keep synchronized if DOB or link changed
+          // Keep synchronized if DOB, link, or profile photo changed (single source of truth)
           const updates: any = {};
           if (!existingMatch.memberContactId) {
             updates.memberContactId = memberContactId;
@@ -575,12 +711,29 @@ class KidsMinistryService {
             updates.dob = mData.dob;
             const newAge = calculateChildAge(mData.dob);
             updates.age = newAge;
-            const rec = getRecommendedClassTier(newAge);
-            updates.assignedTier = rec.tier;
-            updates.assignedClassName = rec.displayName;
+            if (existingMatch.assignedTier !== 'mixed') {
+              const rec = getRecommendedClassTier(newAge);
+              updates.assignedTier = rec.tier;
+              updates.assignedClassName = rec.displayName;
+            }
+          }
+          const memberPhoto = mData.profilePhoto || mData.photoUrl || '';
+          if (memberPhoto && existingMatch.photoUrl !== memberPhoto) {
+            updates.photoUrl = memberPhoto;
+            updates.faceEnrolled = true;
+            updates.faceEnrolledAt = firestore.FieldValue.serverTimestamp();
+          } else if (!memberPhoto && existingMatch.photoUrl) {
+            await mDoc.ref
+              .update(
+                sanitizeForFirestore({
+                  profilePhoto: existingMatch.photoUrl,
+                  updatedAt: firestore.FieldValue.serverTimestamp(),
+                })
+              )
+              .catch(() => {});
           }
           if (Object.keys(updates).length > 0) {
-            await this.updateChildProfile(cId, existingMatch.docId, updates);
+            await this.updateChildProfile(cId, existingMatch.docId, updates, { skipMemberMirror: true });
             synced++;
           }
         } else {
@@ -623,6 +776,106 @@ class KidsMinistryService {
     } catch (err) {
       console.error('[KidsMinistryService] Error syncing member children:', err);
       return { synced: 0, created: 0 };
+    }
+  }
+
+  /**
+   * Reconciles missing profile photos and faceEnrolled flags between `kids_children`
+   * and `Rhema Church/{churchId}/members` so every uploaded photo is linked for Face Scan.
+   */
+  async reconcileAllChildPhotos(churchId?: string): Promise<number> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    try {
+      const [kidsSnap, membersSnap] = await Promise.all([
+        this.getKidsCollection(cId).get(),
+        firestore()
+          .collection(RHEMA_ROOT_COLLECTION)
+          .doc(cId)
+          .collection('members')
+          .get(),
+      ]);
+
+      const memberById = new Map<string, { id: string; data: any }>();
+      const membersList: Array<{ id: string; data: any }> = [];
+      membersSnap.docs.forEach(doc => {
+        const entry = { id: doc.id, data: doc.data() };
+        memberById.set(doc.id, entry);
+        membersList.push(entry);
+      });
+
+      const norm = (s: string) =>
+        String(s || '')
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, ' ');
+      const compact = (s: string) => norm(s).replace(/\s+/g, '');
+
+      let reconciled = 0;
+      for (const kidDoc of kidsSnap.docs) {
+        const k = kidDoc.data() as ChildRecord;
+        const kidPhoto = (k.photoUrl || '').trim();
+        const kNameNorm = norm(k.fullName || `${k.firstName || ''} ${k.lastName || ''}`);
+        const kNameCompact = compact(k.fullName || `${k.firstName || ''} ${k.lastName || ''}`);
+
+        let linkedMember = k.memberContactId ? memberById.get(k.memberContactId) : undefined;
+        if (!linkedMember && k.familyId && kNameNorm) {
+          linkedMember = membersList.find(m => {
+            const famMatch = (m.data.accountId || m.id) === k.familyId;
+            if (!famMatch) return false;
+            const mFull = m.data.name || `${m.data.firstName || ''} ${m.data.lastName || ''}`;
+            return norm(mFull) === kNameNorm || compact(mFull) === kNameCompact;
+          });
+        }
+
+        const memberPhoto = (linkedMember?.data?.profilePhoto || linkedMember?.data?.photoUrl || '').trim();
+
+        if (!kidPhoto && memberPhoto) {
+          await this.updateChildProfile(
+            cId,
+            kidDoc.id,
+            {
+              photoUrl: memberPhoto,
+              faceEnrolled: true,
+              faceEnrolledAt: firestore.FieldValue.serverTimestamp(),
+              ...(linkedMember && !k.memberContactId
+                ? { memberContactId: linkedMember.id, isSyncedFromMember: true }
+                : {}),
+            },
+            { skipMemberMirror: true }
+          );
+          reconciled++;
+        } else if (kidPhoto && !k.faceEnrolled) {
+          await this.updateChildProfile(
+            cId,
+            kidDoc.id,
+            {
+              faceEnrolled: true,
+              faceEnrolledAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { skipMemberMirror: true }
+          );
+          reconciled++;
+        } else if (kidPhoto && linkedMember && !memberPhoto) {
+          await firestore()
+            .collection(RHEMA_ROOT_COLLECTION)
+            .doc(cId)
+            .collection('members')
+            .doc(linkedMember.id)
+            .update(
+              sanitizeForFirestore({
+                profilePhoto: kidPhoto,
+                updatedAt: firestore.FieldValue.serverTimestamp(),
+              })
+            )
+            .catch(() => {});
+          reconciled++;
+        }
+      }
+
+      return reconciled;
+    } catch (err) {
+      console.warn('[KidsMinistryService] reconcileAllChildPhotos error:', err);
+      return 0;
     }
   }
 
@@ -777,6 +1030,7 @@ class KidsMinistryService {
           primary: 3,
           junior: 4,
           teens: 5,
+          mixed: 6,
         };
         list.sort((a, b) => {
           const tDiff = (tierOrder[a.tier as KidsClassTier] || 99) - (tierOrder[b.tier as KidsClassTier] || 99);
@@ -947,6 +1201,9 @@ class KidsMinistryService {
     }> = [];
 
     for (const c of children) {
+      // Children in Mixed Age Group classrooms are eligible at all ages and should not be flagged for promotion
+      if (c.assignedTier === 'mixed') continue;
+
       const currentAge = calculateChildAge(c.dob);
       const recommended = getRecommendedClassTier(currentAge);
 
@@ -1530,31 +1787,452 @@ class KidsMinistryService {
   }
 
   /**
-   * Fetches church members for search and selection when registering faculty.
+   * Fetches church members for search and selection when registering faculty or parents.
    */
-  async searchChurchMembers(churchId: string, search: string): Promise<any[]> {
+  async searchChurchMembers(
+    churchId: string,
+    search: string,
+    options?: { adultsOnly?: boolean; limitCount?: number }
+  ): Promise<any[]> {
     const cId = churchId || RHEMA_CHURCH_ID;
+    const limitCount = options?.limitCount || 500;
+    const kidRelations = new Set(['son', 'daughter', 'child', 'grandson', 'granddaughter', 'nephew', 'niece']);
     try {
       const snap = await firestore()
         .collection(RHEMA_ROOT_COLLECTION)
         .doc(cId)
         .collection('members')
-        .limit(100)
+        .limit(limitCount)
         .get();
 
       const q = search.trim().toLowerCase();
       return snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
         .filter((m: any) => {
+          if (options?.adultsOnly) {
+            const rel = String(m.relation || m.Relation || '').trim().toLowerCase();
+            if (m.isKidMember === true || kidRelations.has(rel)) return false;
+          }
           const name = (m.name || `${m.firstName || ''} ${m.lastName || ''}`).trim().toLowerCase();
-          const phone = (m.phone || m.mobileNumber || '').toLowerCase();
+          const phone = (m.phone || m.mobileNumber || m.phoneNumber || m.normalizedPhone10 || '').toLowerCase();
+          if (!name && !phone) return false;
           if (!q) return true;
           return name.includes(q) || phone.includes(q);
+        })
+        .sort((a: any, b: any) => {
+          const na = (a.name || `${a.firstName || ''} ${a.lastName || ''}`).trim().toLowerCase();
+          const nb = (b.name || `${b.firstName || ''} ${b.lastName || ''}`).trim().toLowerCase();
+          return na.localeCompare(nb);
         });
     } catch (err) {
       console.warn('searchChurchMembers error:', err);
       return [];
     }
+  }
+
+  /**
+   * Checks whether the acting user is an authorized Church Admin or registered Sunday School Teacher.
+   */
+  async verifyTeacherOrAdminAccess(
+    churchId: string,
+    currentUserMember: any
+  ): Promise<{
+    authorized: boolean;
+    role: 'admin' | 'teacher' | 'unauthorized';
+    actorId: string;
+    actorName: string;
+    teacherRecord?: KidsTeacherRecord;
+  }> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    if (!currentUserMember) {
+      return { authorized: false, role: 'unauthorized', actorId: '', actorName: '' };
+    }
+
+    const actorName = (
+      currentUserMember.name ||
+      `${currentUserMember.firstName || ''} ${currentUserMember.lastName || ''}`
+    ).trim() || 'Staff Member';
+    const actorId = currentUserMember.id || currentUserMember.uid || '';
+
+    const userType = String(currentUserMember.userType || currentUserMember.role || '')
+      .trim()
+      .toLowerCase();
+    const isAdmin =
+      currentUserMember.isAdmin === true ||
+      userType.includes('admin') ||
+      userType.includes('pastor');
+
+    if (isAdmin) {
+      return {
+        authorized: true,
+        role: 'admin',
+        actorId,
+        actorName,
+      };
+    }
+
+    // Check if the logged-in member is an authorized Sunday School Teacher in kids_teachers
+    try {
+      const teachersSnap = await this.getTeachersCollection(cId).get();
+      const myPhone10 = String(currentUserMember.phone || currentUserMember.mobileNumber || '')
+        .replace(/\D/g, '')
+        .slice(-10);
+      const myEmail = String(currentUserMember.email || '').trim().toLowerCase();
+
+      const matchedDoc = teachersSnap.docs.find(doc => {
+        const t = doc.data() as KidsTeacherRecord;
+        if (t.status === 'on_leave' || (t as any).isActive === false) return false;
+        if (actorId && t.memberId && t.memberId === actorId) return true;
+        const tPhone10 = String(t.phone || '').replace(/\D/g, '').slice(-10);
+        if (myPhone10 && tPhone10 && myPhone10 === tPhone10) return true;
+        if (myEmail && t.email && t.email.trim().toLowerCase() === myEmail) return true;
+        return false;
+      });
+
+      if (matchedDoc) {
+        const teacherRecord = { id: matchedDoc.id, ...(matchedDoc.data() as any) } as KidsTeacherRecord;
+        return {
+          authorized: true,
+          role: 'teacher',
+          actorId: teacherRecord.id,
+          actorName: teacherRecord.name || actorName,
+          teacherRecord,
+        };
+      }
+    } catch (err) {
+      console.warn('verifyTeacherOrAdminAccess teacher lookup error:', err);
+    }
+
+    return {
+      authorized: false,
+      role: 'unauthorized',
+      actorId,
+      actorName,
+    };
+  }
+
+  /**
+   * Direct Sunday School Child Enrollment by Authorized Teacher or Admin.
+   * - Enforces permission & prevents unauthorized parent ownership changes.
+   * - Prevents duplicates across Household Directory & Rhema Kids.
+   * - Automatically creates & links child under selected parent's Household Directory.
+   * - Logs teacher enrollment history and notifies parent for consent/review.
+   */
+  async enrollChildByTeacher(
+    churchId: string,
+    params: {
+      actingMember: any;
+      selectedParent: any;
+      childFullName: string;
+      dob: string;
+      gender: 'male' | 'female';
+      photoUrl?: string;
+      assignedClass?: KidsClassRecord | null;
+      emergencyContact?: { name: string; phone: string; relationship: string };
+      allergiesList?: string[];
+      medicalNotes?: string;
+      enrollingTeacherOverride?: KidsTeacherRecord | null;
+    }
+  ): Promise<{
+    status: 'enrolled_new' | 'linked_existing' | 'ownership_conflict';
+    child: ChildRecord;
+    message: string;
+  }> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+
+    // 1. Authorization verification
+    const authResult = await this.verifyTeacherOrAdminAccess(cId, params.actingMember);
+    if (!authResult.authorized) {
+      throw new Error(
+        'Only authorized Sunday School teachers and church administrators can enroll children directly.'
+      );
+    }
+
+    const enrollingTeacherId = params.enrollingTeacherOverride?.id || authResult.actorId;
+    const enrollingTeacherName = params.enrollingTeacherOverride?.name || authResult.actorName;
+    const enrollingRole: 'admin' | 'teacher' = authResult.role === 'admin' ? 'admin' : 'teacher';
+
+    // 2. Parse parent & child details
+    const parentDoc = params.selectedParent;
+    if (!parentDoc || !parentDoc.id) {
+      throw new Error('Please select the child’s father or parent from church members.');
+    }
+
+    const parentFamilyId = parentDoc.accountId || parentDoc.id;
+    const parentMemberId = parentDoc.id;
+    const parentName = (
+      parentDoc.name ||
+      `${parentDoc.firstName || ''} ${parentDoc.lastName || ''}`
+    ).trim() || 'Parent';
+    const parentPhone =
+      parentDoc.phone || parentDoc.mobileNumber || parentDoc.phoneNumber || '';
+    const parentPhone10 = String(parentPhone).replace(/\D/g, '').slice(-10);
+    const parentEmail = parentDoc.email || '';
+
+    const cleanedFullName = params.childFullName.trim().replace(/\s+/g, ' ');
+    if (!cleanedFullName) {
+      throw new Error('Please enter the child’s full name.');
+    }
+    const nameParts = cleanedFullName.split(' ');
+    const firstName = nameParts[0];
+    const lastName = nameParts.slice(1).join(' ');
+    const normalizedChildName = cleanedFullName.toLowerCase();
+
+    const age = calculateChildAge(params.dob);
+    const recommended = getRecommendedClassTier(age);
+    const assignedClassId = params.assignedClass?.id;
+    const assignedClassName = params.assignedClass?.name || recommended.displayName;
+    const assignedTier = params.assignedClass?.tier || recommended.tier;
+
+    // 3. Duplicate Prevention Check across existing Rhema Kids records
+    const allKidsSnap = await this.getKidsCollection(cId).get();
+    const existingKids = allKidsSnap.docs.map(d => ({
+      id: d.id,
+      ...(d.data() as any),
+    })) as ChildRecord[];
+
+    const matchedInSameFamily = existingKids.find(
+      k =>
+        k.familyId === parentFamilyId &&
+        String(k.fullName || '').trim().toLowerCase().replace(/\s+/g, ' ') === normalizedChildName
+    );
+
+    if (matchedInSameFamily) {
+      const updates: Partial<ChildRecord> = {
+        assignedClassId: assignedClassId || matchedInSameFamily.assignedClassId,
+        assignedClassName,
+        assignedTier,
+        enrolledByTeacherId: matchedInSameFamily.enrolledByTeacherId || enrollingTeacherId,
+        enrolledByTeacherName: matchedInSameFamily.enrolledByTeacherName || enrollingTeacherName,
+        ...(params.photoUrl
+          ? { photoUrl: params.photoUrl, faceEnrolled: true, faceEnrolledAt: firestore.FieldValue.serverTimestamp() }
+          : {}),
+      };
+      await this.updateChildProfile(cId, matchedInSameFamily.id, updates);
+
+      await this.getAuditLogsCollection(cId).add(
+        sanitizeForFirestore({
+          action: 'teacher_linked_existing_child',
+          childDocId: matchedInSameFamily.id,
+          childId: matchedInSameFamily.childId,
+          childName: matchedInSameFamily.fullName,
+          familyId: parentFamilyId,
+          parentName,
+          enrolledByTeacherId: enrollingTeacherId,
+          enrolledByTeacherName: enrollingTeacherName,
+          enrolledByRole: enrollingRole,
+          createdAt: firestore.FieldValue.serverTimestamp(),
+        })
+      );
+
+      return {
+        status: 'linked_existing',
+        child: { ...matchedInSameFamily, ...updates },
+        message: `${matchedInSameFamily.fullName} is already registered under ${parentName}'s household. Linked existing record to ${assignedClassName} without creating duplicates.`,
+      };
+    }
+
+    const matchedInOtherFamily = existingKids.find(
+      k =>
+        k.familyId !== parentFamilyId &&
+        String(k.fullName || '').trim().toLowerCase().replace(/\s+/g, ' ') === normalizedChildName &&
+        k.dob === params.dob
+    );
+
+    if (matchedInOtherFamily && enrollingRole !== 'admin') {
+      return {
+        status: 'ownership_conflict',
+        child: matchedInOtherFamily,
+        message: `${matchedInOtherFamily.fullName} (DOB ${params.dob}) is already registered under ${matchedInOtherFamily.parentName}'s household. Teachers cannot change existing parent ownership without Administrator authorization.`,
+      };
+    }
+
+    // 4. Household Directory Integration (`Rhema Church/{churchId}/members`)
+    const membersCol = firestore()
+      .collection(RHEMA_ROOT_COLLECTION)
+      .doc(cId)
+      .collection('members');
+
+    // Safely ensure the selected father/parent has accountId set so Household Directory groups properly
+    if (!parentDoc.accountId) {
+      await membersCol
+        .doc(parentMemberId)
+        .update({ accountId: parentFamilyId })
+        .catch(() => {});
+    }
+
+    // Check if child already exists in selected parent's Household Directory
+    const householdSnap = await membersCol.where('accountId', '==', parentFamilyId).get();
+    const existingHouseholdChild = householdSnap.docs.find(d => {
+      const m = d.data();
+      const mName = String(m.name || `${m.firstName || ''} ${m.lastName || ''}`)
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+      return m.id !== parentMemberId && mName === normalizedChildName;
+    });
+
+    let linkedMemberContactId = '';
+    if (existingHouseholdChild) {
+      linkedMemberContactId = existingHouseholdChild.id;
+      await membersCol
+        .doc(linkedMemberContactId)
+        .update(
+          sanitizeForFirestore({
+            removedFromKids: false,
+            isKidMember: true,
+            dob: params.dob,
+            ...(params.photoUrl ? { profilePhoto: params.photoUrl } : {}),
+            updatedAt: firestore.FieldValue.serverTimestamp(),
+          })
+        )
+        .catch(() => {});
+    } else {
+      const householdMemberRef = await membersCol.add(
+        sanitizeForFirestore({
+          firstName,
+          lastName,
+          name: cleanedFullName,
+          displayName: cleanedFullName,
+          relation: params.gender === 'female' ? 'Daughter' : 'Son',
+          gender: params.gender === 'female' ? 'Female' : 'Male',
+          dob: params.dob,
+          anniversaryDate: '',
+          email: parentEmail,
+          phone: '',
+          referencePhone: parentPhone10,
+          isKidMember: true,
+          accountId: parentFamilyId,
+          parentMemberId,
+          profilePhoto: params.photoUrl || '',
+          enrolledByTeacherId: enrollingTeacherId,
+          enrolledByTeacherName: enrollingTeacherName,
+          createdAt: firestore.FieldValue.serverTimestamp(),
+          updatedAt: firestore.FieldValue.serverTimestamp(),
+        })
+      );
+      linkedMemberContactId = householdMemberRef.id;
+    }
+
+    // 5. Create single linked record in Rhema Kids (`kids_children`)
+    const parentGender = String(parentDoc.gender || '').toLowerCase();
+    const primaryRelationship = parentGender === 'female' ? 'Mother' : 'Father';
+    const emergency = params.emergencyContact?.name
+      ? params.emergencyContact
+      : {
+          name: parentName,
+          phone: parentPhone,
+          relationship: primaryRelationship,
+        };
+
+    const enrolledChild = await this.registerChild(cId, {
+      familyId: parentFamilyId,
+      parentMemberId,
+      parentName,
+      parentPhone,
+      parentEmail,
+      firstName,
+      lastName,
+      dob: params.dob,
+      gender: params.gender,
+      photoUrl: params.photoUrl || '',
+      allergiesList: params.allergiesList || [],
+      medicalNotes: params.medicalNotes || '',
+      assignedClassId,
+      assignedClassName,
+      assignedTier,
+      emergencyContact: emergency,
+      guardians: [
+        {
+          id: parentMemberId,
+          name: parentName,
+          relationship: primaryRelationship,
+          phone: parentPhone,
+          isPrimaryContact: true,
+          canPickup: true,
+        },
+      ],
+      notes: `Enrolled directly at Sunday School by ${enrollingTeacherName}`,
+      memberContactId: linkedMemberContactId,
+      isSyncedFromMember: true,
+      enrollmentSource: 'teacher_direct',
+      enrolledByTeacherId: enrollingTeacherId,
+      enrolledByTeacherName: enrollingTeacherName,
+      enrolledByRole: enrollingRole,
+      parentConsentStatus: 'pending_review',
+      parentConsentConfirmed: false,
+    });
+
+    // 6. Audit Log Entry recording enrolling teacher
+    await this.getAuditLogsCollection(cId).add(
+      sanitizeForFirestore({
+        action: 'teacher_direct_enrollment',
+        childDocId: enrolledChild.id,
+        childId: enrolledChild.childId,
+        childName: enrolledChild.fullName,
+        familyId: parentFamilyId,
+        memberContactId: linkedMemberContactId,
+        parentMemberId,
+        parentName,
+        parentPhone,
+        assignedClassName,
+        enrolledByTeacherId: enrollingTeacherId,
+        enrolledByTeacherName: enrollingTeacherName,
+        enrolledByRole: enrollingRole,
+        createdAt: firestore.FieldValue.serverTimestamp(),
+      })
+    );
+
+    // 7. Notify selected Father/Parent for review & consent
+    try {
+      await firestore()
+        .collection(RHEMA_ROOT_COLLECTION)
+        .doc(cId)
+        .collection('notifications')
+        .add(
+          sanitizeForFirestore({
+            type: 'kids_teacher_enrollment',
+            title: `Sunday School Enrollment: ${cleanedFullName}`,
+            body: `${cleanedFullName} was enrolled in ${assignedClassName} by ${enrollingTeacherName}. Please open Rhema Kids to review details and confirm consent.`,
+            targetMemberId: parentMemberId,
+            targetAccountId: parentFamilyId,
+            targetPhone: parentPhone,
+            childDocId: enrolledChild.id,
+            childId: enrolledChild.childId,
+            enrolledByTeacherName: enrollingTeacherName,
+            read: false,
+            createdAt: firestore.FieldValue.serverTimestamp(),
+          })
+        );
+    } catch (notifErr) {
+      console.warn('Could not send parent enrollment notification:', notifErr);
+    }
+
+    return {
+      status: 'enrolled_new',
+      child: enrolledChild,
+      message: `${cleanedFullName} has been enrolled in ${assignedClassName}, added to ${parentName}'s Household Directory, and ${parentName} has been notified to review consent.`,
+    };
+  }
+
+  /**
+   * Allows a parent/guardian to review and confirm consent for a teacher-enrolled child.
+   */
+  async confirmParentConsent(
+    churchId: string,
+    childDocId: string,
+    parentMemberId: string
+  ): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    await this.getKidsCollection(cId).doc(childDocId).update(
+      sanitizeForFirestore({
+        parentConsentStatus: 'confirmed',
+        parentConsentConfirmed: true,
+        parentConsentConfirmedAt: firestore.FieldValue.serverTimestamp(),
+        parentConsentConfirmedBy: parentMemberId,
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+      })
+    );
   }
 
   /**
@@ -2106,29 +2784,56 @@ class KidsMinistryService {
     callback: (config: KidsCurriculumConfig) => void
   ): () => void {
     const docRef = this.getCurriculumConfigDoc(churchId);
+    const defaultConfig: KidsCurriculumConfig = {
+      mode: '52_week',
+      is52WeekEnabled: true,
+      isLaunched: false,
+      officialLaunchDate: null,
+      manualOverrideWeek: null,
+      customActiveLessonId: null,
+    };
     return docRef.onSnapshot(snap => {
       if (snap && snap.exists) {
-        callback(snap.data() as KidsCurriculumConfig);
-      } else {
+        const raw = snap.data() as KidsCurriculumConfig;
+        const is52WeekEnabled =
+          raw.is52WeekEnabled !== undefined
+            ? raw.is52WeekEnabled
+            : raw.mode !== 'custom';
+        const mode: CurriculumMode = raw.mode || (is52WeekEnabled ? '52_week' : 'custom');
         callback({
-          isLaunched: false,
-          officialLaunchDate: null,
-          manualOverrideWeek: null,
+          ...defaultConfig,
+          ...raw,
+          mode,
+          is52WeekEnabled,
         });
+      } else {
+        callback(defaultConfig);
       }
     }, () => {
-      callback({
-        isLaunched: false,
-        officialLaunchDate: null,
-        manualOverrideWeek: null,
-      });
+      callback(defaultConfig);
     });
+  }
+
+  async setCurriculumModeConfig(
+    churchId: string,
+    updates: Partial<KidsCurriculumConfig>
+  ): Promise<void> {
+    const docRef = this.getCurriculumConfigDoc(churchId);
+    await docRef.set(
+      sanitizeForFirestore({
+        ...updates,
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+      }),
+      { merge: true }
+    );
   }
 
   async setCurriculumLaunchDate(churchId: string, launchDate: string): Promise<void> {
     const docRef = this.getCurriculumConfigDoc(churchId);
     await docRef.set(
       sanitizeForFirestore({
+        mode: '52_week',
+        is52WeekEnabled: true,
         officialLaunchDate: launchDate,
         isLaunched: true,
         manualOverrideWeek: null,
@@ -2159,12 +2864,41 @@ class KidsMinistryService {
     const batch = this.getDb().batch();
     for (const doc of snap.docs) {
       const data = doc.data();
+      if (data.type === 'custom') continue;
       const isCurrent = data.weekNumber === activeWeekNumber;
       if (data.isCurrentWeek !== isCurrent) {
         batch.update(doc.ref, { isCurrentWeek: isCurrent, updatedAt: firestore.FieldValue.serverTimestamp() });
       }
     }
     await batch.commit();
+
+    // Sync config override so Member View & Admin Hub resolve the exact chosen week
+    await this.setCurriculumModeConfig(cId, {
+      manualOverrideWeek: activeWeekNumber,
+    });
+  }
+
+  async setActiveCustomLesson(churchId: string, lessonDocId: string): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const curriculumRef = this.getCurriculumCollection(cId);
+    const snap = await curriculumRef.get();
+
+    const batch = this.getDb().batch();
+    for (const doc of snap.docs) {
+      const data = doc.data();
+      if (data.type !== 'custom') continue;
+      const isCurrent = doc.id === lessonDocId;
+      if (data.isCurrentWeek !== isCurrent) {
+        batch.update(doc.ref, { isCurrentWeek: isCurrent, updatedAt: firestore.FieldValue.serverTimestamp() });
+      }
+    }
+    await batch.commit();
+
+    await this.setCurriculumModeConfig(cId, {
+      mode: 'custom',
+      is52WeekEnabled: false,
+      customActiveLessonId: lessonDocId,
+    });
   }
 
   async updateCurriculumLesson(
@@ -2187,10 +2921,15 @@ class KidsMinistryService {
   ): Promise<string> {
     const cId = churchId || RHEMA_CHURCH_ID;
     const now = firestore.FieldValue.serverTimestamp();
-    const docRef = this.getCurriculumCollection(cId).doc(`week_${lesson.weekNumber}`);
+    const isCustom = lesson.type === 'custom';
+    const docId = isCustom
+      ? `custom_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+      : `week_${lesson.weekNumber}`;
+    const docRef = this.getCurriculumCollection(cId).doc(docId);
     await docRef.set(
       sanitizeForFirestore({
         ...lesson,
+        type: lesson.type || '52_week',
         createdAt: now,
         updatedAt: now,
       }),

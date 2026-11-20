@@ -32,26 +32,41 @@ import {
   DoorOpen,
   X,
   UserCheck,
+  UserPlus,
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
+import { useAdminTheme } from '../../utils/adminThemeHelper';
 import KidsMinistryService from '../../services/KidsMinistryService';
 import KidsFaceRecognitionService from '../../services/KidsFaceRecognitionService';
 import { KidsTeacherRecord } from '../../types/KidsMinistryTypes';
+import TeacherEnrollChildModal from './components/TeacherEnrollChildModal';
 
 const { width } = Dimensions.get('window');
 
 export default function KidsTeacherKiosk({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const { member } = useAuth();
+  const {
+    isDark,
+    screenBg,
+    cardSurface,
+    secondarySurface,
+    primaryText,
+    secondaryText,
+    borderColor,
+    barStyle,
+  } = useAdminTheme();
   const churchId = member?.churchId || 'rhema';
 
   // Camera permissions
   const cameraRef = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>('front');
+  const [pictureSize, setPictureSize] = useState<string | undefined>(undefined);
 
   // Mode: 'face_scan' | 'pin_pad' | 'roster'
   const [kioskMode, setKioskMode] = useState<'face_scan' | 'pin_pad' | 'roster'>('face_scan');
+  const [showTeacherEnrollModal, setShowTeacherEnrollModal] = useState(false);
 
   // Teachers data & today attendance
   const [teachers, setTeachers] = useState<KidsTeacherRecord[]>([]);
@@ -70,8 +85,18 @@ export default function KidsTeacherKiosk({ navigation }: any) {
     alreadyCheckedIn: boolean;
   } | null>(null);
 
-  // Animation values
-  const scanLineAnim = useRef(new Animated.Value(0)).current;
+  // Animation values & lifecycle guards
+  const scanLineLoopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const scanLineAnim = useRef(new Animated.Value(0.5)).current;
+
+  const stopTeacherScanAnim = () => {
+    if (scanLineLoopRef.current) {
+      scanLineLoopRef.current.stop();
+      scanLineLoopRef.current = null;
+    }
+    scanLineAnim.stopAnimation();
+    scanLineAnim.setValue(0.5);
+  };
 
   // Realtime subscriptions
   useEffect(() => {
@@ -84,31 +109,69 @@ export default function KidsTeacherKiosk({ navigation }: any) {
       setTodayAttendance(list);
     });
 
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(scanLineAnim, {
-          toValue: 1,
-          duration: 2000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(scanLineAnim, {
-          toValue: 0,
-          duration: 2000,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-
     return () => {
+      stopTeacherScanAnim();
       unsubTeachers();
       unsubAttendance();
     };
   }, [churchId]);
 
+  useEffect(() => {
+    if (scanning && kioskMode === 'face_scan' && !matchedTeacher) {
+      scanLineAnim.setValue(0);
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(scanLineAnim, {
+            toValue: 1,
+            duration: 1400,
+            useNativeDriver: true,
+          }),
+          Animated.timing(scanLineAnim, {
+            toValue: 0,
+            duration: 1400,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      scanLineLoopRef.current = loop;
+      loop.start();
+    } else {
+      stopTeacherScanAnim();
+    }
+
+    return () => {
+      stopTeacherScanAnim();
+    };
+  }, [scanning, kioskMode, matchedTeacher]);
+
   const scanLineTranslate = scanLineAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [-100, 100],
   });
+
+  const sizedForFacingRef = useRef<string | null>(null);
+  const handleCameraReady = async () => {
+    if (sizedForFacingRef.current === cameraFacing) return;
+    sizedForFacingRef.current = cameraFacing;
+    try {
+      const sizes = await cameraRef.current?.getAvailablePictureSizesAsync?.();
+      if (!sizes || sizes.length === 0) return;
+      const parsed = sizes
+        .map(s => {
+          const [w, h] = s.split('x').map(Number);
+          return { raw: s, w: w || 0, h: h || 0 };
+        })
+        .filter(x => x.w > 0 && x.h > 0)
+        .sort((a, b) => a.w - b.w);
+      const ideal =
+        parsed.find(x => x.w >= 640 && x.w <= 1280) ||
+        parsed.find(x => x.w >= 480) ||
+        parsed[0];
+      if (ideal) setPictureSize(ideal.raw);
+    } catch {
+      // Optional optimization
+    }
+  };
 
   // Strict Biometric Teacher Face Recognition (NEVER fakes or guesses a match)
   const triggerFaceScan = async () => {
@@ -146,12 +209,22 @@ export default function KidsTeacherKiosk({ navigation }: any) {
 
     try {
       setScanning(true);
-      const captured = await cameraRef.current.takePictureAsync({
-        quality: 0.35,
-        base64: true,
-      });
+      const captured = await Promise.race([
+        cameraRef.current.takePictureAsync({
+          quality: 0.4,
+          base64: true,
+          exif: false,
+        }),
+        new Promise<undefined>((_, reject) =>
+          setTimeout(() => reject(new Error('Camera capture timed out')), 8000)
+        ),
+      ]);
+
+      cameraRef.current?.resumePreview?.().catch(() => {});
 
       if (!captured?.base64) {
+        stopTeacherScanAnim();
+        setScanning(false);
         Alert.alert('Capture Failed', 'Could not capture a clear camera image. Please try again.');
         return;
       }
@@ -162,7 +235,10 @@ export default function KidsTeacherKiosk({ navigation }: any) {
         'teacher'
       );
 
-      if (verification.matched && verification.matchedCandidateId && verification.confidence >= 85) {
+      stopTeacherScanAnim();
+      setScanning(false);
+
+      if (verification.matched && verification.matchedCandidateId && verification.confidence >= 88) {
         const matched = teachers.find(t => t.id === verification.matchedCandidateId);
         if (matched) {
           const isAlready = todayAttendance.some(a => a.teacherDocId === matched.id);
@@ -176,7 +252,11 @@ export default function KidsTeacherKiosk({ navigation }: any) {
       }
 
       Alert.alert(
-        verification.faceDetected ? 'Face Not Recognized' : 'No Clear Face Detected',
+        verification.serviceUnavailable
+          ? 'Verification Service Unavailable'
+          : verification.faceDetected
+          ? 'Face Mismatch'
+          : 'No Clear Face Detected',
         verification.reason || 'Your face did not match any enrolled teacher profile. Please try again or clock in from the Teachers Roster.',
         [
           { text: 'Teachers Roster', onPress: () => setKioskMode('roster') },
@@ -254,23 +334,29 @@ export default function KidsTeacherKiosk({ navigation }: any) {
     }
   };
 
+  const activePillBg = isDark ? '#FFFFFF' : '#0F172A';
+  const activePillText = isDark ? '#000000' : '#FFFFFF';
+  const iconButtonBg = isDark ? '#18181B' : secondarySurface;
+
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#000000" />
+    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: screenBg }]}>
+      <StatusBar barStyle={barStyle} backgroundColor={screenBg} />
 
       {/* ── TOP HEADER ── */}
-      <View style={styles.headerRow}>
+      <View style={[styles.headerRow, { backgroundColor: screenBg, borderBottomColor: borderColor }]}>
         <TouchableOpacity
-          style={styles.iconBtn}
+          style={[styles.iconBtn, { backgroundColor: iconButtonBg, borderWidth: isDark ? 0 : 1, borderColor }]}
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />
+          <ArrowLeft size={20} color={primaryText} strokeWidth={2.4} />
         </TouchableOpacity>
 
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitleSerif}>Teacher Attendance Kiosk</Text>
-          <Text style={styles.headerSubtitle}>Sunday School Faculty & Safeguarding Clock-In</Text>
+          <Text style={[styles.headerTitleSerif, { color: primaryText }]}>Teacher Attendance Kiosk</Text>
+          <Text style={[styles.headerSubtitle, { color: secondaryText }]}>
+            Sunday School Faculty & Safeguarding Clock-In
+          </Text>
         </View>
 
         <View style={styles.dutyBadge}>
@@ -281,42 +367,65 @@ export default function KidsTeacherKiosk({ navigation }: any) {
       </View>
 
       {/* ── MODE TABS (RHEMA PILLS) ── */}
-      <View style={styles.modeTabsRow}>
+      <View style={[styles.modeTabsRow, { backgroundColor: secondarySurface, borderWidth: 1, borderColor }]}>
         <TouchableOpacity
-          style={[styles.modeTab, kioskMode === 'face_scan' && styles.modeTabActive]}
+          style={[styles.modeTab, kioskMode === 'face_scan' && { backgroundColor: activePillBg }]}
           onPress={() => {
             setKioskMode('face_scan');
             setMatchedTeacher(null);
           }}
         >
-          <Camera size={14} color={kioskMode === 'face_scan' ? '#000000' : '#9CA3AF'} />
-          <Text style={[styles.modeTabText, kioskMode === 'face_scan' && styles.modeTabTextActive]}>
+          <Camera size={14} color={kioskMode === 'face_scan' ? activePillText : secondaryText} />
+          <Text
+            style={[
+              styles.modeTabText,
+              { color: secondaryText },
+              kioskMode === 'face_scan' && { color: activePillText, fontWeight: '700' },
+            ]}
+          >
             Face Scan
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.modeTab, kioskMode === 'roster' && styles.modeTabActive]}
+          style={[styles.modeTab, kioskMode === 'roster' && { backgroundColor: activePillBg }]}
           onPress={() => {
             setKioskMode('roster');
             setMatchedTeacher(null);
           }}
         >
-          <Users size={14} color={kioskMode === 'roster' ? '#000000' : '#9CA3AF'} />
-          <Text style={[styles.modeTabText, kioskMode === 'roster' && styles.modeTabTextActive]}>
+          <Users size={14} color={kioskMode === 'roster' ? activePillText : secondaryText} />
+          <Text
+            style={[
+              styles.modeTabText,
+              { color: secondaryText },
+              kioskMode === 'roster' && { color: activePillText, fontWeight: '700' },
+            ]}
+          >
             Teachers Roster
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.modeTab, { backgroundColor: 'rgba(251, 191, 36, 0.16)', borderWidth: 1, borderColor: 'rgba(217, 119, 6, 0.4)' }]}
+          onPress={() => setShowTeacherEnrollModal(true)}
+          activeOpacity={0.85}
+        >
+          <UserPlus size={14} color={isDark ? '#FBBF24' : '#B45309'} />
+          <Text style={[styles.modeTabText, { color: isDark ? '#FBBF24' : '#B45309' }]}>
+            Enroll Child
           </Text>
         </TouchableOpacity>
       </View>
 
       {/* ── MODE 1: FACE SCAN KIOSK ── */}
       {kioskMode === 'face_scan' && (
-        <View style={styles.cameraContainer}>
+        <View style={[styles.cameraContainer, { backgroundColor: screenBg }]}>
           {!permission?.granted ? (
-            <View style={styles.permissionBox}>
-              <Camera size={36} color="#FBBF24" />
-              <Text style={styles.permissionTitle}>Camera Permission Required</Text>
-              <Text style={styles.permissionSub}>
+            <View style={[styles.permissionBox, { backgroundColor: screenBg }]}>
+              <Camera size={36} color="#D97706" />
+              <Text style={[styles.permissionTitle, { color: primaryText }]}>Camera Permission Required</Text>
+              <Text style={[styles.permissionSub, { color: secondaryText }]}>
                 Enable camera access for biometric Sunday School teacher clock-in.
               </Text>
               <TouchableOpacity style={styles.permissionBtn} onPress={requestPermission}>
@@ -329,6 +438,8 @@ export default function KidsTeacherKiosk({ navigation }: any) {
                 ref={cameraRef}
                 style={StyleSheet.absoluteFillObject}
                 facing={cameraFacing}
+                pictureSize={pictureSize}
+                onCameraReady={handleCameraReady}
               />
 
               {/* OVERLAY RETICLE */}
@@ -339,13 +450,15 @@ export default function KidsTeacherKiosk({ navigation }: any) {
                   <View style={[styles.cornerMarker, styles.cornerBL]} />
                   <View style={[styles.cornerMarker, styles.cornerBR]} />
 
-                  {/* Laser Line */}
-                  <Animated.View
-                    style={[
-                      styles.laserLine,
-                      { transform: [{ translateY: scanLineTranslate }] },
-                    ]}
-                  />
+                  {/* Laser Line — ONLY animates while actively scanning */}
+                  {scanning && !matchedTeacher && (
+                    <Animated.View
+                      style={[
+                        styles.laserLine,
+                        { transform: [{ translateY: scanLineTranslate }] },
+                      ]}
+                    />
+                  )}
 
                   {/* Face Mesh Dots */}
                   <View style={styles.meshDotsContainer}>
@@ -367,31 +480,33 @@ export default function KidsTeacherKiosk({ navigation }: any) {
 
               {/* BOTTOM TRIGGER */}
               {!matchedTeacher && (
-                <View style={styles.triggerBar}>
+                <View style={[styles.triggerBar, { bottom: Math.max(24, insets.bottom + 14) }]}>
                   <TouchableOpacity
-                    style={[styles.scanTriggerBtn, scanning && { opacity: 0.7 }]}
+                    style={[styles.scanTriggerBtn, { backgroundColor: activePillBg }, scanning && { opacity: 0.7 }]}
                     onPress={triggerFaceScan}
                     disabled={scanning}
                     activeOpacity={0.88}
                   >
                     {scanning ? (
                       <>
-                        <ActivityIndicator size="small" color="#000000" />
-                        <Text style={styles.scanTriggerText}>Verifying Face...</Text>
+                        <ActivityIndicator size="small" color={activePillText} />
+                        <Text style={[styles.scanTriggerText, { color: activePillText }]}>Verifying Face...</Text>
                       </>
                     ) : (
                       <>
-                        <Camera size={16} color="#000000" />
-                        <Text style={styles.scanTriggerText}>Scan & Verify Teacher Face</Text>
+                        <Camera size={16} color={activePillText} />
+                        <Text style={[styles.scanTriggerText, { color: activePillText }]}>
+                          Scan & Verify Teacher Face
+                        </Text>
                       </>
                     )}
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={styles.switchCamBtn}
+                    style={[styles.switchCamBtn, { backgroundColor: cardSurface, borderColor }]}
                     onPress={() => setCameraFacing(cameraFacing === 'front' ? 'back' : 'front')}
                   >
-                    <RefreshCw size={14} color="#FFFFFF" />
+                    <RefreshCw size={14} color={primaryText} />
                   </TouchableOpacity>
                 </View>
               )}
@@ -444,7 +559,11 @@ export default function KidsTeacherKiosk({ navigation }: any) {
             return (
               <TouchableOpacity
                 key={t.id}
-                style={[styles.teacherCard, isClockedIn && styles.teacherCardClocked]}
+                style={[
+                  styles.teacherCard,
+                  { backgroundColor: cardSurface, borderColor },
+                  isClockedIn && styles.teacherCardClocked,
+                ]}
                 onPress={() =>
                   setMatchedTeacher({
                     teacher: t,
@@ -454,29 +573,54 @@ export default function KidsTeacherKiosk({ navigation }: any) {
                 }
                 activeOpacity={0.88}
               >
-                <View style={[styles.teacherAvatar, isClockedIn && styles.teacherAvatarClocked]}>
-                  <Text style={styles.teacherAvatarText}>{t.name.charAt(0)}</Text>
+                <View
+                  style={[
+                    styles.teacherAvatar,
+                    { backgroundColor: secondarySurface },
+                    isClockedIn && styles.teacherAvatarClocked,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.teacherAvatarText,
+                      { color: isClockedIn ? '#FFFFFF' : primaryText },
+                    ]}
+                  >
+                    {t.name.charAt(0)}
+                  </Text>
                 </View>
 
                 <View style={{ flex: 1 }}>
                   <View style={styles.teacherNameRow}>
-                    <Text style={styles.teacherName}>{t.name}</Text>
+                    <Text style={[styles.teacherName, { color: primaryText }]}>{t.name}</Text>
                     {t.safeguardingStatus === 'verified' && (
                       <View style={styles.verifiedBadge}>
-                        <ShieldCheck size={10} color="#34D399" />
+                        <ShieldCheck size={10} color="#10B981" />
                         <Text style={styles.verifiedBadgeText}>Verified</Text>
                       </View>
                     )}
                   </View>
 
-                  <Text style={styles.teacherClassMeta}>
+                  <Text style={[styles.teacherClassMeta, { color: secondaryText }]}>
                     {t.assignedClassName} · {t.roomNumber || 'Room 201'}
                   </Text>
                 </View>
 
-                <View style={[styles.clockStatusPill, isClockedIn && styles.clockStatusPillActive]}>
-                  <Text style={[styles.clockStatusText, isClockedIn && styles.clockStatusTextActive]}>
-                    {isClockedIn ? 'Clocked In ✓' : 'Clock In &rsaquo;'}
+                <View
+                  style={[
+                    styles.clockStatusPill,
+                    { backgroundColor: secondarySurface },
+                    isClockedIn && styles.clockStatusPillActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.clockStatusText,
+                      { color: isDark ? '#FBBF24' : '#B45309' },
+                      isClockedIn && styles.clockStatusTextActive,
+                    ]}
+                  >
+                    {isClockedIn ? 'Clocked In ✓' : 'Clock In ›'}
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -488,29 +632,41 @@ export default function KidsTeacherKiosk({ navigation }: any) {
       {/* ── POPUP TEACHER MATCH CARD ── */}
       {matchedTeacher && (
         <View style={styles.popupOverlay}>
-          <View style={styles.popupCard}>
+          <View
+            style={[
+              styles.popupCard,
+              {
+                backgroundColor: cardSurface,
+                borderColor,
+                paddingBottom: Math.max(20, insets.bottom + 14),
+              },
+            ]}
+          >
             <View style={styles.popupHeader}>
               <View style={styles.verifiedMatchRow}>
-                <ShieldCheck size={16} color="#34D399" />
+                <ShieldCheck size={16} color="#10B981" />
                 <Text style={styles.verifiedMatchText}>
                   {matchedTeacher.confidence < 100
                     ? `TEACHER MATCH (${matchedTeacher.confidence}%)`
                     : 'IDENTITY VERIFIED'}
                 </Text>
               </View>
-              <TouchableOpacity onPress={() => setMatchedTeacher(null)} style={styles.closePopupBtn}>
-                <X size={16} color="#9CA3AF" />
+              <TouchableOpacity
+                onPress={() => setMatchedTeacher(null)}
+                style={[styles.closePopupBtn, { backgroundColor: secondarySurface }]}
+              >
+                <X size={16} color={secondaryText} />
               </TouchableOpacity>
             </View>
 
             {/* Teacher Details */}
             <View style={styles.teacherProfileRow}>
-              <View style={styles.popupAvatar}>
+              <View style={[styles.popupAvatar, { backgroundColor: secondarySurface }]}>
                 <Text style={styles.popupAvatarText}>{matchedTeacher.teacher.name.charAt(0)}</Text>
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.popupTeacherName}>{matchedTeacher.teacher.name}</Text>
-                <Text style={styles.popupTeacherRole}>
+                <Text style={[styles.popupTeacherName, { color: primaryText }]}>{matchedTeacher.teacher.name}</Text>
+                <Text style={[styles.popupTeacherRole, { color: secondaryText }]}>
                   {matchedTeacher.teacher.role === 'director' ? 'Ministry Director' : 'Lead Teacher'} · {matchedTeacher.teacher.assignedClassName}
                 </Text>
                 <Text style={styles.popupRoomText}>
@@ -521,7 +677,7 @@ export default function KidsTeacherKiosk({ navigation }: any) {
 
             {/* Safeguarding Card */}
             <View style={styles.safeguardingBox}>
-              <ShieldCheck size={14} color="#34D399" />
+              <ShieldCheck size={14} color="#10B981" />
               <Text style={styles.safeguardingText}>
                 SAFEGUARDING & POLICE VERIFICATION: APPROVED ✓
               </Text>
@@ -530,15 +686,19 @@ export default function KidsTeacherKiosk({ navigation }: any) {
             {/* Actions */}
             <View style={styles.popupActionsRow}>
               <TouchableOpacity
-                style={[styles.confirmClockBtn, processingCheckIn && { opacity: 0.7 }]}
+                style={[
+                  styles.confirmClockBtn,
+                  { backgroundColor: activePillBg },
+                  processingCheckIn && { opacity: 0.7 },
+                ]}
                 onPress={handleConfirmCheckIn}
                 disabled={processingCheckIn}
                 activeOpacity={0.88}
               >
                 {processingCheckIn ? (
-                  <ActivityIndicator size="small" color="#000000" />
+                  <ActivityIndicator size="small" color={activePillText} />
                 ) : (
-                  <Text style={styles.confirmClockText}>
+                  <Text style={[styles.confirmClockText, { color: activePillText }]}>
                     {matchedTeacher.alreadyCheckedIn ? 'Already Clocked In (OK)' : 'Confirm Clock-In'}
                   </Text>
                 )}
@@ -548,11 +708,21 @@ export default function KidsTeacherKiosk({ navigation }: any) {
                 style={styles.cancelClockBtn}
                 onPress={() => setMatchedTeacher(null)}
               >
-                <Text style={styles.cancelClockText}>Cancel</Text>
+                <Text style={[styles.cancelClockText, { color: secondaryText }]}>Cancel</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
+      )}
+
+      {/* ── DIRECT CHILD ENROLLMENT BY SUNDAY SCHOOL TEACHER ── */}
+      {showTeacherEnrollModal && (
+        <TeacherEnrollChildModal
+          visible={showTeacherEnrollModal}
+          onClose={() => setShowTeacherEnrollModal(false)}
+          churchId={churchId}
+          actingMember={member}
+        />
       )}
     </View>
   );
