@@ -1,4 +1,4 @@
-import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
+import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 import axios from 'axios';
@@ -198,37 +198,6 @@ async function scheduleZoomMeetingOnApi(params: {
 }
 
 /**
- * 📹 CREATE ZOOM MEETING (Callable Function)
- * Called by backend services or ZoomService.
- */
-export const createZoomMeeting = onCall({ cors: true, invoker: 'public' }, async (request) => {
-  const { title, topic, description, startTime, endTime, duration, password } = request.data || {};
-  const resolvedTopic = String(topic || title || '').trim();
-
-  if (!resolvedTopic) {
-    throw new HttpsError('invalid-argument', 'Title is required for the meeting.');
-  }
-
-  try {
-    return await scheduleZoomMeetingOnApi({
-      topic: resolvedTopic,
-      description,
-      startTime,
-      endTime,
-      duration,
-      password,
-    });
-  } catch (err: any) {
-    console.error('[createZoomMeeting] Error:', err?.response?.data || err?.message || err);
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      'Failed to create Zoom meeting via Zoom API';
-    throw new HttpsError('internal', msg);
-  }
-});
-
-/**
  * 📹 GENERATE ZOOM MEETING LINK (Callable Function in asia-south1)
  * Called by AdminZoomMeetingsCreate.tsx when tapping "+ Generate Zoom Meet Link".
  */
@@ -364,33 +333,3 @@ export const createBibleClass = onCall(
     }
   }
 );
-
-/**
- * 🔗 HTTP Trigger Alternative for createZoomMeeting
- */
-export const createZoomMeetingHttp = onRequest({ cors: true, invoker: 'public' }, async (req, res) => {
-  const { title, topic, description, startTime, endTime, duration, password } = req.body || {};
-  const resolvedTopic = String(topic || title || '').trim();
-
-  if (!resolvedTopic) {
-    res.status(400).json({ error: 'Title is required for the meeting.' });
-    return;
-  }
-
-  try {
-    const result = await scheduleZoomMeetingOnApi({
-      topic: resolvedTopic,
-      description,
-      startTime,
-      endTime,
-      duration,
-      password,
-    });
-    res.status(200).json(result);
-  } catch (err: any) {
-    console.error('[createZoomMeetingHttp] Error:', err?.response?.data || err?.message || err);
-    res.status(500).json({
-      error: err?.response?.data?.message || err?.message || 'Failed to create Zoom meeting via Zoom API',
-    });
-  }
-});

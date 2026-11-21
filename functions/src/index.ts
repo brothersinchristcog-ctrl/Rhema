@@ -1822,7 +1822,6 @@ export {
   triggerDailyVersePushHttp,
   sendDailyVersePushScheduled,
   monitorMeetingLive,
-  pushMeetingLive,
   onBaptismRequestCreatedAdmin,
   onBaptismRequestCreatedAdminLegacy,
   onPrayerRequestCreatedAdmin,
@@ -1874,8 +1873,6 @@ export {
 } from './rosterNotifications.js';
 
 export {
-  createZoomMeeting,
-  createZoomMeetingHttp,
   generateZoomMeetingLink,
   createBibleClass,
 } from './meetings.js';
