@@ -35,6 +35,16 @@ import {
 } from '../types/KidsMinistryTypes';
 
 /**
+ * Formats a Date into local YYYY-MM-DD (avoids UTC midnight date-shift issues).
+ */
+function formatLocalYMD(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
  * Sanitizes an object before writing to Firestore.
  * Strips undefined properties recursively.
  */
@@ -1515,18 +1525,19 @@ class KidsMinistryService {
     programSessionId?: string;
     programType?: KidsProgramType;
     programTitle?: string;
+    sessionDate?: string;
   }): Promise<{ session: any; alreadyCheckedIn: boolean }> {
     const cId = params.churchId || RHEMA_CHURCH_ID;
-    const today = new Date().toISOString().split('T')[0]; // "YYYY-MM-DD"
+    const effectiveDate = params.sessionDate || formatLocalYMD(); // "YYYY-MM-DD"
     const sessionsRef = this.getSessionsCollection(cId);
 
     const programSessionId =
-      params.programSessionId || `sess_${today}_${params.programType || 'sunday_school'}`;
+      params.programSessionId || `sess_${effectiveDate}_${params.programType || 'sunday_school'}`;
     const programType = params.programType || 'sunday_school';
     const programTitle = params.programTitle || 'Sunday School';
 
     // 1. DUPLICATE CHECK-IN PREVENTION
-    // Scoped strictly to the program session to allow checking in to multiple distinct programs on the same day
+    // Scoped strictly to the program session to allow checking in to multiple distinct programs on different dates or same day
     let dupQuery = sessionsRef
       .where('childDocId', '==', params.child.id)
       .where('status', '==', 'active');
@@ -1534,15 +1545,15 @@ class KidsMinistryService {
     if (params.programSessionId) {
       dupQuery = dupQuery.where('programSessionId', '==', params.programSessionId);
     } else {
-      dupQuery = dupQuery.where('sessionDate', '==', today);
+      dupQuery = dupQuery.where('sessionDate', '==', effectiveDate);
     }
 
     const existingSnap = await dupQuery.get();
+    const activeExistingDoc = existingSnap.docs.find(d => !(d.data() as any)?.deletedByParent);
 
-    if (!existingSnap.empty) {
-      const existingDoc = existingSnap.docs[0];
+    if (activeExistingDoc) {
       return {
-        session: { id: existingDoc.id, ...(existingDoc.data() as any) },
+        session: { id: activeExistingDoc.id, ...(activeExistingDoc.data() as any) },
         alreadyCheckedIn: true,
       };
     }
@@ -1553,7 +1564,7 @@ class KidsMinistryService {
     const classNameResolved = params.child.assignedClassName || programTitle;
 
     const sessionData = {
-      sessionId: `SESS_${today.replace(/-/g, '')}_${Date.now().toString().slice(-4)}`,
+      sessionId: `SESS_${effectiveDate.replace(/-/g, '')}_${Date.now().toString().slice(-4)}`,
       programSessionId,
       programType,
       programTitle,
@@ -1568,7 +1579,7 @@ class KidsMinistryService {
       classId: params.child.assignedClassId || params.child.assignedTier || 'general',
       className: classNameResolved,
       teacherName: params.checkedInByName,
-      sessionDate: today,
+      sessionDate: effectiveDate,
 
       pickupCode,
       checkInTime: now,
@@ -1584,12 +1595,13 @@ class KidsMinistryService {
 
     const docRef = await sessionsRef.add(sanitizeForFirestore(sessionData));
 
-    // 3. UPDATE CHILD LIVE STATUS
+    // 3. UPDATE CHILD LIVE STATUS & unhide program session if previously removed
     await this.getKidsCollection(cId).doc(params.child.id).update({
       custodyStatus: 'checked_in',
       activePickupCode: pickupCode,
       currentSessionId: docRef.id,
       lastCheckInAt: now,
+      hiddenProgramSessionIds: firestore.FieldValue.arrayRemove(programSessionId),
       updatedAt: now,
     });
 
@@ -1609,13 +1621,14 @@ class KidsMinistryService {
           className: classNameResolved,
           classTier: params.child.assignedTier || 'primary',
           teacherName: params.checkedInByName,
-          sessionDate: today,
+          sessionDate: effectiveDate,
           programSessionId,
           programType,
           programTitle,
           status: 'present',
           checkInTime: now,
           method: params.method,
+          deletedByParent: false,
           createdAt: now,
         }),
         { merge: true }
@@ -2644,9 +2657,10 @@ class KidsMinistryService {
     programSessionId?: string;
     programType?: KidsProgramType;
     programTitle?: string;
+    sessionDate?: string;
   }): Promise<{ record: any; alreadyCheckedIn: boolean }> {
     const cId = params.churchId || RHEMA_CHURCH_ID;
-    const today = new Date().toISOString().split('T')[0];
+    const today = params.sessionDate || formatLocalYMD();
     const attRef = this.getTeacherAttendanceCollection(cId);
 
     const programSessionId =
@@ -2883,6 +2897,7 @@ class KidsMinistryService {
             ...(d.data() as any),
           }));
           const filtered = all.filter(r => {
+            if ((r as any).deletedByParent) return false;
             if (r.programSessionId && r.programSessionId === session.id) return true;
             if (
               !r.programSessionId &&
@@ -2914,6 +2929,7 @@ class KidsMinistryService {
           if (!snap) return callback([]);
           const all = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
           const filtered = all.filter(r => {
+            if ((r as any).deletedByParent) return false;
             if (r.programSessionId && r.programSessionId === session.id) return true;
             if (
               !r.programSessionId &&
@@ -2948,6 +2964,7 @@ class KidsMinistryService {
             ...(d.data() as any),
           }));
           const filtered = all.filter(r => {
+            if ((r as any).deletedByParent) return false;
             if (r.programSessionId && r.programSessionId === session.id) return true;
             if (
               !r.programSessionId &&
@@ -2988,7 +3005,7 @@ class KidsMinistryService {
               id: d.id,
               ...(d.data() as any),
             }))
-            .filter(r => r.childDocId === childDocId);
+            .filter(r => r.childDocId === childDocId && !r.deletedByParent);
           list.sort((a, b) => (b.sessionDate || '').localeCompare(a.sessionDate || ''));
           callback(list);
         },
@@ -3022,7 +3039,7 @@ class KidsMinistryService {
               id: d.id,
               ...(d.data() as any),
             }))
-            .filter(l => l.childDocId === childDocId);
+            .filter(l => l.childDocId === childDocId && !l.deletedByParent);
           list.sort((a, b) => (b.sessionDate || '').localeCompare(a.sessionDate || ''));
           callback(list);
         },
@@ -3031,6 +3048,105 @@ class KidsMinistryService {
           callback([]);
         }
       );
+  }
+
+  /**
+   * Deletes an attendance history entry for a specific child and program session.
+   * Removes/soft-deletes matching custody sessions and attendance logs and hides the session
+   * for this child only (preserving sibling & other families' records).
+   */
+  async deleteChildAttendanceHistoryRecord(params: {
+    churchId?: string;
+    childDocId: string;
+    programSessionId: string;
+    date?: string;
+    custodyRecordId?: string;
+    deletedByMemberId?: string;
+  }): Promise<void> {
+    const cId = params.churchId || RHEMA_CHURCH_ID;
+    const { childDocId, programSessionId, date, custodyRecordId, deletedByMemberId } = params;
+    if (!childDocId || !programSessionId) return;
+
+    const now = firestore.FieldValue.serverTimestamp();
+    const deleteOrSoftDelete = async (docRef: any) => {
+      try {
+        await docRef.delete();
+      } catch {
+        await docRef.update({
+          deletedByParent: true,
+          deletedAt: now,
+          deletedByMemberId: deletedByMemberId || '',
+        });
+      }
+    };
+
+    const isLegacyKey = programSessionId.startsWith('legacy_');
+    const deletedCustodyIds = new Set<string>();
+
+    // 1. Delete matching custody sessions for this child + program session
+    const custodySnap = await this.getSessionsCollection(cId)
+      .where('childDocId', '==', childDocId)
+      .get();
+
+    for (const d of custodySnap.docs) {
+      const data = d.data() as any;
+      const matchesExplicitId = custodyRecordId && d.id === custodyRecordId;
+      const matchesProgram = data.programSessionId && data.programSessionId === programSessionId;
+      const matchesLegacy =
+        !data.programSessionId &&
+        date &&
+        data.sessionDate === date &&
+        (isLegacyKey || programSessionId.includes(data.programType || 'sunday_school'));
+
+      if (matchesExplicitId || matchesProgram || matchesLegacy) {
+        deletedCustodyIds.add(d.id);
+        await deleteOrSoftDelete(d.ref);
+      }
+    }
+
+    // 2. Delete matching attendance logs for this child + program session
+    const attSnap = await this.getAttendanceCollection(cId)
+      .where('childDocId', '==', childDocId)
+      .get();
+
+    for (const d of attSnap.docs) {
+      const data = d.data() as any;
+      const matchesProgram = data.programSessionId && data.programSessionId === programSessionId;
+      const matchesDeterministic =
+        d.id === `att_${programSessionId}_${childDocId}` ||
+        d.id === `absent_${programSessionId}_${childDocId}`;
+      const matchesLegacy =
+        !data.programSessionId &&
+        date &&
+        data.sessionDate === date &&
+        (isLegacyKey || programSessionId.includes(data.programType || 'sunday_school'));
+
+      if (matchesProgram || matchesDeterministic || matchesLegacy) {
+        await deleteOrSoftDelete(d.ref);
+      }
+    }
+
+    // 3. Hide this program session for this child only & reset active custody status if deleted
+    const childRef = this.getKidsCollection(cId).doc(childDocId);
+    const childSnap = await childRef.get();
+    const childUpdate: Record<string, any> = {
+      hiddenProgramSessionIds: firestore.FieldValue.arrayUnion(programSessionId),
+      updatedAt: now,
+    };
+
+    const childData = childSnap.data() as any;
+    if (
+      childData &&
+      childData.custodyStatus === 'checked_in' &&
+      childData.currentSessionId &&
+      deletedCustodyIds.has(childData.currentSessionId)
+    ) {
+      childUpdate.custodyStatus = 'checked_out';
+      childUpdate.activePickupCode = '';
+      childUpdate.currentSessionId = '';
+    }
+
+    await childRef.update(childUpdate);
   }
 
   /**

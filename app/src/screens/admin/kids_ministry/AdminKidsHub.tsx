@@ -44,7 +44,7 @@ import { AdminTabContext } from '../../../context/AdminTabContext';
 import KidsMinistryService from '../../../services/KidsMinistryService';
 import { CustomAlert } from '../../../components/CustomAlert';
 import { useAdminTheme } from '../../../utils/adminThemeHelper';
-import { formatDateDisplay } from '../../../utils/DateUtils';
+import { formatDateDisplay, toStandardDateString } from '../../../utils/DateUtils';
 import {
   ChildRecord,
   KidsClassRecord,
@@ -65,6 +65,7 @@ import {
   splitCurriculumLessons,
   formatCurriculumDateDisplay,
   getCurriculumWeekDate,
+  getKidsProgramVisual,
 } from '../../../types/KidsMinistryTypes';
 import TeacherEnrollChildModal from '../../kids_ministry/components/TeacherEnrollChildModal';
 import EditClassModal from './components/EditClassModal';
@@ -81,20 +82,6 @@ import ChildProfileDetailModal from './components/ChildProfileDetailModal';
 import AdminSessionManagerModal from './components/AdminSessionManagerModal';
 
 const { width } = Dimensions.get('window');
-
-const getProgramEmoji = (type?: string): string => {
-  switch (type) {
-    case 'vbs': return '☀️';
-    case 'special_meeting': return '✨';
-    case 'childrens_worship': return '🎵';
-    case 'summer_camp': return '⛺';
-    case 'bible_study': return '📜';
-    case 'other': return '🎯';
-    case 'sunday_school':
-    default:
-      return '📖';
-  }
-};
 
 const formatDateMonthYear = (dateStr: string | null | undefined): string => {
   if (!dateStr) return '';
@@ -264,9 +251,7 @@ export default function AdminKidsHub({ navigation }: any) {
               await KidsMinistryService.deleteProgramSession(churchId, target.id);
               if (selectedSession?.id === target.id) {
                 const remaining = programSessions.filter(s => s.id !== target.id);
-                if (remaining.length > 0) {
-                  setSelectedSession(remaining[0]);
-                }
+                setSelectedSession(remaining.length > 0 ? remaining[0] : null);
               }
             } catch (e: any) {
               Alert.alert('Error', e?.message || 'Could not delete session.');
@@ -355,18 +340,14 @@ export default function AdminKidsHub({ navigation }: any) {
           const matching = sessionList.find(s => s.id === prev.id);
           if (matching) return matching;
         }
-        const today = new Date().toISOString().split('T')[0];
+        if (sessionList.length === 0) return null;
+        const today = toStandardDateString(new Date());
         const todaySess = sessionList.find(s => s.date === today && s.status === 'active');
         return todaySess || sessionList[0] || null;
       });
     });
 
-    // Ensure default Sunday School session exists for today
-    KidsMinistryService.getOrCreateDailyProgramSession(churchId, 'sunday_school')
-      .then(defaultSess => {
-        setSelectedSession(prev => prev || defaultSess);
-      })
-      .catch(() => {});
+    // Do NOT auto-create a Sunday School session with today's date; wait for explicit admin creation.
 
     // Reconcile any unlinked household member profile photos onto Kids records
     KidsMinistryService.reconcileAllChildPhotos(churchId).catch(() => {});
@@ -630,334 +611,495 @@ export default function AdminKidsHub({ navigation }: any) {
           {/* ==================================================== */}
           {activeTab === 'overview' && (
             <>
-              {/* ── PROGRAM ATTENDANCE SESSION HERO CARD ── */}
-              <View style={[styles.sessionHeroCard, { backgroundColor: cardSurface, borderColor }]}>
-                {/* Top Row: Live Status Pill & Manage Sessions Button */}
-                <View style={styles.sessionTopRow}>
-                  <View
-                    style={[
-                      styles.liveStatusPill,
-                      {
-                        backgroundColor:
-                          selectedSession?.status === 'active'
-                            ? isDark
-                              ? 'rgba(16, 185, 129, 0.16)'
-                              : '#ECFDF5'
-                            : isDark
-                            ? 'rgba(245, 158, 11, 0.16)'
-                            : '#FFFBEB',
-                        borderColor:
-                          selectedSession?.status === 'active'
-                            ? isDark
-                              ? 'rgba(16, 185, 129, 0.35)'
-                              : '#A7F3D0'
-                            : isDark
-                            ? 'rgba(245, 158, 11, 0.35)'
-                            : '#FDE68A',
-                      },
-                    ]}
-                  >
-                    <View
-                      style={[
-                        styles.livePulseDot,
-                        { backgroundColor: selectedSession?.status === 'active' ? '#10B981' : '#F59E0B' },
-                      ]}
-                    />
-                    <Text
-                      style={[
-                        styles.liveStatusText,
-                        { color: selectedSession?.status === 'active' ? '#059669' : '#D97706' },
-                      ]}
-                    >
-                      {selectedSession?.status === 'active'
-                        ? 'ACTIVE PROGRAM SESSION'
-                        : (selectedSession?.status?.toUpperCase() || 'SESSION')}
-                    </Text>
-                  </View>
+              {/* ── REDESIGNED MODERN PROGRAM ATTENDANCE CARD ── */}
+              {(() => {
+                if (!selectedSession) {
+                  return (
+                    <View style={[styles.compactEmptySessionCard, { backgroundColor: cardSurface, borderColor }]}>
+                      <View style={styles.compactEmptyTopRow}>
+                        <View
+                          style={[
+                            styles.compactEmptyIconBox,
+                            {
+                              backgroundColor: isDark ? 'rgba(59, 130, 246, 0.14)' : '#EFF6FF',
+                              borderColor: isDark ? 'rgba(96, 165, 250, 0.3)' : '#BFDBFE',
+                            },
+                          ]}
+                        >
+                          <Calendar size={18} color={isDark ? '#60A5FA' : '#2563EB'} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.compactEmptyTitle, { color: primaryText }]} numberOfLines={1}>
+                            No Program Session Created
+                          </Text>
+                          <Text style={[styles.compactEmptySub, { color: secondaryText }]} numberOfLines={2}>
+                            Schedule a Sunday School, VBS, or event date to enable check-in.
+                          </Text>
+                        </View>
+                      </View>
 
-                  <View style={styles.sessionHeroActionsRow}>
-                    {/* Edit Active Session Button */}
-                    <TouchableOpacity
-                      style={[styles.sessionActionBtn, { backgroundColor: secondarySurface, borderColor }]}
-                      onPress={() => handleOpenEditSession(selectedSession)}
-                      activeOpacity={0.8}
-                    >
-                      <Edit3 size={12.5} color={primaryText} />
-                      <Text style={[styles.sessionActionBtnText, { color: primaryText }]}>Edit</Text>
-                    </TouchableOpacity>
-
-                    {/* Delete Active Session Button */}
-                    <TouchableOpacity
-                      style={[
-                        styles.sessionActionBtn,
-                        styles.deleteActionBtn,
-                        {
-                          backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2',
-                          borderColor: isDark ? 'rgba(239, 68, 68, 0.35)' : '#FCA5A5',
-                        },
-                      ]}
-                      onPress={() => handleDeleteSession(selectedSession)}
-                      activeOpacity={0.8}
-                    >
-                      <Trash2 size={12.5} color="#EF4444" />
-                    </TouchableOpacity>
-
-                    {/* + Add Button ("keep the button +add like this") */}
-                    <TouchableOpacity
-                      style={[styles.addSessionBtn, { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }]}
-                      onPress={handleOpenAddSession}
-                      activeOpacity={0.85}
-                    >
-                      <Plus size={13} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.4} />
-                      <Text style={[styles.addSessionBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>
-                        + Add
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                {/* Session Main Title Row */}
-                <View style={styles.sessionHeroTitleRow}>
-                  <View style={styles.programEmojiBox}>
-                    <Text style={{ fontSize: 22 }}>
-                      {getProgramEmoji(selectedSession?.programType)}
-                    </Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.selectedSessionTitle, { color: primaryText }]} numberOfLines={1}>
-                      {selectedSession?.programTitle || 'Sunday School'}
-                    </Text>
-                    <Text style={[styles.programTypeCategoryLabel, { color: secondaryText }]}>
-                      {selectedSession?.programType
-                        ? selectedSession.programType.replace(/_/g, ' ').toUpperCase()
-                        : 'SUNDAY SCHOOL'}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Metadata Pills Row (Date Month Year, Time, Faculty) */}
-                <View style={styles.sessionMetaPillsRow}>
-                  {/* Date Pill (Date Month Year) */}
-                  <View style={[styles.metaPill, { backgroundColor: secondarySurface, borderColor }]}>
-                    <Calendar size={13} color="#F59E0B" />
-                    <Text style={[styles.metaPillText, { color: primaryText }]}>
-                      {formatDateMonthYear(selectedSession?.date)}
-                    </Text>
-                    <Text style={[styles.metaPillSub, { color: secondaryText }]}>
-                      ({formatDateDisplay(selectedSession?.date)})
-                    </Text>
-                  </View>
-
-                  {/* Start Time Pill */}
-                  <View style={[styles.metaPill, { backgroundColor: secondarySurface, borderColor }]}>
-                    <Clock size={13} color="#3B82F6" />
-                    <Text style={[styles.metaPillText, { color: primaryText }]}>
-                      {selectedSession?.startTime || '09:30 AM'}
-                    </Text>
-                  </View>
-
-                  {/* Assigned Faculty Pill */}
-                  <View style={[styles.metaPill, { backgroundColor: secondarySurface, borderColor }]}>
-                    <Users size={13} color="#10B981" />
-                    <Text style={[styles.metaPillText, { color: primaryText }]}>
-                      {selectedSession?.assignedTeacherIds?.length || 0}{' '}
-                      {(selectedSession?.assignedTeacherIds?.length || 0) === 1 ? 'Faculty' : 'Faculty'}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Attendance Finalization Status / Action Row */}
-                {selectedSession ? (
-                  <View
-                    style={[
-                      styles.finalizeBar,
-                      {
-                        backgroundColor: selectedSession.attendanceFinalized
-                          ? isDark
-                            ? 'rgba(16, 185, 129, 0.14)'
-                            : '#ECFDF5'
-                          : secondarySurface,
-                        borderColor: selectedSession.attendanceFinalized
-                          ? isDark
-                            ? 'rgba(52, 211, 153, 0.35)'
-                            : '#A7F3D0'
-                          : borderColor,
-                      },
-                    ]}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text
+                      <TouchableOpacity
                         style={[
-                          styles.finalizeBarTitle,
+                          styles.compactCreateSessionBtn,
                           {
-                            color: selectedSession.attendanceFinalized
-                              ? '#10B981'
-                              : primaryText,
+                            backgroundColor: isDark ? '#FFFFFF' : '#0F172A',
                           },
                         ]}
-                      >
-                        {selectedSession.attendanceFinalized
-                          ? `Attendance Finalized ✓ · Present: ${selectedSession.presentCount ?? sessionCustodyRecords.length} · Absent: ${selectedSession.absentCount ?? 0}`
-                          : 'Attendance Open · Mark Absent Only After Finalizing'}
-                      </Text>
-                    </View>
-                    {!selectedSession.attendanceFinalized && (
-                      <TouchableOpacity
-                        style={[
-                          styles.finalizeActionBtn,
-                          { backgroundColor: '#10B981', opacity: finalizingSession ? 0.7 : 1 },
-                        ]}
-                        onPress={handleFinalizeSelectedSession}
-                        disabled={finalizingSession}
+                        onPress={handleOpenAddSession}
                         activeOpacity={0.85}
                       >
-                        {finalizingSession ? (
-                          <ActivityIndicator size="small" color="#FFFFFF" />
-                        ) : (
-                          <Text style={styles.finalizeActionBtnText}>Finalize Attendance</Text>
-                        )}
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                ) : null}
-
-                {/* Session Switcher Tray (Available Sessions) */}
-                {programSessions.length > 1 && (
-                  <View style={[styles.sessionSwitcherTray, { borderTopColor: borderColor }]}>
-                    <View style={styles.trayHeaderRow}>
-                      <Text style={[styles.trayHeading, { color: secondaryText }]}>
-                        PROGRAM SESSIONS · TAP TO SWITCH
-                      </Text>
-                      <TouchableOpacity
-                        onPress={() => {
-                          setSessionToEdit(null);
-                          setSessionManagerTab('list');
-                          setShowSessionManagerModal(true);
-                        }}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={[styles.trayCount, { color: '#3B82F6', fontWeight: '700' }]}>
-                          Manage All ({filteredSessions.length}) →
+                        <Plus size={14} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.5} />
+                        <Text
+                          style={[
+                            styles.compactCreateSessionBtnText,
+                            { color: isDark ? '#000000' : '#FFFFFF' },
+                          ]}
+                        >
+                          Create Program Session
                         </Text>
                       </TouchableOpacity>
                     </View>
+                  );
+                }
 
-                    {/* Quick Program Type Filter Chips */}
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={styles.sessionTypeChipsRow}
-                    >
-                      {(
-                        [
-                          'all',
-                          'sunday_school',
-                          'vbs',
-                          'special_meeting',
-                          'childrens_worship',
-                          'summer_camp',
-                          'bible_study',
-                        ] as const
-                      ).map(pType => {
-                        const isSel = sessionFilterType === pType;
-                        const labels: Record<string, string> = {
-                          all: 'All',
-                          sunday_school: 'Sunday School',
-                          vbs: 'VBS',
-                          special_meeting: 'Special',
-                          childrens_worship: 'Worship',
-                          summer_camp: 'Camps',
-                          bible_study: 'Bible Study',
-                        };
-                        return (
-                          <TouchableOpacity
-                            key={pType}
-                            style={[
-                              styles.sessionTypeChip,
-                              { backgroundColor: secondarySurface, borderColor },
-                              isSel && {
-                                backgroundColor: isDark ? '#FFFFFF' : '#0F172A',
-                                borderColor: isDark ? '#FFFFFF' : '#0F172A',
-                              },
-                            ]}
-                            onPress={() => setSessionFilterType(pType)}
-                          >
-                            <Text
+                const visual = getKidsProgramVisual(selectedSession.programType, isDark);
+                const displayTitle = selectedSession.programTitle || visual.label;
+                const normTitle = displayTitle.trim().toLowerCase();
+                const showDistinctCategory =
+                  normTitle !== visual.label.trim().toLowerCase() &&
+                  normTitle !== visual.shortLabel.trim().toLowerCase();
+
+                const isFinalized = Boolean(selectedSession.attendanceFinalized);
+                const statusMeta = isFinalized
+                  ? {
+                      label: 'FINALIZED',
+                      dot: '#10B981',
+                      text: isDark ? '#34D399' : '#047857',
+                      bg: isDark ? 'rgba(16, 185, 129, 0.16)' : '#ECFDF5',
+                      border: isDark ? 'rgba(52, 211, 153, 0.35)' : '#A7F3D0',
+                    }
+                  : selectedSession.status === 'upcoming'
+                  ? {
+                      label: 'UPCOMING',
+                      dot: '#3B82F6',
+                      text: isDark ? '#60A5FA' : '#1D4ED8',
+                      bg: isDark ? 'rgba(59, 130, 246, 0.16)' : '#EFF6FF',
+                      border: isDark ? 'rgba(96, 165, 250, 0.35)' : '#BFDBFE',
+                    }
+                  : selectedSession.status === 'completed'
+                  ? {
+                      label: 'COMPLETED',
+                      dot: '#F59E0B',
+                      text: isDark ? '#FBBF24' : '#B45309',
+                      bg: isDark ? 'rgba(245, 158, 11, 0.16)' : '#FFFBEB',
+                      border: isDark ? 'rgba(251, 191, 36, 0.35)' : '#FDE68A',
+                    }
+                  : {
+                      label: 'ACTIVE',
+                      dot: '#10B981',
+                      text: isDark ? '#34D399' : '#059669',
+                      bg: isDark ? 'rgba(16, 185, 129, 0.16)' : '#ECFDF5',
+                      border: isDark ? 'rgba(52, 211, 153, 0.35)' : '#A7F3D0',
+                    };
+
+                const presentTotal = selectedSession.presentCount ?? sessionCustodyRecords.length;
+                const absentTotal = selectedSession.absentCount ?? 0;
+                const liveCheckedInCount = sessionCustodyRecords.filter(c => c.status === 'active').length;
+                const assignedFacultyCount = selectedSession.assignedTeacherIds?.length || 0;
+
+                return (
+                  <View style={[styles.sessionHeroCard, { backgroundColor: cardSurface, borderColor }]}>
+                    {/* Program Color Accent Strip */}
+                    <View style={[styles.programCardAccentBar, { backgroundColor: visual.accentColor }]} />
+
+                    <View style={styles.sessionCardBody}>
+                      {/* Header Row: Icon + Program Name (+ Single Category Badge if distinct) + Status Pill */}
+                      <View style={styles.sessionHeaderRow}>
+                        <View
+                          style={[
+                            styles.programEmojiBox,
+                            { backgroundColor: visual.softBg, borderColor: visual.softBorder },
+                          ]}
+                        >
+                          <Text style={{ fontSize: 23 }}>{visual.emoji}</Text>
+                        </View>
+
+                        <View style={{ flex: 1, paddingRight: 8 }}>
+                          {showDistinctCategory && (
+                            <View
                               style={[
-                                styles.sessionTypeChipText,
-                                { color: secondaryText },
-                                isSel && { color: isDark ? '#000000' : '#FFFFFF', fontWeight: '800' },
+                                styles.categoryTagInline,
+                                { backgroundColor: visual.softBg, borderColor: visual.softBorder },
                               ]}
                             >
-                              {labels[pType]}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </ScrollView>
-
-                    {/* Horizontal Sessions Carousel */}
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={styles.sessionsCarousel}
-                    >
-                      {filteredSessions.map(sess => {
-                        const isSelected = selectedSession?.id === sess.id;
-                        return (
-                          <TouchableOpacity
-                            key={sess.id}
-                            style={[
-                              styles.sessionCardPill,
-                              { backgroundColor: secondarySurface, borderColor },
-                              isSelected && {
-                                borderColor: '#10B981',
-                                borderWidth: 1.5,
-                                backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : '#ECFDF5',
-                              },
-                            ]}
-                            onPress={() => setSelectedSession(sess)}
-                            activeOpacity={0.8}
-                          >
-                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-                              <Text style={{ fontSize: 14 }}>
-                                {getProgramEmoji(sess.programType)}
+                              <Text style={[styles.categoryTagInlineText, { color: visual.accentColor }]}>
+                                {visual.shortLabel.toUpperCase()}
                               </Text>
-                              {isSelected ? (
-                                <View style={styles.activeTagBadge}>
-                                  <Text style={styles.activeTagText}>Active</Text>
-                                </View>
-                              ) : (
-                                <View
-                                  style={[
-                                    styles.miniDot,
-                                    { backgroundColor: sess.status === 'active' ? '#10B981' : '#F59E0B' },
-                                  ]}
-                                />
+                            </View>
+                          )}
+                          <Text style={[styles.selectedSessionTitle, { color: primaryText }]} numberOfLines={2}>
+                            {displayTitle}
+                          </Text>
+                          <Text style={[styles.programSessionSub, { color: secondaryText }]} numberOfLines={1}>
+                            {selectedSession.description?.trim() || 'Kids Ministry Attendance Session'}
+                          </Text>
+                        </View>
+
+                        <View
+                          style={[
+                            styles.liveStatusPill,
+                            { backgroundColor: statusMeta.bg, borderColor: statusMeta.border },
+                          ]}
+                        >
+                          <View style={[styles.livePulseDot, { backgroundColor: statusMeta.dot }]} />
+                          <Text style={[styles.liveStatusText, { color: statusMeta.text }]}>
+                            {statusMeta.label}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* 3-Column Equal Metadata Grid (Single Clear Date, Time, Faculty) */}
+                      <View style={styles.sessionMetaGrid}>
+                        <View style={[styles.metaGridTile, { backgroundColor: secondarySurface, borderColor }]}>
+                          <View style={styles.metaGridLabelRow}>
+                            <Calendar size={12} color={visual.accentColor} />
+                            <Text style={[styles.metaGridEyebrow, { color: secondaryText }]}>DATE</Text>
+                          </View>
+                          <Text style={[styles.metaGridValue, { color: primaryText }]} numberOfLines={1}>
+                            {formatDateMonthYear(selectedSession.date) || 'Not Set'}
+                          </Text>
+                        </View>
+
+                        <View style={[styles.metaGridTile, { backgroundColor: secondarySurface, borderColor }]}>
+                          <View style={styles.metaGridLabelRow}>
+                            <Clock size={12} color="#3B82F6" />
+                            <Text style={[styles.metaGridEyebrow, { color: secondaryText }]}>TIME</Text>
+                          </View>
+                          <Text style={[styles.metaGridValue, { color: primaryText }]} numberOfLines={1}>
+                            {selectedSession.startTime || 'Not Set'}
+                          </Text>
+                        </View>
+
+                        <View style={[styles.metaGridTile, { backgroundColor: secondarySurface, borderColor }]}>
+                          <View style={styles.metaGridLabelRow}>
+                            <Users size={12} color="#10B981" />
+                            <Text style={[styles.metaGridEyebrow, { color: secondaryText }]}>FACULTY</Text>
+                          </View>
+                          <Text style={[styles.metaGridValue, { color: primaryText }]} numberOfLines={1}>
+                            {assignedFacultyCount} Assigned
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Attendance Summary Banner */}
+                      {selectedSession ? (
+                        <View
+                          style={[
+                            styles.finalizeBar,
+                            {
+                              backgroundColor: isFinalized
+                                ? isDark
+                                  ? 'rgba(16, 185, 129, 0.12)'
+                                  : '#F0FDF4'
+                                : secondarySurface,
+                              borderColor: isFinalized
+                                ? isDark
+                                  ? 'rgba(52, 211, 153, 0.35)'
+                                  : '#BBF7D0'
+                                : borderColor,
+                            },
+                          ]}
+                        >
+                          <View style={styles.finalizeLeft}>
+                            <CheckCircle
+                              size={16}
+                              color={isFinalized ? '#10B981' : '#3B82F6'}
+                            />
+                            <View style={{ flex: 1 }}>
+                              <Text
+                                style={[
+                                  styles.finalizeBarTitle,
+                                  { color: isFinalized ? (isDark ? '#34D399' : '#047857') : primaryText },
+                                ]}
+                              >
+                                {isFinalized ? 'Attendance Finalized' : 'Attendance Open'}
+                              </Text>
+                              {!isFinalized && (
+                                <Text style={[styles.finalizeBarSub, { color: secondaryText }]}>
+                                  {liveCheckedInCount} checked in · Tap finalize after service
+                                </Text>
                               )}
                             </View>
+                          </View>
 
-                            <Text
+                          {isFinalized ? (
+                            <View style={styles.attendanceStatsPills}>
+                              <View
+                                style={[
+                                  styles.attStatChip,
+                                  {
+                                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.2)' : '#DCFCE7',
+                                  },
+                                ]}
+                              >
+                                <Text style={[styles.attStatChipText, { color: isDark ? '#6EE7B7' : '#047857' }]}>
+                                  {presentTotal} Present
+                                </Text>
+                              </View>
+                              <View
+                                style={[
+                                  styles.attStatChip,
+                                  {
+                                    backgroundColor: isDark ? 'rgba(239, 68, 68, 0.2)' : '#FEE2E2',
+                                  },
+                                ]}
+                              >
+                                <Text style={[styles.attStatChipText, { color: isDark ? '#FCA5A5' : '#B91C1C' }]}>
+                                  {absentTotal} Absent
+                                </Text>
+                              </View>
+                            </View>
+                          ) : (
+                            <TouchableOpacity
                               style={[
-                                styles.sessionPillTitle,
-                                { color: primaryText },
-                                isSelected && { fontWeight: '800', color: isDark ? '#34D399' : '#059669' },
+                                styles.finalizeActionBtn,
+                                { backgroundColor: '#10B981', opacity: finalizingSession ? 0.7 : 1 },
                               ]}
-                              numberOfLines={1}
+                              onPress={handleFinalizeSelectedSession}
+                              disabled={finalizingSession}
+                              activeOpacity={0.85}
                             >
-                              {sess.programTitle}
-                            </Text>
+                              {finalizingSession ? (
+                                <ActivityIndicator size="small" color="#FFFFFF" />
+                              ) : (
+                                <Text style={styles.finalizeActionBtnText}>Finalize</Text>
+                              )}
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      ) : null}
 
-                            <Text style={[styles.sessionPillDate, { color: secondaryText }]}>
-                              {formatDateMonthYear(sess.date)} ({formatDateDisplay(sess.date)})
+                      {/* Clean Uniform 3-Button Action Toolbar (Add | Edit | Delete) */}
+                      <View style={styles.sessionActionsToolbar}>
+                        <TouchableOpacity
+                          style={[
+                            styles.toolbarPrimaryBtn,
+                            { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' },
+                          ]}
+                          onPress={handleOpenAddSession}
+                          activeOpacity={0.85}
+                        >
+                          <Plus size={14} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.5} />
+                          <Text
+                            style={[
+                              styles.toolbarPrimaryBtnText,
+                              { color: isDark ? '#000000' : '#FFFFFF' },
+                            ]}
+                          >
+                            Add
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.toolbarSecondaryBtn,
+                            { backgroundColor: secondarySurface, borderColor },
+                          ]}
+                          onPress={() => handleOpenEditSession(selectedSession)}
+                          activeOpacity={0.82}
+                        >
+                          <Edit3 size={14} color={primaryText} />
+                          <Text style={[styles.toolbarSecondaryBtnText, { color: primaryText }]}>
+                            Edit
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.toolbarDeleteBtn,
+                            {
+                              backgroundColor: isDark ? 'rgba(239, 68, 68, 0.14)' : '#FEF2F2',
+                              borderColor: isDark ? 'rgba(239, 68, 68, 0.35)' : '#FECACA',
+                            },
+                          ]}
+                          onPress={() => handleDeleteSession(selectedSession)}
+                          activeOpacity={0.82}
+                        >
+                          <Trash2 size={14} color="#EF4444" />
+                          <Text style={styles.toolbarDeleteBtnText}>Delete</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {/* Session Switcher Tray */}
+                      {programSessions.length > 0 && (
+                        <View style={[styles.sessionSwitcherTray, { borderTopColor: borderColor }]}>
+                          <View style={styles.trayHeaderRow}>
+                            <Text style={[styles.trayHeading, { color: secondaryText }]}>
+                              PROGRAM SESSIONS
                             </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </ScrollView>
+                            <TouchableOpacity
+                              style={[
+                                styles.manageAllBtn,
+                                {
+                                  backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF',
+                                },
+                              ]}
+                              onPress={() => {
+                                setSessionToEdit(null);
+                                setSessionManagerTab('list');
+                                setShowSessionManagerModal(true);
+                              }}
+                              activeOpacity={0.8}
+                            >
+                              <Text style={[styles.trayCount, { color: isDark ? '#60A5FA' : '#2563EB' }]}>
+                                Manage All ({filteredSessions.length})
+                              </Text>
+                              <ChevronRight size={13} color={isDark ? '#60A5FA' : '#2563EB'} />
+                            </TouchableOpacity>
+                          </View>
+
+                          {programSessions.length > 1 && (
+                            <>
+                              {/* Quick Program Type Filter Chips */}
+                              <ScrollView
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                                contentContainerStyle={styles.sessionTypeChipsRow}
+                              >
+                                {(
+                                  [
+                                    'all',
+                                    'sunday_school',
+                                    'vbs',
+                                    'special_meeting',
+                                    'childrens_worship',
+                                    'summer_camp',
+                                    'bible_study',
+                                  ] as const
+                                ).map(pType => {
+                                  const isSel = sessionFilterType === pType;
+                                  const chipLabel =
+                                    pType === 'all'
+                                      ? 'All'
+                                      : getKidsProgramVisual(pType, isDark).shortLabel;
+                                  return (
+                                    <TouchableOpacity
+                                      key={pType}
+                                      style={[
+                                        styles.sessionTypeChip,
+                                        { backgroundColor: secondarySurface, borderColor },
+                                        isSel && {
+                                          backgroundColor: isDark ? '#FFFFFF' : '#0F172A',
+                                          borderColor: isDark ? '#FFFFFF' : '#0F172A',
+                                        },
+                                      ]}
+                                      onPress={() => setSessionFilterType(pType)}
+                                    >
+                                      <Text
+                                        style={[
+                                          styles.sessionTypeChipText,
+                                          { color: secondaryText },
+                                          isSel && {
+                                            color: isDark ? '#000000' : '#FFFFFF',
+                                            fontWeight: '800',
+                                          },
+                                        ]}
+                                      >
+                                        {chipLabel}
+                                      </Text>
+                                    </TouchableOpacity>
+                                  );
+                                })}
+                              </ScrollView>
+
+                              {/* Horizontal Sessions Carousel */}
+                              <ScrollView
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                                contentContainerStyle={styles.sessionsCarousel}
+                              >
+                                {filteredSessions.map(sess => {
+                                  const isSelected = selectedSession?.id === sess.id;
+                                  const sessVisual = getKidsProgramVisual(sess.programType, isDark);
+                                  const pillBadge = sess.attendanceFinalized
+                                    ? 'Finalized'
+                                    : isSelected
+                                    ? 'Active'
+                                    : sess.status === 'upcoming'
+                                    ? 'Upcoming'
+                                    : 'Open';
+                                  return (
+                                    <TouchableOpacity
+                                      key={sess.id}
+                                      style={[
+                                        styles.sessionCardPill,
+                                        { backgroundColor: secondarySurface, borderColor },
+                                        isSelected && {
+                                          borderColor: sessVisual.accentColor,
+                                          borderWidth: 1.5,
+                                          backgroundColor: sessVisual.softBg,
+                                        },
+                                      ]}
+                                      onPress={() => setSelectedSession(sess)}
+                                      activeOpacity={0.82}
+                                    >
+                                      <View style={styles.sessionPillTopRow}>
+                                        <View
+                                          style={[
+                                            styles.sessionPillEmojiWrap,
+                                            { backgroundColor: isSelected ? cardSurface : sessVisual.softBg },
+                                          ]}
+                                        >
+                                          <Text style={{ fontSize: 13 }}>{sessVisual.emoji}</Text>
+                                        </View>
+                                        <View
+                                          style={[
+                                            styles.activeTagBadge,
+                                            {
+                                              backgroundColor: isSelected
+                                                ? sessVisual.accentColor
+                                                : isDark
+                                                ? 'rgba(148, 163, 184, 0.2)'
+                                                : '#E2E8F0',
+                                            },
+                                          ]}
+                                        >
+                                          <Text
+                                            style={[
+                                              styles.activeTagText,
+                                              {
+                                                color: isSelected ? '#FFFFFF' : secondaryText,
+                                              },
+                                            ]}
+                                          >
+                                            {pillBadge}
+                                          </Text>
+                                        </View>
+                                      </View>
+
+                                      <Text
+                                        style={[styles.sessionPillTitle, { color: primaryText }]}
+                                        numberOfLines={1}
+                                      >
+                                        {sess.programTitle}
+                                      </Text>
+
+                                      <Text style={[styles.sessionPillDate, { color: secondaryText }]} numberOfLines={1}>
+                                        {formatDateMonthYear(sess.date)}
+                                        {sess.startTime ? ` · ${sess.startTime}` : ''}
+                                      </Text>
+                                    </TouchableOpacity>
+                                  );
+                                })}
+                              </ScrollView>
+                            </>
+                          )}
+                        </View>
+                      )}
+                    </View>
                   </View>
-                )}
-              </View>
+                );
+              })()}
 
               {/* 4 Clean & Truthful Program-Scoped Executive Metric Cards */}
               <View style={styles.kpiGrid}>
@@ -985,7 +1127,7 @@ export default function AdminKidsHub({ navigation }: any) {
                   </View>
                   <Text style={[styles.kpiTitle, { color: primaryText }]}>Checked-In</Text>
                   <Text style={[styles.kpiSub, { color: secondaryText }]} numberOfLines={1}>
-                    {selectedSession?.programTitle || 'This session'}
+                    {selectedSession?.programTitle || 'No active session'}
                   </Text>
                 </View>
 
@@ -996,8 +1138,9 @@ export default function AdminKidsHub({ navigation }: any) {
                       <Clock size={16} color="#FBBF24" />
                     </View>
                     <Text style={[styles.kpiNumber, { color: '#FBBF24' }]}>
-                      {sessionTeacherAttendance.length}/
-                      {selectedSession?.assignedTeacherIds?.length || teachers.length || 5}
+                      {selectedSession
+                        ? `${sessionTeacherAttendance.length}/${selectedSession.assignedTeacherIds?.length || teachers.length || 0}`
+                        : '0/0'}
                     </Text>
                   </View>
                   <Text style={[styles.kpiTitle, { color: primaryText }]}>Faculty On Duty</Text>
@@ -1022,20 +1165,33 @@ export default function AdminKidsHub({ navigation }: any) {
               {/* Active Program Attendance Stations */}
               <View style={{ gap: 8, marginTop: 14, marginBottom: 4 }}>
                 <Text style={[styles.sectionHeading, { color: secondaryText }]}>
-                  ACTIVE ATTENDANCE STATIONS · {selectedSession?.programTitle?.toUpperCase() || 'SUNDAY SCHOOL'}
+                  ACTIVE ATTENDANCE STATIONS ·{' '}
+                  {selectedSession ? selectedSession.programTitle.toUpperCase() : 'NO SESSION SELECTED'}
                 </Text>
 
                 <View style={styles.stationsRow}>
                   {/* Face Scan Entrance Check-In */}
                   <TouchableOpacity
                     style={[styles.stationCard, { backgroundColor: cardSurface, borderColor }]}
-                    onPress={() =>
+                    onPress={() => {
+                      if (!selectedSession) {
+                        Alert.alert(
+                          'Create a Program Session First',
+                          'Please create a program session with its event date first so face scans and check-ins are linked to the right event.',
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Create Session', onPress: handleOpenAddSession },
+                          ]
+                        );
+                        return;
+                      }
                       navigation.navigate('KidsFaceScanKiosk', {
-                        targetSessionId: selectedSession?.id,
-                        sessionTitle: selectedSession?.programTitle || 'Sunday School',
-                        programType: selectedSession?.programType || 'sunday_school',
-                      })
-                    }
+                        targetSessionId: selectedSession.id,
+                        sessionTitle: selectedSession.programTitle,
+                        programType: selectedSession.programType,
+                        sessionDate: selectedSession.date,
+                      });
+                    }}
                     activeOpacity={0.85}
                   >
                     <View style={[styles.stationIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
@@ -1043,7 +1199,9 @@ export default function AdminKidsHub({ navigation }: any) {
                     </View>
                     <Text style={[styles.stationTitle, { color: primaryText }]}>Entrance Check-In</Text>
                     <Text style={[styles.stationSub, { color: secondaryText }]}>
-                      Face, QR & Manual
+                      {selectedSession
+                        ? `Face, QR · ${formatDateMonthYear(selectedSession.date)}`
+                        : 'Select or create a session'}
                     </Text>
                     <View style={styles.stationArrow}>
                       <ChevronRight size={14} color="#60A5FA" />
@@ -1053,20 +1211,36 @@ export default function AdminKidsHub({ navigation }: any) {
                   {/* Teacher Exit Scanner */}
                   <TouchableOpacity
                     style={[styles.stationCard, { backgroundColor: cardSurface, borderColor }]}
-                    onPress={() =>
+                    onPress={() => {
+                      if (!selectedSession) {
+                        Alert.alert(
+                          'Create a Program Session First',
+                          'Please create or select a program session before opening the dismissal scanner.',
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Create Session', onPress: handleOpenAddSession },
+                          ]
+                        );
+                        return;
+                      }
                       navigation.navigate('KidsCheckOutScanner', {
-                        targetSessionId: selectedSession?.id,
-                        sessionTitle: selectedSession?.programTitle || 'Sunday School',
-                        programType: selectedSession?.programType || 'sunday_school',
-                      })
-                    }
+                        targetSessionId: selectedSession.id,
+                        sessionTitle: selectedSession.programTitle,
+                        programType: selectedSession.programType,
+                        sessionDate: selectedSession.date,
+                      });
+                    }}
                     activeOpacity={0.85}
                   >
                     <View style={[styles.stationIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
                       <UserCheck size={18} color="#34D399" />
                     </View>
                     <Text style={[styles.stationTitle, { color: primaryText }]}>Teacher Exit</Text>
-                    <Text style={[styles.stationSub, { color: secondaryText }]}>Dismissal scanner</Text>
+                    <Text style={[styles.stationSub, { color: secondaryText }]}>
+                      {selectedSession
+                        ? `Dismissal · ${formatDateMonthYear(selectedSession.date)}`
+                        : 'Dismissal scanner'}
+                    </Text>
                     <View style={styles.stationArrow}>
                       <ChevronRight size={14} color="#34D399" />
                     </View>
@@ -2064,24 +2238,116 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   sessionHeroCard: {
-    borderRadius: 20,
-    padding: 16,
+    borderRadius: 22,
     borderWidth: 1,
-    gap: 12,
+    overflow: 'hidden',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 2,
   },
-  sessionTopRow: {
+  compactEmptySessionCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 14,
+    gap: 11,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  compactEmptyTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 11,
+  },
+  compactEmptyIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  compactEmptyTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  compactEmptySub: {
+    fontSize: 11.5,
+    lineHeight: 16,
+    marginTop: 1.5,
+  },
+  compactCreateSessionBtn: {
+    height: 36,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+  },
+  compactCreateSessionBtnText: {
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  programCardAccentBar: {
+    height: 4,
+    width: '100%',
+  },
+  sessionCardBody: {
+    padding: 16,
+    gap: 13,
+  },
+  sessionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  programEmojiBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryTagInline: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginBottom: 4,
+  },
+  categoryTagInlineText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  selectedSessionTitle: {
+    fontSize: 19,
+    fontWeight: '800',
+    letterSpacing: -0.35,
+    lineHeight: 24,
+  },
+  programSessionSub: {
+    fontSize: 12,
+    marginTop: 2,
+    fontWeight: '500',
   },
   liveStatusPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
     paddingHorizontal: 10,
-    paddingVertical: 4.5,
+    paddingVertical: 5,
     borderRadius: 999,
     borderWidth: 1,
+    flexShrink: 0,
   },
   livePulseDot: {
     width: 6.5,
@@ -2089,41 +2355,34 @@ const styles = StyleSheet.create({
     borderRadius: 3.5,
   },
   liveStatusText: {
-    fontSize: 10.5,
+    fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
-  sessionHeroActionsRow: {
+  sessionMetaGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
-  sessionActionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 9,
-    paddingVertical: 5.5,
-    borderRadius: 8,
+  metaGridTile: {
+    flex: 1,
+    borderRadius: 12,
     borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    gap: 4,
   },
-  deleteActionBtn: {
-    paddingHorizontal: 7,
-  },
-  sessionActionBtnText: {
-    fontSize: 11.5,
-    fontWeight: '700',
-  },
-  addSessionBtn: {
+  metaGridLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 11,
-    paddingVertical: 6,
-    borderRadius: 999,
   },
-  addSessionBtnText: {
-    fontSize: 12,
+  metaGridEyebrow: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  metaGridValue: {
+    fontSize: 12.5,
     fontWeight: '800',
   },
   finalizeBar: {
@@ -2131,75 +2390,104 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
-    paddingHorizontal: 11,
-    paddingVertical: 8,
-    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
     borderWidth: 1,
   },
-  finalizeBarTitle: {
-    fontSize: 11.5,
-    fontWeight: '700',
+  finalizeLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
-  finalizeActionBtn: {
-    paddingHorizontal: 11,
-    paddingVertical: 6.5,
+  finalizeBarTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  finalizeBarSub: {
+    fontSize: 11,
+    marginTop: 1,
+  },
+  attendanceStatsPills: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  attStatChip: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
     borderRadius: 999,
   },
-  finalizeActionBtnText: {
-    color: '#FFFFFF',
+  attStatChipText: {
     fontSize: 11,
     fontWeight: '800',
   },
-  sessionHeroTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  programEmojiBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+  finalizeActionBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  selectedSessionTitle: {
-    fontSize: 18,
+  finalizeActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
     fontWeight: '800',
-    letterSpacing: -0.3,
   },
-  programTypeCategoryLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    marginTop: 2,
-  },
-  sessionMetaPillsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 7,
-  },
-  metaPill: {
+  sessionActionsToolbar: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+  },
+  toolbarPrimaryBtn: {
+    flex: 1,
+    height: 36,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: 5,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
+    paddingHorizontal: 10,
+  },
+  toolbarPrimaryBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  toolbarSecondaryBtn: {
+    flex: 1,
+    height: 36,
     borderRadius: 10,
     borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
   },
-  metaPillText: {
-    fontSize: 11.5,
+  toolbarSecondaryBtnText: {
+    fontSize: 12,
     fontWeight: '700',
   },
-  metaPillSub: {
-    fontSize: 10.5,
-    fontWeight: '500',
+  toolbarDeleteBtn: {
+    flex: 1,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  toolbarDeleteBtnText: {
+    color: '#EF4444',
+    fontSize: 12.5,
+    fontWeight: '700',
   },
   sessionSwitcherTray: {
     borderTopWidth: 1,
-    paddingTop: 12,
-    gap: 9,
+    paddingTop: 13,
+    gap: 10,
   },
   trayHeaderRow: {
     flexDirection: 'row',
@@ -2211,17 +2499,25 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.6,
   },
+  manageAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
   trayCount: {
-    fontSize: 10.5,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '800',
   },
   sessionTypeChipsRow: {
     flexDirection: 'row',
     gap: 6,
   },
   sessionTypeChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 5.5,
     borderRadius: 999,
     borderWidth: 1,
   },
@@ -2231,40 +2527,46 @@ const styles = StyleSheet.create({
   },
   sessionsCarousel: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 9,
     paddingTop: 2,
   },
   sessionCardPill: {
     paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderRadius: 13,
+    paddingVertical: 10,
+    borderRadius: 14,
     borderWidth: 1,
-    gap: 3,
-    minWidth: 140,
-    maxWidth: 210,
+    gap: 5,
+    width: 172,
+  },
+  sessionPillTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  sessionPillEmojiWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   activeTagBadge: {
-    backgroundColor: '#10B981',
-    paddingHorizontal: 6,
-    paddingVertical: 1.5,
-    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 999,
   },
   activeTagText: {
-    color: '#FFFFFF',
     fontSize: 9.5,
     fontWeight: '800',
   },
-  miniDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
   sessionPillTitle: {
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: 12.5,
+    fontWeight: '800',
   },
   sessionPillDate: {
     fontSize: 10.5,
+    fontWeight: '600',
   },
   kpiGrid: {
     flexDirection: 'row',

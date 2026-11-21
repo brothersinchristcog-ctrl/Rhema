@@ -47,7 +47,8 @@ import KidsMinistryService from '../../services/KidsMinistryService';
 import KidsFaceRecognitionService, {
   FaceVerificationProgressStage,
 } from '../../services/KidsFaceRecognitionService';
-import { ChildRecord, KidsProgramType } from '../../types/KidsMinistryTypes';
+import { ChildRecord, KidsProgramType, KidsSessionRecord, KidsAttendanceSession } from '../../types/KidsMinistryTypes';
+import { formatDateDisplay, toStandardDateString } from '../../utils/DateUtils';
 import TeacherEnrollChildModal from './components/TeacherEnrollChildModal';
 
 const { width } = Dimensions.get('window');
@@ -92,6 +93,7 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
   const targetSessionId: string | undefined = route?.params?.targetSessionId;
   const sessionTitle: string | undefined = route?.params?.sessionTitle;
   const programType: KidsProgramType | undefined = route?.params?.programType;
+  const sessionDate: string | undefined = route?.params?.sessionDate;
 
   // Camera permissions & config
   const [permission, requestPermission] = useCameraPermissions();
@@ -100,10 +102,11 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
   // Kiosk Mode
   const [kioskMode, setKioskMode] = useState<KioskMode>('face_scan');
 
-  // Enrolled children
+  // Enrolled children & custody records scoped strictly to targetSessionId
   const [enrolledChildren, setEnrolledChildren] = useState<ChildRecord[]>([]);
   const [selectedChildId, setSelectedChildId] = useState<string | null>(initialTargetChildId || null);
   const [loadingKids, setLoadingKids] = useState(true);
+  const [sessionCustodyRecords, setSessionCustodyRecords] = useState<KidsSessionRecord[]>([]);
 
   // Modals
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
@@ -175,14 +178,55 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
       setLoadingKids(false);
     });
 
+    let unsubCustody: (() => void) | null = null;
+    if (targetSessionId) {
+      const dummySession = {
+        id: targetSessionId,
+        programType: programType || 'sunday_school',
+        programTitle: sessionTitle || 'Sunday School',
+        date: sessionDate || toStandardDateString(new Date()),
+        status: 'active',
+        churchId,
+      } as KidsAttendanceSession;
+      unsubCustody = KidsMinistryService.subscribeToSessionCustodyRecords(
+        churchId,
+        dummySession,
+        recs => {
+          if (!isMountedRef.current) return;
+          setSessionCustodyRecords(recs || []);
+        }
+      );
+    } else {
+      setSessionCustodyRecords([]);
+    }
+
     return () => {
       isMountedRef.current = false;
       activeScanIdRef.current += 1;
       scanInFlightRef.current = false;
       stopScanAnimation();
       unsub();
+      if (unsubCustody) unsubCustody();
     };
-  }, [churchId]);
+  }, [churchId, targetSessionId, sessionDate, programType, sessionTitle]);
+
+  const getChildSessionCheckInStatus = (
+    child: ChildRecord
+  ): { alreadyCheckedIn: boolean; pickupCode?: string } => {
+    if (targetSessionId) {
+      const activeRec = sessionCustodyRecords.find(
+        r => r.childDocId === child.id && r.status === 'active'
+      );
+      return {
+        alreadyCheckedIn: Boolean(activeRec),
+        pickupCode: activeRec?.pickupCode,
+      };
+    }
+    return {
+      alreadyCheckedIn: child.custodyStatus === 'checked_in',
+      pickupCode: child.activePickupCode,
+    };
+  };
 
   const isScanningOrVerifying = scanPhase === 'scanning' || scanPhase === 'verifying';
 
@@ -388,13 +432,14 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
             return;
           }
 
+          const sessionStatus = getChildSessionCheckInStatus(matchedChild);
           setScanPhase('success');
           setStatusMessage('Face Verified Successfully');
           setScannedResult({
             child: matchedChild,
             confidence: verification.confidence,
-            pickupCode: matchedChild.activePickupCode,
-            alreadyCheckedIn: matchedChild.custodyStatus === 'checked_in',
+            pickupCode: sessionStatus.pickupCode,
+            alreadyCheckedIn: sessionStatus.alreadyCheckedIn,
             method: 'face_scan',
           });
           setOutcomeDetails({
@@ -489,13 +534,14 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
       const child = await KidsMinistryService.findChildByScanQuery(churchId, result.data);
       if (child) {
         stopScanAnimation();
+        const sessionStatus = getChildSessionCheckInStatus(child);
         setScanPhase('success');
         setStatusMessage('Child Identified via QR Code');
         setScannedResult({
           child,
           confidence: 100,
-          pickupCode: child.activePickupCode,
-          alreadyCheckedIn: child.custodyStatus === 'checked_in',
+          pickupCode: sessionStatus.pickupCode,
+          alreadyCheckedIn: sessionStatus.alreadyCheckedIn,
           method: 'scan_qr',
         });
       } else {
@@ -525,6 +571,7 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
         programSessionId: targetSessionId,
         programType: programType || 'sunday_school',
         programTitle: sessionTitle || 'Sunday School',
+        sessionDate: sessionDate || undefined,
       });
 
       if (result.alreadyCheckedIn) {
@@ -593,7 +640,9 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
             {sessionTitle || 'Child Check-In'}
           </Text>
           <Text style={[styles.headerSubtitle, { color: secondaryText }]} numberOfLines={1}>
-            {targetSessionId ? 'Program Attendance & Security' : 'Verify Identity & Attendance'}
+            {targetSessionId
+              ? `${sessionDate ? `${formatDateDisplay(sessionDate)} · ` : ''}Program Attendance`
+              : 'Verify Identity & Attendance'}
           </Text>
         </View>
 
@@ -1122,13 +1171,14 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
                   key={c.id}
                   style={[styles.manualCard, { backgroundColor: cardSurface, borderColor }]}
                   onPress={() => {
+                    const sessionStatus = getChildSessionCheckInStatus(c);
                     setScanPhase('success');
                     setStatusMessage('Child Selected Manually');
                     setScannedResult({
                       child: c,
                       confidence: 100,
-                      pickupCode: c.activePickupCode,
-                      alreadyCheckedIn: c.custodyStatus === 'checked_in',
+                      pickupCode: sessionStatus.pickupCode,
+                      alreadyCheckedIn: sessionStatus.alreadyCheckedIn,
                       method: 'manual',
                     });
                   }}
@@ -1517,13 +1567,14 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
           churchId={churchId}
           actingMember={member}
           onChildEnrolled={enrolledChild => {
+            const sessionStatus = getChildSessionCheckInStatus(enrolledChild);
             setScanPhase('success');
             setStatusMessage('Child Enrolled Successfully');
             setScannedResult({
               child: enrolledChild,
               confidence: 100,
-              pickupCode: enrolledChild.activePickupCode,
-              alreadyCheckedIn: enrolledChild.custodyStatus === 'checked_in',
+              pickupCode: sessionStatus.pickupCode,
+              alreadyCheckedIn: sessionStatus.alreadyCheckedIn,
               method: 'manual',
             });
           }}

@@ -29,15 +29,12 @@ import {
   Calendar,
   User,
   Plus,
-  Volume2,
   CheckCircle2,
-  Sparkles,
   UserCheck,
   Phone,
   MessageCircle,
   Check,
   AlertTriangle,
-  Trash2,
   ArrowUpRight,
   ChevronRight,
 } from 'lucide-react-native';
@@ -85,6 +82,9 @@ const KIDS_CATEGORY_ICONS = {
   songs: require('../../../assets/kids_cat_songs.png'),
   attendance: require('../../../assets/3d_attendance.png'),
   safety: require('../../../assets/3d_members_family.png'),
+  classroom: require('../../../assets/3d_sermon_notes.png'),
+  history: require('../../../assets/3d_events.png'),
+  enroll: require('../../../assets/3d_members.png'),
 };
 
 const KIDS_BIBLE_QUOTES = [
@@ -202,8 +202,8 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
   const [vbsEvent, setVbsEvent] = useState<KidsVBSEventRecord | null>(null);
   const [kingdomBadges] = useState<KidsBadge[]>(() => KidsMinistryService.getKingdomBadges());
 
-  // Navigation Tabs: 'home' | 'classroom' | 'lms'
-  const [activeTab, setActiveTab] = useState<'home' | 'classroom' | 'lms'>('home');
+  // Navigation Tabs: 'home' | 'classroom'
+  const [activeTab, setActiveTab] = useState<'home' | 'classroom'>('home');
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [showChildPicker, setShowChildPicker] = useState(false);
   const [confirmingConsent, setConfirmingConsent] = useState(false);
@@ -632,50 +632,6 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
     }
   };
 
-  const handleDeleteStory = (storyId: string, storyTitle: string) => {
-    Alert.alert(
-      'Delete Bible Story',
-      `Are you sure you want to delete "${storyTitle}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await KidsMinistryService.deleteStory(churchId, storyId);
-              Alert.alert('Story Deleted', `"${storyTitle}" has been removed.`);
-            } catch (e: any) {
-              Alert.alert('Error', e.message || 'Could not delete story');
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const handleDeleteSong = (songId: string, songTitle: string) => {
-    Alert.alert(
-      'Delete Worship Song',
-      `Are you sure you want to delete "${songTitle}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await KidsMinistryService.deleteSong(churchId, songId);
-              Alert.alert('Song Deleted', `"${songTitle}" has been removed.`);
-            } catch (e: any) {
-              Alert.alert('Error', e.message || 'Could not delete song');
-            }
-          },
-        },
-      ]
-    );
-  };
-
   const enrollModalEl = showEnrollModal ? (
     <EnrollChildModal
       visible={showEnrollModal}
@@ -970,7 +926,6 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
                           },
                         ]}
                       >
-                        <Sparkles size={12} color={theme.isDark ? '#C4B5FD' : '#7C3AED'} />
                         <Text
                           style={[
                             styles.kidsQuoteBadgeText,
@@ -1211,7 +1166,7 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
                 </View>
               </TouchableOpacity>
 
-              {/* Categories — Clean 2 × 3 Grid (Learning + Attendance & Safety) */}
+              {/* Categories — Responsive 3 × 3 Bento Grid */}
               <View>
                 <View style={styles.sectionTitleRow}>
                   <Text style={[styles.modernSectionTitle, { color: theme.textPrimary }]}>
@@ -1241,8 +1196,6 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
                         badgeDot: null as string | null,
                         onPress: () => setExploreCategory('quizzes'),
                       },
-                    ],
-                    [
                       {
                         key: 'lessons',
                         label: 'Weekly Lessons',
@@ -1250,6 +1203,8 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
                         badgeDot: null as string | null,
                         onPress: () => setExploreCategory('lessons'),
                       },
+                    ],
+                    [
                       {
                         key: 'songs',
                         label: 'Action Songs',
@@ -1257,8 +1212,13 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
                         badgeDot: null as string | null,
                         onPress: () => setExploreCategory('songs'),
                       },
-                    ],
-                    [
+                      {
+                        key: 'classroom',
+                        label: 'My Classroom',
+                        icon: KIDS_CATEGORY_ICONS.classroom,
+                        badgeDot: null as string | null,
+                        onPress: () => setActiveTab('classroom'),
+                      },
                       {
                         key: 'attendance',
                         label: 'Attendance',
@@ -1267,6 +1227,18 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
                         onPress: () => {
                           setSafetyInitialProgramId(activeTodayEntry?.programSessionId || null);
                           setSafetyModalSection('overview');
+                        },
+                      },
+                    ],
+                    [
+                      {
+                        key: 'history',
+                        label: 'History',
+                        icon: KIDS_CATEGORY_ICONS.history,
+                        badgeDot: null as string | null,
+                        onPress: () => {
+                          setSafetyInitialProgramId(activeTodayEntry?.programSessionId || null);
+                          setSafetyModalSection('history');
                         },
                       },
                       {
@@ -1278,6 +1250,13 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
                           setSafetyInitialProgramId(null);
                           setSafetyModalSection('consent');
                         },
+                      },
+                      {
+                        key: 'enroll_child',
+                        label: 'Enroll Child',
+                        icon: KIDS_CATEGORY_ICONS.enroll,
+                        badgeDot: null as string | null,
+                        onPress: () => setShowEnrollModal(true),
                       },
                     ],
                   ];
@@ -1312,9 +1291,9 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
                                 {cat.badgeDot ? (
                                   <View
                                     style={{
-                                      width: 7,
-                                      height: 7,
-                                      borderRadius: 4,
+                                      width: 6,
+                                      height: 6,
+                                      borderRadius: 3,
                                       backgroundColor: cat.badgeDot,
                                     }}
                                   />
@@ -1322,11 +1301,13 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
                                 <Text
                                   style={[styles.categoryTileLabel, { color: theme.textPrimary }]}
                                   numberOfLines={1}
+                                  adjustsFontSizeToFit
+                                  minimumFontScale={0.76}
                                 >
                                   {cat.label}
                                 </Text>
                                 <ChevronRight
-                                  size={14}
+                                  size={11}
                                   color={theme.coralPrimary}
                                   strokeWidth={2.6}
                                 />
@@ -1340,7 +1321,7 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
                 })()}
               </View>
 
-              {/* This Sunday's Lesson (clean full-width card without View All or duplicate card) */}
+              {/* Redesigned Modern This Sunday's Lesson Card */}
               {(() => {
                 const { lesson: activeLesson, mode: activeMode, activeDate } = resolveActiveCurriculumLesson({
                   config: curriculumConfig,
@@ -1354,6 +1335,8 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
                   activeMode === 'custom' && activeDate
                     ? formatCurriculumDateDisplay(activeDate)
                     : `Week ${activeLesson?.weekNumber || 1} Lesson`;
+                const accentSky = theme.isDark ? '#38BDF8' : '#0284C7';
+                const verseSurface = theme.isDark ? 'rgba(15, 23, 42, 0.55)' : 'rgba(255, 255, 255, 0.85)';
 
                 return (
                   <View>
@@ -1375,37 +1358,138 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
                           setSelectedLessonForModal(activeLesson);
                         }
                       }}
-                      activeOpacity={0.88}
+                      activeOpacity={0.9}
                     >
-                      <View style={styles.featuredTopRow}>
-                        <View style={styles.featuredLessonIllust}>
-                          <Text style={{ fontSize: 26 }}>📖</Text>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.featuredEyebrow, { color: theme.isDark ? '#7DD3FC' : '#0369A1' }]}>
-                            {tagLabel} · {verseRef}
-                          </Text>
-                          <Text style={[styles.featuredTitle, { color: theme.textPrimary }]} numberOfLines={2}>
-                            {lessonTitle}
-                          </Text>
-                        </View>
-                      </View>
+                      {/* Top Color Accent Strip */}
+                      <View style={[styles.lessonAccentStrip, { backgroundColor: accentSky }]} />
 
-                      <Text style={[styles.featuredVerseText, { color: theme.textPrimary }]}>
-                        “{verseTe || verseEn}”
-                      </Text>
-                      {!!verseTe && (
-                        <Text style={[styles.featuredVerseSub, { color: theme.textSecondary }]}>
-                          “{verseEn}”
-                        </Text>
-                      )}
+                      <View style={styles.lessonCardInner}>
+                        {/* Header Row: Illustrated Emblem + Week & Scripture Pills */}
+                        <View style={styles.featuredTopRow}>
+                          <View
+                            style={[
+                              styles.featuredLessonIllust,
+                              {
+                                backgroundColor: theme.isDark ? 'rgba(56, 189, 248, 0.14)' : '#FFFFFF',
+                                borderColor: theme.isDark ? 'rgba(56, 189, 248, 0.28)' : '#BAE6FD',
+                              },
+                            ]}
+                          >
+                            <BookOpen size={22} color={accentSky} strokeWidth={2.2} />
+                          </View>
 
-                      <View style={styles.featuredBottomRow}>
-                        <Text style={[styles.featuredPillText, { color: theme.textPrimary }]}>
-                          3 Goals · Bilingual
-                        </Text>
-                        <View style={styles.arrowActionCircle}>
-                          <ArrowUpRight size={16} color="#FFFFFF" strokeWidth={2.5} />
+                          <View style={{ flex: 1, gap: 6 }}>
+                            <View style={styles.lessonPillsRow}>
+                              <View
+                                style={[
+                                  styles.lessonWeekPill,
+                                  {
+                                    backgroundColor: theme.isDark ? 'rgba(56, 189, 248, 0.16)' : '#E0F2FE',
+                                  },
+                                ]}
+                              >
+                                <Calendar size={11} color={accentSky} />
+                                <Text style={[styles.lessonWeekPillText, { color: accentSky }]}>
+                                  {tagLabel}
+                                </Text>
+                              </View>
+
+                              <View
+                                style={[
+                                  styles.lessonRefPill,
+                                  {
+                                    backgroundColor: theme.isDark ? 'rgba(251, 191, 36, 0.15)' : '#FEF3C7',
+                                  },
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.lessonRefPillText,
+                                    { color: theme.isDark ? '#FBBF24' : '#B45309' },
+                                  ]}
+                                >
+                                  {verseRef}
+                                </Text>
+                              </View>
+                            </View>
+
+                            <Text style={[styles.featuredTitle, { color: theme.textPrimary }]} numberOfLines={2}>
+                              {lessonTitle}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* Framed Memory Verse Block */}
+                        <View
+                          style={[
+                            styles.memoryVerseBox,
+                            {
+                              backgroundColor: verseSurface,
+                              borderColor: theme.skyBorder,
+                            },
+                          ]}
+                        >
+                          <View style={[styles.memoryVerseStripe, { backgroundColor: accentSky }]} />
+                          <View style={{ flex: 1, gap: 4 }}>
+                            <View style={styles.memoryVerseHeader}>
+                              <Text style={[styles.memoryVerseEyebrow, { color: accentSky }]}>
+                                MEMORY VERSE
+                              </Text>
+                              <Text style={[styles.memoryVerseLangTag, { color: theme.textSecondary }]}>
+                                {verseTe ? 'తెలుగు · ENG' : 'ENG'}
+                              </Text>
+                            </View>
+
+                            <Text style={[styles.featuredVerseText, { color: theme.textPrimary }]}>
+                              “{verseTe || verseEn}”
+                            </Text>
+                            {!!verseTe && (
+                              <Text style={[styles.featuredVerseSub, { color: theme.textSecondary }]}>
+                                “{verseEn}”
+                              </Text>
+                            )}
+                          </View>
+                        </View>
+
+                        {/* Clean Footer Action Row */}
+                        <View
+                          style={[
+                            styles.featuredBottomRow,
+                            {
+                              borderTopColor: theme.isDark
+                                ? 'rgba(255,255,255,0.08)'
+                                : 'rgba(14, 165, 233, 0.18)',
+                            },
+                          ]}
+                        >
+                          <View style={styles.lessonMetaChipsRow}>
+                            <View
+                              style={[
+                                styles.lessonMetaMiniChip,
+                                { backgroundColor: theme.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.72)' },
+                              ]}
+                            >
+                              <Award size={12} color={theme.coralPrimary} />
+                              <Text style={[styles.lessonMetaMiniText, { color: theme.textPrimary }]}>
+                                3 Goals
+                              </Text>
+                            </View>
+                            <View
+                              style={[
+                                styles.lessonMetaMiniChip,
+                                { backgroundColor: theme.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.72)' },
+                              ]}
+                            >
+                              <Text style={[styles.lessonMetaMiniText, { color: theme.textSecondary }]}>
+                                Story & Activity
+                              </Text>
+                            </View>
+                          </View>
+
+                          <View style={[styles.openLessonPillBtn, { backgroundColor: accentSky }]}>
+                            <Text style={styles.openLessonPillText}>Open Lesson</Text>
+                            <ArrowUpRight size={14} color="#FFFFFF" strokeWidth={2.5} />
+                          </View>
                         </View>
                       </View>
                     </TouchableOpacity>
@@ -1413,15 +1497,12 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
                 );
               })()}
 
-              {/* Popular Lessons & Highlights matching Screenshot 2 bottom cards */}
+              {/* Popular Learning Highlights (View all button removed as requested) */}
               <View>
                 <View style={styles.sectionTitleRow}>
                   <Text style={[styles.modernSectionTitle, { color: theme.textPrimary }]}>
                     Popular Learning
                   </Text>
-                  <TouchableOpacity onPress={() => setActiveTab('lms')}>
-                    <Text style={[styles.viewAllText, { color: theme.textSecondary }]}>View all</Text>
-                  </TouchableOpacity>
                 </View>
 
                 <View style={{ gap: 10 }}>
@@ -1790,169 +1871,6 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
                   </View>
                 );
               })()}
-            </>
-          )}
-
-          {/* ==================================================== */}
-          {/* TAB 3: BIBLE LMS (QUIZZES, STORIES & WORSHIP)        */}
-          {/* ==================================================== */}
-          {activeTab === 'lms' && (
-            <>
-              <View style={styles.subpageBackRow}>
-                <TouchableOpacity
-                  style={[
-                    styles.subpageBackBtn,
-                    { backgroundColor: theme.cardBg, borderColor: theme.border },
-                  ]}
-                  onPress={() => setActiveTab('home')}
-                  activeOpacity={0.82}
-                >
-                  <ArrowLeft size={16} color={theme.textPrimary} strokeWidth={2.5} />
-                  <Text style={[styles.subpageBackText, { color: theme.textPrimary }]}>
-                    Back to Home
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Featured Bible Quiz Card */}
-              {quizzes.length > 0 && (
-                <View style={[styles.quizCard, { backgroundColor: theme.goldBg, borderColor: theme.goldAccent }]}>
-                  <View style={styles.quizHeader}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.quizHeaderTag, { color: theme.goldAccent }]}>BIBLE CHALLENGE OF THE WEEK</Text>
-                      <Text style={[styles.quizTitle, { color: theme.textPrimary }]}>{quizzes[0].title}</Text>
-                      <Text style={[styles.quizTeluguSub, { color: theme.textSecondary }]}>{quizzes[0].titleTelugu} · {quizzes[0].scriptureRef}</Text>
-                    </View>
-                    <Text style={{ fontSize: 32 }}>{quizzes[0].coverEmoji || '🏆'}</Text>
-                  </View>
-
-                  <View style={styles.quizRewardBadgeRow}>
-                    <View style={[styles.quizPointsPill, { backgroundColor: theme.goldBg }]}>
-                      <Text style={[styles.quizPointsText, { color: theme.goldAccent }]}>★ +{quizzes[0].pointsReward} Star Points</Text>
-                    </View>
-                    <View style={[styles.quizBadgePill, { backgroundColor: theme.cardBg, borderColor: theme.border, borderWidth: 1 }]}>
-                      <Text style={[styles.quizBadgePillText, { color: theme.textPrimary }]}>{quizzes[0].badgeReward}</Text>
-                    </View>
-                  </View>
-
-                  <TouchableOpacity
-                    style={[styles.startQuizBtn, { backgroundColor: theme.goldAccent }]}
-                    onPress={() => setSelectedQuizForPlayer(quizzes[0])}
-                    activeOpacity={0.88}
-                  >
-                    <Award size={16} color="#FFFFFF" />
-                    <Text style={[styles.startQuizBtnText, { color: '#FFFFFF' }]}>Start Interactive Quiz &rsaquo;</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {/* Bible Stories */}
-              <View style={{ marginTop: 8 }}>
-                <View style={styles.sectionHeaderRow}>
-                  <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>BIBLE STORIES</Text>
-                  <Text style={[styles.sectionHeaderSub, { color: theme.goldAccent }]}>Tap to read</Text>
-                </View>
-
-                {stories.map(s => {
-                  const fullBody = getFullStoryContent(s);
-                  const readTimeLabel = s.readTime || estimateStoryReadTime(fullBody);
-                  return (
-                    <TouchableOpacity
-                      key={s.id}
-                      style={[styles.lmsStoryCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
-                      onPress={() => setSelectedStoryForReader(s)}
-                      activeOpacity={0.88}
-                    >
-                      <View style={[styles.lmsStoryThumb16x9, { backgroundColor: theme.innerCardBg, borderBottomColor: theme.border }]}>
-                        {s.coverImageUrl ? (
-                          <Image source={{ uri: s.coverImageUrl }} style={styles.storyCoverImg} resizeMode="cover" />
-                        ) : (
-                          <View style={styles.lmsStoryFallbackHero}>
-                            <Text style={{ fontSize: 38 }}>{s.coverEmoji || '📖'}</Text>
-                          </View>
-                        )}
-                      </View>
-                      <View style={styles.lmsStoryCardBody}>
-                        <View style={styles.lmsStoryMetaRow}>
-                          {s.scriptureRef ? (
-                            <View style={[styles.storyReadPill, { backgroundColor: theme.goldBg }]}>
-                              <Text style={[styles.storyReadPillText, { color: theme.goldAccent }]}>{s.scriptureRef}</Text>
-                            </View>
-                          ) : null}
-                          <Text style={[styles.storyMeta, { color: theme.textSecondary, marginTop: 0 }]}>{readTimeLabel}</Text>
-                        </View>
-                        <Text style={[styles.lmsStoryTitle, { color: theme.textPrimary }]} numberOfLines={2}>
-                          {s.title}
-                        </Text>
-                        {s.titleTelugu && s.titleTelugu.trim() !== s.title.trim() ? (
-                          <Text style={[styles.storyTeluguText, { color: theme.textSecondary }]} numberOfLines={1}>
-                            {s.titleTelugu}
-                          </Text>
-                        ) : null}
-                        {fullBody ? (
-                          <Text style={[styles.lmsStoryExcerpt, { color: theme.textSecondary }]} numberOfLines={2}>
-                            {fullBody}
-                          </Text>
-                        ) : null}
-                        <View style={styles.lmsStoryFooter}>
-                          <View style={[styles.storyReadPill, { backgroundColor: theme.goldBg }]}>
-                            <Text style={[styles.storyReadPillText, { color: theme.goldAccent }]}>Read Story &rsaquo;</Text>
-                          </View>
-                          <TouchableOpacity
-                            style={styles.itemDeleteBtn}
-                            onPress={() => handleDeleteStory(s.id, s.title)}
-                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          >
-                            <Trash2 size={15} color="#EF4444" />
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              {/* Action Worship Songs Playlist */}
-              <View style={{ marginTop: 14 }}>
-                <View style={styles.sectionHeaderRow}>
-                  <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>KIDS ACTION WORSHIP SONGS</Text>
-                  <Text style={[styles.sectionHeaderSub, { color: theme.goldAccent }]}>Video & Lyrics</Text>
-                </View>
-
-                {songs.map(song => (
-                  <TouchableOpacity
-                    key={song.id}
-                    style={[styles.songListCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
-                    onPress={() => setSelectedSongForPlayer(song)}
-                    activeOpacity={0.88}
-                  >
-                    <View style={[styles.songEmojiBubble, { backgroundColor: theme.innerCardBg, borderColor: theme.border }]}>
-                      {song.thumbnailUrl ? (
-                        <Image source={{ uri: song.thumbnailUrl }} style={styles.storyCoverImg} />
-                      ) : (
-                        <Text style={{ fontSize: 24 }}>{song.coverEmoji || '🎵'}</Text>
-                      )}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.songTitle, { color: theme.textPrimary }]}>{song.title}</Text>
-                      <Text style={[styles.songTeluguSub, { color: theme.textSecondary }]}>{song.titleTelugu}</Text>
-                      <Text style={[styles.songDurationMeta, { color: theme.textSecondary }]}>Duration: {song.duration || '3:00'} · Action Dance</Text>
-                    </View>
-                    <View style={styles.cardActionsRow}>
-                      <View style={[styles.songPlayBtn, { backgroundColor: theme.innerCardBg }]}>
-                        <Volume2 size={14} color={theme.goldAccent} />
-                      </View>
-                      <TouchableOpacity
-                        style={styles.itemDeleteBtn}
-                        onPress={() => handleDeleteSong(song.id, song.title)}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      >
-                        <Trash2 size={15} color="#EF4444" />
-                      </TouchableOpacity>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </View>
             </>
           )}
 
@@ -3773,29 +3691,25 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: -0.2,
   },
-  viewAllText: {
-    fontSize: 12.5,
-    fontWeight: '700',
-  },
   categoryGrid: {
-    gap: 12,
+    gap: 10,
   },
   categoryGridRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
   },
   categoryGridTile: {
     flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 7,
     backgroundColor: 'transparent',
   },
   categoryIconCircle: {
-    width: 78,
-    height: 78,
+    width: 62,
+    height: 62,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -3806,26 +3720,36 @@ const styles = StyleSheet.create({
   categoryLabelPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    justifyContent: 'center',
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
     borderRadius: 999,
     borderWidth: 1,
+    maxWidth: '100%',
   },
   categoryTileLabel: {
-    fontSize: 12.5,
+    fontSize: 10.8,
     fontWeight: '700',
     textAlign: 'center',
+    flexShrink: 1,
   },
   featuredLessonCard: {
     width: width - 86,
     borderRadius: 22,
     borderWidth: 1,
-    padding: 16,
-    gap: 8,
+    overflow: 'hidden',
   },
   featuredLessonFullCard: {
     width: '100%',
+  },
+  lessonAccentStrip: {
+    height: 4,
+    width: '100%',
+  },
+  lessonCardInner: {
+    padding: 16,
+    gap: 12,
   },
   featuredTopRow: {
     flexDirection: 'row',
@@ -3833,41 +3757,121 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   featuredLessonIllust: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.88)',
+    width: 50,
+    height: 50,
+    borderRadius: 15,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  featuredEyebrow: {
+  lessonPillsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+  },
+  lessonWeekPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  lessonWeekPillText: {
     fontSize: 10.5,
     fontWeight: '800',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
+    letterSpacing: 0.2,
+  },
+  lessonRefPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  lessonRefPillText: {
+    fontSize: 10.5,
+    fontWeight: '800',
   },
   featuredTitle: {
-    fontSize: 15,
+    fontSize: 16.5,
     fontWeight: '800',
-    marginTop: 2,
+    lineHeight: 22,
+    letterSpacing: -0.2,
+  },
+  memoryVerseBox: {
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    overflow: 'hidden',
+    padding: 12,
+    gap: 10,
+  },
+  memoryVerseStripe: {
+    width: 3.5,
+    borderRadius: 2,
+  },
+  memoryVerseHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
+  memoryVerseEyebrow: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+  },
+  memoryVerseLangTag: {
+    fontSize: 10,
+    fontWeight: '700',
   },
   featuredVerseText: {
-    fontSize: 13,
+    fontSize: 13.5,
     fontWeight: '700',
-    lineHeight: 18,
+    lineHeight: 19.5,
   },
   featuredVerseSub: {
     fontSize: 12,
     fontStyle: 'italic',
-    lineHeight: 17,
+    lineHeight: 17.5,
   },
   featuredBottomRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 4,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    gap: 8,
   },
-  featuredPillText: {
+  lessonMetaChipsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    flexWrap: 'wrap',
+  },
+  lessonMetaMiniChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  lessonMetaMiniText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  openLessonPillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 13,
+    paddingVertical: 7.5,
+    borderRadius: 999,
+  },
+  openLessonPillText: {
+    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '800',
   },
@@ -3917,48 +3921,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-  },
-  lmsStoryCard: {
-    borderRadius: 18,
-    borderWidth: 1,
-    overflow: 'hidden',
-    marginBottom: 12,
-  },
-  lmsStoryThumb16x9: {
-    width: '100%',
-    aspectRatio: 16 / 9,
-    borderBottomWidth: 1,
-    overflow: 'hidden',
-  },
-  lmsStoryFallbackHero: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  lmsStoryCardBody: {
-    padding: 14,
-    gap: 6,
-  },
-  lmsStoryMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  lmsStoryTitle: {
-    fontSize: 16.5,
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-    fontWeight: '800',
-    lineHeight: 22,
-  },
-  lmsStoryExcerpt: {
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  lmsStoryFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 4,
   },
 });

@@ -161,6 +161,7 @@ export interface ChildRecord {
   parentConsentConfirmedAt?: any;
   parentConsentConfirmedBy?: string;
   consentPermissions?: ChildConsentPermissions;
+  hiddenProgramSessionIds?: string[]; // Parent-deleted attendance history entries for this child only
   approvedByAdminId?: string;
   approvedAt?: any;
   enrolledAt: any;
@@ -234,6 +235,7 @@ export interface KidsSessionRecord {
   
   allergyFlag: boolean;
   notes?: string;
+  deletedByParent?: boolean;
 }
 
 export interface KidsAttendanceLogRecord {
@@ -258,6 +260,7 @@ export interface KidsAttendanceLogRecord {
   finalizedByMemberId?: string;
   finalizedByName?: string;
   finalizedAt?: any;
+  deletedByParent?: boolean;
   createdAt: any;
 }
 
@@ -292,6 +295,98 @@ export const KIDS_PROGRAM_LABELS: Record<KidsProgramType, string> = {
   summer_camp: 'Summer Camp',
   other: 'Special Event',
 };
+
+export interface KidsProgramVisualMeta {
+  type: KidsProgramType;
+  label: string;
+  shortLabel: string;
+  emoji: string;
+  accentColor: string;
+  softBg: string;
+  softBorder: string;
+}
+
+/**
+ * Returns consistent visual theme tokens (emoji, labels, accent colors) across all Kids Ministry program types.
+ */
+export function getKidsProgramVisual(
+  programType?: KidsProgramType | string,
+  isDark: boolean = false
+): KidsProgramVisualMeta {
+  switch (programType) {
+    case 'vbs':
+      return {
+        type: 'vbs',
+        label: 'Vacation Bible School (VBS)',
+        shortLabel: 'VBS',
+        emoji: '☀️',
+        accentColor: isDark ? '#FB923C' : '#EA580C',
+        softBg: isDark ? 'rgba(249, 115, 22, 0.16)' : '#FFF7ED',
+        softBorder: isDark ? 'rgba(251, 146, 60, 0.35)' : '#FED7AA',
+      };
+    case 'special_meeting':
+      return {
+        type: 'special_meeting',
+        label: 'Special Kids Meeting',
+        shortLabel: 'Special',
+        emoji: '✨',
+        accentColor: isDark ? '#C084FC' : '#7C3AED',
+        softBg: isDark ? 'rgba(139, 92, 246, 0.16)' : '#F5F3FF',
+        softBorder: isDark ? 'rgba(192, 132, 252, 0.35)' : '#DDD6FE',
+      };
+    case 'childrens_worship':
+      return {
+        type: 'childrens_worship',
+        label: "Children's Worship",
+        shortLabel: 'Worship',
+        emoji: '🎵',
+        accentColor: isDark ? '#F472B6' : '#DB2777',
+        softBg: isDark ? 'rgba(236, 72, 153, 0.16)' : '#FDF2F8',
+        softBorder: isDark ? 'rgba(244, 114, 182, 0.35)' : '#FBCFE8',
+      };
+    case 'summer_camp':
+      return {
+        type: 'summer_camp',
+        label: 'Summer Camp',
+        shortLabel: 'Camps',
+        emoji: '⛺',
+        accentColor: isDark ? '#34D399' : '#059669',
+        softBg: isDark ? 'rgba(16, 185, 129, 0.16)' : '#ECFDF5',
+        softBorder: isDark ? 'rgba(52, 211, 153, 0.35)' : '#A7F3D0',
+      };
+    case 'bible_study':
+      return {
+        type: 'bible_study',
+        label: 'Bible Study Program',
+        shortLabel: 'Bible Study',
+        emoji: '📜',
+        accentColor: isDark ? '#60A5FA' : '#2563EB',
+        softBg: isDark ? 'rgba(59, 130, 246, 0.16)' : '#EFF6FF',
+        softBorder: isDark ? 'rgba(96, 165, 250, 0.35)' : '#BFDBFE',
+      };
+    case 'other':
+      return {
+        type: 'other',
+        label: 'Special Event',
+        shortLabel: 'Other',
+        emoji: '🎯',
+        accentColor: isDark ? '#94A3B8' : '#475569',
+        softBg: isDark ? 'rgba(148, 163, 184, 0.16)' : '#F8FAFC',
+        softBorder: isDark ? 'rgba(148, 163, 184, 0.32)' : '#CBD5E1',
+      };
+    case 'sunday_school':
+    default:
+      return {
+        type: 'sunday_school',
+        label: 'Sunday School',
+        shortLabel: 'Sunday School',
+        emoji: '📖',
+        accentColor: isDark ? '#FBBF24' : '#D97706',
+        softBg: isDark ? 'rgba(245, 158, 11, 0.16)' : '#FFFBEB',
+        softBorder: isDark ? 'rgba(251, 191, 36, 0.35)' : '#FDE68A',
+      };
+  }
+}
 
 /**
  * Resolves unified consent & release permissions for a child record across Member View, Admin, and Scanners.
@@ -877,14 +972,15 @@ export function buildChildProgramAttendanceEntries(params: {
   const { child, programSessions, custodyRecords, attendanceLogs, classes, teachers } = params;
   if (!child) return [];
 
-  // Enforce strict per-child filtering by unique ID so sibling records never mix.
+  // Enforce strict per-child filtering by unique ID and skip parent-deleted history entries.
   const belongsToChild = (rec: { childDocId?: string; childId?: string }): boolean => {
     if (rec.childDocId) return rec.childDocId === child.id;
     if (rec.childId && child.childId) return rec.childId === child.childId;
     return false;
   };
-  const childCustodyRecords = custodyRecords.filter(belongsToChild);
-  const childAttendanceLogs = attendanceLogs.filter(belongsToChild);
+  const hiddenSessionIds = new Set(child.hiddenProgramSessionIds || []);
+  const childCustodyRecords = custodyRecords.filter(r => belongsToChild(r) && !r.deletedByParent);
+  const childAttendanceLogs = attendanceLogs.filter(l => belongsToChild(l) && !l.deletedByParent);
 
   const assignedClass =
     classes.find(c => child.assignedClassId && c.id === child.assignedClassId) ||
@@ -920,6 +1016,7 @@ export function buildChildProgramAttendanceEntries(params: {
   const entries: KidsProgramAttendanceEntry[] = [];
 
   for (const sess of programSessions) {
+    if (hiddenSessionIds.has(sess.id)) continue;
     const custody = childCustodyRecords.find(r => {
       if (r.programSessionId && r.programSessionId === sess.id) return true;
       return !r.programSessionId && r.sessionDate === sess.date && sess.programType === 'sunday_school';
@@ -972,6 +1069,7 @@ export function buildChildProgramAttendanceEntries(params: {
   for (const custody of childCustodyRecords) {
     if (matchedCustodyIds.has(custody.id)) continue;
     const key = custody.programSessionId || `legacy_${custody.sessionDate}_${custody.programType || 'sunday_school'}`;
+    if (hiddenSessionIds.has(key)) continue;
     if (entries.some(e => e.programSessionId === key)) continue;
 
     entries.push({
@@ -996,6 +1094,7 @@ export function buildChildProgramAttendanceEntries(params: {
   for (const log of childAttendanceLogs) {
     if (matchedLogIds.has(log.id)) continue;
     const key = log.programSessionId || `legacy_${log.sessionDate}_${log.programType || 'sunday_school'}`;
+    if (hiddenSessionIds.has(key)) continue;
     if (entries.some(e => e.programSessionId === key)) continue;
 
     // Respect rule: never mark absent without finalized session unless the record explicitly represents a finalized absent log

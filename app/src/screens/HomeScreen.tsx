@@ -1667,10 +1667,10 @@ export const EventsTicker = ({
   // Both English and Telugu cards generated with 38 designer colors
   const items = useMemo(() => {
     const evList = (events && events.length > 0) ? events : [
-      { title: 'Sunday Worship Service', titleTelugu: 'ఆదివారపు ఆరాధన', time: '10:00 AM - 12:30 PM' },
-      { title: 'Midweek Bible Study', titleTelugu: 'బైబిల్ స్టడీ', time: '7:00 PM - 8:30 PM' },
-      { title: 'Early Morning Prayer', titleTelugu: 'ఉదయ కాల ప్రార్థన', time: '6:00 AM - 7:30 AM' },
-      { title: 'Youth Revival Fellowship', titleTelugu: 'యూత్ కూడిక', time: '6:30 PM - 8:30 PM' },
+      { title: 'Sunday Worship Service', titleTelugu: 'ఆదివారపు ఆరాధన', time: '10:00 AM - 12:30 PM', isServiceTiming: true },
+      { title: 'Midweek Bible Study', titleTelugu: 'బైబిల్ స్టడీ', time: '7:00 PM - 8:30 PM', isServiceTiming: true },
+      { title: 'Early Morning Prayer', titleTelugu: 'ఉదయ కాల ప్రార్థన', time: '6:00 AM - 7:30 AM', isServiceTiming: true },
+      { title: 'Youth Revival Fellowship', titleTelugu: 'యూత్ కూడిక', time: '6:30 PM - 8:30 PM', isServiceTiming: true },
     ];
 
     const result: any[] = [];
@@ -1678,28 +1678,43 @@ export const EventsTicker = ({
       const enTitle = cleanEnglishTitle(ev.title);
       const teTitle = getTeluguServiceTitle(ev.title, ev.titleTelugu);
       const cleanTime = cleanTimeText(ev.time || '');
+      const cleanDateLabel = (ev.dateLabel || '').trim();
+      const scheduleLine = cleanDateLabel
+        ? (cleanTime ? `${cleanDateLabel}  •  ${cleanTime}` : cleanDateLabel)
+        : cleanTime;
 
-      // 1. English Event Card
+      const enCategory = ev.isServiceTiming
+        ? 'CHURCH SERVICE TIMINGS'
+        : ev.categoryEn || 'UPCOMING EVENT';
+      const teCategory = ev.isServiceTiming
+        ? 'ఆరాధన సమయములు'
+        : ev.categoryTe || 'రాబోవు కూడిక';
+
+      // 1. English Card
       const enColor = EVENT_CARD_PALETTE[(idx * 2) % EVENT_CARD_PALETTE.length];
       result.push({
         id: `ev-en-${idx}`,
-        category: 'UPCOMING EVENT',
+        category: enCategory,
         eventName: enTitle,
         time: cleanTime,
-        title: cleanTime ? `${enTitle}  •  ${cleanTime}` : enTitle,
-        raw: ev,
+        scheduleMeta: scheduleLine,
+        title: scheduleLine ? `${enTitle}  •  ${scheduleLine}` : enTitle,
+        raw: ev.isServiceTiming ? null : ev,
+        isServiceTiming: Boolean(ev.isServiceTiming),
         colorConfig: enColor,
       });
 
-      // 2. Dedicated Telugu Event Card
+      // 2. Dedicated Telugu Card
       const teColor = EVENT_CARD_PALETTE[(idx * 2 + 1) % EVENT_CARD_PALETTE.length];
       result.push({
         id: `ev-te-${idx}`,
-        category: 'రాబోవు కూడిక',
+        category: teCategory,
         eventName: teTitle,
         time: cleanTime,
-        title: cleanTime ? `${teTitle}  •  ${cleanTime}` : teTitle,
-        raw: ev,
+        scheduleMeta: scheduleLine,
+        title: scheduleLine ? `${teTitle}  •  ${scheduleLine}` : teTitle,
+        raw: ev.isServiceTiming ? null : ev,
+        isServiceTiming: Boolean(ev.isServiceTiming),
         colorConfig: teColor,
       });
     });
@@ -1809,8 +1824,7 @@ export const EventsTicker = ({
           const cfg = item.colorConfig || EVENT_CARD_PALETTE[idx % EVENT_CARD_PALETTE.length];
           const textColor = cfg.isLight ? '#111827' : '#FFFFFF';
           const kickerColor = cfg.isLight ? '#4B5563' : 'rgba(255, 255, 255, 0.78)';
-          // Normal event names fit on single row; only split into 2 rows if massive (> 55 chars)
-          const isHugeTitle = Boolean(item.time && (item.eventName?.length || 0) > 55);
+          const hasScheduleMeta = Boolean(item.scheduleMeta);
 
           return (
             <TouchableOpacity
@@ -1821,7 +1835,7 @@ export const EventsTicker = ({
                 { width: cardWidth, backgroundColor: cfg.bg }
               ]}
               onPress={() => {
-                if (item.raw) {
+                if (item.raw && !item.isServiceTiming) {
                   onEventPress ? onEventPress(item.raw) : onSeeAll?.();
                 } else {
                   onSeeAll?.();
@@ -1833,20 +1847,23 @@ export const EventsTicker = ({
                   <Text style={[mqCardStyles.kickerText, { color: kickerColor }]} numberOfLines={1}>
                     {item.category || 'Upcoming Event'}
                   </Text>
-                  {isHugeTitle ? (
+                  {hasScheduleMeta ? (
                     <View style={mqCardStyles.twoRowWrap}>
                       <Text
                         style={[mqCardStyles.titleText, { color: textColor }]}
                         numberOfLines={1}
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.85}
+                        ellipsizeMode="tail"
                       >
                         {item.eventName}
                       </Text>
                       <View style={mqCardStyles.timeRow}>
-                        <Clock size={11} color={kickerColor} strokeWidth={2.2} style={{ marginRight: 4 }} />
+                        {item.isServiceTiming ? (
+                          <Clock size={11} color={kickerColor} strokeWidth={2.2} style={{ marginRight: 4 }} />
+                        ) : (
+                          <Calendar size={11} color={kickerColor} strokeWidth={2.2} style={{ marginRight: 4 }} />
+                        )}
                         <Text style={[mqCardStyles.timeRowText, { color: kickerColor }]} numberOfLines={1}>
-                          {item.time}
+                          {item.scheduleMeta}
                         </Text>
                       </View>
                     </View>
@@ -4095,8 +4112,88 @@ export default function HomeScreen() {
   }, [member, authMember, user?.photoURL]);
 
   const tickerEvents = useMemo(() => {
-    const list = (todayEvents && todayEvents.length > 0) ? todayEvents : (events || []);
-    if (list.length === 0) {
+    const parseEvDateLocal = (raw?: string | any): Date | null => {
+      if (!raw) return null;
+      if (raw instanceof Date) return isNaN(raw.getTime()) ? null : raw;
+      if (typeof raw?.toDate === 'function') {
+        const d = raw.toDate();
+        return isNaN(d.getTime()) ? null : d;
+      }
+      const clean = String(raw).trim().split('T')[0];
+      const parts = clean.split(/[-/]/);
+      if (parts.length === 3) {
+        if (parts[0].length === 4) {
+          const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+          return isNaN(d.getTime()) ? null : d;
+        }
+        if (parts[2].length === 4) {
+          const d = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
+          return isNaN(d.getTime()) ? null : d;
+        }
+      }
+      const fallback = new Date(clean);
+      return isNaN(fallback.getTime()) ? null : fallback;
+    };
+
+    const parseTimeEndMins = (ev: any): number | null => {
+      let tStr = ev.endTime;
+      if (!tStr && ev.time && /[-–]/.test(String(ev.time))) {
+        const segs = String(ev.time).split(/[-–]/);
+        tStr = segs[segs.length - 1]?.trim();
+      }
+      if (!tStr) return null;
+      const upper = String(tStr).toUpperCase().trim();
+      if (!upper.includes(':')) return null;
+      const isPM = upper.includes('PM');
+      const isAM = upper.includes('AM');
+      const numeric = upper.replace(/AM|PM|\s+/g, '');
+      const [hRaw, mRaw] = numeric.split(':');
+      let h = parseInt(hRaw, 10);
+      const m = parseInt(mRaw, 10) || 0;
+      if (isNaN(h)) return null;
+      if (isPM && h < 12) h += 12;
+      if (isAM && h === 12) h = 0;
+      return h * 60 + m;
+    };
+
+    const now = new Date();
+    const todayMidnight = new Date(now);
+    todayMidnight.setHours(0, 0, 0, 0);
+    const nowMins = now.getHours() * 60 + now.getMinutes();
+
+    const combinedMap = new Map<string, any>();
+    [...(todayEvents || []), ...(events || [])].forEach((ev: any) => {
+      if (!ev) return;
+      const key = ev.id || `${ev.title || ''}_${ev.date || ''}`;
+      if (!combinedMap.has(key)) combinedMap.set(key, ev);
+    });
+
+    const activeAndUpcoming = Array.from(combinedMap.values())
+      .filter((ev: any) => {
+        const statusLower = String(ev.status || '').toLowerCase();
+        if (statusLower === 'completed' || statusLower === 'cancelled' || statusLower === 'ended') {
+          return false;
+        }
+        const startD = parseEvDateLocal(ev.date || ev.startDate || ev.eventDate);
+        const endD = parseEvDateLocal(ev.endDate || ev.date || ev.startDate || ev.eventDate);
+        if (!endD) return false;
+        const endMidnight = new Date(endD);
+        endMidnight.setHours(0, 0, 0, 0);
+        if (endMidnight.getTime() < todayMidnight.getTime()) return false;
+        if (endMidnight.getTime() === todayMidnight.getTime()) {
+          const endMins = parseTimeEndMins(ev);
+          if (endMins !== null && nowMins > endMins) return false;
+        }
+        return Boolean(startD || endD);
+      })
+      .sort((a: any, b: any) => {
+        const aStart = parseEvDateLocal(a.date || a.startDate)?.getTime() || 0;
+        const bStart = parseEvDateLocal(b.date || b.startDate)?.getTime() || 0;
+        return aStart - bStart;
+      });
+
+    // If no active or upcoming events exist, display church service timings cleanly
+    if (activeAndUpcoming.length === 0) {
       const timings = activeChurch?.serviceTimings || [];
       if (timings.length > 0) {
         return timings.map((st: any) => {
@@ -4111,22 +4208,85 @@ export default function HomeScreen() {
           return {
             title: st.name || 'Church Service',
             titleTelugu: st.nameTelugu || getTeluguServiceTitle(st.name),
+            dateLabel: (st.note || '').trim() || undefined,
             time: timeEn,
             timeTelugu: timeTe,
+            isServiceTiming: true,
+            categoryEn: 'CHURCH SERVICE TIMINGS',
+            categoryTe: 'ఆరాధన సమయములు',
             raw: st,
           };
         });
       }
       return [
-        { title: 'Morning Prayer', titleTelugu: 'ఉదయ కాల ప్రార్థన', time: '6:00 AM - 7:30 AM', timeTelugu: 'ఉదయం 6:00 - 7:30' },
-        { title: 'Worship Service', titleTelugu: 'ఆరాధన కూడిక', time: '10:00 AM - 12:30 PM', timeTelugu: 'ఉదయం 10:00 - మధ్యాహ్నం 12:30' },
-        { title: 'Evening Fellowship', titleTelugu: 'సాయంకాల సహవాసం', time: '6:30 PM - 8:30 PM', timeTelugu: 'సాయంత్రం 6:30 - రాత్రి 8:30' },
+        {
+          title: 'Morning Prayer',
+          titleTelugu: 'ఉదయ కాల ప్రార్థన',
+          time: '6:00 AM - 7:30 AM',
+          timeTelugu: 'ఉదయం 6:00 - 7:30',
+          isServiceTiming: true,
+          categoryEn: 'CHURCH SERVICE TIMINGS',
+          categoryTe: 'ఆరాధన సమయములు',
+        },
+        {
+          title: 'Worship Service',
+          titleTelugu: 'ఆరాధన కూడిక',
+          time: '10:00 AM - 12:30 PM',
+          timeTelugu: 'ఉదయం 10:00 - మధ్యాహ్నం 12:30',
+          isServiceTiming: true,
+          categoryEn: 'CHURCH SERVICE TIMINGS',
+          categoryTe: 'ఆరాధన సమయములు',
+        },
+        {
+          title: 'Evening Fellowship',
+          titleTelugu: 'సాయంకాల సహవాసం',
+          time: '6:30 PM - 8:30 PM',
+          timeTelugu: 'సాయంత్రం 6:30 - రాత్రి 8:30',
+          isServiceTiming: true,
+          categoryEn: 'CHURCH SERVICE TIMINGS',
+          categoryTe: 'ఆరాధన సమయములు',
+        },
       ];
     }
-    return list.map((ev: any) => {
+
+    const fmtShortDate = (d: Date, includeYear = false) =>
+      d.toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        ...(includeYear ? { year: 'numeric' } : {}),
+      });
+
+    return activeAndUpcoming.map((ev: any) => {
+      const startD = parseEvDateLocal(ev.date || ev.startDate || ev.eventDate);
+      const endD = parseEvDateLocal(ev.endDate || ev.date || ev.startDate || ev.eventDate);
+      const startMid = startD ? new Date(startD.getFullYear(), startD.getMonth(), startD.getDate()) : null;
+      const endMid = endD ? new Date(endD.getFullYear(), endD.getMonth(), endD.getDate()) : null;
+
+      const isActiveOngoing = Boolean(
+        startMid &&
+        endMid &&
+        todayMidnight.getTime() >= startMid.getTime() &&
+        todayMidnight.getTime() <= endMid.getTime()
+      );
+
+      let dateLabel = '';
+      if (startMid && endMid && startMid.getTime() !== endMid.getTime()) {
+        const sameYear = startMid.getFullYear() === endMid.getFullYear();
+        dateLabel = sameYear
+          ? `${fmtShortDate(startMid)} – ${fmtShortDate(endMid, true)}`
+          : `${fmtShortDate(startMid, true)} – ${fmtShortDate(endMid, true)}`;
+      } else if (startMid) {
+        dateLabel =
+          startMid.getTime() === todayMidnight.getTime()
+            ? `Today · ${fmtShortDate(startMid, true)}`
+            : fmtShortDate(startMid, true);
+      } else if (ev.date) {
+        dateLabel = formatDateDisplay(ev.date);
+      }
+
       const sEn = ev.startTime ? formatEventTime(ev.startTime, 'en') : '';
       const eEn = ev.endTime ? formatEventTime(ev.endTime, 'en') : '';
-      const timeEn = sEn ? (eEn ? `${sEn} - ${eEn}` : sEn) : (ev.date ? formatDateDisplay(ev.date) : 'Today');
+      const timeEn = sEn ? (eEn ? `${sEn} - ${eEn}` : sEn) : (ev.time || '');
 
       const sTe = ev.startTime ? formatEventTime(ev.startTime, 'te') : '';
       const eTe = ev.endTime ? formatEventTime(ev.endTime, 'te') : '';
@@ -4135,8 +4295,12 @@ export default function HomeScreen() {
       return {
         title: ev.title || 'Church Event',
         titleTelugu: ev.titleTelugu || ev.title,
+        dateLabel,
         time: timeEn,
         timeTelugu: timeTe,
+        isServiceTiming: false,
+        categoryEn: isActiveOngoing ? 'ACTIVE EVENT' : 'UPCOMING EVENT',
+        categoryTe: isActiveOngoing ? 'ప్రస్తుత కూడిక' : 'రాబోవు కూడిక',
         raw: ev,
       };
     });
@@ -4276,7 +4440,7 @@ export default function HomeScreen() {
               theme={screenTheme}
               onSeeAll={() => navigation.navigate('Events')} 
               onEventPress={(evItem) => {
-                if (evItem?.raw) {
+                if (evItem?.raw && !evItem?.isServiceTiming) {
                   navigation.navigate('EventDetails', { event: evItem.raw });
                 } else {
                   navigation.navigate('Events');

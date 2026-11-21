@@ -19,7 +19,6 @@ import {
   Users,
   CheckCircle,
   Trash2,
-  Sparkles,
   ChevronRight,
   Layers,
   Edit3,
@@ -33,6 +32,7 @@ import {
   KidsAttendanceSession,
   KidsProgramType,
   KidsTeacherRecord,
+  getKidsProgramVisual,
 } from '../../../../types/KidsMinistryTypes';
 
 interface AdminSessionManagerModalProps {
@@ -334,32 +334,41 @@ export default function AdminSessionManagerModal({
 
         {/* Segmented Mode Tabs */}
         <View style={[styles.tabsRow, { borderBottomColor: borderColor }]}>
-          <TouchableOpacity
-            style={[
-              styles.tabPill,
-              { backgroundColor: secondarySurface, borderColor },
-              activeTab === 'create' && { backgroundColor: activePillBg, borderColor: activePillBg },
-            ]}
-            onPress={() => setActiveTab('create')}
-          >
-            <Text style={[styles.tabPillText, { color: activeTab === 'create' ? activePillText : secondaryText }]}>
-              {editingSession ? 'Edit Program Session' : 'Create Program Session'}
-            </Text>
-          </TouchableOpacity>
+          <View style={[styles.tabsTrack, { backgroundColor: secondarySurface, borderColor }]}>
+            <TouchableOpacity
+              style={[
+                styles.tabPill,
+                activeTab === 'create' && { backgroundColor: activePillBg },
+              ]}
+              onPress={() => setActiveTab('create')}
+              activeOpacity={0.85}
+            >
+              <Plus size={14} color={activeTab === 'create' ? activePillText : secondaryText} strokeWidth={2.4} />
+              <Text
+                style={[styles.tabPillText, { color: activeTab === 'create' ? activePillText : secondaryText }]}
+                numberOfLines={1}
+              >
+                {editingSession ? 'Edit Session' : 'Create Session'}
+              </Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[
-              styles.tabPill,
-              { backgroundColor: secondarySurface, borderColor },
-              activeTab === 'list' && { backgroundColor: activePillBg, borderColor: activePillBg },
-            ]}
-            onPress={() => setActiveTab('list')}
-          >
-            <Layers size={14} color={activeTab === 'list' ? activePillText : secondaryText} />
-            <Text style={[styles.tabPillText, { color: activeTab === 'list' ? activePillText : secondaryText }]}>
-              All Sessions ({sessions.length})
-            </Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.tabPill,
+                activeTab === 'list' && { backgroundColor: activePillBg },
+              ]}
+              onPress={() => setActiveTab('list')}
+              activeOpacity={0.85}
+            >
+              <Layers size={14} color={activeTab === 'list' ? activePillText : secondaryText} />
+              <Text
+                style={[styles.tabPillText, { color: activeTab === 'list' ? activePillText : secondaryText }]}
+                numberOfLines={1}
+              >
+                All Sessions ({sessions.length})
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {activeTab === 'create' ? (
@@ -383,7 +392,7 @@ export default function AdminSessionManagerModal({
                     ✏️ Editing: {editingSession.programTitle}
                   </Text>
                   <Text style={[styles.editingBannerSub, { color: secondaryText }]}>
-                    {formatDateMonthYear(editingSession.date)} ({formatDateDisplay(editingSession.date)})
+                    {formatDateMonthYear(editingSession.date)}
                   </Text>
                 </View>
                 <TouchableOpacity
@@ -547,10 +556,7 @@ export default function AdminSessionManagerModal({
             {/* Form Action Buttons: Save & Delete */}
             <View style={styles.formActionButtonsRow}>
               <TouchableOpacity
-                style={[
-                  styles.createBtn,
-                  { backgroundColor: activePillBg, flex: editingSession ? 1 : undefined },
-                ]}
+                style={[styles.createBtn, { backgroundColor: activePillBg }]}
                 onPress={handleSaveSession}
                 disabled={saving}
                 activeOpacity={0.85}
@@ -560,9 +566,9 @@ export default function AdminSessionManagerModal({
                 ) : (
                   <>
                     {editingSession ? (
-                      <Check size={17} color={activePillText} strokeWidth={2.4} />
+                      <Check size={16} color={activePillText} strokeWidth={2.5} />
                     ) : (
-                      <Sparkles size={17} color={activePillText} />
+                      <Plus size={16} color={activePillText} strokeWidth={2.5} />
                     )}
                     <Text style={[styles.createBtnText, { color: activePillText }]}>
                       {editingSession ? 'Save Changes' : 'Create & Activate Program Session'}
@@ -608,65 +614,172 @@ export default function AdminSessionManagerModal({
             ) : (
               sessions.map(sess => {
                 const isSelected = activeSession?.id === sess.id;
+                const sessVisual = getKidsProgramVisual(sess.programType, isDark);
+                const normTitle = (sess.programTitle || sessVisual.label).trim().toLowerCase();
+                const showDistinctCategory =
+                  normTitle !== sessVisual.label.trim().toLowerCase() &&
+                  normTitle !== sessVisual.shortLabel.trim().toLowerCase();
+                const statusBadgeLabel = sess.attendanceFinalized
+                  ? 'FINALIZED'
+                  : sess.status === 'upcoming'
+                  ? 'UPCOMING'
+                  : sess.status === 'completed'
+                  ? 'COMPLETED'
+                  : 'ACTIVE';
+                const statusBadgeColor = sess.attendanceFinalized
+                  ? '#10B981'
+                  : sess.status === 'upcoming'
+                  ? '#3B82F6'
+                  : sess.status === 'completed'
+                  ? '#F59E0B'
+                  : '#10B981';
+                const facultyCount = sess.assignedTeacherIds?.length || 0;
+
                 return (
                   <View
                     key={sess.id}
                     style={[
                       styles.sessionRowCard,
                       { backgroundColor: cardSurface, borderColor },
-                      isSelected && { borderColor: '#F59E0B', borderWidth: 2 },
+                      isSelected && { borderColor: sessVisual.accentColor, borderWidth: 1.5 },
                     ]}
                   >
-                    <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                        <View style={[styles.statusDot, { backgroundColor: sess.status === 'active' ? '#10B981' : '#F59E0B' }]} />
-                        <Text style={[styles.sessionBadge, { color: sess.attendanceFinalized ? '#10B981' : sess.status === 'active' ? '#10B981' : '#F59E0B' }]}>
-                          {sess.programType.replace('_', ' ').toUpperCase()} · {sess.attendanceFinalized ? 'FINALIZED ✓' : sess.status.toUpperCase()}
-                        </Text>
+                    {/* Program Top Accent Bar */}
+                    <View
+                      style={[
+                        styles.listCardAccentBar,
+                        { backgroundColor: sessVisual.accentColor },
+                      ]}
+                    />
+
+                    <View style={styles.listCardInner}>
+                      {/* Card Header */}
+                      <View style={styles.listCardHeader}>
+                        <View
+                          style={[
+                            styles.listCardEmojiBox,
+                            { backgroundColor: sessVisual.softBg, borderColor: sessVisual.softBorder },
+                          ]}
+                        >
+                          <Text style={{ fontSize: 19 }}>{sessVisual.emoji}</Text>
+                        </View>
+
+                        <View style={{ flex: 1, paddingRight: 8 }}>
+                          {showDistinctCategory && (
+                            <Text style={[styles.listCategoryEyebrow, { color: sessVisual.accentColor }]}>
+                              {sessVisual.shortLabel.toUpperCase()}
+                            </Text>
+                          )}
+                          <Text style={[styles.sessionRowTitle, { color: primaryText }]} numberOfLines={1}>
+                            {sess.programTitle}
+                          </Text>
+                        </View>
+
+                        <View
+                          style={[
+                            styles.listStatusPill,
+                            {
+                              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : secondarySurface,
+                              borderColor,
+                            },
+                          ]}
+                        >
+                          <View style={[styles.statusDot, { backgroundColor: statusBadgeColor }]} />
+                          <Text style={[styles.sessionBadge, { color: statusBadgeColor }]}>
+                            {statusBadgeLabel}
+                          </Text>
+                        </View>
                       </View>
-                      <Text style={[styles.sessionRowTitle, { color: primaryText }]}>
-                        {sess.programTitle}
-                      </Text>
-                      <Text style={[styles.sessionRowMeta, { color: secondaryText }]}>
-                        📅 {formatDateMonthYear(sess.date)} ({formatDateDisplay(sess.date)}){sess.startTime ? ` · ${sess.startTime}` : ''} · {sess.assignedTeacherIds?.length || 0} {sess.assignedTeacherIds?.length === 1 ? 'teacher' : 'teachers'} assigned
-                      </Text>
-                    </View>
 
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      {/* Select / Active */}
-                      <TouchableOpacity
-                        style={[
-                          styles.selectBtn,
-                          { backgroundColor: isSelected ? '#10B981' : secondarySurface, borderColor },
-                        ]}
-                        onPress={() => {
-                          onSelectSession(sess);
-                          onClose();
-                        }}
-                      >
-                        <Text style={[styles.selectBtnText, { color: isSelected ? '#FFFFFF' : primaryText }]}>
-                          {isSelected ? 'Active' : 'Select'}
-                        </Text>
-                      </TouchableOpacity>
+                      {/* 3-Column Meta Row (Single Clear Date, Time, Faculty) */}
+                      <View style={[styles.listMetaStrip, { backgroundColor: secondarySurface, borderColor }]}>
+                        <View style={styles.listMetaItem}>
+                          <Calendar size={12} color={sessVisual.accentColor} />
+                          <Text style={[styles.listMetaText, { color: primaryText }]} numberOfLines={1}>
+                            {formatDateMonthYear(sess.date)}
+                          </Text>
+                        </View>
+                        <View style={[styles.listMetaDivider, { backgroundColor: borderColor }]} />
+                        <View style={styles.listMetaItem}>
+                          <Clock size={12} color="#3B82F6" />
+                          <Text style={[styles.listMetaText, { color: primaryText }]} numberOfLines={1}>
+                            {sess.startTime || '09:30 AM'}
+                          </Text>
+                        </View>
+                        <View style={[styles.listMetaDivider, { backgroundColor: borderColor }]} />
+                        <View style={styles.listMetaItem}>
+                          <Users size={12} color="#10B981" />
+                          <Text style={[styles.listMetaText, { color: primaryText }]} numberOfLines={1}>
+                            {facultyCount} Faculty
+                          </Text>
+                        </View>
+                      </View>
 
-                      {/* Edit Button */}
-                      <TouchableOpacity
-                        style={[styles.editRowBtn, { backgroundColor: secondarySurface, borderColor }]}
-                        onPress={() => handleStartEdit(sess)}
-                        activeOpacity={0.8}
-                      >
-                        <Edit3 size={13} color={primaryText} />
-                        <Text style={[styles.editRowBtnText, { color: primaryText }]}>Edit</Text>
-                      </TouchableOpacity>
+                      {/* Uniform 3-Button Action Bar */}
+                      <View style={styles.listCardActionsRow}>
+                        <TouchableOpacity
+                          style={[
+                            styles.selectBtn,
+                            {
+                              backgroundColor: isSelected
+                                ? '#10B981'
+                                : isDark
+                                ? '#FFFFFF'
+                                : '#0F172A',
+                              borderColor: isSelected
+                                ? '#10B981'
+                                : isDark
+                                ? '#FFFFFF'
+                                : '#0F172A',
+                            },
+                          ]}
+                          onPress={() => {
+                            onSelectSession(sess);
+                            onClose();
+                          }}
+                          activeOpacity={0.85}
+                        >
+                          {isSelected && <Check size={13} color="#FFFFFF" strokeWidth={2.5} />}
+                          <Text
+                            style={[
+                              styles.selectBtnText,
+                              {
+                                color: isSelected
+                                  ? '#FFFFFF'
+                                  : isDark
+                                  ? '#000000'
+                                  : '#FFFFFF',
+                              },
+                            ]}
+                          >
+                            {isSelected ? 'Selected' : 'Select'}
+                          </Text>
+                        </TouchableOpacity>
 
-                      {/* Delete Button */}
-                      <TouchableOpacity
-                        style={[styles.deleteBtn, { backgroundColor: secondarySurface, borderColor }]}
-                        onPress={() => handleDeleteSession(sess)}
-                        activeOpacity={0.8}
-                      >
-                        <Trash2 size={14} color="#EF4444" />
-                      </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.editRowBtn, { backgroundColor: secondarySurface, borderColor }]}
+                          onPress={() => handleStartEdit(sess)}
+                          activeOpacity={0.8}
+                        >
+                          <Edit3 size={13.5} color={primaryText} />
+                          <Text style={[styles.editRowBtnText, { color: primaryText }]}>Edit</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.deleteBtn,
+                            {
+                              backgroundColor: isDark ? 'rgba(239, 68, 68, 0.14)' : '#FEF2F2',
+                              borderColor: isDark ? 'rgba(239, 68, 68, 0.35)' : '#FECACA',
+                            },
+                          ]}
+                          onPress={() => handleDeleteSession(sess)}
+                          activeOpacity={0.8}
+                        >
+                          <Trash2 size={13.5} color="#EF4444" />
+                          <Text style={styles.deleteBtnText}>Delete</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   </View>
                 );
@@ -724,21 +837,26 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   tabsRow: {
-    flexDirection: 'row',
     paddingHorizontal: 16,
     paddingVertical: 10,
-    gap: 8,
     borderBottomWidth: 1,
+  },
+  tabsTrack: {
+    flexDirection: 'row',
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 3,
+    gap: 4,
   },
   tabPill: {
     flex: 1,
+    height: 36,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 9,
-    borderRadius: 12,
-    borderWidth: 1,
+    paddingHorizontal: 10,
+    borderRadius: 9,
   },
   tabPillText: { fontSize: 12.5, fontWeight: '700' },
   formScroll: { padding: 18, gap: 18 },
@@ -819,15 +937,16 @@ const styles = StyleSheet.create({
   teacherChipName: { fontSize: 12.5, fontWeight: '700' },
   teacherChipRole: { fontSize: 11 },
   createBtn: {
+    flex: 1,
+    height: 44,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 999,
-    marginTop: 8,
+    gap: 7,
+    paddingHorizontal: 16,
+    borderRadius: 12,
   },
-  createBtnText: { fontSize: 14, fontWeight: '800' },
+  createBtnText: { fontSize: 13.5, fontWeight: '800' },
   listScroll: { padding: 18, gap: 10 },
   emptyCard: {
     alignItems: 'center',
@@ -838,32 +957,102 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 16, fontWeight: '800' },
   emptySub: { fontSize: 12.5, textAlign: 'center', lineHeight: 18 },
   sessionRowCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  listCardAccentBar: {
+    height: 3.5,
+    width: '100%',
+  },
+  listCardInner: {
+    padding: 14,
+    gap: 11,
+  },
+  listCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 14,
-    borderRadius: 16,
-    borderWidth: 1,
-    gap: 12,
+    gap: 10,
   },
-  statusDot: { width: 7, height: 7, borderRadius: 4 },
-  sessionBadge: { fontSize: 10.5, fontWeight: '800', letterSpacing: 0.4 },
-  sessionRowTitle: { fontSize: 14.5, fontWeight: '800' },
-  sessionRowMeta: { fontSize: 11.5, marginTop: 2 },
+  listCardEmojiBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  listCategoryEyebrow: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    marginBottom: 1,
+  },
+  listStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  statusDot: { width: 6.5, height: 6.5, borderRadius: 3.5 },
+  sessionBadge: { fontSize: 10, fontWeight: '800', letterSpacing: 0.4 },
+  sessionRowTitle: { fontSize: 15.5, fontWeight: '800', letterSpacing: -0.2 },
+  listMetaStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 11,
+    borderWidth: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
+  listMetaItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  listMetaDivider: {
+    width: 1,
+    height: 14,
+  },
+  listMetaText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  listCardActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   selectBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    flex: 1.15,
+    height: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
     borderRadius: 10,
     borderWidth: 1,
   },
   selectBtnText: { fontSize: 12, fontWeight: '800' },
   deleteBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+    flex: 1,
+    height: 36,
+    borderRadius: 10,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 5,
     borderWidth: 1,
+  },
+  deleteBtnText: {
+    color: '#EF4444',
+    fontSize: 12,
+    fontWeight: '700',
   },
   editingBanner: {
     flexDirection: 'row',
@@ -899,13 +1088,13 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   deleteSessionFormBtn: {
+    height: 44,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
     paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 999,
+    borderRadius: 12,
     borderWidth: 1,
   },
   deleteSessionFormBtnText: {
@@ -914,11 +1103,12 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   editRowBtn: {
+    flex: 1,
+    height: 36,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    justifyContent: 'center',
+    gap: 5,
     borderRadius: 10,
     borderWidth: 1,
   },
