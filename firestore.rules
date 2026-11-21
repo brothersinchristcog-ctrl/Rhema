@@ -733,6 +733,18 @@ service cloud.firestore {
         allow delete: if isChurchAdmin();
       }
 
+      // Program-Based Kids Ministry Sessions (Sunday School, VBS, Special Meetings, etc.)
+      match /kids_program_sessions/{programSessionId} {
+        allow read, create, update: if isAuthenticated();
+        allow delete: if isChurchAdmin();
+      }
+
+      // Program-Wise Kids Attendance Records (Present & Finalized Absent)
+      match /kids_attendance/{attendanceId} {
+        allow read, create, update: if isAuthenticated();
+        allow delete: if isChurchAdmin();
+      }
+
       // Teachers & Volunteers Faculty
       match /kids_teachers/{teacherId} {
         allow read: if isAuthenticated();

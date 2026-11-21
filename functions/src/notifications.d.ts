@@ -384,4 +384,25 @@ export declare const onVolunteerPostUpdated: import("firebase-functions").CloudF
     churchId: string;
     postId: string;
 }>>;
+/**
+ * Trigger: Child Checked In -> Notify parent with class & pickup code.
+ */
+export declare const onKidsSessionCreated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    sessionId: string;
+}>>;
+/**
+ * Trigger: Child Checked Out -> Notify parent with handover guardian details.
+ */
+export declare const onKidsSessionUpdated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+    churchId: string;
+    sessionId: string;
+}>>;
+/**
+ * Trigger: Child Marked Absent -> Strictly verifies program attendanceFinalized === true before sending alert.
+ */
+export declare const onKidsAttendanceAbsentCreated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    attendanceId: string;
+}>>;
 //# sourceMappingURL=notifications.d.ts.map
