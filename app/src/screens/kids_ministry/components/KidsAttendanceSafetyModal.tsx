@@ -939,7 +939,11 @@ export default function KidsAttendanceSafetyModal({
                                 activeOpacity={0.82}
                               >
                                 <View style={styles.programPickTopRow}>
-                                  <Text style={{ fontSize: 14 }}>{pVisual.emoji}</Text>
+                                  <Image
+                                    source={pVisual.iconImage}
+                                    style={{ width: 18, height: 18 }}
+                                    resizeMode="contain"
+                                  />
                                   <View style={[styles.dotSmall, { backgroundColor: st.color }]} />
                                 </View>
                                 <Text
@@ -988,7 +992,11 @@ export default function KidsAttendanceSafetyModal({
                                     { backgroundColor: progVisual.softBg, borderColor: progVisual.softBorder },
                                   ]}
                                 >
-                                  <Text style={{ fontSize: 22 }}>{progVisual.emoji}</Text>
+                                  <Image
+                                    source={progVisual.iconImage}
+                                    style={{ width: 28, height: 28 }}
+                                    resizeMode="contain"
+                                  />
                                 </View>
 
                                 <View style={{ flex: 1, paddingRight: 8 }}>
@@ -1322,7 +1330,11 @@ export default function KidsAttendanceSafetyModal({
                             <View style={styles.historyRowContent}>
                               <View style={styles.historyRowTop}>
                                 <View style={[styles.historyEmojiMini, { backgroundColor: pVisual.softBg }]}>
-                                  <Text style={{ fontSize: 15 }}>{pVisual.emoji}</Text>
+                                  <Image
+                                    source={pVisual.iconImage}
+                                    style={{ width: 21, height: 21 }}
+                                    resizeMode="contain"
+                                  />
                                 </View>
 
                                 <View style={{ flex: 1, paddingRight: 8 }}>

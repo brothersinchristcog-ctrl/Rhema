@@ -301,13 +301,24 @@ export interface KidsProgramVisualMeta {
   label: string;
   shortLabel: string;
   emoji: string;
+  iconImage: any;
   accentColor: string;
   softBg: string;
   softBorder: string;
 }
 
+const KIDS_PROGRAM_3D_ICONS = {
+  sunday_school: require('../../assets/kids_cat_lessons.png'),
+  vbs: require('../../assets/gallery_3d_church.png'),
+  special_meeting: require('../../assets/3d_party_popper.png'),
+  childrens_worship: require('../../assets/gallery_3d_stage.png'),
+  summer_camp: require('../../assets/gallery_3d_fireworks.png'),
+  bible_study: require('../../assets/3d_daily_verse.png'),
+  other: require('../../assets/3d_events.png'),
+} as const;
+
 /**
- * Returns consistent visual theme tokens (emoji, labels, accent colors) across all Kids Ministry program types.
+ * Returns consistent visual theme tokens (3D icon, labels, accent colors) across all Kids Ministry program types.
  */
 export function getKidsProgramVisual(
   programType?: KidsProgramType | string,
@@ -320,6 +331,7 @@ export function getKidsProgramVisual(
         label: 'Vacation Bible School (VBS)',
         shortLabel: 'VBS',
         emoji: '☀️',
+        iconImage: KIDS_PROGRAM_3D_ICONS.vbs,
         accentColor: isDark ? '#FB923C' : '#EA580C',
         softBg: isDark ? 'rgba(249, 115, 22, 0.16)' : '#FFF7ED',
         softBorder: isDark ? 'rgba(251, 146, 60, 0.35)' : '#FED7AA',
@@ -330,6 +342,7 @@ export function getKidsProgramVisual(
         label: 'Special Kids Meeting',
         shortLabel: 'Special',
         emoji: '✨',
+        iconImage: KIDS_PROGRAM_3D_ICONS.special_meeting,
         accentColor: isDark ? '#C084FC' : '#7C3AED',
         softBg: isDark ? 'rgba(139, 92, 246, 0.16)' : '#F5F3FF',
         softBorder: isDark ? 'rgba(192, 132, 252, 0.35)' : '#DDD6FE',
@@ -340,6 +353,7 @@ export function getKidsProgramVisual(
         label: "Children's Worship",
         shortLabel: 'Worship',
         emoji: '🎵',
+        iconImage: KIDS_PROGRAM_3D_ICONS.childrens_worship,
         accentColor: isDark ? '#F472B6' : '#DB2777',
         softBg: isDark ? 'rgba(236, 72, 153, 0.16)' : '#FDF2F8',
         softBorder: isDark ? 'rgba(244, 114, 182, 0.35)' : '#FBCFE8',
@@ -350,6 +364,7 @@ export function getKidsProgramVisual(
         label: 'Summer Camp',
         shortLabel: 'Camps',
         emoji: '⛺',
+        iconImage: KIDS_PROGRAM_3D_ICONS.summer_camp,
         accentColor: isDark ? '#34D399' : '#059669',
         softBg: isDark ? 'rgba(16, 185, 129, 0.16)' : '#ECFDF5',
         softBorder: isDark ? 'rgba(52, 211, 153, 0.35)' : '#A7F3D0',
@@ -360,6 +375,7 @@ export function getKidsProgramVisual(
         label: 'Bible Study Program',
         shortLabel: 'Bible Study',
         emoji: '📜',
+        iconImage: KIDS_PROGRAM_3D_ICONS.bible_study,
         accentColor: isDark ? '#60A5FA' : '#2563EB',
         softBg: isDark ? 'rgba(59, 130, 246, 0.16)' : '#EFF6FF',
         softBorder: isDark ? 'rgba(96, 165, 250, 0.35)' : '#BFDBFE',
@@ -370,6 +386,7 @@ export function getKidsProgramVisual(
         label: 'Special Event',
         shortLabel: 'Other',
         emoji: '🎯',
+        iconImage: KIDS_PROGRAM_3D_ICONS.other,
         accentColor: isDark ? '#94A3B8' : '#475569',
         softBg: isDark ? 'rgba(148, 163, 184, 0.16)' : '#F8FAFC',
         softBorder: isDark ? 'rgba(148, 163, 184, 0.32)' : '#CBD5E1',
@@ -381,6 +398,7 @@ export function getKidsProgramVisual(
         label: 'Sunday School',
         shortLabel: 'Sunday School',
         emoji: '📖',
+        iconImage: KIDS_PROGRAM_3D_ICONS.sunday_school,
         accentColor: isDark ? '#FBBF24' : '#D97706',
         softBg: isDark ? 'rgba(245, 158, 11, 0.16)' : '#FFFBEB',
         softBorder: isDark ? 'rgba(251, 191, 36, 0.35)' : '#FDE68A',

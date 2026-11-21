@@ -126,27 +126,36 @@ export default function AdminZoomMeetingsCreate({
   const handleGenerateZoomLink = async () => {
     try {
       setLoading(true);
-      
+
       const startTimestamp = parseDateTimeToMs(form.date, form.startTime);
+      const endTimestamp = parseDateTimeToMs(form.date, form.endTime);
       const isoStartTime = startTimestamp ? new Date(startTimestamp).toISOString() : new Date().toISOString();
-      
+      const duration =
+        startTimestamp && endTimestamp && endTimestamp > startTimestamp
+          ? Math.max(15, Math.round((endTimestamp - startTimestamp) / 60000))
+          : 60;
+
       const generateZoom = firebase.app().functions('asia-south1').httpsCallable('generateZoomMeetingLink');
       const response = await generateZoom({
         topic: form.title || 'Church Online Meeting',
         startTime: isoStartTime,
-        duration: 60
+        duration,
       });
-      
+
       const data = response.data as any;
-      if (data.success && data.meetingUri) {
-        setForm(prev => ({ ...prev, meetingLink: data.meetingUri }));
-        showPopup('link', 'Zoom Link Generated!', 'Your official Zoom Meeting has been created. Members can join via this link.', data.meetingUri);
+      const resolvedUrl = data?.meetingUri || data?.meetingUrl;
+      if (data?.success && resolvedUrl) {
+        setForm(prev => ({ ...prev, meetingLink: resolvedUrl }));
+        showPopup('link', 'Zoom Link Generated!', 'Your official Zoom Meeting has been created. Members can join via this link.', resolvedUrl);
       } else {
-        showPopup('error', 'Error', 'Failed to generate Zoom link.');
+        showPopup('error', 'Error', data?.message || 'Failed to generate Zoom link.');
       }
     } catch (error: any) {
-       console.error(error);
-       showPopup('error', 'Integration Pending', 'Could not connect to Zoom. Please ensure ZOOM credentials are set in the Firebase environment variables.');
+      console.error('Zoom link generation error:', error);
+      const errMsg =
+        error?.message ||
+        'Could not connect to Zoom. Please deploy the Zoom backend functions and set ZOOM credentials in functions/.env.';
+      showPopup('error', 'Zoom Link Error', errMsg);
     } finally {
       setLoading(false);
     }
@@ -184,10 +193,11 @@ export default function AdminZoomMeetingsCreate({
   const handleGenerateGoogleMeetLink = async () => {
     setLoading(true);
     try {
+      const configuredWebClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
       GoogleSignin.configure({
         scopes: ['https://www.googleapis.com/auth/meetings.space.created'],
         offlineAccess: false,
-        webClientId: '962252889183-jomnitu1s1317td9fmdq9qbo7d8sdbhb.apps.googleusercontent.com',
+        ...(configuredWebClientId ? { webClientId: configuredWebClientId } : {}),
       });
       await GoogleSignin.hasPlayServices();
 
@@ -248,10 +258,11 @@ export default function AdminZoomMeetingsCreate({
     setLoading(true);
     try {
       const startTimestamp = parseDateTimeToMs(form.date, form.startTime);
-      
+      const endTimestamp = parseDateTimeToMs(form.date, form.endTime);
+
       const createBibleClass = firebase.app().functions('asia-south1').httpsCallable('createBibleClass');
       const result = await createBibleClass({
-        churchId: 'default',
+        churchId: member?.churchId || 'rhema',
         title: form.title,
         topic: form.topic,
         bibleBook: form.bibleBook,
@@ -264,7 +275,8 @@ export default function AdminZoomMeetingsCreate({
         provider: provider,
         meetingType: provider,
         recurrence: 'NONE',
-        startTimestamp
+        startTimestamp,
+        endTimestamp,
       });
 
       const data = result.data as any;

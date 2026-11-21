@@ -721,7 +721,11 @@ export default function AdminKidsHub({ navigation }: any) {
                             { backgroundColor: visual.softBg, borderColor: visual.softBorder },
                           ]}
                         >
-                          <Text style={{ fontSize: 23 }}>{visual.emoji}</Text>
+                          <Image
+                            source={visual.iconImage}
+                            style={{ width: 30, height: 30 }}
+                            resizeMode="contain"
+                          />
                         </View>
 
                         <View style={{ flex: 1, paddingRight: 8 }}>
@@ -1050,7 +1054,11 @@ export default function AdminKidsHub({ navigation }: any) {
                                             { backgroundColor: isSelected ? cardSurface : sessVisual.softBg },
                                           ]}
                                         >
-                                          <Text style={{ fontSize: 13 }}>{sessVisual.emoji}</Text>
+                                          <Image
+                                            source={sessVisual.iconImage}
+                                            style={{ width: 17, height: 17 }}
+                                            resizeMode="contain"
+                                          />
                                         </View>
                                         <View
                                           style={[

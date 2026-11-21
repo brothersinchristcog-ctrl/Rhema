@@ -9,6 +9,7 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -89,14 +90,14 @@ const parseTimeStringToDate = (timeStr: string): Date => {
   return d;
 };
 
-const PROGRAM_TYPES: { type: KidsProgramType; label: string; icon: string }[] = [
-  { type: 'sunday_school', label: 'Sunday School', icon: '📖' },
-  { type: 'vbs', label: 'VBS (Bible School)', icon: '☀️' },
-  { type: 'special_meeting', label: 'Special Meeting', icon: '✨' },
-  { type: 'childrens_worship', label: "Children's Worship", icon: '🎵' },
-  { type: 'summer_camp', label: 'Summer Camp', icon: '⛺' },
-  { type: 'bible_study', label: 'Bible Study', icon: '📜' },
-  { type: 'other', label: 'Other Event', icon: '🎯' },
+const PROGRAM_TYPES: { type: KidsProgramType; label: string }[] = [
+  { type: 'sunday_school', label: 'Sunday School' },
+  { type: 'vbs', label: 'VBS (Bible School)' },
+  { type: 'special_meeting', label: 'Special Meeting' },
+  { type: 'childrens_worship', label: "Children's Worship" },
+  { type: 'summer_camp', label: 'Summer Camp' },
+  { type: 'bible_study', label: 'Bible Study' },
+  { type: 'other', label: 'Other Event' },
 ];
 
 export default function AdminSessionManagerModal({
@@ -412,23 +413,34 @@ export default function AdminSessionManagerModal({
               <View style={styles.programGrid}>
                 {PROGRAM_TYPES.map(p => {
                   const isSelected = programType === p.type;
+                  const visualMeta = getKidsProgramVisual(p.type, isDark);
                   return (
                     <TouchableOpacity
                       key={p.type}
                       style={[
                         styles.programTypeCard,
                         { backgroundColor: cardSurface, borderColor },
-                        isSelected && { borderColor: '#F59E0B', borderWidth: 2, backgroundColor: isDark ? 'rgba(245, 158, 11, 0.12)' : '#FFFBEB' },
+                        isSelected && {
+                          borderColor: visualMeta.accentColor,
+                          borderWidth: 1.8,
+                          backgroundColor: visualMeta.softBg,
+                        },
                       ]}
                       onPress={() => handleSelectProgramType(p.type, p.label)}
+                      activeOpacity={0.82}
                     >
-                      <Text style={{ fontSize: 20 }}>{p.icon}</Text>
+                      <Image
+                        source={visualMeta.iconImage}
+                        style={{ width: 28, height: 28 }}
+                        resizeMode="contain"
+                      />
                       <Text
                         style={[
                           styles.programTypeLabel,
-                          { color: primaryText },
-                          isSelected && { fontWeight: '800', color: '#D97706' },
+                          { color: primaryText, flex: 1 },
+                          isSelected && { fontWeight: '800', color: visualMeta.accentColor },
                         ]}
+                        numberOfLines={1}
                       >
                         {p.label}
                       </Text>
@@ -661,7 +673,11 @@ export default function AdminSessionManagerModal({
                             { backgroundColor: sessVisual.softBg, borderColor: sessVisual.softBorder },
                           ]}
                         >
-                          <Text style={{ fontSize: 19 }}>{sessVisual.emoji}</Text>
+                          <Image
+                            source={sessVisual.iconImage}
+                            style={{ width: 24, height: 24 }}
+                            resizeMode="contain"
+                          />
                         </View>
 
                         <View style={{ flex: 1, paddingRight: 8 }}>
