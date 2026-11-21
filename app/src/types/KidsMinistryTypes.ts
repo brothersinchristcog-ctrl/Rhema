@@ -307,6 +307,8 @@ export interface KidsBibleStory {
   readTime: string;
   summary: string;
   summaryTelugu: string;
+  storyContent?: string;
+  storyContentTelugu?: string;
   pages: KidsBibleStoryPage[];
   reflectionQuestions: Array<{
     questionEnglish: string;

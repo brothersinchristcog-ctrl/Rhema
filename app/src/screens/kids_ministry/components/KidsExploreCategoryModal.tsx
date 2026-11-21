@@ -34,6 +34,7 @@ import {
   formatCurriculumDateDisplay,
 } from '../../../types/KidsMinistryTypes';
 import { useTheme } from '../../../context/ThemeContext';
+import { getFullStoryContent, estimateStoryReadTime } from './BibleStoryReaderContent';
 
 export type KidsExploreCategory = 'stories' | 'quizzes' | 'lessons' | 'songs';
 
@@ -203,34 +204,55 @@ export default function KidsExploreCategoryModal({
               (filteredStories.length === 0 ? (
                 <EmptyCategory icon={<BookOpen size={30} color={textSecondary} />} title="No Bible Stories Yet" textPrimary={textPrimary} textSecondary={textSecondary} cardBg={cardBg} border={border} />
               ) : (
-                filteredStories.map(s => (
-                  <TouchableOpacity
-                    key={s.id}
-                    style={[styles.itemCard, { backgroundColor: cardBg, borderColor: border }, !isDark && styles.lightShadow]}
-                    onPress={() => onSelectStory(s)}
-                    activeOpacity={0.85}
-                  >
-                    <View style={[styles.thumbBox, { backgroundColor: innerBg, borderColor: border }]}>
-                      {s.coverImageUrl ? (
-                        <Image source={{ uri: s.coverImageUrl }} style={styles.thumbImg} />
-                      ) : (
-                        <Text style={{ fontSize: 24 }}>{s.coverEmoji || '📖'}</Text>
-                      )}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.itemTitle, { color: textPrimary }]} numberOfLines={1}>{s.title}</Text>
-                      {s.titleTelugu ? (
-                        <Text style={[styles.itemSubTe, { color: textPrimary }]} numberOfLines={1}>{s.titleTelugu}</Text>
-                      ) : null}
-                      <Text style={[styles.itemMeta, { color: textSecondary }]}>
-                        {s.scriptureRef ? `${s.scriptureRef} · ` : ''}{s.readTime || '5 min'} · {s.pages?.length || 1} Pages
-                      </Text>
-                    </View>
-                    <View style={[styles.actionPill, { backgroundColor: goldBg }]}>
-                      <Text style={[styles.actionPillText, { color: goldAccent }]}>Read &rsaquo;</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))
+                filteredStories.map(s => {
+                  const fullBody = getFullStoryContent(s);
+                  const readTimeLabel = s.readTime || estimateStoryReadTime(fullBody);
+                  return (
+                    <TouchableOpacity
+                      key={s.id}
+                      style={[styles.storyListCard, { backgroundColor: cardBg, borderColor: border }, !isDark && styles.lightShadow]}
+                      onPress={() => onSelectStory(s)}
+                      activeOpacity={0.86}
+                    >
+                      <View style={[styles.storyThumb16x9, { backgroundColor: innerBg, borderBottomColor: border }]}>
+                        {s.coverImageUrl ? (
+                          <Image source={{ uri: s.coverImageUrl }} style={styles.thumbImg} resizeMode="cover" />
+                        ) : (
+                          <View style={styles.storyFallbackHero}>
+                            <Text style={{ fontSize: 38 }}>{s.coverEmoji || '📖'}</Text>
+                          </View>
+                        )}
+                      </View>
+                      <View style={styles.storyCardBody}>
+                        <View style={styles.storyMetaTopRow}>
+                          {s.scriptureRef ? (
+                            <View style={[styles.actionPill, { backgroundColor: goldBg }]}>
+                              <Text style={[styles.actionPillText, { color: goldAccent }]}>{s.scriptureRef}</Text>
+                            </View>
+                          ) : null}
+                          <Text style={[styles.storyReadTimeText, { color: textSecondary }]}>{readTimeLabel}</Text>
+                        </View>
+                        <Text style={[styles.storyCardTitle, { color: textPrimary }]} numberOfLines={2}>
+                          {s.title}
+                        </Text>
+                        {s.titleTelugu && s.titleTelugu.trim() !== s.title.trim() ? (
+                          <Text style={[styles.itemSubTe, { color: textSecondary }]} numberOfLines={1}>
+                            {s.titleTelugu}
+                          </Text>
+                        ) : null}
+                        {fullBody ? (
+                          <Text style={[styles.storyCardExcerpt, { color: textSecondary }]} numberOfLines={2}>
+                            {fullBody}
+                          </Text>
+                        ) : null}
+                        <View style={styles.storyCardFooter}>
+                          <Text style={[styles.storyReadCta, { color: goldAccent }]}>Read Story</Text>
+                          <ChevronRight size={15} color={goldAccent} />
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
               ))}
 
             {/* ONLY KIDS QUIZZES */}
@@ -477,6 +499,57 @@ const styles = StyleSheet.create({
   thumbImg: {
     width: '100%',
     height: '100%',
+  },
+  storyListCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginBottom: 4,
+  },
+  storyThumb16x9: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+    borderBottomWidth: 1,
+    overflow: 'hidden',
+  },
+  storyFallbackHero: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  storyCardBody: {
+    padding: 14,
+    gap: 6,
+  },
+  storyMetaTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  storyReadTimeText: {
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
+  storyCardTitle: {
+    fontSize: 16.5,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontWeight: '800',
+    lineHeight: 22,
+  },
+  storyCardExcerpt: {
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  storyCardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  storyReadCta: {
+    fontSize: 12.5,
+    fontWeight: '800',
   },
   itemTitle: {
     fontSize: 14.5,

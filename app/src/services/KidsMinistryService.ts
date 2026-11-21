@@ -1,4 +1,5 @@
 import firestore from '@react-native-firebase/firestore';
+import storage from '@react-native-firebase/storage';
 import { RHEMA_CHURCH_ID, RHEMA_ROOT_COLLECTION } from '../constants/ChurchConfig';
 import FirestoreService from './FirestoreService';
 import {
@@ -299,13 +300,66 @@ class KidsMinistryService {
     // Calculate age & recommended class tier
     const age = calculateChildAge(data.dob);
     const recommended = getRecommendedClassTier(age);
+    const fullName = `${data.firstName || ''} ${data.lastName || ''}`.trim();
+    const normNewName = fullName.toLowerCase().replace(/\s+/g, ' ');
+    const now = firestore.FieldValue.serverTimestamp();
+
+    // Single-source duplicate guard in kids_children within the same household
+    if (data.familyId && normNewName) {
+      const famKidsSnap = await collectionRef.where('familyId', '==', data.familyId).get();
+      const existingKidDoc = famKidsSnap.docs.find(d => {
+        const k = d.data();
+        if (data.memberContactId && k.memberContactId === data.memberContactId) return true;
+        const kName = String(k.fullName || `${k.firstName || ''} ${k.lastName || ''}`)
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, ' ');
+        return kName === normNewName;
+      });
+      if (existingKidDoc) {
+        const prev = existingKidDoc.data() as ChildRecord;
+        const mergedPhoto = data.photoUrl || prev.photoUrl || '';
+        const mergedUpdates: Partial<ChildRecord> = {
+          dob: data.dob || prev.dob,
+          age,
+          gender: data.gender || prev.gender,
+          ...(data.assignedClassId ? { assignedClassId: data.assignedClassId } : {}),
+          ...(data.assignedClassName ? { assignedClassName: data.assignedClassName } : {}),
+          ...(data.assignedTier ? { assignedTier: data.assignedTier } : {}),
+          ...(mergedPhoto
+            ? {
+                photoUrl: mergedPhoto,
+                faceEnrolled: true,
+                faceEnrolledAt: prev.faceEnrolledAt || now,
+              }
+            : {}),
+          ...(data.memberContactId && !prev.memberContactId
+            ? { memberContactId: data.memberContactId, isSyncedFromMember: true }
+            : {}),
+          ...(data.allergiesList && data.allergiesList.length > 0
+            ? {
+                medical: {
+                  hasAllergies: true,
+                  allergiesList: data.allergiesList,
+                  medicalAlertNotes: data.medicalNotes || prev.medical?.medicalAlertNotes || '',
+                  bloodGroup: data.bloodGroup || prev.medical?.bloodGroup || '',
+                  emergencyContact: data.emergencyContact || prev.medical?.emergencyContact,
+                },
+              }
+            : {}),
+        };
+        await this.updateChildProfile(cId, existingKidDoc.id, mergedUpdates);
+        return {
+          ...prev,
+          ...mergedUpdates,
+          id: existingKidDoc.id,
+        };
+      }
+    }
 
     // Determine sequence number for formatted ID e.g. "KID-2026-0001"
     const countSnap = await collectionRef.get();
     const childId = formatChildId(countSnap.size + 1);
-
-    const fullName = `${data.firstName || ''} ${data.lastName || ''}`.trim();
-    const now = firestore.FieldValue.serverTimestamp();
 
     const newRecord: Omit<ChildRecord, 'id'> = {
       childId,
@@ -3901,6 +3955,22 @@ class KidsMinistryService {
       };
     });
   }
+  async uploadStoryThumbnail(churchId: string, localUri: string): Promise<string> {
+    const trimmed = (localUri || '').trim();
+    if (!trimmed) return '';
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return trimmed;
+    }
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const rawExt = trimmed.split('.').pop()?.split('?')[0]?.toLowerCase() || 'jpg';
+    const safeExt = /^[a-z0-9]{2,5}$/.test(rawExt) ? rawExt : 'jpg';
+    const storageRef = storage().ref(
+      `churches/${cId}/kids_stories/${Date.now()}_thumb.${safeExt}`
+    );
+    await storageRef.putFile(trimmed);
+    return storageRef.getDownloadURL();
+  }
+
   async createStory(churchId: string, story: Partial<KidsBibleStory>): Promise<string> {
     const cId = churchId || RHEMA_CHURCH_ID;
     const now = firestore.FieldValue.serverTimestamp();

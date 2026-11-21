@@ -1855,6 +1855,9 @@ export {
   onRegistrationRequestUpdated,
   onVolunteerPostCreated,
   onVolunteerPostUpdated,
+  onKidsSessionCreated,
+  onKidsSessionUpdated,
+  onKidsAttendanceAbsentCreated,
 } from './notifications.js';
 
 export {

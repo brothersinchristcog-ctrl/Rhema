@@ -6267,3 +6267,286 @@ export const onVolunteerPostUpdated = onDocumentUpdated(
     }
   }
 );
+
+/**
+ * Resolve strictly the linked parent/household FCM device tokens for a Kids Ministry child.
+ * Never broadcasts to church-wide topics to uphold child safety & family privacy.
+ */
+async function resolveKidsParentTargetsAndTokens(
+  db: any,
+  churchId: string,
+  record: any
+): Promise<{
+  targetMemberId: string;
+  targetAccountId: string;
+  targetPhone: string;
+  tokens: string[];
+}> {
+  let targetMemberId = String(record?.parentMemberId || '').trim();
+  let targetAccountId = String(record?.familyId || '').trim();
+  let targetPhone = String(record?.parentPhone || '').trim();
+  const childDocId = String(record?.childDocId || '').trim();
+
+  if ((!targetMemberId && !targetAccountId && !targetPhone) && childDocId) {
+    try {
+      const childSnap = await db
+        .collection('Rhema Church')
+        .doc(churchId)
+        .collection('kids_children')
+        .doc(childDocId)
+        .get();
+      if (childSnap.exists) {
+        const cData = childSnap.data() || {};
+        targetMemberId = String(cData.parentMemberId || '').trim();
+        targetAccountId = String(cData.familyId || '').trim();
+        targetPhone = String(cData.parentPhone || '').trim();
+      }
+    } catch (_) {}
+  }
+
+  const tokenSet = new Set<string>();
+  const addTokens = (d: any) => {
+    if (!d) return;
+    if (typeof d.fcmToken === 'string' && d.fcmToken.trim().length > 10) {
+      tokenSet.add(d.fcmToken.trim());
+    }
+    if (Array.isArray(d.fcmTokens)) {
+      d.fcmTokens.forEach((tk: any) => {
+        if (typeof tk === 'string' && tk.trim().length > 10) tokenSet.add(tk.trim());
+      });
+    }
+  };
+
+  const targetDigits = targetPhone.replace(/\D/g, '').slice(-10);
+  const matchesParent = (docId: string, d: any): boolean => {
+    if (!d) return false;
+    if (targetMemberId && (docId === targetMemberId || d.id === targetMemberId || d.uid === targetMemberId)) {
+      return true;
+    }
+    if (targetAccountId && (d.accountId === targetAccountId || docId === targetAccountId)) {
+      // Skip child docs without FCM tokens; parent/spouse household members match here
+      return !d.isKidMember;
+    }
+    if (targetDigits.length >= 10) {
+      const mDigits = String(d.phone || d.mobile || d.MobilePhone || '').replace(/\D/g, '').slice(-10);
+      if (mDigits && mDigits === targetDigits) return true;
+    }
+    return false;
+  };
+
+  try {
+    const membersSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
+    membersSnap.forEach((mDoc: any) => {
+      const d = mDoc.data();
+      if (matchesParent(mDoc.id, d)) addTokens(d);
+    });
+  } catch (_) {}
+
+  try {
+    const usersSnap = await db.collection('users').get();
+    usersSnap.forEach((uDoc: any) => {
+      const u = uDoc.data();
+      if (!u) return;
+      const uChurch = u.primaryChurchId || u.churchId || 'rhema';
+      if (uChurch !== churchId) return;
+      if (matchesParent(uDoc.id, u)) addTokens(u);
+    });
+  } catch (_) {}
+
+  return {
+    targetMemberId,
+    targetAccountId,
+    targetPhone,
+    tokens: Array.from(tokenSet),
+  };
+}
+
+/**
+ * Shared parent notification dispatcher for Kids Check-In, Check-Out, and Finalized Absent alerts.
+ */
+async function dispatchKidsAttendanceParentPush(params: {
+  churchId: string;
+  docId: string;
+  type: 'kids_check_in' | 'kids_check_out' | 'kids_absent';
+  title: string;
+  body: string;
+  record: any;
+}) {
+  const db = getFirestore();
+  const messaging = getMessaging();
+  const { churchId, docId, type, title, body, record } = params;
+
+  const targetInfo = await resolveKidsParentTargetsAndTokens(db, churchId, record);
+
+  // Persist idempotent in-app notification using deterministic docId
+  await db
+    .collection('Rhema Church')
+    .doc(churchId)
+    .collection('notifications')
+    .doc(docId)
+    .set(
+      {
+        type,
+        churchId,
+        title,
+        body,
+        content: body,
+        targetMemberId: targetInfo.targetMemberId,
+        targetAccountId: targetInfo.targetAccountId,
+        targetPhone: targetInfo.targetPhone,
+        childDocId: String(record?.childDocId || ''),
+        childId: String(record?.childId || ''),
+        childName: String(record?.childName || ''),
+        programSessionId: String(record?.programSessionId || ''),
+        programTitle: String(record?.programTitle || ''),
+        screen: 'KidsMinistry',
+        initialCategory: 'attendance',
+        read: false,
+        createdAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+  if (targetInfo.tokens.length > 0) {
+    await sendHighPriorityPush(
+      messaging,
+      targetInfo.tokens,
+      title,
+      body,
+      {
+        type,
+        churchId,
+        childDocId: String(record?.childDocId || ''),
+        programSessionId: String(record?.programSessionId || ''),
+        initialCategory: 'attendance',
+        screen: 'KidsMinistry',
+        click_action: 'FLUTTER_NOTIFICATION_CLICK',
+      },
+      'church_alerts'
+    );
+    console.log(`✅ [KidsMinistry] Dispatched ${type} push (${docId}) to ${targetInfo.tokens.length} parent device(s).`);
+  } else {
+    console.log(`ℹ️ [KidsMinistry] No parent FCM token found for ${docId}; in-app notification recorded.`);
+  }
+}
+
+/**
+ * Trigger: Child Checked In -> Notify parent with class & pickup code.
+ */
+export const onKidsSessionCreated = onDocumentCreated(
+  { document: 'Rhema Church/{churchId}/kids_sessions/{sessionId}', region: 'asia-south1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+
+    const data = snap.data() || {};
+    if (data.checkInPushSent === true || data.status !== 'active') return;
+
+    const churchId = event.params.churchId || 'rhema';
+    const sessionId = event.params.sessionId;
+    const childName = data.childName || 'Your child';
+    const programTitle = data.programTitle || 'Sunday School';
+    const className = data.className || programTitle;
+    const pickupCode = data.pickupCode ? ` Pickup Code: ${data.pickupCode}.` : '';
+
+    try {
+      await snap.ref.update({ checkInPushSent: true, checkInPushSentAt: FieldValue.serverTimestamp() });
+      await dispatchKidsAttendanceParentPush({
+        churchId,
+        docId: `kids_in_${sessionId}`,
+        type: 'kids_check_in',
+        title: `Checked In: ${childName}`,
+        body: `${childName} safely checked into ${programTitle} (${className}).${pickupCode}`,
+        record: data,
+      });
+    } catch (err) {
+      console.error(`[KidsMinistry] Error sending check-in push for ${sessionId}:`, err);
+    }
+  }
+);
+
+/**
+ * Trigger: Child Checked Out -> Notify parent with handover guardian details.
+ */
+export const onKidsSessionUpdated = onDocumentUpdated(
+  { document: 'Rhema Church/{churchId}/kids_sessions/{sessionId}', region: 'asia-south1' },
+  async (event) => {
+    const change = event.data;
+    if (!change) return;
+
+    const before = change.before.data() || {};
+    const after = change.after.data() || {};
+    if (before.status === 'checked_out' || after.status !== 'checked_out') return;
+    if (after.checkOutPushSent === true) return;
+
+    const churchId = event.params.churchId || 'rhema';
+    const sessionId = event.params.sessionId;
+    const childName = after.childName || 'Your child';
+    const programTitle = after.programTitle || 'Sunday School';
+    const guardianName = after.checkedOutByName || 'an authorized guardian';
+
+    try {
+      await change.after.ref.update({ checkOutPushSent: true, checkOutPushSentAt: FieldValue.serverTimestamp() });
+      await dispatchKidsAttendanceParentPush({
+        churchId,
+        docId: `kids_out_${sessionId}`,
+        type: 'kids_check_out',
+        title: `Checked Out: ${childName}`,
+        body: `${childName} was safely checked out from ${programTitle} and handed over to ${guardianName}.`,
+        record: after,
+      });
+    } catch (err) {
+      console.error(`[KidsMinistry] Error sending check-out push for ${sessionId}:`, err);
+    }
+  }
+);
+
+/**
+ * Trigger: Child Marked Absent -> Strictly verifies program attendanceFinalized === true before sending alert.
+ */
+export const onKidsAttendanceAbsentCreated = onDocumentCreated(
+  { document: 'Rhema Church/{churchId}/kids_attendance/{attendanceId}', region: 'asia-south1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+
+    const data = snap.data() || {};
+    if (data.status !== 'absent' || data.absentPushSent === true) return;
+
+    const churchId = event.params.churchId || 'rhema';
+    const attendanceId = event.params.attendanceId;
+    const programSessionId = String(data.programSessionId || '').trim();
+    if (!programSessionId) return;
+
+    const db = getFirestore();
+    try {
+      // Strictly ensure absent notification never fires before program attendance is finalized
+      const progSnap = await db
+        .collection('Rhema Church')
+        .doc(churchId)
+        .collection('kids_program_sessions')
+        .doc(programSessionId)
+        .get();
+      if (!progSnap.exists || progSnap.data()?.attendanceFinalized !== true) {
+        console.log(`🛑 [KidsMinistry] Skipping absent alert for ${attendanceId}: program session ${programSessionId} not finalized yet.`);
+        return;
+      }
+
+      await snap.ref.update({ absentPushSent: true, absentPushSentAt: FieldValue.serverTimestamp() });
+      const childName = data.childName || 'Your child';
+      const programTitle = data.programTitle || 'Sunday School';
+      const dateStr = data.sessionDate || '';
+
+      await dispatchKidsAttendanceParentPush({
+        churchId,
+        docId: `kids_absent_${programSessionId}_${data.childDocId || attendanceId}`,
+        type: 'kids_absent',
+        title: `Absent Notice: ${childName}`,
+        body: `${childName} was marked absent for ${programTitle}${dateStr ? ` (${dateStr})` : ''} after attendance was finalized.`,
+        record: data,
+      });
+    } catch (err) {
+      console.error(`[KidsMinistry] Error sending absent push for ${attendanceId}:`, err);
+    }
+  }
+);
