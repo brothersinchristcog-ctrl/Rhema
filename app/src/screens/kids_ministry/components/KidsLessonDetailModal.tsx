@@ -10,10 +10,11 @@ import {
   Alert,
   StatusBar,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, initialWindowMetrics } from 'react-native-safe-area-context';
 import {
-  X,
+  ArrowLeft,
   Sparkles,
   BookOpen,
   Award,
@@ -24,6 +25,9 @@ import {
   ChevronRight,
   Calendar,
   RotateCcw,
+  Clock,
+  MessageCircle,
+  Star,
 } from 'lucide-react-native';
 import {
   KidsCurriculumLesson,
@@ -36,6 +40,7 @@ import {
   resolveLessonTierKey,
 } from '../../../types/KidsMinistryTypes';
 import { useTheme } from '../../../context/ThemeContext';
+import { getSongCardColor, isColorLight } from '../../SongsScreen';
 
 interface Props {
   visible: boolean;
@@ -64,7 +69,9 @@ export default function KidsLessonDetailModal({
   onOpenSong,
   onClose,
 }: Props) {
-  const { isDark, colors: themeColors } = useTheme();
+  const { isDark } = useTheme();
+  const [isPreparing, setIsPreparing] = useState(true);
+  const [langMode, setLangMode] = useState<'both' | 'english' | 'telugu'>('both');
   const [verseMemorized, setVerseMemorized] = useState(false);
   const [playingAudio, setPlayingAudio] = useState(false);
   const [orderedWordIds, setOrderedWordIds] = useState<number[]>([]);
@@ -80,7 +87,6 @@ export default function KidsLessonDetailModal({
     const items = memoryWords.map((word, idx) => ({ id: idx, word }));
     if (items.length <= 1) return items;
     const copy = [...items];
-    // Deterministic Fisher-Yates seeded by lesson id & reset counter so chips stay stable while tapping
     let seed =
       shuffleSeed +
       (lesson?.id || 'lesson')
@@ -91,7 +97,6 @@ export default function KidsLessonDetailModal({
       const j = seed % (i + 1);
       [copy[i], copy[j]] = [copy[j], copy[i]];
     }
-    // Ensure scrambled order if possible
     if (copy.every((it, idx) => it.id === idx) && copy.length > 1) {
       [copy[0], copy[1]] = [copy[1], copy[0]];
     }
@@ -99,29 +104,51 @@ export default function KidsLessonDetailModal({
   }, [memoryWords, lesson?.id, shuffleSeed]);
 
   useEffect(() => {
+    if (!visible || !lesson) return;
+    setIsPreparing(true);
     setOrderedWordIds([]);
     setPracticeHint(null);
     setVerseMemorized(false);
+    const timer = setTimeout(() => {
+      setIsPreparing(false);
+    }, 180);
+    return () => clearTimeout(timer);
   }, [lesson?.id, visible]);
 
   if (!lesson) return null;
 
-  const screenBg = isDark ? '#000000' : (themeColors.background || '#FAF7F2');
-  const cardBg = isDark ? '#18181B' : (themeColors.surface || '#FFFFFF');
-  const innerBg = isDark ? '#09090B' : '#F1F5F9';
-  const border = isDark ? '#27272A' : (themeColors.border || '#E2E8F0');
-  const textPrimary = isDark ? '#FFFFFF' : (themeColors.text || '#0F172A');
-  const textSecondary = isDark ? '#9CA3AF' : (themeColors.textSecondary || '#64748B');
-  const textBody = isDark ? '#D1D5DB' : '#334155';
-  const goldAccent = isDark ? '#FBBF24' : '#D97706';
+  const screenBg = isDark ? '#0B0F19' : '#FFFDF9';
+  const cardBg = isDark ? '#151B2B' : '#FFFFFF';
+  const innerBg = isDark ? '#1E2538' : '#F8F4EC';
+  const border = isDark ? '#283149' : '#EAE4D7';
+  const textPrimary = isDark ? '#F8FAFC' : '#111827';
+  const textSecondary = isDark ? '#94A3B8' : '#64748B';
+  const textBody = isDark ? '#E2E8F0' : '#334155';
+  const goldAccent = isDark ? '#FBBF24' : '#B45309';
+  const goldBg = isDark ? 'rgba(251, 191, 36, 0.14)' : '#FEF3C7';
+  const violetAccent = isDark ? '#A78BFA' : '#7C3AED';
   const blueAccent = isDark ? '#60A5FA' : '#2563EB';
   const emeraldAccent = isDark ? '#34D399' : '#059669';
   const purpleAccent = isDark ? '#C084FC' : '#7C3AED';
   const barStyle = isDark ? 'light-content' : 'dark-content';
 
-  const childTier = resolveLessonTierKey(child?.assignedTier as KidsClassTier | undefined, child?.age ?? 7);
+  // Match week hero card with Songs palette
+  const heroColorIdx = Math.max(0, (lesson.weekNumber || 1) - 1);
+  const heroColor = getSongCardColor(heroColorIdx).color;
+  const heroIsLight = isColorLight(heroColor);
+  const heroTitleColor = heroIsLight ? '#0F172A' : '#FFFFFF';
+  const heroSubColor = heroIsLight ? '#334155' : 'rgba(255, 255, 255, 0.86)';
+  const heroPillBg = heroIsLight ? 'rgba(255, 255, 255, 0.72)' : 'rgba(255, 255, 255, 0.18)';
+  const heroPillBorder = heroIsLight ? 'rgba(15, 23, 42, 0.08)' : 'rgba(255, 255, 255, 0.24)';
+  const heroRingColor = heroIsLight ? 'rgba(255, 255, 255, 0.45)' : 'rgba(255, 255, 255, 0.14)';
+
+  const childTier = resolveLessonTierKey(
+    child?.assignedTier as KidsClassTier | undefined,
+    child?.age ?? 7
+  );
   const tierGuide = lesson.tierGuides ? lesson.tierGuides[childTier] : null;
-  const practiceComplete = memoryWords.length > 0 && orderedWordIds.length === memoryWords.length;
+  const practiceComplete =
+    memoryWords.length > 0 && orderedWordIds.length === memoryWords.length;
 
   const handleTapWordChip = (item: { id: number; word: string }) => {
     if (orderedWordIds.includes(item.id) || practiceComplete) return;
@@ -131,7 +158,7 @@ export default function KidsLessonDetailModal({
       setPracticeHint(null);
     } else {
       setPracticeHint(
-        `Try word #${orderedWordIds.length + 1} next (look closely at the verse above!)`
+        `Hint: Try looking at word #${orderedWordIds.length + 1} in the verse above.`
       );
     }
   };
@@ -150,7 +177,7 @@ export default function KidsLessonDetailModal({
         'Scripture Recitation',
         `"${lesson.memoryVerse.verseEnglish}"\n\n"${lesson.memoryVerse.verseTelugu}"\n\n— ${lesson.memoryVerse.reference}`
       );
-    }, 400);
+    }, 350);
   };
 
   const handleMarkMemorized = () => {
@@ -163,7 +190,8 @@ export default function KidsLessonDetailModal({
 
   const handleShareLesson = async () => {
     try {
-      const msg = `🌟 *THIS SUNDAY AT RHEMA SUNDAY SCHOOL*\n` +
+      const msg =
+        `🌟 *THIS SUNDAY AT RHEMA SUNDAY SCHOOL*\n` +
         `*Lesson*: ${lesson.title} (${lesson.titleTelugu})\n` +
         `*Scripture*: ${lesson.scriptureRef}\n\n` +
         `🎯 *BIG TRUTH*: ${lesson.bigIdea}\n\n` +
@@ -172,10 +200,13 @@ export default function KidsLessonDetailModal({
         `_Practice together at home this week!_`;
 
       await Share.share({ message: msg });
-    } catch (e) {
+    } catch {
       // User dismissed share
     }
   };
+
+  const showEng = langMode === 'both' || langMode === 'english';
+  const showTel = langMode === 'both' || langMode === 'telugu';
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
@@ -183,341 +214,554 @@ export default function KidsLessonDetailModal({
         <SafeAreaView style={[styles.container, { backgroundColor: screenBg }]} edges={['top', 'bottom']}>
           <StatusBar barStyle={barStyle} backgroundColor={screenBg} />
 
-          {/* Header */}
+          {/* Editorial Top Header */}
           <View style={[styles.headerRow, { borderBottomColor: border }]}>
             <TouchableOpacity
               onPress={onClose}
-              style={[styles.closeBtn, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
+              style={[styles.iconCircleBtn, { backgroundColor: cardBg, borderColor: border }]}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <X size={20} color={textPrimary} />
+              <ArrowLeft size={19} color={textPrimary} />
             </TouchableOpacity>
-            <View style={styles.headerTitles}>
-              <Text style={[styles.titleSerif, { color: textPrimary }]} numberOfLines={1}>
-                Sunday Bible Lesson
-              </Text>
-              <Text style={[styles.subtitle, { color: textSecondary }]} numberOfLines={1}>
+
+            <View style={styles.headerCenter}>
+              <Text style={[styles.headerEyebrow, { color: violetAccent }]} numberOfLines={1}>
                 {lesson.type === 'custom'
-                  ? scheduledDate
-                    ? formatCurriculumDateDisplay(scheduledDate)
-                    : lesson.quarterTheme
-                  : `Week ${lesson.weekNumber} · ${lesson.quarterTheme}`}
+                  ? 'SUNDAY LESSON'
+                  : `WEEK ${lesson.weekNumber} · ${(lesson.quarterTheme || 'BIBLE STUDY').toUpperCase()}`}
+              </Text>
+              <Text style={[styles.headerTitleSerif, { color: textPrimary }]} numberOfLines={1}>
+                Weekly Bible Guide
               </Text>
             </View>
+
             <TouchableOpacity
               onPress={handleShareLesson}
-              style={[styles.shareIconBtn, { backgroundColor: isDark ? 'rgba(251, 191, 36, 0.15)' : '#FEF3C7' }]}
+              style={[styles.iconCircleBtn, { backgroundColor: goldBg, borderColor: border }]}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Share2 size={18} color={goldAccent} />
+              <Share2 size={17} color={goldAccent} />
             </TouchableOpacity>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-            {/* Hero Lesson Card */}
-            <View style={[styles.heroCard, { backgroundColor: cardBg, borderColor: border }, !isDark && styles.lightShadow]}>
-              <View style={styles.heroBadgeRow}>
-                <View style={[styles.weekTag, { backgroundColor: isDark ? 'rgba(251, 191, 36, 0.2)' : '#FEF3C7' }]}>
-                  <Text style={[styles.weekTagText, { color: goldAccent }]}>
-                    {lesson.type === 'custom' ? 'CUSTOM LESSON' : `WEEK ${lesson.weekNumber}`}
-                  </Text>
-                </View>
-                {scheduledDate ? (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <Calendar size={12} color={textSecondary} />
-                    <Text style={[styles.academicYearText, { color: textSecondary }]}>
-                      {formatCurriculumDateDisplay(scheduledDate)}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-
-              <Text style={[styles.lessonTitleEn, { color: textPrimary }]}>{lesson.title}</Text>
-              <Text style={[styles.lessonTitleTe, { color: goldAccent }]}>{lesson.titleTelugu}</Text>
-              <Text style={[styles.scriptureRefText, { color: textSecondary }]}>
-                📖 Scripture: {lesson.scriptureRef} · {lesson.scriptureRefTelugu}
-              </Text>
-            </View>
-
-            {/* Big Truth / ప్రధాన సత్యం Banner */}
-            <View
-              style={[
-                styles.truthBanner,
-                {
-                  backgroundColor: isDark ? 'rgba(251, 191, 36, 0.08)' : '#FFFBEB',
-                  borderLeftColor: goldAccent,
-                },
-              ]}
-            >
-              <View style={styles.truthHeader}>
-                <Sparkles size={16} color={goldAccent} />
-                <Text style={[styles.truthHeading, { color: goldAccent }]}>THIS WEEK'S BIG TRUTH / ప్రధాన సత్యం</Text>
-              </View>
-              <Text style={[styles.truthEn, { color: textPrimary }]}>{lesson.bigIdea}</Text>
-              <Text style={[styles.truthTe, { color: textBody }]}>{lesson.bigIdeaTelugu}</Text>
-            </View>
-
-            {/* Interactive Memory Verse Card */}
-            <View style={[styles.memoryCard, { backgroundColor: cardBg, borderColor: border }, !isDark && styles.lightShadow]}>
-              <View style={styles.memoryCardHeader}>
-                <View style={styles.memoryTitleGroup}>
-                  <Award size={18} color={goldAccent} />
-                  <Text style={[styles.memoryHeading, { color: goldAccent }]}>MEMORY VERSE CHALLENGE</Text>
-                </View>
-                <TouchableOpacity
-                  style={[styles.listenBtn, { backgroundColor: isDark ? 'rgba(251, 191, 36, 0.15)' : '#FEF3C7' }]}
-                  onPress={handleReciteAudio}
-                  activeOpacity={0.8}
-                >
-                  <Volume2 size={14} color={goldAccent} />
-                  <Text style={[styles.listenBtnText, { color: goldAccent }]}>
-                    {playingAudio ? 'Playing...' : 'Listen'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={[styles.quoteBox, { backgroundColor: innerBg, borderWidth: 1, borderColor: border }]}>
-                <Text style={[styles.quoteEn, { color: textPrimary }]}>"{lesson.memoryVerse.verseEnglish}"</Text>
-                <Text style={[styles.quoteRef, { color: goldAccent }]}>— {lesson.memoryVerse.reference}</Text>
-                <Text style={[styles.quoteTe, { color: textBody }]}>"{lesson.memoryVerse.verseTelugu}"</Text>
-                <Text style={[styles.quoteRef, { color: goldAccent }]}>— {lesson.memoryVerse.referenceTelugu}</Text>
-              </View>
-
-              {/* Interactive Word Order Builder */}
-              <View style={styles.wordPracticeHeader}>
-                <Text style={[styles.wordPracticePrompt, { color: textSecondary }]}>
-                  Tap words in order to practice ({orderedWordIds.length}/{memoryWords.length}):
+          {isPreparing ? (
+            <View style={styles.loadingWrap}>
+              <View style={[styles.loadingCard, { backgroundColor: cardBg, borderColor: border }]}>
+                <ActivityIndicator size="large" color={violetAccent} />
+                <Text style={[styles.loadingTitle, { color: textPrimary }]}>
+                  Opening Week {lesson.weekNumber || ''} Lesson...
                 </Text>
-                {orderedWordIds.length > 0 && (
-                  <TouchableOpacity
-                    style={[styles.resetPracticeBtn, { backgroundColor: innerBg, borderColor: border }]}
-                    onPress={handleResetPractice}
-                    activeOpacity={0.8}
-                  >
-                    <RotateCcw size={11} color={textSecondary} />
-                    <Text style={[styles.resetPracticeText, { color: textSecondary }]}>Reset</Text>
-                  </TouchableOpacity>
-                )}
+                <Text style={[styles.loadingSub, { color: textSecondary }]} numberOfLines={1}>
+                  {lesson.title}
+                </Text>
               </View>
-
-              {/* Sentence Builder Answer Tray */}
+            </View>
+          ) : (
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+              {/* 1. Colorful Hero Lesson Banner */}
               <View
                 style={[
-                  styles.answerTray,
+                  styles.heroBannerCard,
                   {
-                    backgroundColor: innerBg,
-                    borderColor: practiceComplete ? '#10B981' : border,
+                    backgroundColor: heroColor,
+                    borderColor: heroIsLight
+                      ? 'rgba(15, 23, 42, 0.08)'
+                      : 'rgba(255, 255, 255, 0.16)',
                   },
                 ]}
               >
-                {orderedWordIds.length === 0 ? (
-                  <Text style={[styles.answerPlaceholder, { color: textSecondary }]}>
-                    Tap the scrambled words below in the correct verse order...
-                  </Text>
-                ) : (
-                  <View style={styles.wordsWrap}>
-                    {orderedWordIds.map((wordId, seqIdx) => (
-                      <View
-                        key={`${wordId}-${seqIdx}`}
-                        style={[
-                          styles.builtWordChip,
-                          practiceComplete && styles.builtWordChipComplete,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.builtWordText,
-                            practiceComplete && { color: '#FFFFFF' },
-                          ]}
-                        >
-                          {memoryWords[wordId]}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                )}
-              </View>
+                <View style={[styles.heroRingA, { borderColor: heroRingColor }]} pointerEvents="none" />
+                <View style={[styles.heroRingB, { borderColor: heroRingColor }]} pointerEvents="none" />
 
-              {practiceHint ? (
-                <Text style={styles.practiceHintText}>{practiceHint}</Text>
-              ) : practiceComplete ? (
-                <View style={styles.practiceSuccessBanner}>
-                  <Check size={14} color="#10B981" />
-                  <Text style={styles.practiceSuccessText}>
-                    Great job! You placed every word in the exact order!
+                <View style={styles.heroMetaRow}>
+                  <View
+                    style={[
+                      styles.heroPill,
+                      { backgroundColor: heroPillBg, borderColor: heroPillBorder },
+                    ]}
+                  >
+                    <Text style={[styles.heroPillText, { color: heroTitleColor }]}>
+                      {lesson.type === 'custom' ? 'CUSTOM LESSON' : `WEEK ${lesson.weekNumber}`}
+                    </Text>
+                  </View>
+
+                  {scheduledDate ? (
+                    <View
+                      style={[
+                        styles.heroDatePill,
+                        { backgroundColor: heroPillBg, borderColor: heroPillBorder },
+                      ]}
+                    >
+                      <Calendar size={12} color={heroTitleColor} />
+                      <Text style={[styles.heroDateText, { color: heroTitleColor }]}>
+                        {formatCurriculumDateDisplay(scheduledDate)}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                <Text style={[styles.heroTitleEn, { color: heroTitleColor }]}>
+                  {lesson.title}
+                </Text>
+                {lesson.titleTelugu ? (
+                  <Text style={[styles.heroTitleTe, { color: heroSubColor }]}>
+                    {lesson.titleTelugu}
+                  </Text>
+                ) : null}
+
+                <View
+                  style={[
+                    styles.heroScriptureBar,
+                    { backgroundColor: heroPillBg, borderColor: heroPillBorder },
+                  ]}
+                >
+                  <BookOpen size={13.5} color={heroTitleColor} />
+                  <Text style={[styles.heroScriptureText, { color: heroTitleColor }]} numberOfLines={2}>
+                    {lesson.scriptureRef}
+                    {lesson.scriptureRefTelugu ? ` · ${lesson.scriptureRefTelugu}` : ''}
                   </Text>
                 </View>
-              ) : null}
+              </View>
 
-              {/* Scrambled Word Bank */}
-              <View style={styles.wordsWrap}>
-                {shuffledWordItems.map(item => {
-                  const isUsed = orderedWordIds.includes(item.id);
+              {/* 2. Bilingual Language Switcher */}
+              <View style={[styles.langSwitcher, { backgroundColor: innerBg, borderColor: border }]}>
+                {(
+                  [
+                    { id: 'both', label: 'Bilingual' },
+                    { id: 'english', label: 'English' },
+                    { id: 'telugu', label: 'తెలుగు' },
+                  ] as const
+                ).map(tab => {
+                  const active = langMode === tab.id;
                   return (
                     <TouchableOpacity
-                      key={item.id}
+                      key={tab.id}
                       style={[
-                        styles.wordChip,
-                        { backgroundColor: innerBg, borderColor: border, borderWidth: 1 },
-                        isUsed && styles.wordChipUsed,
+                        styles.langTab,
+                        active && { backgroundColor: cardBg, borderColor: border, borderWidth: 1 },
                       ]}
-                      onPress={() => handleTapWordChip(item)}
-                      disabled={isUsed || practiceComplete}
-                      activeOpacity={0.75}
+                      onPress={() => setLangMode(tab.id)}
+                      activeOpacity={0.85}
                     >
                       <Text
                         style={[
-                          styles.wordChipText,
-                          { color: textPrimary },
-                          isUsed && { color: textSecondary, opacity: 0.45 },
+                          styles.langTabText,
+                          { color: active ? violetAccent : textSecondary },
+                          active && { fontWeight: '800' },
                         ]}
                       >
-                        {item.word}
+                        {tab.label}
                       </Text>
                     </TouchableOpacity>
                   );
                 })}
               </View>
 
-              {/* Memorized Completion Button */}
-              <TouchableOpacity
-                style={[styles.memorizedBtn, verseMemorized && styles.memorizedBtnDone]}
-                onPress={handleMarkMemorized}
-                activeOpacity={0.88}
-                disabled={verseMemorized}
+              {/* 3. This Week's Big Truth Card */}
+              <View
+                style={[
+                  styles.sectionCard,
+                  {
+                    backgroundColor: isDark ? 'rgba(251, 191, 36, 0.08)' : '#FFFBEB',
+                    borderColor: isDark ? 'rgba(251, 191, 36, 0.25)' : '#FDE68A',
+                  },
+                ]}
               >
-                {verseMemorized ? (
-                  <>
-                    <Check size={18} color="#FFFFFF" />
-                    <Text style={styles.memorizedBtnTextDone}>Memorized! (+20 Points Earned)</Text>
-                  </>
-                ) : (
-                  <>
-                    <Award size={18} color="#000000" />
-                    <Text style={styles.memorizedBtnText}>I Have Memorized This Verse! ⭐</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            {/* Linked Learning Materials (Bible Story, Quiz, Action Song) & Story Summary */}
-            {(linkedStory || linkedQuiz || linkedSong || lesson.customStorySummary || lesson.customActivityNotes) && (
-              <View style={[styles.linkedSection, { backgroundColor: cardBg, borderColor: border }, !isDark && styles.lightShadow]}>
-                <Text style={[styles.scheduleHeading, { color: textSecondary }]}>WEEKLY ACTIVITIES, STORY & QUIZ</Text>
-
-                {lesson.customStorySummary ? (
-                  <View style={[styles.customNoteBox, { backgroundColor: innerBg, borderColor: border }]}>
-                    <Text style={[styles.customNoteTitle, { color: goldAccent }]}>📖 Bible Story Summary</Text>
-                    <Text style={[styles.customNoteText, { color: textBody }]}>{lesson.customStorySummary}</Text>
+                <View style={styles.sectionHeaderRow}>
+                  <View style={[styles.sectionIconCircle, { backgroundColor: goldBg }]}>
+                    <Sparkles size={15} color={goldAccent} />
                   </View>
+                  <Text style={[styles.sectionEyebrow, { color: goldAccent }]}>
+                    THIS WEEK'S BIG TRUTH · ప్రధాన సత్యం
+                  </Text>
+                </View>
+                {showEng && (
+                  <Text style={[styles.truthEnText, { color: textPrimary }]}>{lesson.bigIdea}</Text>
+                )}
+                {showTel && lesson.bigIdeaTelugu ? (
+                  <Text style={[styles.truthTeText, { color: textBody }]}>
+                    {lesson.bigIdeaTelugu}
+                  </Text>
                 ) : null}
-
-                {lesson.customActivityNotes ? (
-                  <View style={[styles.customNoteBox, { backgroundColor: innerBg, borderColor: border }]}>
-                    <Text style={[styles.customNoteTitle, { color: goldAccent }]}>🎨 Weekly Activity & Craft</Text>
-                    <Text style={[styles.customNoteText, { color: textBody }]}>{lesson.customActivityNotes}</Text>
-                  </View>
-                ) : null}
-
-                {linkedStory && onOpenStory && (
-                  <TouchableOpacity
-                    style={[styles.linkedActionCard, { backgroundColor: innerBg, borderColor: border }]}
-                    onPress={() => onOpenStory(linkedStory)}
-                    activeOpacity={0.85}
-                  >
-                    <View style={[styles.linkedIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
-                      <BookOpen size={18} color={blueAccent} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.linkedTag, { color: blueAccent }]}>READ BIBLE STORY</Text>
-                      <Text style={[styles.linkedTitle, { color: textPrimary }]}>{linkedStory.title}</Text>
-                    </View>
-                    <ChevronRight size={18} color={blueAccent} />
-                  </TouchableOpacity>
-                )}
-
-                {linkedQuiz && onOpenQuiz && (
-                  <TouchableOpacity
-                    style={[styles.linkedActionCard, { backgroundColor: innerBg, borderColor: border }]}
-                    onPress={() => onOpenQuiz(linkedQuiz)}
-                    activeOpacity={0.85}
-                  >
-                    <View style={[styles.linkedIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
-                      <Award size={18} color={emeraldAccent} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.linkedTag, { color: emeraldAccent }]}>PLAY INTERACTIVE QUIZ</Text>
-                      <Text style={[styles.linkedTitle, { color: textPrimary }]}>{linkedQuiz.title}</Text>
-                    </View>
-                    <ChevronRight size={18} color={emeraldAccent} />
-                  </TouchableOpacity>
-                )}
-
-                {linkedSong && onOpenSong && (
-                  <TouchableOpacity
-                    style={[styles.linkedActionCard, { backgroundColor: innerBg, borderColor: border }]}
-                    onPress={() => onOpenSong(linkedSong)}
-                    activeOpacity={0.85}
-                  >
-                    <View style={[styles.linkedIconBox, { backgroundColor: 'rgba(168, 85, 247, 0.15)' }]}>
-                      <Music size={18} color={purpleAccent} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.linkedTag, { color: purpleAccent }]}>SING WORSHIP SONG</Text>
-                      <Text style={[styles.linkedTitle, { color: textPrimary }]}>{linkedSong.title}</Text>
-                    </View>
-                    <ChevronRight size={18} color={purpleAccent} />
-                  </TouchableOpacity>
-                )}
               </View>
-            )}
 
-            {/* Tier-Specific Adaptation for this child */}
-            {tierGuide && (
-              <View style={[styles.tierActivityCard, { backgroundColor: cardBg, borderColor: border }, !isDark && styles.lightShadow]}>
-                <View style={styles.tierHeader}>
-                  <Text style={[styles.tierBadge, { color: emeraldAccent }]}>{tierGuide.tierName.toUpperCase()}</Text>
+              {/* 4. Interactive Memory Verse Challenge */}
+              <View style={[styles.sectionCard, { backgroundColor: cardBg, borderColor: border }]}>
+                <View style={styles.memoryHeaderRow}>
+                  <View style={styles.sectionHeaderRow}>
+                    <View
+                      style={[
+                        styles.sectionIconCircle,
+                        { backgroundColor: isDark ? 'rgba(139, 92, 246, 0.18)' : '#EFE9FE' },
+                      ]}
+                    >
+                      <Star size={15} color={violetAccent} fill={violetAccent} />
+                    </View>
+                    <Text style={[styles.sectionEyebrow, { color: violetAccent }]}>
+                      MEMORY VERSE CHALLENGE
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.listenPill, { backgroundColor: goldBg }]}
+                    onPress={handleReciteAudio}
+                    activeOpacity={0.82}
+                  >
+                    <Volume2 size={13} color={goldAccent} />
+                    <Text style={[styles.listenPillText, { color: goldAccent }]}>
+                      {playingAudio ? 'Playing...' : 'Recite'}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
 
-                <Text style={[styles.activityTitle, { color: textPrimary }]}>🎨 {tierGuide.activityName}</Text>
-                <Text style={[styles.activityInstructionsEn, { color: textBody }]}>
-                  {tierGuide.activityInstructions}
-                </Text>
-                <Text style={[styles.activityInstructionsTe, { color: textSecondary }]}>
-                  {tierGuide.activityInstructionsTelugu}
-                </Text>
+                <View style={[styles.quoteShowcase, { backgroundColor: innerBg, borderColor: border }]}>
+                  {showEng && (
+                    <>
+                      <Text style={[styles.quoteEnText, { color: textPrimary }]}>
+                        “{lesson.memoryVerse.verseEnglish}”
+                      </Text>
+                      <Text style={[styles.quoteRefText, { color: violetAccent }]}>
+                        — {lesson.memoryVerse.reference}
+                      </Text>
+                    </>
+                  )}
+                  {showEng && showTel && (
+                    <View style={[styles.quoteDivider, { backgroundColor: border }]} />
+                  )}
+                  {showTel && (
+                    <>
+                      <Text style={[styles.quoteTeText, { color: textBody }]}>
+                        “{lesson.memoryVerse.verseTelugu}”
+                      </Text>
+                      <Text style={[styles.quoteRefText, { color: goldAccent }]}>
+                        — {lesson.memoryVerse.referenceTelugu}
+                      </Text>
+                    </>
+                  )}
+                </View>
 
-                {tierGuide.discussionQuestions?.length > 0 && (
-                  <View style={[styles.discussionSection, { borderTopColor: border }]}>
-                    <Text style={[styles.discussionHeading, { color: goldAccent }]}>Family Talk Questions:</Text>
-                    {tierGuide.discussionQuestions.map((q, idx) => (
-                      <View key={idx} style={styles.qItemRow}>
-                        <Text style={[styles.qBullet, { color: goldAccent }]}>•</Text>
-                        <Text style={[styles.qText, { color: textBody }]}>{q}</Text>
+                {/* Word Scramble Builder */}
+                {memoryWords.length > 0 && (
+                  <View style={styles.scrambleWrap}>
+                    <View style={styles.scrambleHeaderRow}>
+                      <Text style={[styles.scrambleLabel, { color: textSecondary }]}>
+                        Build the verse ({orderedWordIds.length}/{memoryWords.length} words)
+                      </Text>
+                      {orderedWordIds.length > 0 && (
+                        <TouchableOpacity
+                          style={[styles.resetChip, { backgroundColor: innerBg, borderColor: border }]}
+                          onPress={handleResetPractice}
+                          activeOpacity={0.8}
+                        >
+                          <RotateCcw size={11} color={textSecondary} />
+                          <Text style={[styles.resetChipText, { color: textSecondary }]}>Reset</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    <View
+                      style={[
+                        styles.answerTray,
+                        {
+                          backgroundColor: innerBg,
+                          borderColor: practiceComplete ? '#10B981' : border,
+                        },
+                      ]}
+                    >
+                      {orderedWordIds.length === 0 ? (
+                        <Text style={[styles.answerPlaceholder, { color: textSecondary }]}>
+                          Tap the word tiles below in exact verse order...
+                        </Text>
+                      ) : (
+                        <View style={styles.wordsWrap}>
+                          {orderedWordIds.map((wordId, seqIdx) => (
+                            <View
+                              key={`${wordId}-${seqIdx}`}
+                              style={[
+                                styles.builtWordChip,
+                                practiceComplete && { backgroundColor: '#10B981' },
+                              ]}
+                            >
+                              <Text style={styles.builtWordText}>{memoryWords[wordId]}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+
+                    {practiceHint ? (
+                      <Text style={styles.practiceHintText}>{practiceHint}</Text>
+                    ) : practiceComplete ? (
+                      <View style={styles.practiceSuccessBanner}>
+                        <Check size={14} color="#10B981" />
+                        <Text style={styles.practiceSuccessText}>
+                          Awesome! You arranged the entire memory verse!
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    <View style={styles.wordsWrap}>
+                      {shuffledWordItems.map(item => {
+                        const isUsed = orderedWordIds.includes(item.id);
+                        return (
+                          <TouchableOpacity
+                            key={item.id}
+                            style={[
+                              styles.wordChip,
+                              { backgroundColor: cardBg, borderColor: border },
+                              isUsed && styles.wordChipUsed,
+                            ]}
+                            onPress={() => handleTapWordChip(item)}
+                            disabled={isUsed || practiceComplete}
+                            activeOpacity={0.75}
+                          >
+                            <Text
+                              style={[
+                                styles.wordChipText,
+                                { color: textPrimary },
+                                isUsed && { color: textSecondary, opacity: 0.4 },
+                              ]}
+                            >
+                              {item.word}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                )}
+
+                <TouchableOpacity
+                  style={[
+                    styles.memorizedBtn,
+                    { backgroundColor: verseMemorized ? '#10B981' : violetAccent },
+                  ]}
+                  onPress={handleMarkMemorized}
+                  activeOpacity={0.88}
+                  disabled={verseMemorized}
+                >
+                  {verseMemorized ? (
+                    <>
+                      <Check size={18} color="#FFFFFF" />
+                      <Text style={styles.memorizedBtnText}>Memorized! (+20 Points Earned)</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Award size={18} color="#FFFFFF" />
+                      <Text style={styles.memorizedBtnText}>
+                        I Memorized This Verse! (+20 ★)
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              {/* 5. Linked Story, Quiz, Song & Custom Notes */}
+              {(linkedStory ||
+                linkedQuiz ||
+                linkedSong ||
+                lesson.customStorySummary ||
+                lesson.customActivityNotes) && (
+                <View style={[styles.sectionCard, { backgroundColor: cardBg, borderColor: border }]}>
+                  <Text style={[styles.sectionEyebrow, { color: textSecondary }]}>
+                    RELATED LEARNING MATERIALS
+                  </Text>
+
+                  {lesson.customStorySummary ? (
+                    <View style={[styles.noteCard, { backgroundColor: innerBg, borderColor: border }]}>
+                      <Text style={[styles.noteTitle, { color: goldAccent }]}>
+                        📖 Bible Story Summary
+                      </Text>
+                      <Text style={[styles.noteBody, { color: textBody }]}>
+                        {lesson.customStorySummary}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {lesson.customActivityNotes ? (
+                    <View style={[styles.noteCard, { backgroundColor: innerBg, borderColor: border }]}>
+                      <Text style={[styles.noteTitle, { color: goldAccent }]}>
+                        🎨 Weekly Activity & Craft
+                      </Text>
+                      <Text style={[styles.noteBody, { color: textBody }]}>
+                        {lesson.customActivityNotes}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {linkedStory && onOpenStory && (
+                    <TouchableOpacity
+                      style={[
+                        styles.linkedCard,
+                        {
+                          backgroundColor: isDark ? 'rgba(59, 130, 246, 0.12)' : '#EFF6FF',
+                          borderColor: isDark ? '#1D4ED8' : '#BFDBFE',
+                        },
+                      ]}
+                      onPress={() => onOpenStory(linkedStory)}
+                      activeOpacity={0.85}
+                    >
+                      <View style={[styles.linkedIconCircle, { backgroundColor: blueAccent }]}>
+                        <BookOpen size={17} color="#FFFFFF" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.linkedTag, { color: blueAccent }]}>
+                          READ BIBLE STORY
+                        </Text>
+                        <Text style={[styles.linkedTitle, { color: textPrimary }]} numberOfLines={1}>
+                          {linkedStory.title}
+                        </Text>
+                      </View>
+                      <ChevronRight size={18} color={blueAccent} />
+                    </TouchableOpacity>
+                  )}
+
+                  {linkedQuiz && onOpenQuiz && (
+                    <TouchableOpacity
+                      style={[
+                        styles.linkedCard,
+                        {
+                          backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : '#ECFDF5',
+                          borderColor: isDark ? '#065F46' : '#A7F3D0',
+                        },
+                      ]}
+                      onPress={() => onOpenQuiz(linkedQuiz)}
+                      activeOpacity={0.85}
+                    >
+                      <View style={[styles.linkedIconCircle, { backgroundColor: emeraldAccent }]}>
+                        <Award size={17} color="#FFFFFF" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.linkedTag, { color: emeraldAccent }]}>
+                          PLAY INTERACTIVE QUIZ
+                        </Text>
+                        <Text style={[styles.linkedTitle, { color: textPrimary }]} numberOfLines={1}>
+                          {linkedQuiz.title}
+                        </Text>
+                      </View>
+                      <ChevronRight size={18} color={emeraldAccent} />
+                    </TouchableOpacity>
+                  )}
+
+                  {linkedSong && onOpenSong && (
+                    <TouchableOpacity
+                      style={[
+                        styles.linkedCard,
+                        {
+                          backgroundColor: isDark ? 'rgba(168, 85, 247, 0.12)' : '#F5F3FF',
+                          borderColor: isDark ? '#6D28D9' : '#DDD6FE',
+                        },
+                      ]}
+                      onPress={() => onOpenSong(linkedSong)}
+                      activeOpacity={0.85}
+                    >
+                      <View style={[styles.linkedIconCircle, { backgroundColor: purpleAccent }]}>
+                        <Music size={17} color="#FFFFFF" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.linkedTag, { color: purpleAccent }]}>
+                          SING ACTION SONG
+                        </Text>
+                        <Text style={[styles.linkedTitle, { color: textPrimary }]} numberOfLines={1}>
+                          {linkedSong.title}
+                        </Text>
+                      </View>
+                      <ChevronRight size={18} color={purpleAccent} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+
+              {/* 6. Age-Tier Activity & Family Talk Questions */}
+              {tierGuide && (
+                <View style={[styles.sectionCard, { backgroundColor: cardBg, borderColor: border }]}>
+                  <View style={styles.tierHeader}>
+                    <View
+                      style={[
+                        styles.tierBadgePill,
+                        { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.16)' : '#ECFDF5' },
+                      ]}
+                    >
+                      <Text style={[styles.tierBadgeText, { color: emeraldAccent }]}>
+                        {tierGuide.tierName.toUpperCase()}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text style={[styles.activityTitle, { color: textPrimary }]}>
+                    🎨 {tierGuide.activityName}
+                  </Text>
+                  {showEng && (
+                    <Text style={[styles.activityDescEn, { color: textBody }]}>
+                      {tierGuide.activityInstructions}
+                    </Text>
+                  )}
+                  {showTel && tierGuide.activityInstructionsTelugu ? (
+                    <Text style={[styles.activityDescTe, { color: textSecondary }]}>
+                      {tierGuide.activityInstructionsTelugu}
+                    </Text>
+                  ) : null}
+
+                  {tierGuide.discussionQuestions?.length > 0 && (
+                    <View style={[styles.discussionBlock, { borderTopColor: border }]}>
+                      <View style={styles.sectionHeaderRow}>
+                        <MessageCircle size={15} color={goldAccent} />
+                        <Text style={[styles.discussionHeading, { color: goldAccent }]}>
+                          Family Talk Questions
+                        </Text>
+                      </View>
+                      {tierGuide.discussionQuestions.map((q, idx) => (
+                        <View
+                          key={idx}
+                          style={[styles.qRowCard, { backgroundColor: innerBg, borderColor: border }]}
+                        >
+                          <View style={[styles.qNumBadge, { backgroundColor: goldBg }]}>
+                            <Text style={[styles.qNumText, { color: goldAccent }]}>{idx + 1}</Text>
+                          </View>
+                          <Text style={[styles.qRowText, { color: textBody }]}>{q}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* 7. Sunday Classroom Schedule */}
+              {lesson.teacherPrep?.schedule?.length > 0 && (
+                <View style={[styles.sectionCard, { backgroundColor: cardBg, borderColor: border }]}>
+                  <View style={styles.sectionHeaderRow}>
+                    <Clock size={14} color={textSecondary} />
+                    <Text style={[styles.sectionEyebrow, { color: textSecondary }]}>
+                      SUNDAY CLASSROOM SCHEDULE
+                    </Text>
+                  </View>
+
+                  <View style={styles.schedList}>
+                    {lesson.teacherPrep.schedule.map((item, idx) => (
+                      <View
+                        key={idx}
+                        style={[styles.schedRow, { backgroundColor: innerBg, borderColor: border }]}
+                      >
+                        <View style={[styles.schedPill, { backgroundColor: goldBg }]}>
+                          <Text style={[styles.schedPillText, { color: goldAccent }]}>
+                            {item.timeMinutes}m
+                          </Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.schedSegment, { color: textPrimary }]}>
+                            {item.segment}
+                          </Text>
+                          <Text style={[styles.schedDesc, { color: textSecondary }]}>
+                            {item.description}
+                          </Text>
+                        </View>
                       </View>
                     ))}
                   </View>
-                )}
-              </View>
-            )}
-
-            {/* Teacher Schedule Overview for Parents */}
-            {lesson.teacherPrep?.schedule?.length > 0 && (
-              <View style={[styles.classScheduleCard, { backgroundColor: cardBg, borderColor: border }, !isDark && styles.lightShadow]}>
-                <Text style={[styles.scheduleHeading, { color: textSecondary }]}>SUNDAY CLASSROOM SCHEDULE (45 MIN)</Text>
-                {lesson.teacherPrep.schedule.map((item, idx) => (
-                  <View key={idx} style={[styles.schedRow, { backgroundColor: innerBg }]}>
-                    <View style={[styles.schedPill, { backgroundColor: isDark ? '#27272A' : '#FEF3C7' }]}>
-                      <Text style={[styles.schedPillText, { color: goldAccent }]}>{item.timeMinutes}m</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.schedSegment, { color: textPrimary }]}>{item.segment}</Text>
-                      <Text style={[styles.schedDesc, { color: textSecondary }]}>{item.description}</Text>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            )}
-          </ScrollView>
+                </View>
+              )}
+            </ScrollView>
+          )}
         </SafeAreaView>
       </SafeAreaProvider>
     </Modal>
@@ -527,7 +771,6 @@ export default function KidsLessonDetailModal({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
   },
   headerRow: {
     flexDirection: 'row',
@@ -537,216 +780,278 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
   },
-  lightShadow: {
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 1,
-  },
-  closeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#27272A',
+  iconCircleBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerTitles: {
+  headerCenter: {
+    flex: 1,
     alignItems: 'center',
+    paddingHorizontal: 10,
   },
-  titleSerif: {
+  headerEyebrow: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.0,
+  },
+  headerTitleSerif: {
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '800',
+    marginTop: 1,
   },
-  subtitle: {
-    fontSize: 11,
-    color: '#9CA3AF',
-    marginTop: 2,
-  },
-  shareIconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(251, 191, 36, 0.15)',
-    justifyContent: 'center',
+  loadingWrap: {
+    flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+  },
+  loadingCard: {
+    width: '100%',
+    maxWidth: 320,
+    borderRadius: 24,
+    borderWidth: 1,
+    paddingVertical: 30,
+    paddingHorizontal: 22,
+    alignItems: 'center',
+    gap: 10,
+  },
+  loadingTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginTop: 4,
+  },
+  loadingSub: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   scroll: {
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 42,
     gap: 14,
-    paddingBottom: 40,
   },
-  heroCard: {
-    backgroundColor: '#18181B',
-    borderRadius: 16,
-    padding: 16,
+  heroBannerCard: {
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: '#27272A',
+    padding: 18,
+    overflow: 'hidden',
+    position: 'relative',
+    gap: 10,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 3,
   },
-  heroBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
+  heroRingA: {
+    position: 'absolute',
+    right: -24,
+    bottom: -36,
+    width: 132,
+    height: 132,
+    borderRadius: 66,
+    borderWidth: 1.5,
   },
-  weekTag: {
-    backgroundColor: 'rgba(251, 191, 36, 0.2)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+  heroRingB: {
+    position: 'absolute',
+    right: 22,
+    bottom: -56,
+    width: 132,
+    height: 132,
+    borderRadius: 66,
+    borderWidth: 1.5,
   },
-  weekTagText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#FBBF24',
-    letterSpacing: 0.5,
-  },
-  academicYearText: {
-    fontSize: 11,
-    color: '#6B7280',
-    fontWeight: '600',
-  },
-  lessonTitleEn: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 3,
-  },
-  lessonTitleTe: {
-    fontSize: 15,
-    color: '#FBBF24',
-    marginBottom: 6,
-  },
-  scriptureRefText: {
-    fontSize: 12,
-    color: '#9CA3AF',
-  },
-  truthBanner: {
-    backgroundColor: 'rgba(251, 191, 36, 0.08)',
-    borderRadius: 12,
-    padding: 14,
-    borderLeftWidth: 4,
-    borderLeftColor: '#FBBF24',
-  },
-  truthHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 6,
-  },
-  truthHeading: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#FBBF24',
-    letterSpacing: 0.5,
-  },
-  truthEn: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    lineHeight: 20,
-  },
-  truthTe: {
-    fontSize: 13,
-    color: '#E5E7EB',
-    marginTop: 4,
-    lineHeight: 18,
-  },
-  memoryCard: {
-    backgroundColor: '#18181B',
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#27272A',
-    gap: 12,
-  },
-  memoryCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  memoryTitleGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  memoryHeading: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#FBBF24',
-    letterSpacing: 0.5,
-  },
-  listenBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(251, 191, 36, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  listenBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#FBBF24',
-  },
-  quoteBox: {
-    backgroundColor: '#09090B',
-    padding: 12,
-    borderRadius: 10,
-    gap: 3,
-  },
-  quoteEn: {
-    fontSize: 14,
-    color: '#FFFFFF',
-    fontStyle: 'italic',
-    lineHeight: 20,
-  },
-  quoteRef: {
-    fontSize: 11,
-    color: '#FBBF24',
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  quoteTe: {
-    fontSize: 13,
-    color: '#E5E7EB',
-    lineHeight: 18,
-  },
-  wordPracticeHeader: {
+  heroMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
+  },
+  heroPill: {
+    paddingHorizontal: 11,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  heroPillText: {
+    fontSize: 10.5,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+  },
+  heroDatePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  heroDateText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  heroTitleEn: {
+    fontSize: 21,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontWeight: '800',
+    lineHeight: 27,
+  },
+  heroTitleTe: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    lineHeight: 20,
+    marginTop: -4,
+  },
+  heroScriptureBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
     marginTop: 2,
   },
-  wordPracticePrompt: {
-    fontSize: 11.5,
-    fontWeight: '600',
-    color: '#9CA3AF',
+  heroScriptureText: {
     flex: 1,
+    fontSize: 12.5,
+    fontWeight: '700',
+    lineHeight: 17,
   },
-  resetPracticeBtn: {
+  langSwitcher: {
+    flexDirection: 'row',
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 4,
+    gap: 4,
+  },
+  langTab: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+  },
+  langTabText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  sectionCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 16,
+    gap: 10,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sectionIconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sectionEyebrow: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.9,
+  },
+  truthEnText: {
+    fontSize: 16,
+    fontWeight: '800',
+    lineHeight: 23,
+  },
+  truthTeText: {
+    fontSize: 14.5,
+    lineHeight: 22,
+    fontWeight: '600',
+  },
+  memoryHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  listenPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  listenPillText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  quoteShowcase: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
+    gap: 6,
+  },
+  quoteEnText: {
+    fontSize: 15.5,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontWeight: '700',
+    lineHeight: 23,
+  },
+  quoteRefText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  quoteDivider: {
+    height: 1,
+    width: '100%',
+    marginVertical: 4,
+  },
+  quoteTeText: {
+    fontSize: 14.5,
+    lineHeight: 22,
+    fontWeight: '600',
+  },
+  scrambleWrap: {
+    gap: 10,
+    marginTop: 2,
+  },
+  scrambleHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  scrambleLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  resetChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     paddingHorizontal: 9,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 999,
     borderWidth: 1,
   },
-  resetPracticeText: {
+  resetChipText: {
     fontSize: 11,
     fontWeight: '700',
   },
   answerTray: {
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1.5,
+    borderStyle: 'dashed',
     padding: 12,
     minHeight: 54,
     justifyContent: 'center',
@@ -754,247 +1059,200 @@ const styles = StyleSheet.create({
   answerPlaceholder: {
     fontSize: 12,
     fontStyle: 'italic',
+    textAlign: 'center',
+  },
+  wordsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
   },
   builtWordChip: {
-    backgroundColor: '#FBBF24',
+    backgroundColor: '#7C3AED',
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 8,
-  },
-  builtWordChipComplete: {
-    backgroundColor: '#059669',
+    borderRadius: 999,
   },
   builtWordText: {
     fontSize: 12.5,
     fontWeight: '700',
-    color: '#000000',
+    color: '#FFFFFF',
+  },
+  wordChip: {
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  wordChipUsed: {
+    opacity: 0.45,
+  },
+  wordChipText: {
+    fontSize: 12.5,
+    fontWeight: '700',
   },
   practiceHintText: {
     fontSize: 11.5,
-    fontWeight: '600',
     color: '#D97706',
+    fontWeight: '600',
   },
   practiceSuccessBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(16, 185, 129, 0.12)',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    backgroundColor: 'rgba(16, 185, 129, 0.14)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
   },
   practiceSuccessText: {
     fontSize: 12,
     fontWeight: '700',
     color: '#10B981',
-    flex: 1,
-  },
-  wordsWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  wordChip: {
-    backgroundColor: '#27272A',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  wordChipUsed: {
-    borderStyle: 'dashed',
-  },
-  wordChipActive: {
-    backgroundColor: '#FBBF24',
-  },
-  wordChipText: {
-    fontSize: 12.5,
-    fontWeight: '600',
-    color: '#D1D5DB',
-  },
-  wordChipTextActive: {
-    color: '#000000',
-    fontWeight: 'bold',
   },
   memorizedBtn: {
+    borderRadius: 999,
+    paddingVertical: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#FBBF24',
-    paddingVertical: 12,
-    borderRadius: 10,
     marginTop: 4,
   },
-  memorizedBtnDone: {
-    backgroundColor: '#059669',
-  },
   memorizedBtnText: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: '#000000',
-  },
-  memorizedBtnTextDone: {
-    fontSize: 13,
-    fontWeight: 'bold',
+    fontSize: 14,
+    fontWeight: '800',
     color: '#FFFFFF',
   },
-  tierActivityCard: {
-    backgroundColor: '#18181B',
+  noteCard: {
     borderRadius: 14,
-    padding: 14,
     borderWidth: 1,
-    borderColor: '#27272A',
-    gap: 8,
+    padding: 13,
+    gap: 5,
   },
-  tierHeader: {
-    marginBottom: 2,
-  },
-  tierBadge: {
-    fontSize: 10,
+  noteTitle: {
+    fontSize: 13,
     fontWeight: '800',
-    color: '#10B981',
-    letterSpacing: 0.5,
   },
-  activityTitle: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
+  noteBody: {
+    fontSize: 13.5,
+    lineHeight: 20,
   },
-  activityInstructionsEn: {
-    fontSize: 12,
-    color: '#D1D5DB',
-    lineHeight: 18,
-  },
-  activityInstructionsTe: {
-    fontSize: 11,
-    color: '#9CA3AF',
-    lineHeight: 16,
-  },
-  discussionSection: {
-    marginTop: 6,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#27272A',
-    gap: 4,
-  },
-  discussionHeading: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#FBBF24',
-    marginBottom: 2,
-  },
-  qItemRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 6,
-  },
-  qBullet: {
-    color: '#FBBF24',
-    fontSize: 12,
-  },
-  qText: {
-    fontSize: 12,
-    color: '#D1D5DB',
-    flex: 1,
-    lineHeight: 17,
-  },
-  classScheduleCard: {
-    backgroundColor: '#09090B',
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#27272A',
-    gap: 8,
-  },
-  scheduleHeading: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#9CA3AF',
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  schedRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    backgroundColor: '#18181B',
-    padding: 8,
-    borderRadius: 8,
-  },
-  schedPill: {
-    backgroundColor: '#27272A',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  schedPillText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#FBBF24',
-  },
-  schedSegment: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  schedDesc: {
-    fontSize: 11,
-    color: '#9CA3AF',
-    marginTop: 1,
-  },
-  linkedSection: {
-    backgroundColor: '#09090B',
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#27272A',
-    gap: 10,
-  },
-  customNoteBox: {
-    backgroundColor: '#18181B',
-    borderRadius: 10,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#27272A',
-    gap: 4,
-  },
-  customNoteTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#FBBF24',
-  },
-  customNoteText: {
-    fontSize: 12,
-    color: '#D1D5DB',
-    lineHeight: 17,
-  },
-  linkedActionCard: {
+  linkedCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: '#18181B',
-    padding: 11,
-    borderRadius: 10,
+    padding: 12,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#27272A',
   },
-  linkedIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 9,
+  linkedIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
   linkedTag: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '800',
-    color: '#60A5FA',
     letterSpacing: 0.6,
   },
   linkedTitle: {
-    fontSize: 13,
+    fontSize: 14.5,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  tierHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  tierBadgePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  tierBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  activityTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  activityDescEn: {
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  activityDescTe: {
+    fontSize: 13.5,
+    lineHeight: 21,
+    fontWeight: '500',
+  },
+  discussionBlock: {
+    borderTopWidth: 1,
+    paddingTop: 12,
+    marginTop: 4,
+    gap: 8,
+  },
+  discussionHeading: {
+    fontSize: 13.5,
+    fontWeight: '800',
+  },
+  qRowCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: 11,
+    borderRadius: 13,
+    borderWidth: 1,
+  },
+  qNumBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  qNumText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  qRowText: {
+    flex: 1,
+    fontSize: 13.5,
+    lineHeight: 20,
+    fontWeight: '500',
+  },
+  schedList: {
+    gap: 8,
+  },
+  schedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    padding: 11,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  schedPill: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  schedPillText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  schedSegment: {
+    fontSize: 13.5,
     fontWeight: '700',
-    color: '#FFFFFF',
+  },
+  schedDesc: {
+    fontSize: 12,
     marginTop: 1,
+    lineHeight: 17,
   },
 });

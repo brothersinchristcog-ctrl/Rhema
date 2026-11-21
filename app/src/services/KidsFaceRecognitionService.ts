@@ -26,14 +26,31 @@ export interface FaceCandidate {
   gender?: string;
 }
 
+export type FaceVerificationStatus =
+  | 'matched'
+  | 'mismatch'
+  | 'no_face'
+  | 'no_photos'
+  | 'timeout'
+  | 'service_unavailable'
+  | 'error';
+
+export type FaceVerificationProgressStage =
+  | 'loading_photos'
+  | 'comparing'
+  | 'confirming';
+
 export interface FaceVerificationResult {
   matched: boolean;
   faceDetected: boolean;
   matchedCandidateId: string | null;
   confidence: number;
   reason: string;
+  status: FaceVerificationStatus;
   provider?: string;
   serviceUnavailable?: boolean;
+  timedOut?: boolean;
+  differencesFound?: string[];
 }
 
 type VisionVerdict = 'DEFINITE_SAME_PERSON' | 'DIFFERENT_PERSON' | 'UNCERTAIN';
@@ -51,7 +68,28 @@ interface RawVisionMatchResponse {
 const STRICT_CONFIDENCE_THRESHOLD = 88;
 const CONSENSUS_MIN_CONFIDENCE = 85;
 const BATCH_SIZE = 5;
-const REQUEST_TIMEOUT_MS = 12000;
+const REQUEST_TIMEOUT_MS = 22000;
+
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err: any) {
+    if (err?.name === 'AbortError' || /abort/i.test(String(err?.message || ''))) {
+      const timeoutErr: any = new Error('Face verification request timed out');
+      timeoutErr.isTimeout = true;
+      throw timeoutErr;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 // In-memory cache of reference photo URL -> pure base64 JPEG/PNG payload
 const referencePhotoCache = new Map<string, { base64: string; mimeType: string }>();
@@ -330,7 +368,7 @@ async function verifyBatchWithGemini(
   liveImage: { base64: string; mimeType: string },
   batch: Array<{ index: number; candidate: FaceCandidate; image: { base64: string; mimeType: string } }>,
   role: 'child' | 'teacher'
-): Promise<{ parsed?: RawVisionMatchResponse; provider?: string; error?: string }> {
+): Promise<{ parsed?: RawVisionMatchResponse; provider?: string; error?: string; timedOut?: boolean }> {
   const apiKey = getGeminiApiKey();
   if (!apiKey) return { error: 'Gemini API key missing' };
 
@@ -345,16 +383,14 @@ async function verifyBatchWithGemini(
 
   const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash-lite'];
   let lastError = 'Gemini request failed';
+  let timedOut = false;
 
   for (const model of models) {
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-      const res = await fetch(
+      const res = await fetchWithTimeout(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
         {
           method: 'POST',
-          signal: controller.signal,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts }],
@@ -363,9 +399,9 @@ async function verifyBatchWithGemini(
               responseMimeType: 'application/json',
             },
           }),
-        }
+        },
+        REQUEST_TIMEOUT_MS
       );
-      clearTimeout(timeout);
 
       if (!res.ok) {
         const errBody = await res.text().catch(() => '');
@@ -382,18 +418,19 @@ async function verifyBatchWithGemini(
       lastError = `Gemini (${model}) returned unparseable output`;
       break;
     } catch (err: any) {
-      lastError = err?.name === 'AbortError' ? `Gemini (${model}) timed out` : (err?.message || lastError);
+      if (err?.isTimeout) timedOut = true;
+      lastError = err?.isTimeout ? `Gemini (${model}) timed out` : (err?.message || lastError);
       break;
     }
   }
-  return { error: lastError };
+  return { error: lastError, timedOut };
 }
 
 async function verifyBatchWithAnthropic(
   liveImage: { base64: string; mimeType: string },
   batch: Array<{ index: number; candidate: FaceCandidate; image: { base64: string; mimeType: string } }>,
   role: 'child' | 'teacher'
-): Promise<{ parsed?: RawVisionMatchResponse; provider?: string; error?: string }> {
+): Promise<{ parsed?: RawVisionMatchResponse; provider?: string; error?: string; timedOut?: boolean }> {
   const apiKey = getAnthropicApiKey();
   if (!apiKey) return { error: 'Anthropic API key missing' };
 
@@ -417,28 +454,29 @@ async function verifyBatchWithAnthropic(
   // Prioritize Sonnet 4.5 for higher facial verification accuracy, then Haiku 4.5
   const models = ['claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20251001'];
   let lastError = 'Anthropic request failed';
+  let timedOut = false;
 
   for (const model of models) {
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        signal: controller.signal,
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerously-allow-browser': 'true',
+      const res = await fetchWithTimeout(
+        'https://api.anthropic.com/v1/messages',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerously-allow-browser': 'true',
+          },
+          body: JSON.stringify({
+            model,
+            max_tokens: 350,
+            temperature: 0,
+            messages: [{ role: 'user', content }],
+          }),
         },
-        body: JSON.stringify({
-          model,
-          max_tokens: 350,
-          temperature: 0,
-          messages: [{ role: 'user', content }],
-        }),
-      });
-      clearTimeout(timeout);
+        REQUEST_TIMEOUT_MS
+      );
 
       if (!res.ok) {
         const errBody = await res.text().catch(() => '');
@@ -455,18 +493,19 @@ async function verifyBatchWithAnthropic(
       lastError = `Anthropic (${model}) returned unparseable output`;
       break;
     } catch (err: any) {
-      lastError = err?.name === 'AbortError' ? `Anthropic (${model}) timed out` : (err?.message || lastError);
+      if (err?.isTimeout) timedOut = true;
+      lastError = err?.isTimeout ? `Anthropic (${model}) timed out` : (err?.message || lastError);
       break;
     }
   }
-  return { error: lastError };
+  return { error: lastError, timedOut };
 }
 
 async function verifyBatchWithGroq(
   liveImage: { base64: string; mimeType: string },
   batch: Array<{ index: number; candidate: FaceCandidate; image: { base64: string; mimeType: string } }>,
   role: 'child' | 'teacher'
-): Promise<{ parsed?: RawVisionMatchResponse; provider?: string; error?: string }> {
+): Promise<{ parsed?: RawVisionMatchResponse; provider?: string; error?: string; timedOut?: boolean }> {
   const apiKey = getGroqApiKey();
   if (!apiKey) return { error: 'Groq API key missing' };
 
@@ -484,24 +523,24 @@ async function verifyBatchWithGroq(
   ];
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
+    const res = await fetchWithTimeout(
+      'https://api.groq.com/openai/v1/chat/completions',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+          max_tokens: 350,
+          temperature: 0,
+          response_format: { type: 'json_object' },
+          messages: [{ role: 'user', content }],
+        }),
       },
-      body: JSON.stringify({
-        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-        max_tokens: 350,
-        temperature: 0,
-        response_format: { type: 'json_object' },
-        messages: [{ role: 'user', content }],
-      }),
-    });
-    clearTimeout(timeout);
+      REQUEST_TIMEOUT_MS
+    );
 
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
@@ -516,7 +555,8 @@ async function verifyBatchWithGroq(
     return { error: 'Groq returned unparseable output' };
   } catch (err: any) {
     return {
-      error: err?.name === 'AbortError' ? 'Groq request timed out' : (err?.message || 'Groq request failed'),
+      error: err?.isTimeout ? 'Groq request timed out' : (err?.message || 'Groq request failed'),
+      timedOut: Boolean(err?.isTimeout),
     };
   }
 }
@@ -529,7 +569,8 @@ class KidsFaceRecognitionService {
   async verifyLiveFace(
     livePhotoBase64: string,
     candidates: FaceCandidate[],
-    role: 'child' | 'teacher' = 'child'
+    role: 'child' | 'teacher' = 'child',
+    onProgress?: (stage: FaceVerificationProgressStage) => void
   ): Promise<FaceVerificationResult> {
     const liveImage = stripBase64Prefix(livePhotoBase64);
     if (!liveImage.base64 || liveImage.base64.length < 100) {
@@ -538,6 +579,7 @@ class KidsFaceRecognitionService {
         faceDetected: false,
         matchedCandidateId: null,
         confidence: 0,
+        status: 'no_face',
         reason: 'Could not capture a clear camera image. Please try again.',
       };
     }
@@ -552,12 +594,15 @@ class KidsFaceRecognitionService {
         faceDetected: false,
         matchedCandidateId: null,
         confidence: 0,
+        status: 'no_photos',
         reason:
           role === 'child'
             ? 'No enrolled child reference photos found. Please add a clear profile photo for your child first.'
             : 'No enrolled teacher face photos found. Please use your 4-Digit Teacher PIN or ask Admin to add profile photos.',
       };
     }
+
+    onProgress?.('loading_photos');
 
     const loadedEntries = (
       await Promise.all(
@@ -574,18 +619,22 @@ class KidsFaceRecognitionService {
         faceDetected: false,
         matchedCandidateId: null,
         confidence: 0,
+        status: 'service_unavailable',
         serviceUnavailable: true,
         reason: 'Unable to download enrolled reference photo(s). Please verify internet access and retry.',
       };
     }
 
     let anyProviderSucceeded = false;
+    let anyTimedOut = false;
     let sawFace = false;
     let bestConfidence = 0;
     let bestReason = '';
+    let bestDifferences: string[] = [];
     let lastProviderError = '';
 
     for (let offset = 0; offset < loadedEntries.length; offset += BATCH_SIZE) {
+      onProgress?.('comparing');
       const slice = loadedEntries.slice(offset, offset + BATCH_SIZE).map((entry, idx) => ({
         index: idx,
         candidate: entry.candidate,
@@ -595,15 +644,19 @@ class KidsFaceRecognitionService {
       // Primary evaluation: Gemini Flash -> Anthropic Claude -> Groq Vision
       let primaryFamily: 'gemini' | 'anthropic' | 'groq' = 'gemini';
       let apiResult = await verifyBatchWithGemini(liveImage, slice, role);
+      if (apiResult.timedOut) anyTimedOut = true;
+
       if (!apiResult.parsed) {
         if (apiResult.error) lastProviderError = apiResult.error;
         primaryFamily = 'anthropic';
         apiResult = await verifyBatchWithAnthropic(liveImage, slice, role);
+        if (apiResult.timedOut) anyTimedOut = true;
       }
       if (!apiResult.parsed) {
         if (apiResult.error) lastProviderError = apiResult.error;
         primaryFamily = 'groq';
         apiResult = await verifyBatchWithGroq(liveImage, slice, role);
+        if (apiResult.timedOut) anyTimedOut = true;
       }
 
       if (!apiResult.parsed) {
@@ -622,6 +675,7 @@ class KidsFaceRecognitionService {
           faceDetected: false,
           matchedCandidateId: null,
           confidence: 0,
+          status: 'no_face',
           reason:
             parsed.reason ||
             'No clear face detected in camera frame. Please look directly inside the oval frame.',
@@ -633,15 +687,17 @@ class KidsFaceRecognitionService {
       if (parsed.confidence >= bestConfidence) {
         bestConfidence = parsed.confidence;
         if (parsed.reason) bestReason = parsed.reason;
+        if (parsed.differencesFound.length > 0) bestDifferences = parsed.differencesFound;
       }
 
       if (isStrictMatchValid(parsed, slice.length, STRICT_CONFIDENCE_THRESHOLD)) {
+        onProgress?.('confirming');
         const matchedEntry = slice[parsed.matchedCandidateIndex!];
 
         // Dual-Provider Consensus: When a second independent Vision AI is configured,
         // require independent 1:1 confirmation before approving check-in.
         const secondarySlice = [{ index: 0, candidate: matchedEntry.candidate, image: matchedEntry.image }];
-        let secondaryResult: { parsed?: RawVisionMatchResponse; provider?: string; error?: string } | null = null;
+        let secondaryResult: { parsed?: RawVisionMatchResponse; provider?: string; error?: string; timedOut?: boolean } | null = null;
 
         if (primaryFamily === 'gemini') {
           if (getAnthropicApiKey()) {
@@ -662,6 +718,9 @@ class KidsFaceRecognitionService {
                 : secParsed.reason || `Secondary check rejected ${matchedEntry.candidate.name} (${secParsed.confidence}%)`;
             bestConfidence = Math.min(bestConfidence, secParsed.confidence);
             bestReason = `Face does not match ${matchedEntry.candidate.name}: ${diffDetail}`;
+            if (secParsed.differencesFound.length > 0) {
+              bestDifferences = secParsed.differencesFound;
+            }
             continue;
           }
           const avgConfidence = Math.round((parsed.confidence + secParsed.confidence) / 2);
@@ -670,6 +729,7 @@ class KidsFaceRecognitionService {
             faceDetected: true,
             matchedCandidateId: matchedEntry.candidate.id,
             confidence: avgConfidence,
+            status: 'matched',
             reason: parsed.reason || `Verified identity match for ${matchedEntry.candidate.name}.`,
             provider: `${provider}+${secondaryResult.provider}`,
           };
@@ -680,6 +740,7 @@ class KidsFaceRecognitionService {
           faceDetected: true,
           matchedCandidateId: matchedEntry.candidate.id,
           confidence: Math.round(parsed.confidence),
+          status: 'matched',
           reason: parsed.reason || `Verified identity match for ${matchedEntry.candidate.name}.`,
           provider,
         };
@@ -692,8 +753,12 @@ class KidsFaceRecognitionService {
         faceDetected: false,
         matchedCandidateId: null,
         confidence: 0,
+        status: anyTimedOut ? 'timeout' : 'service_unavailable',
+        timedOut: anyTimedOut,
         serviceUnavailable: true,
-        reason: `Face verification service is temporarily unreachable (${lastProviderError || 'network/provider timeout'}). Please retry or use QR / Manual check-in.`,
+        reason: anyTimedOut
+          ? 'Face verification timed out. Please check your internet connection or use QR Code / Manual Search.'
+          : `Face verification service is temporarily unavailable (${lastProviderError || 'network error'}). Please use QR Code or Manual Search.`,
       };
     }
 
@@ -702,10 +767,12 @@ class KidsFaceRecognitionService {
       faceDetected: sawFace,
       matchedCandidateId: null,
       confidence: Math.round(bestConfidence),
+      status: sawFace ? 'mismatch' : 'no_face',
+      differencesFound: bestDifferences,
       reason:
         bestReason ||
         (role === 'child'
-          ? 'Live face does not match the registered student profile photo. Check-in denied.'
+          ? 'Live face does not match the registered child profile photo. Check-in denied.'
           : 'Live face does not match any enrolled Sunday School teacher.'),
     };
   }
@@ -715,9 +782,10 @@ class KidsFaceRecognitionService {
    */
   async verifyTargetChildFace(
     livePhotoBase64: string,
-    targetChild: FaceCandidate
+    targetChild: FaceCandidate,
+    onProgress?: (stage: FaceVerificationProgressStage) => void
   ): Promise<FaceVerificationResult> {
-    return this.verifyLiveFace(livePhotoBase64, [targetChild], targetChild.role || 'child');
+    return this.verifyLiveFace(livePhotoBase64, [targetChild], targetChild.role || 'child', onProgress);
   }
 
   /**

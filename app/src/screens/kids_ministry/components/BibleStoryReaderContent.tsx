@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   Platform,
 } from 'react-native';
-import { BookOpen, Clock, HelpCircle } from 'lucide-react-native';
+import { BookOpen, Clock, MessageCircleHeart } from 'lucide-react-native';
 import { KidsBibleStory } from '../../../types/KidsMinistryTypes';
 import { useTheme } from '../../../context/ThemeContext';
 
@@ -102,20 +102,20 @@ export function DropCapStoryBody({
     return null;
   }
 
-  const dropCapWidth = 68;
-  const dropCapGap = 14;
-  const sideTextWidth = Math.max(140, containerWidth - dropCapWidth - dropCapGap);
+  const dropCapWidth = 50;
+  const dropCapGap = 6;
+  const sideTextWidth = Math.max(150, containerWidth - dropCapWidth - dropCapGap);
 
   // Use measured 3-line break when available; fallback to a safe opening length until measured
   const splitPoint =
     leadCharCount !== null
       ? leadCharCount
-      : restOfFirst.length <= 105
+      : restOfFirst.length <= 125
       ? restOfFirst.length
       : (() => {
-          const slice = restOfFirst.slice(0, 105);
+          const slice = restOfFirst.slice(0, 125);
           const lastSpace = slice.lastIndexOf(' ');
-          return lastSpace > 40 ? lastSpace : 105;
+          return lastSpace > 45 ? lastSpace : 125;
         })();
 
   const leadBesideCap = restOfFirst.slice(0, splitPoint).trimEnd();
@@ -137,6 +137,7 @@ export function DropCapStoryBody({
           pointerEvents="none"
           style={[
             styles.measureHiddenText,
+            styles.storyBodyText,
             {
               width: sideTextWidth,
               fontSize,
@@ -161,18 +162,10 @@ export function DropCapStoryBody({
         </Text>
       )}
 
-      {/* Opening Paragraph with Decorative Drop-Cap */}
+      {/* Opening Paragraph with Editorial Serif Drop-Cap */}
       <View style={styles.dropCapRow}>
-        <View
-          style={[
-            styles.dropCapTile,
-            {
-              width: dropCapWidth,
-              backgroundColor: dropCapBg,
-              borderColor: dropCapBorder,
-            },
-          ]}
-        >
+        <View style={[styles.dropCapTile, { width: dropCapWidth }]}>
+          <View style={[styles.dropCapGlow, { backgroundColor: dropCapBg }]} />
           <Text style={[styles.dropCapLetter, { color: dropCapTextColor }]}>
             {firstLetter}
           </Text>
@@ -323,7 +316,11 @@ export default function BibleStoryReaderContent({
         ) : null}
       </View>
 
-      <View style={[styles.divider, { backgroundColor: border }]} />
+      <View style={styles.ornamentDividerRow}>
+        <View style={[styles.ornamentLine, { backgroundColor: border }]} />
+        <Text style={[styles.ornamentDot, { color: goldAccent }]}>✦</Text>
+        <View style={[styles.ornamentLine, { backgroundColor: border }]} />
+      </View>
 
       {/* Optional Language Toggle if Telugu version exists */}
       {hasTelugu && (
@@ -364,35 +361,86 @@ export default function BibleStoryReaderContent({
         </Text>
       )}
 
-      {/* ── OPTIONAL DISCUSSION QUESTIONS ── */}
+      {/* ── FAMILY REFLECTION QUESTIONS ── */}
       {reflectionQuestions && reflectionQuestions.length > 0 && (
         <View
           style={[
             styles.reflectionCard,
             {
-              backgroundColor: isDark ? 'rgba(251, 191, 36, 0.08)' : '#FFFBEB',
-              borderColor: isDark ? 'rgba(251, 191, 36, 0.25)' : '#FDE68A',
+              backgroundColor: isDark ? '#1A162D' : '#F6F2FF',
+              borderColor: isDark ? '#342A5E' : '#E5DCFD',
             },
           ]}
         >
           <View style={styles.reflectionHeader}>
-            <HelpCircle size={17} color={goldAccent} />
-            <Text style={[styles.reflectionTitle, { color: goldAccent }]}>
-              Family Reflection Questions
-            </Text>
-          </View>
-          {reflectionQuestions.map((q, idx) => (
-            <View key={idx} style={styles.questionItem}>
-              <Text style={[styles.questionEng, { color: textPrimary }]}>
-                {idx + 1}. {q.questionEnglish}
-              </Text>
-              {q.questionTelugu ? (
-                <Text style={[styles.questionTel, { color: textSecondary }]}>
-                  {q.questionTelugu}
-                </Text>
-              ) : null}
+            <View
+              style={[
+                styles.reflectionIconBadge,
+                { backgroundColor: isDark ? 'rgba(139, 92, 246, 0.25)' : '#EDE9FE' },
+              ]}
+            >
+              <MessageCircleHeart size={18} color={isDark ? '#C4B5FD' : '#7C3AED'} />
             </View>
-          ))}
+            <View style={{ flex: 1 }}>
+              <Text
+                style={[
+                  styles.reflectionTitle,
+                  { color: isDark ? '#EDE9FE' : '#4C1D95' },
+                ]}
+              >
+                Family Reflection Questions
+              </Text>
+              <Text
+                style={[
+                  styles.reflectionSubtitle,
+                  { color: isDark ? '#A78BFA' : '#7C3AED' },
+                ]}
+              >
+                Discuss together after reading
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.questionsStack}>
+            {reflectionQuestions.map((q, idx) => (
+              <View
+                key={idx}
+                style={[
+                  styles.questionMiniCard,
+                  {
+                    backgroundColor: isDark ? '#231D3D' : '#FFFFFF',
+                    borderColor: isDark ? '#342A5E' : '#EAE3FF',
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.questionNumBadge,
+                    { backgroundColor: isDark ? 'rgba(139, 92, 246, 0.24)' : '#F3EEFF' },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.questionNumText,
+                      { color: isDark ? '#DDD6FE' : '#6D28D9' },
+                    ]}
+                  >
+                    {idx + 1}
+                  </Text>
+                </View>
+                <View style={{ flex: 1, gap: 4 }}>
+                  <Text style={[styles.questionEng, { color: textPrimary }]}>
+                    {q.questionEnglish}
+                  </Text>
+                  {q.questionTelugu ? (
+                    <Text style={[styles.questionTel, { color: textSecondary }]}>
+                      {q.questionTelugu}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+            ))}
+          </View>
         </View>
       )}
     </View>
@@ -487,17 +535,25 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     fontWeight: '600',
   },
-  divider: {
-    width: '100%',
-    height: 1,
+  ornamentDividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
     marginVertical: 16,
+  },
+  ornamentLine: {
+    flex: 1,
+    height: 1,
+  },
+  ornamentDot: {
+    fontSize: 12,
   },
   langToggleRow: {
     flexDirection: 'row',
     padding: 4,
     borderRadius: 12,
     borderWidth: 1,
-    marginBottom: 16,
+    marginBottom: 18,
     gap: 4,
   },
   langTab: {
@@ -525,19 +581,25 @@ const styles = StyleSheet.create({
   dropCapRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 14,
+    gap: 6,
   },
   dropCapTile: {
-    height: 76,
-    borderRadius: 16,
-    borderWidth: 1.5,
+    height: 70,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 4,
+    position: 'relative',
+    marginTop: 2,
+  },
+  dropCapGlow: {
+    position: 'absolute',
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    opacity: 0.55,
   },
   dropCapLetter: {
-    fontSize: 52,
-    lineHeight: 58,
+    fontSize: 62,
+    lineHeight: 68,
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     fontWeight: '900',
     includeFontPadding: false,
@@ -555,7 +617,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   subsequentParagraph: {
-    marginTop: 12,
+    marginTop: 14,
     marginBottom: 2,
   },
   emptyBodyHint: {
@@ -565,31 +627,63 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   reflectionCard: {
-    marginTop: 24,
-    borderRadius: 16,
-    padding: 16,
+    marginTop: 28,
+    borderRadius: 22,
+    padding: 18,
     borderWidth: 1,
-    gap: 10,
+    gap: 14,
   },
   reflectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 12,
+  },
+  reflectionIconBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   reflectionTitle: {
-    fontSize: 14,
+    fontSize: 15.5,
     fontWeight: '800',
   },
-  questionItem: {
-    gap: 2,
+  reflectionSubtitle: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    marginTop: 1,
+  },
+  questionsStack: {
+    gap: 10,
+  },
+  questionMiniCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 11,
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 13,
+  },
+  questionNumBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  questionNumText: {
+    fontSize: 12,
+    fontWeight: '800',
   },
   questionEng: {
-    fontSize: 13.5,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
     lineHeight: 20,
   },
   questionTel: {
-    fontSize: 12,
-    lineHeight: 18,
+    fontSize: 12.5,
+    lineHeight: 19,
   },
 });

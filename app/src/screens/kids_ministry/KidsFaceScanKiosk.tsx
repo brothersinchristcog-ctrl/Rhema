@@ -32,23 +32,46 @@ import {
   QrCode,
   Shield,
   ShieldCheck,
+  ShieldAlert,
   X,
-  Info,
   Trash2,
   Lock,
   UserPlus,
+  Users,
+  WifiOff,
+  RotateCcw,
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useAdminTheme } from '../../utils/adminThemeHelper';
 import KidsMinistryService from '../../services/KidsMinistryService';
-import KidsFaceRecognitionService from '../../services/KidsFaceRecognitionService';
-import { ChildRecord } from '../../types/KidsMinistryTypes';
+import KidsFaceRecognitionService, {
+  FaceVerificationProgressStage,
+} from '../../services/KidsFaceRecognitionService';
+import { ChildRecord, KidsProgramType } from '../../types/KidsMinistryTypes';
 import TeacherEnrollChildModal from './components/TeacherEnrollChildModal';
 
 const { width } = Dimensions.get('window');
-const OVAL_WIDTH = Math.min(width * 0.72, 270);
-const OVAL_HEIGHT = Math.round(OVAL_WIDTH * 1.34); // ~360px natural egg/oval face aspect ratio
+const OVAL_WIDTH = Math.min(width * 0.56, 215);
+const OVAL_HEIGHT = Math.round(OVAL_WIDTH * 1.28);
 const BARCODE_SETTINGS: { barcodeTypes: BarcodeType[] } = { barcodeTypes: ['qr'] };
+
+type KioskMode = 'face_scan' | 'scan_qr' | 'manual';
+type ScanPhase =
+  | 'ready'
+  | 'scanning'
+  | 'verifying'
+  | 'success'
+  | 'mismatch'
+  | 'failed'
+  | 'error';
+
+interface OutcomeDetails {
+  headline: string;
+  detail: string;
+  differences?: string[];
+  expectedChild?: ChildRecord | null;
+  sourceMethod?: 'face_scan' | 'scan_qr' | 'manual';
+}
 
 export default function KidsFaceScanKiosk({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
@@ -65,51 +88,50 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
   } = useAdminTheme();
   const churchId = member?.churchId || 'rhema';
 
-  // Optional target child passed via route params (e.g. from parent view)
   const initialTargetChildId: string | undefined = route?.params?.targetChildId;
+  const targetSessionId: string | undefined = route?.params?.targetSessionId;
+  const sessionTitle: string | undefined = route?.params?.sessionTitle;
+  const programType: KidsProgramType | undefined = route?.params?.programType;
 
   // Camera permissions & config
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>('front');
-  const [pictureSize, setPictureSize] = useState<string | undefined>(undefined);
-  const [cameraKey, setCameraKey] = useState(0);
-  const sizedForFacingRef = useRef<string | null>(null);
-  const [isTorchOn, setIsTorchOn] = useState(false);
 
-  // Kiosk Mode: 'face_scan' | 'scan_qr' | 'manual'
-  const [kioskMode, setKioskMode] = useState<'face_scan' | 'scan_qr' | 'manual'>('face_scan');
+  // Kiosk Mode
+  const [kioskMode, setKioskMode] = useState<KioskMode>('face_scan');
 
-  // Enrolled children for fast matching
+  // Enrolled children
   const [enrolledChildren, setEnrolledChildren] = useState<ChildRecord[]>([]);
   const [selectedChildId, setSelectedChildId] = useState<string | null>(initialTargetChildId || null);
   const [loadingKids, setLoadingKids] = useState(true);
 
-  // Privacy / Biometric Consent Modal
+  // Modals
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [showTeacherEnrollModal, setShowTeacherEnrollModal] = useState(false);
 
-  // Scanning & Match States
+  // Unified Verification State Machine
   const cameraRef = useRef<CameraView>(null);
-  const [scanning, setScanning] = useState(false);
-  const [scanStatusText, setScanStatusText] = useState('Center child face inside oval frame');
-  const [scanState, setScanState] = useState<'idle' | 'scanning' | 'success' | 'rejected'>('idle');
-  const [scanRejected, setScanRejected] = useState<{
-    title: string;
-    reason: string;
-  } | null>(null);
+  const [scanPhase, setScanPhase] = useState<ScanPhase>('ready');
+  const [statusMessage, setStatusMessage] = useState('Ready to Scan');
+  const [statusSubMessage, setStatusSubMessage] = useState(
+    'Center face inside the frame and tap Start Face Scan.'
+  );
+  const [outcomeDetails, setOutcomeDetails] = useState<OutcomeDetails | null>(null);
   const [scannedResult, setScannedResult] = useState<{
     child: ChildRecord;
     confidence: number;
     pickupCode?: string;
     alreadyCheckedIn?: boolean;
+    method: 'face_scan' | 'scan_qr' | 'manual';
   } | null>(null);
 
-  // Manual search query
+  // Manual search query & check-in submission
   const [searchQuery, setSearchQuery] = useState('');
   const [processingCheckIn, setProcessingCheckIn] = useState(false);
 
-  // Animated values & lifecycle guards for face scanner
+  // Strict lifecycle & duplicate-scan prevention guards
   const isMountedRef = useRef(true);
+  const scanInFlightRef = useRef(false);
   const activeScanIdRef = useRef(0);
   const sweepLoopRef = useRef<Animated.CompositeAnimation | null>(null);
   const sweepAnim = useRef(new Animated.Value(0.5)).current;
@@ -123,23 +145,32 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
     sweepAnim.setValue(0.5);
   };
 
-  const resetScanToIdle = () => {
+  const resetScanStateOnly = () => {
     activeScanIdRef.current += 1;
+    scanInFlightRef.current = false;
     stopScanAnimation();
-    setScanning(false);
     setScannedResult(null);
-    setScanRejected(null);
-    setScanState('idle');
-    setScanStatusText('Center child face inside oval frame');
-    cameraRef.current?.resumePreview?.().catch(() => {});
+    setOutcomeDetails(null);
+    setScanPhase('ready');
+    setStatusMessage('Ready to Scan');
+    setStatusSubMessage('Center face inside the frame and tap Start Face Scan.');
   };
 
-  // Load registered children for instant matching & reconcile any unlinked household photos
+  const resetScanToReady = () => {
+    resetScanStateOnly();
+  };
+
+  const switchCameraFacing = (nextFacing: 'front' | 'back') => {
+    setCameraFacing(nextFacing);
+  };
+
+  // Load registered children & reconcile profile photos
   useEffect(() => {
     isMountedRef.current = true;
     KidsMinistryService.reconcileAllChildPhotos(churchId).catch(() => {});
 
     const unsub = KidsMinistryService.subscribeToAllChildren(churchId, list => {
+      if (!isMountedRef.current) return;
       setEnrolledChildren(list);
       setLoadingKids(false);
     });
@@ -147,25 +178,28 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
     return () => {
       isMountedRef.current = false;
       activeScanIdRef.current += 1;
+      scanInFlightRef.current = false;
       stopScanAnimation();
       unsub();
     };
   }, [churchId]);
 
-  // Run laser sweep animation ONLY while biometric verification is actively running
+  const isScanningOrVerifying = scanPhase === 'scanning' || scanPhase === 'verifying';
+
+  // Run sweep beam strictly ONLY while actively scanning/verifying in face_scan mode
   useEffect(() => {
-    if (scanning && kioskMode === 'face_scan' && !scannedResult && !scanRejected) {
+    if (kioskMode === 'face_scan' && isScanningOrVerifying) {
       sweepAnim.setValue(0);
       const loop = Animated.loop(
         Animated.sequence([
           Animated.timing(sweepAnim, {
             toValue: 1,
-            duration: 1400,
+            duration: 1300,
             useNativeDriver: true,
           }),
           Animated.timing(sweepAnim, {
             toValue: 0,
-            duration: 1400,
+            duration: 1300,
             useNativeDriver: true,
           }),
         ])
@@ -179,58 +213,31 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
     return () => {
       stopScanAnimation();
     };
-  }, [scanning, kioskMode, scannedResult, scanRejected]);
+  }, [kioskMode, scanPhase]);
 
   const sweepTranslate = sweepAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [-OVAL_HEIGHT / 2 + 20, OVAL_HEIGHT / 2 - 20],
+    outputRange: [-OVAL_HEIGHT / 2 + 16, OVAL_HEIGHT / 2 - 16],
   });
 
-  const handleCameraReady = async () => {
-    if (sizedForFacingRef.current === cameraFacing) return;
-    sizedForFacingRef.current = cameraFacing;
-    try {
-      const sizes = await cameraRef.current?.getAvailablePictureSizesAsync?.();
-      if (!sizes || sizes.length === 0) return;
-      const parsed = sizes
-        .map(s => {
-          const [w, h] = s.split('x').map(Number);
-          return { raw: s, w: w || 0, h: h || 0 };
-        })
-        .filter(x => x.w > 0 && x.h > 0)
-        .sort((a, b) => a.w - b.w);
-      const ideal =
-        parsed.find(x => x.w >= 640 && x.w <= 1280) ||
-        parsed.find(x => x.w >= 480) ||
-        parsed[0];
-      if (ideal) {
-        setPictureSize(ideal.raw);
-      }
-    } catch {
-      // Optional resolution optimization
-    }
-  };
-
-  // Current active target child if specific child selected
   const activeTargetChild = selectedChildId
-    ? enrolledChildren.find(c => c.id === selectedChildId)
+    ? enrolledChildren.find(c => c.id === selectedChildId) || null
     : null;
+
+  const childrenWithPhotos = enrolledChildren.filter(c =>
+    Boolean(c.photoUrl && c.photoUrl.trim().length > 10)
+  );
 
   // Trigger strict 1:1 or 1:N biometric face recognition
   const triggerFaceRecognition = async () => {
-    if (scanning) return;
+    if (scanInFlightRef.current || isScanningOrVerifying) return;
 
     if (enrolledChildren.length === 0) {
       Alert.alert('No Children Enrolled', 'Please enroll children in Sunday School first.');
       return;
     }
 
-    // Determine target pool
-    let candidatePool = enrolledChildren;
-    if (activeTargetChild) {
-      candidatePool = [activeTargetChild];
-    }
-
+    const candidatePool = activeTargetChild ? [activeTargetChild] : enrolledChildren;
     const candidatesWithPhotos = candidatePool
       .filter(c => Boolean(c.photoUrl && c.photoUrl.trim().length > 10))
       .map(c => ({
@@ -243,14 +250,17 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
       }));
 
     if (candidatesWithPhotos.length === 0) {
-      setScanState('rejected');
-      setScanRejected({
-        title: activeTargetChild
-          ? `No Photo for ${activeTargetChild.firstName}`
-          : 'No Child Face Photos Enrolled',
-        reason: activeTargetChild
-          ? `${activeTargetChild.fullName} does not have a reference photo enrolled yet. Please upload a profile photo or use App QR Code / Manual Search.`
-          : 'None of the enrolled children have a reference photo uploaded. Please add a face photo during enrollment or use QR / Manual Search.',
+      stopScanAnimation();
+      setScanPhase('error');
+      setStatusMessage('Unable to Complete Face Verification. Please Try Again.');
+      setOutcomeDetails({
+        headline: activeTargetChild
+          ? `No Reference Photo for ${activeTargetChild.fullName}`
+          : 'No Registered Child Photos Found',
+        detail: activeTargetChild
+          ? `${activeTargetChild.fullName} does not have a registered face photo yet. Upload a profile photo or use QR Code / Manual Search.`
+          : 'No enrolled children have profile photos uploaded yet. Please enroll a photo or check in via QR Code / Manual Search.',
+        expectedChild: activeTargetChild,
       });
       return;
     }
@@ -260,164 +270,239 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
       return;
     }
 
+    scanInFlightRef.current = true;
     const runId = ++activeScanIdRef.current;
 
     try {
-      setScanRejected(null);
+      // Stage 1: Detecting Face
       setScannedResult(null);
-      setScanning(true);
-      setScanState('scanning');
-      setScanStatusText(
+      setOutcomeDetails(null);
+      setScanPhase('scanning');
+      setStatusMessage('Detecting Face...');
+      setStatusSubMessage(
         activeTargetChild
-          ? `Verifying strictly against ${activeTargetChild.firstName}...`
-          : 'Analyzing live facial structure...'
+          ? `Capturing live photo to verify ${activeTargetChild.fullName}...`
+          : `Capturing live photo to search ${candidatesWithPhotos.length} registered child profiles...`
       );
 
       let captured: { base64?: string } | undefined;
       try {
         captured = await Promise.race([
           cameraRef.current.takePictureAsync({
-            quality: 0.4,
+            quality: 0.45,
             base64: true,
             exif: false,
           }),
           new Promise<undefined>((_, reject) =>
-            setTimeout(() => reject(new Error('Camera capture timed out')), 8000)
+            setTimeout(() => reject(new Error('Camera capture timed out')), 9000)
           ),
         ]);
-      } catch (capErr) {
+      } catch {
         if (!isMountedRef.current || activeScanIdRef.current !== runId) return;
         stopScanAnimation();
-        setScanning(false);
-        setPictureSize(undefined);
-        sizedForFacingRef.current = null;
-        setCameraKey(k => k + 1);
-        setScanState('rejected');
-        setScanStatusText('Camera capture failed');
-        setScanRejected({
-          title: 'Camera Capture Failed',
-          reason: 'Camera took too long to capture a photo. Preview has been refreshed — please tap Scan again.',
+        setScanPhase('error');
+        setStatusMessage('Unable to Complete Face Verification. Please Try Again.');
+        setOutcomeDetails({
+          headline: 'Camera Capture Timed Out',
+          detail: 'The camera could not capture a steady photo in time. Please tap Try Again or use QR / Manual check-in.',
+          expectedChild: activeTargetChild,
         });
         return;
       }
-
-      // Immediately resume live camera preview on Android so it never stays frozen/black
-      cameraRef.current?.resumePreview?.().catch(() => {});
 
       if (!isMountedRef.current || activeScanIdRef.current !== runId) return;
 
       if (!captured?.base64) {
         stopScanAnimation();
-        setScanning(false);
-        setScanState('rejected');
-        setScanStatusText('Camera capture failed');
-        setScanRejected({
-          title: 'Camera Capture Failed',
-          reason: 'Could not capture a clear frame. Hold steady inside the oval frame and try again.',
+        setScanPhase('failed');
+        setStatusMessage('Face Not Recognized');
+        setOutcomeDetails({
+          headline: 'No Clear Photo Captured',
+          detail: 'Could not read a clear image from the camera. Hold steady in good lighting and try again.',
+          expectedChild: activeTargetChild,
         });
         return;
       }
 
-      setScanStatusText('Comparing biometric markers against enrolled reference...');
+      // Stage 2: Verifying Identity
+      setScanPhase('verifying');
+      setStatusMessage('Verifying Identity...');
+      setStatusSubMessage(
+        activeTargetChild
+          ? `Comparing captured face against ${activeTargetChild.fullName}'s profile...`
+          : `Comparing captured face across ${candidatesWithPhotos.length} registered children...`
+      );
 
-      let verification;
-      if (activeTargetChild && candidatesWithPhotos.length === 1) {
-        // Strict 1:1 Target Verification
-        verification = await KidsFaceRecognitionService.verifyTargetChildFace(
-          captured.base64,
-          candidatesWithPhotos[0]
-        );
-      } else {
-        // Strict 1:N Verification across all children with photos
-        verification = await KidsFaceRecognitionService.verifyLiveFace(
-          captured.base64,
-          candidatesWithPhotos,
-          'child'
-        );
-      }
+      const onProgress = (stage: FaceVerificationProgressStage) => {
+        if (!isMountedRef.current || activeScanIdRef.current !== runId) return;
+        if (stage === 'loading_photos') {
+          setStatusSubMessage('Loading registered reference photo(s)...');
+        } else if (stage === 'comparing') {
+          setStatusSubMessage(
+            activeTargetChild
+              ? `Checking facial match with ${activeTargetChild.fullName}...`
+              : `Searching ${candidatesWithPhotos.length} registered child profiles...`
+          );
+        } else if (stage === 'confirming') {
+          setStatusSubMessage('Confirming verified identity match...');
+        }
+      };
+
+      const verification =
+        activeTargetChild && candidatesWithPhotos.length === 1
+          ? await KidsFaceRecognitionService.verifyTargetChildFace(
+              captured.base64,
+              candidatesWithPhotos[0],
+              onProgress
+            )
+          : await KidsFaceRecognitionService.verifyLiveFace(
+              captured.base64,
+              candidatesWithPhotos,
+              'child',
+              onProgress
+            );
 
       if (!isMountedRef.current || activeScanIdRef.current !== runId) return;
 
-      // Immediately halt scanning animation & loading spinner once response is received
+      // Immediately stop scanning animation & transition off camera view upon receiving response
       stopScanAnimation();
-      setScanning(false);
 
-      // Check if identity matched with strict consensus verification (>= 88%)
-      if (verification.matched && verification.matchedCandidateId && verification.confidence >= 88) {
+      // Strict check: only show success when backend confirms match + valid enrolled child exists
+      if (
+        verification.status === 'matched' &&
+        verification.matched &&
+        verification.matchedCandidateId &&
+        verification.confidence >= 88
+      ) {
         const matchedChild = enrolledChildren.find(c => c.id === verification.matchedCandidateId);
         if (matchedChild) {
-          setScanState('success');
-          setScanStatusText(`Verification Successful: ${matchedChild.fullName} (${verification.confidence}%)`);
+          // Extra guard in 1:1 mode: returned ID must strictly match the expected child
+          if (activeTargetChild && matchedChild.id !== activeTargetChild.id) {
+            setScanPhase('mismatch');
+            setStatusMessage('Face Does Not Match This Child');
+            setOutcomeDetails({
+              headline: `Face Does Not Match ${activeTargetChild.fullName}`,
+              detail: `The scanned face did not verify as ${activeTargetChild.fullName}. Check-in was blocked.`,
+              expectedChild: activeTargetChild,
+            });
+            return;
+          }
+
+          setScanPhase('success');
+          setStatusMessage('Face Verified Successfully');
           setScannedResult({
             child: matchedChild,
             confidence: verification.confidence,
             pickupCode: matchedChild.activePickupCode,
             alreadyCheckedIn: matchedChild.custodyStatus === 'checked_in',
+            method: 'face_scan',
+          });
+          setOutcomeDetails({
+            headline: `Verified: ${matchedChild.fullName}`,
+            detail: verification.reason || 'Biometric identity confirmed against registered profile.',
           });
           return;
         }
       }
 
-      // Strict failure — distinguish service issue vs empty frame vs identity mismatch
-      setScanState('rejected');
-      setScanStatusText(
+      // Error / Timeout / Service Unavailable
+      if (
+        verification.status === 'timeout' ||
+        verification.status === 'service_unavailable' ||
+        verification.status === 'error' ||
         verification.serviceUnavailable
-          ? 'Verification Service Unavailable'
-          : !verification.faceDetected
-          ? 'No Clear Face Detected'
-          : 'Face Mismatch'
-      );
-      setScanRejected({
-        title: verification.serviceUnavailable
-          ? 'Verification Service Unavailable'
-          : !verification.faceDetected
-          ? 'No Clear Face Detected'
-          : activeTargetChild
-          ? `Face Mismatch · Not ${activeTargetChild.firstName}`
-          : 'Face Mismatch',
-        reason:
-          verification.reason ||
-          (activeTargetChild
-            ? `The live camera face does not match ${activeTargetChild.fullName}'s enrolled reference photo. Please ensure ${activeTargetChild.firstName} is looking directly at the camera, or use QR Code check-in.`
-            : 'Face does not match any enrolled Sunday School student. Un-enrolled adults, siblings, and unregistered visitors are denied access.'),
-      });
+      ) {
+        setScanPhase('error');
+        setStatusMessage('Unable to Complete Face Verification. Please Try Again.');
+        setOutcomeDetails({
+          headline: verification.timedOut
+            ? 'Verification Request Timed Out'
+            : 'Face Verification Unavailable',
+          detail:
+            verification.reason ||
+            'Unable to complete face verification right now. Please try again, or switch to QR Code or Manual Search.',
+          expectedChild: activeTargetChild,
+        });
+        return;
+      }
+
+      // No clear face detected
+      if (!verification.faceDetected || verification.status === 'no_face') {
+        setScanPhase('failed');
+        setStatusMessage('Face Not Recognized');
+        setOutcomeDetails({
+          headline: 'No Clear Face Detected',
+          detail:
+            verification.reason ||
+            'Make sure the child is facing the camera directly inside the oval frame with clear lighting.',
+          expectedChild: activeTargetChild,
+        });
+        return;
+      }
+
+      // Face detected but does not match expected child (1:1) vs unrecognized in 1:N search
+      if (activeTargetChild) {
+        setScanPhase('mismatch');
+        setStatusMessage('Face Does Not Match This Child');
+        setOutcomeDetails({
+          headline: `Expected ${activeTargetChild.fullName}`,
+          detail:
+            verification.reason ||
+            `The scanned face does not match ${activeTargetChild.fullName}'s registered profile photo. No other child was selected.`,
+          differences: verification.differencesFound,
+          expectedChild: activeTargetChild,
+        });
+      } else {
+        setScanPhase('failed');
+        setStatusMessage('Face Not Recognized');
+        setOutcomeDetails({
+          headline: 'Face Not Recognized Among Registered Children',
+          detail:
+            verification.reason ||
+            'The captured face does not match any enrolled child profile. Please verify enrollment or use Manual Search / QR Code.',
+          differences: verification.differencesFound,
+        });
+      }
     } catch (err: any) {
       if (!isMountedRef.current || activeScanIdRef.current !== runId) return;
       stopScanAnimation();
-      setScanning(false);
-      setScanState('rejected');
-      setScanStatusText('Verification failed');
-      setScanRejected({
-        title: 'Verification Error',
-        reason: err?.message || 'Unable to verify face right now. Please try again or use QR / Manual Search.',
+      setScanPhase('error');
+      setStatusMessage('Unable to Complete Face Verification. Please Try Again.');
+      setOutcomeDetails({
+        headline: 'Verification Service Error',
+        detail:
+          err?.message ||
+          'An unexpected error occurred while verifying identity. Please try again or use QR / Manual check-in.',
+        expectedChild: activeTargetChild,
       });
     } finally {
-      if (isMountedRef.current && activeScanIdRef.current === runId) {
-        setScanning(false);
-      }
+      scanInFlightRef.current = false;
     }
   };
 
   // Handle QR code detected by CameraView
   const handleQrDetected = async (result: BarcodeScanningResult) => {
-    if (processingCheckIn || scannedResult) return;
+    if (processingCheckIn || scanPhase === 'success') return;
 
     try {
       setProcessingCheckIn(true);
       const child = await KidsMinistryService.findChildByScanQuery(churchId, result.data);
       if (child) {
-        setScanState('success');
+        stopScanAnimation();
+        setScanPhase('success');
+        setStatusMessage('Child Identified via QR Code');
         setScannedResult({
           child,
-          confidence: 100.0,
+          confidence: 100,
           pickupCode: child.activePickupCode,
           alreadyCheckedIn: child.custodyStatus === 'checked_in',
+          method: 'scan_qr',
         });
       } else {
-        Alert.alert('Invalid QR Code', 'No child found matching this QR code payload.');
+        Alert.alert('Invalid QR Code', 'No registered child found matching this QR code.');
       }
     } catch (e: any) {
-      Alert.alert('Scan Error', e.message || 'Could not process QR code');
+      Alert.alert('Scan Error', e?.message || 'Could not process QR code.');
     } finally {
       setProcessingCheckIn(false);
     }
@@ -425,45 +510,38 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
 
   // Confirm Check-In
   const handleConfirmCheckIn = async () => {
-    if (!scannedResult) return;
+    if (!scannedResult || processingCheckIn) return;
     setProcessingCheckIn(true);
 
     try {
-      const parentName =
-        member?.name || `${member?.firstName || ''} ${member?.lastName || ''}`.trim() || 'Parent';
+      const staffName =
+        member?.name || `${member?.firstName || ''} ${member?.lastName || ''}`.trim() || 'Admin';
       const result = await KidsMinistryService.checkInChild({
         churchId,
         child: scannedResult.child,
-        method: kioskMode === 'scan_qr' ? 'qr_code' : kioskMode,
+        method: scannedResult.method === 'scan_qr' ? 'qr_code' : scannedResult.method,
         checkedInByMemberId: member?.id || 'kiosk_station',
-        checkedInByName: parentName,
+        checkedInByName: staffName,
+        programSessionId: targetSessionId,
+        programType: programType || 'sunday_school',
+        programTitle: sessionTitle || 'Sunday School',
       });
 
       if (result.alreadyCheckedIn) {
         Alert.alert(
           'Already Checked In',
           `${scannedResult.child.fullName} is already checked in!\n\nActive Pickup Code: ${result.session.pickupCode}`,
-          [
-            {
-              text: 'OK',
-              onPress: resetScanToIdle,
-            },
-          ]
+          [{ text: 'OK', onPress: resetScanToReady }]
         );
       } else {
         Alert.alert(
-          'Check-In Successful! 🎉',
-          `Welcome, ${scannedResult.child.fullName}!\n\nClass: ${scannedResult.child.assignedClassName || 'Sunday School'}\nToday's Pickup Code: ${result.session.pickupCode}\n\nPush notification sent to parents.`,
-          [
-            {
-              text: 'Done',
-              onPress: resetScanToIdle,
-            },
-          ]
+          'Check-In Confirmed',
+          `${scannedResult.child.fullName} has been checked in.\n\nClass: ${scannedResult.child.assignedClassName || 'Sunday School'}\nPickup Code: ${result.session.pickupCode}`,
+          [{ text: 'Done', onPress: resetScanToReady }]
         );
       }
     } catch (e: any) {
-      Alert.alert('Check-In Failed', e.message || 'Could not record check-in');
+      Alert.alert('Check-In Failed', e?.message || 'Could not record check-in.');
     } finally {
       setProcessingCheckIn(false);
     }
@@ -471,7 +549,7 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
 
   // Manual Search Filter
   const manualFiltered = enrolledChildren.filter(c => {
-    if (!searchQuery.trim()) return false;
+    if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase().trim();
     return (
       c.fullName.toLowerCase().includes(q) ||
@@ -480,23 +558,27 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
     );
   });
 
-  // Dynamic Ring Border Color
   const getScannerBorderColor = () => {
-    if (scanState === 'success') return '#10B981'; // Vibrant Green
-    if (scanState === 'rejected') return '#EF4444'; // Red
-    if (scanning || scanState === 'scanning') return '#38BDF8'; // Active Cyan
-    return '#FBBF24'; // Warm Gold
+    if (scanPhase === 'verifying') return '#818CF8';
+    if (scanPhase === 'scanning') return '#38BDF8';
+    return '#FBBF24';
   };
 
   const activePillBg = isDark ? '#FFFFFF' : '#0F172A';
   const activePillText = isDark ? '#000000' : '#FFFFFF';
   const iconButtonBg = isDark ? '#18181B' : secondarySurface;
 
+  const isOutcomePhase =
+    scanPhase === 'success' ||
+    scanPhase === 'mismatch' ||
+    scanPhase === 'failed' ||
+    scanPhase === 'error';
+
   return (
     <View style={[styles.container, { paddingTop: insets.top, backgroundColor: screenBg }]}>
       <StatusBar barStyle={barStyle} backgroundColor={screenBg} />
 
-      {/* ── TOP HEADER ── */}
+      {/* ── HEADER ── */}
       <View style={[styles.headerRow, { backgroundColor: screenBg, borderBottomColor: borderColor }]}>
         <TouchableOpacity
           style={[styles.iconBtn, { backgroundColor: iconButtonBg, borderColor, borderWidth: isDark ? 0 : 1 }]}
@@ -508,10 +590,10 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
 
         <View style={styles.headerCenter}>
           <Text style={[styles.headerTitleSerif, { color: primaryText }]} numberOfLines={1}>
-            Sunday School Attendance
+            {sessionTitle || 'Child Check-In'}
           </Text>
           <Text style={[styles.headerSubtitle, { color: secondaryText }]} numberOfLines={1}>
-            Biometric Face & Pass Kiosk
+            {targetSessionId ? 'Program Attendance & Security' : 'Verify Identity & Attendance'}
           </Text>
         </View>
 
@@ -533,10 +615,11 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
             <ShieldCheck size={18} color="#10B981" />
           </TouchableOpacity>
 
-          {kioskMode !== 'manual' && (
+          {kioskMode !== 'manual' && !isOutcomePhase && (
             <TouchableOpacity
               style={[styles.iconBtn, { backgroundColor: iconButtonBg, borderColor, borderWidth: isDark ? 0 : 1 }]}
-              onPress={() => setCameraFacing(cameraFacing === 'front' ? 'back' : 'front')}
+              onPress={() => switchCameraFacing(cameraFacing === 'front' ? 'back' : 'front')}
+              disabled={isScanningOrVerifying}
             >
               <RefreshCw size={16} color={primaryText} />
             </TouchableOpacity>
@@ -544,7 +627,7 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
         </View>
       </View>
 
-      {/* ── MODE TABS ── */}
+      {/* ── CHECK-IN MODE TABS ── */}
       <View style={[styles.modeTabsRow, { backgroundColor: screenBg, borderBottomColor: borderColor }]}>
         <TouchableOpacity
           style={[
@@ -552,10 +635,11 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
             { backgroundColor: secondarySurface, borderColor },
             kioskMode === 'face_scan' && { backgroundColor: activePillBg, borderColor: activePillBg },
           ]}
+          disabled={isScanningOrVerifying}
           onPress={() => {
             setKioskMode('face_scan');
-            setCameraFacing('front');
-            resetScanToIdle();
+            switchCameraFacing('front');
+            resetScanStateOnly();
           }}
         >
           <Camera size={14} color={kioskMode === 'face_scan' ? activePillText : secondaryText} />
@@ -566,7 +650,7 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
               kioskMode === 'face_scan' && { color: activePillText, fontWeight: '800' },
             ]}
           >
-            Face Recognition
+            Face Scan
           </Text>
         </TouchableOpacity>
 
@@ -576,10 +660,11 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
             { backgroundColor: secondarySurface, borderColor },
             kioskMode === 'scan_qr' && { backgroundColor: activePillBg, borderColor: activePillBg },
           ]}
+          disabled={isScanningOrVerifying}
           onPress={() => {
             setKioskMode('scan_qr');
-            setCameraFacing('back');
-            resetScanToIdle();
+            switchCameraFacing('back');
+            resetScanStateOnly();
           }}
         >
           <QrCode size={14} color={kioskMode === 'scan_qr' ? activePillText : secondaryText} />
@@ -590,7 +675,7 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
               kioskMode === 'scan_qr' && { color: activePillText, fontWeight: '800' },
             ]}
           >
-            Scan App QR
+            Parent QR
           </Text>
         </TouchableOpacity>
 
@@ -600,9 +685,10 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
             { backgroundColor: secondarySurface, borderColor },
             kioskMode === 'manual' && { backgroundColor: activePillBg, borderColor: activePillBg },
           ]}
+          disabled={isScanningOrVerifying}
           onPress={() => {
             setKioskMode('manual');
-            resetScanToIdle();
+            resetScanToReady();
           }}
         >
           <Search size={14} color={kioskMode === 'manual' ? activePillText : secondaryText} />
@@ -613,225 +699,382 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
               kioskMode === 'manual' && { color: activePillText, fontWeight: '800' },
             ]}
           >
-            Manual Search
+            Manual List
           </Text>
         </TouchableOpacity>
       </View>
 
-      {/* ── OPTIONAL TARGET CHILD SELECTION STRIP (FOR STRICT 1:1 MATCHING) ── */}
-      {kioskMode === 'face_scan' && enrolledChildren.length > 0 && (
-        <View style={[styles.targetChildBar, { backgroundColor: cardSurface, borderBottomColor: borderColor }]}>
-          <Text style={[styles.targetBarLabel, { color: secondaryText }]}>TARGET CHILD:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.targetChipsRow}>
-            <TouchableOpacity
+      {/* ════════════════════════════════════════════════════════════════ */}
+      {/* DEDICATED VERIFICATION OUTCOME VIEW (STOPS SCANNING SCREEN!)    */}
+      {/* ════════════════════════════════════════════════════════════════ */}
+      {isOutcomePhase ? (
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[
+            styles.outcomeScroll,
+            { paddingBottom: Math.max(28, insets.bottom + 18) },
+          ]}
+        >
+          {/* 1. VERIFICATION SUCCESS */}
+          {scanPhase === 'success' && scannedResult && (
+            <View
               style={[
-                styles.targetChip,
-                { backgroundColor: secondarySurface, borderColor },
-                selectedChildId === null && styles.targetChipActive,
+                styles.outcomeCard,
+                {
+                  backgroundColor: cardSurface,
+                  borderColor: '#10B981',
+                },
               ]}
-              onPress={() => {
-                setSelectedChildId(null);
-                resetScanToIdle();
-              }}
             >
-              <Text
+              <View
                 style={[
-                  styles.targetChipText,
-                  { color: primaryText },
-                  selectedChildId === null && styles.targetChipTextActive,
+                  styles.outcomeStatusBanner,
+                  { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.16)' : '#ECFDF5' },
                 ]}
               >
-                Auto-Detect Enrolled Child
-              </Text>
-            </TouchableOpacity>
-
-            {enrolledChildren.map(kid => {
-              const isSelected = selectedChildId === kid.id;
-              const hasPhoto = Boolean(kid.photoUrl && kid.photoUrl.trim().length > 10);
-              return (
-                <TouchableOpacity
-                  key={kid.id}
-                  style={[
-                    styles.targetChip,
-                    { backgroundColor: secondarySurface, borderColor },
-                    isSelected && styles.targetChipActive,
-                    !hasPhoto && styles.targetChipNoPhoto,
-                  ]}
-                  onPress={() => {
-                    setSelectedChildId(kid.id);
-                    resetScanToIdle();
-                  }}
-                >
-                  {hasPhoto ? (
-                    <Image
-                      source={{ uri: kid.photoUrl }}
-                      style={{ width: 20, height: 20, borderRadius: 10 }}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <Text style={styles.targetChipEmoji}>
-                      {kid.gender === 'female' ? '👧' : '🧒'}
-                    </Text>
-                  )}
-                  <Text
-                    style={[
-                      styles.targetChipText,
-                      { color: primaryText },
-                      isSelected && styles.targetChipTextActive,
-                    ]}
-                  >
-                    {kid.fullName}
+                <CheckCircle size={20} color="#10B981" />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.outcomeBannerLabel, { color: '#10B981' }]}>
+                    {scannedResult.method === 'face_scan'
+                      ? 'Face Verified Successfully'
+                      : scannedResult.method === 'scan_qr'
+                      ? 'QR Pass Verified'
+                      : 'Child Selected Manually'}
                   </Text>
-                  {!hasPhoto && (
-                    <Text style={styles.noPhotoBadge}>No Photo</Text>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-      )}
-
-      {/* ── MAIN KIOSK VIEWPORT ── */}
-      {kioskMode !== 'manual' ? (
-        <View style={[styles.cameraContainer, { backgroundColor: screenBg }]}>
-          {!permission?.granted ? (
-            <View style={[styles.permissionBox, { backgroundColor: screenBg }]}>
-              <Camera size={36} color="#D97706" />
-              <Text style={[styles.permissionTitle, { color: primaryText }]}>Camera Permission Required</Text>
-              <Text style={[styles.permissionSub, { color: secondaryText }]}>
-                Allow camera access to enable real-time child face scan & QR check-in.
-              </Text>
-              <TouchableOpacity
-                style={[styles.permissionBtn, { backgroundColor: activePillBg }]}
-                onPress={requestPermission}
-              >
-                <Text style={[styles.permissionBtnText, { color: activePillText }]}>Grant Camera Access</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.viewfinder}>
-              {/* Full-bleed camera feed */}
-              <CameraView
-                key={`kiosk-cam-${cameraKey}`}
-                ref={cameraRef}
-                style={StyleSheet.absoluteFillObject}
-                facing={cameraFacing}
-                pictureSize={pictureSize}
-                onCameraReady={handleCameraReady}
-                enableTorch={isTorchOn}
-                barcodeScannerSettings={kioskMode === 'scan_qr' ? BARCODE_SETTINGS : undefined}
-                onBarcodeScanned={kioskMode === 'scan_qr' ? handleQrDetected : undefined}
-              />
-
-              {/* MODERN EGG-SHAPED FACE SCANNER VIEWPORT */}
-              <View style={styles.circularScannerContainer} pointerEvents="box-none">
-                {/* Single Clean Egg-Shaped Frame */}
-                <View
-                  style={[
-                    styles.eggFrame,
-                    {
-                      borderColor: getScannerBorderColor(),
-                    },
-                  ]}
-                >
-                  {/* Sweep Laser Beam inside the egg frame — ONLY runs while actively scanning */}
-                  {kioskMode === 'face_scan' && scanning && !scannedResult && !scanRejected && (
-                    <Animated.View
-                      style={[
-                        styles.circularLaserLine,
-                        {
-                          backgroundColor: getScannerBorderColor(),
-                          shadowColor: getScannerBorderColor(),
-                          transform: [{ translateY: sweepTranslate }],
-                        },
-                      ]}
-                    />
-                  )}
-
-                  {/* Corner Tick Marks along the egg border */}
-                  <View style={[styles.circleTick, styles.tickTop, { backgroundColor: getScannerBorderColor() }]} />
-                  <View style={[styles.circleTick, styles.tickBottom, { backgroundColor: getScannerBorderColor() }]} />
-                  <View style={[styles.circleTick, styles.tickLeft, { backgroundColor: getScannerBorderColor() }]} />
-                  <View style={[styles.circleTick, styles.tickRight, { backgroundColor: getScannerBorderColor() }]} />
-
-                  {/* Subtle Face Alignment Target */}
-                  {kioskMode === 'face_scan' && (
-                    <View style={styles.faceGuideWrapper}>
-                      <View style={styles.guideEyesRow}>
-                        <View style={[styles.guideDot, { backgroundColor: getScannerBorderColor() }]} />
-                        <View style={[styles.guideDot, { backgroundColor: getScannerBorderColor() }]} />
-                      </View>
-                      <View style={[styles.guideNoseDot, { backgroundColor: getScannerBorderColor() }]} />
-                      <View style={[styles.guideSmileArc, { borderColor: getScannerBorderColor() }]} />
-                    </View>
-                  )}
-                </View>
-
-                {/* Instruction / Status Pill */}
-                <View
-                  style={[
-                    styles.statusPill,
-                    scanState === 'success' && styles.statusPillSuccess,
-                    scanState === 'rejected' && styles.statusPillRejected,
-                  ]}
-                >
-                  {scanning ? (
-                    <ActivityIndicator size="small" color="#38BDF8" style={{ marginRight: 6 }} />
-                  ) : scanState === 'success' ? (
-                    <CheckCircle size={14} color="#10B981" style={{ marginRight: 6 }} />
-                  ) : scanState === 'rejected' ? (
-                    <AlertTriangle size={14} color="#EF4444" style={{ marginRight: 6 }} />
-                  ) : (
-                    <Shield size={14} color="#FBBF24" style={{ marginRight: 6 }} />
-                  )}
-                  <Text style={styles.statusPillText}>
-                    {kioskMode === 'face_scan' ? scanStatusText : 'Align Parent QR Code'}
+                  <Text style={[styles.outcomeBannerSub, { color: secondaryText }]}>
+                    {scannedResult.method === 'face_scan'
+                      ? `Identity confirmed against registered profile (${scannedResult.confidence}% match)`
+                      : 'Ready to complete Sunday School attendance'}
                   </Text>
                 </View>
               </View>
 
-              {/* BOTTOM SCAN TRIGGER BUTTON */}
-              {kioskMode === 'face_scan' && !scannedResult && !scanRejected && (
-                <View style={[styles.triggerBar, { bottom: Math.max(22, insets.bottom + 14) }]}>
-                  <TouchableOpacity
-                    style={[
-                      styles.scanTriggerBtn,
-                      { backgroundColor: activePillBg, shadowColor: '#000000' },
-                      scanning && { opacity: 0.7 },
-                    ]}
-                    onPress={triggerFaceRecognition}
-                    disabled={scanning}
-                    activeOpacity={0.88}
-                  >
-                    {scanning ? (
-                      <>
-                        <ActivityIndicator size="small" color={activePillText} />
-                        <Text style={[styles.scanTriggerText, { color: activePillText }]}>
-                          Verifying Face Biometrics...
-                        </Text>
-                      </>
-                    ) : (
-                      <>
-                        <Camera size={18} color={activePillText} />
-                        <Text style={[styles.scanTriggerText, { color: activePillText }]}>
-                          {activeTargetChild
-                            ? `Verify ${activeTargetChild.firstName}'s Face`
-                            : 'Scan & Verify Child Face'}
-                        </Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                  <Text style={styles.securitySubtext}>
-                    Zero False Positives · Enrolled Students Recognized Accurately
+              {/* Verified Child Profile */}
+              <View style={[styles.verifiedProfileBox, { backgroundColor: secondarySurface, borderColor }]}>
+                {scannedResult.child.photoUrl ? (
+                  <Image
+                    source={{ uri: scannedResult.child.photoUrl }}
+                    style={styles.verifiedAvatarPhoto}
+                  />
+                ) : (
+                  <View style={styles.verifiedAvatarFallback}>
+                    <Text style={styles.verifiedAvatarLetter}>
+                      {scannedResult.child.firstName.charAt(0)}
+                    </Text>
+                  </View>
+                )}
+
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.verifiedChildName, { color: primaryText }]}>
+                    {scannedResult.child.fullName}
+                  </Text>
+                  <Text style={[styles.verifiedChildMeta, { color: secondaryText }]}>
+                    {scannedResult.child.assignedClassName || 'Sunday School'} · Age {scannedResult.child.age}
+                  </Text>
+                  <Text style={[styles.verifiedChildId, { color: isDark ? '#FBBF24' : '#B45309' }]}>
+                    ID: {scannedResult.child.childId}
+                  </Text>
+                </View>
+              </View>
+
+              {scannedResult.child.medical?.hasAllergies && (
+                <View style={styles.allergyWarningBox}>
+                  <AlertTriangle size={15} color="#EF4444" />
+                  <Text style={[styles.allergyWarningText, { color: isDark ? '#FCA5A5' : '#DC2626' }]}>
+                    MEDICAL ALERT: {scannedResult.child.medical.allergiesList.join(', ')}
                   </Text>
                 </View>
               )}
+
+              <View style={[styles.attendanceNoteBox, { backgroundColor: secondarySurface, borderColor }]}>
+                <Text style={[styles.attendanceNoteTitle, { color: isDark ? '#34D399' : '#047857' }]}>
+                  {scannedResult.alreadyCheckedIn
+                    ? 'Already Checked In Today'
+                    : 'Ready to Mark Present'}
+                </Text>
+                <Text style={[styles.attendanceNoteSub, { color: secondaryText }]}>
+                  {scannedResult.alreadyCheckedIn
+                    ? `${scannedResult.child.firstName} is already checked in.${scannedResult.pickupCode ? ` Active Pickup Code: ${scannedResult.pickupCode}` : ''}`
+                    : `Tap "Confirm Check-In" below to check in ${scannedResult.child.firstName} and issue today's pickup code.`}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.primaryOutcomeBtn, { backgroundColor: '#10B981' }]}
+                onPress={handleConfirmCheckIn}
+                disabled={processingCheckIn}
+                activeOpacity={0.86}
+              >
+                {processingCheckIn ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <CheckCircle size={18} color="#FFFFFF" />
+                    <Text style={styles.primaryOutcomeBtnText}>
+                      {scannedResult.alreadyCheckedIn ? 'View Active Session' : 'Confirm Check-In'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.secondaryOutcomeBtn, { backgroundColor: secondarySurface, borderColor }]}
+                onPress={resetScanToReady}
+                activeOpacity={0.85}
+              >
+                <RotateCcw size={15} color={primaryText} />
+                <Text style={[styles.secondaryOutcomeBtnText, { color: primaryText }]}>
+                  Scan Another Child
+                </Text>
+              </TouchableOpacity>
             </View>
           )}
-        </View>
-      ) : (
-        /* MANUAL SEARCH VIEW */
+
+          {/* 2. FACE MISMATCH WARNING (STRICT 1:1 FAILURE) */}
+          {scanPhase === 'mismatch' && (
+            <View
+              style={[
+                styles.outcomeCard,
+                {
+                  backgroundColor: cardSurface,
+                  borderColor: '#EF4444',
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.outcomeStatusBanner,
+                  { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.16)' : '#FEF2F2' },
+                ]}
+              >
+                <ShieldAlert size={22} color="#EF4444" />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.outcomeBannerLabel, { color: '#EF4444' }]}>
+                    Face Does Not Match This Child
+                  </Text>
+                  <Text style={[styles.outcomeBannerSub, { color: secondaryText }]}>
+                    Check-in blocked · Please verify the child standing at check-in
+                  </Text>
+                </View>
+              </View>
+
+              {outcomeDetails?.expectedChild && (
+                <View style={[styles.verifiedProfileBox, { backgroundColor: secondarySurface, borderColor }]}>
+                  {outcomeDetails.expectedChild.photoUrl ? (
+                    <Image
+                      source={{ uri: outcomeDetails.expectedChild.photoUrl }}
+                      style={styles.verifiedAvatarPhoto}
+                    />
+                  ) : (
+                    <View style={styles.verifiedAvatarFallback}>
+                      <Text style={styles.verifiedAvatarLetter}>
+                        {outcomeDetails.expectedChild.firstName.charAt(0)}
+                      </Text>
+                    </View>
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.expectedLabel, { color: '#EF4444' }]}>
+                      EXPECTED CHILD PROFILE
+                    </Text>
+                    <Text style={[styles.verifiedChildName, { color: primaryText }]}>
+                      {outcomeDetails.expectedChild.fullName}
+                    </Text>
+                    <Text style={[styles.verifiedChildMeta, { color: secondaryText }]}>
+                      The live camera face did not match this registered profile.
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              <Text style={[styles.outcomeBodyText, { color: secondaryText }]}>
+                {outcomeDetails?.detail ||
+                  'The captured face does not match this child. Another child was not selected automatically.'}
+              </Text>
+
+              <TouchableOpacity
+                style={[styles.primaryOutcomeBtn, { backgroundColor: activePillBg }]}
+                onPress={resetScanToReady}
+                activeOpacity={0.86}
+              >
+                <Camera size={17} color={activePillText} />
+                <Text style={[styles.primaryOutcomeBtnText, { color: activePillText }]}>
+                  Retry Face Scan
+                </Text>
+              </TouchableOpacity>
+
+              <View style={styles.altActionsRow}>
+                <TouchableOpacity
+                  style={[styles.altActionBtn, { backgroundColor: secondarySurface, borderColor }]}
+                  onPress={() => {
+                    resetScanToReady();
+                    setKioskMode('manual');
+                  }}
+                >
+                  <Search size={14} color={primaryText} />
+                  <Text style={[styles.altActionText, { color: primaryText }]}>Manual Select</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.altActionBtn, { backgroundColor: secondarySurface, borderColor }]}
+                  onPress={() => {
+                    setKioskMode('scan_qr');
+                    switchCameraFacing('back');
+                    resetScanStateOnly();
+                  }}
+                >
+                  <QrCode size={14} color={primaryText} />
+                  <Text style={[styles.altActionText, { color: primaryText }]}>Use QR Code</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* 3. FACE NOT RECOGNIZED (NO FACE OR 1:N UNRECOGNIZED) */}
+          {scanPhase === 'failed' && (
+            <View
+              style={[
+                styles.outcomeCard,
+                {
+                  backgroundColor: cardSurface,
+                  borderColor: '#F59E0B',
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.outcomeStatusBanner,
+                  { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.16)' : '#FFFBEB' },
+                ]}
+              >
+                <AlertTriangle size={22} color="#D97706" />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.outcomeBannerLabel, { color: '#D97706' }]}>
+                    Face Not Recognized
+                  </Text>
+                  <Text style={[styles.outcomeBannerSub, { color: secondaryText }]}>
+                    {outcomeDetails?.headline || 'Could not match a registered child profile'}
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={[styles.outcomeBodyText, { color: secondaryText }]}>
+                {outcomeDetails?.detail ||
+                  'No matching enrolled child was found. Make sure the child is looking straight into the frame with good lighting, or select them manually.'}
+              </Text>
+
+              <TouchableOpacity
+                style={[styles.primaryOutcomeBtn, { backgroundColor: activePillBg }]}
+                onPress={resetScanToReady}
+                activeOpacity={0.86}
+              >
+                <Camera size={17} color={activePillText} />
+                <Text style={[styles.primaryOutcomeBtnText, { color: activePillText }]}>
+                  Retry Face Scan
+                </Text>
+              </TouchableOpacity>
+
+              <View style={styles.altActionsRow}>
+                <TouchableOpacity
+                  style={[styles.altActionBtn, { backgroundColor: secondarySurface, borderColor }]}
+                  onPress={() => {
+                    resetScanToReady();
+                    setKioskMode('manual');
+                  }}
+                >
+                  <Search size={14} color={primaryText} />
+                  <Text style={[styles.altActionText, { color: primaryText }]}>Manual Select</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.altActionBtn, { backgroundColor: secondarySurface, borderColor }]}
+                  onPress={() => {
+                    setKioskMode('scan_qr');
+                    switchCameraFacing('back');
+                    resetScanStateOnly();
+                  }}
+                >
+                  <QrCode size={14} color={primaryText} />
+                  <Text style={[styles.altActionText, { color: primaryText }]}>Use QR Code</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* 4. ERROR / TIMEOUT / SERVICE UNAVAILABLE */}
+          {scanPhase === 'error' && (
+            <View
+              style={[
+                styles.outcomeCard,
+                {
+                  backgroundColor: cardSurface,
+                  borderColor: '#EF4444',
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.outcomeStatusBanner,
+                  { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.16)' : '#FEF2F2' },
+                ]}
+              >
+                <WifiOff size={22} color="#EF4444" />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.outcomeBannerLabel, { color: '#EF4444' }]}>
+                    Unable to Complete Face Verification. Please Try Again.
+                  </Text>
+                  <Text style={[styles.outcomeBannerSub, { color: secondaryText }]}>
+                    {outcomeDetails?.headline || 'Verification service could not finish'}
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={[styles.outcomeBodyText, { color: secondaryText }]}>
+                {outcomeDetails?.detail ||
+                  'Face verification is temporarily unavailable. You can retry scanning or check the child in using QR Code or Manual List.'}
+              </Text>
+
+              <TouchableOpacity
+                style={[styles.primaryOutcomeBtn, { backgroundColor: activePillBg }]}
+                onPress={resetScanToReady}
+                activeOpacity={0.86}
+              >
+                <RotateCcw size={17} color={activePillText} />
+                <Text style={[styles.primaryOutcomeBtnText, { color: activePillText }]}>
+                  Try Again
+                </Text>
+              </TouchableOpacity>
+
+              <View style={styles.altActionsRow}>
+                <TouchableOpacity
+                  style={[styles.altActionBtn, { backgroundColor: secondarySurface, borderColor }]}
+                  onPress={() => {
+                    setKioskMode('scan_qr');
+                    switchCameraFacing('back');
+                    resetScanStateOnly();
+                  }}
+                >
+                  <QrCode size={14} color={primaryText} />
+                  <Text style={[styles.altActionText, { color: primaryText }]}>Use QR Code</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.altActionBtn, { backgroundColor: secondarySurface, borderColor }]}
+                  onPress={() => {
+                    resetScanToReady();
+                    setKioskMode('manual');
+                  }}
+                >
+                  <Search size={14} color={primaryText} />
+                  <Text style={[styles.altActionText, { color: primaryText }]}>Manual List</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </ScrollView>
+      ) : kioskMode === 'manual' ? (
+        /* ════════════════════════════════════════════════════════════════ */
+        /* MANUAL SEARCH VIEW                                              */
+        /* ════════════════════════════════════════════════════════════════ */
         <View style={[styles.manualContainer, { backgroundColor: screenBg }]}>
           <View style={[styles.searchBar, { backgroundColor: cardSurface, borderColor }]}>
             <Search size={16} color={secondaryText} />
@@ -839,9 +1082,8 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
               style={[styles.searchInput, { color: primaryText }]}
               value={searchQuery}
               onChangeText={setSearchQuery}
-              placeholder="Search by Child Name, ID (KID-...), or Phone..."
+              placeholder="Search Child Name, ID (KID-...), or Phone..."
               placeholderTextColor={secondaryText}
-              autoFocus
             />
             {searchQuery.length > 0 && (
               <TouchableOpacity onPress={() => setSearchQuery('')}>
@@ -851,12 +1093,19 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.manualList}>
-            {manualFiltered.length === 0 ? (
+            {loadingKids ? (
+              <View style={styles.emptySearchCard}>
+                <ActivityIndicator size="large" color="#FBBF24" />
+                <Text style={[styles.emptySearchText, { color: secondaryText, marginTop: 10 }]}>
+                  Loading enrolled children...
+                </Text>
+              </View>
+            ) : manualFiltered.length === 0 ? (
               <View style={styles.emptySearchCard}>
                 <Text style={[styles.emptySearchText, { color: secondaryText }]}>
                   {searchQuery.trim()
                     ? `No registered child found matching "${searchQuery}"`
-                    : 'Type a name or phone number to check in manually'}
+                    : 'No children enrolled yet.'}
                 </Text>
                 <TouchableOpacity
                   style={styles.emptyEnrollBtn}
@@ -864,7 +1113,7 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
                   activeOpacity={0.85}
                 >
                   <UserPlus size={15} color="#000000" strokeWidth={2.5} />
-                  <Text style={styles.emptyEnrollBtnText}>Enroll Child Directly</Text>
+                  <Text style={styles.emptyEnrollBtnText}>Enroll Child Now</Text>
                 </TouchableOpacity>
               </View>
             ) : (
@@ -873,12 +1122,14 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
                   key={c.id}
                   style={[styles.manualCard, { backgroundColor: cardSurface, borderColor }]}
                   onPress={() => {
-                    setScanState('success');
+                    setScanPhase('success');
+                    setStatusMessage('Child Selected Manually');
                     setScannedResult({
                       child: c,
-                      confidence: 100.0,
+                      confidence: 100,
                       pickupCode: c.activePickupCode,
                       alreadyCheckedIn: c.custodyStatus === 'checked_in',
+                      method: 'manual',
                     });
                   }}
                 >
@@ -896,7 +1147,7 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.manualName, { color: primaryText }]}>{c.fullName}</Text>
                     <Text style={[styles.manualMeta, { color: secondaryText }]}>
-                      ID: {c.childId} · {c.assignedClassName} · Age {c.age}
+                      ID: {c.childId} · {c.assignedClassName || 'Sunday School'} · Age {c.age}
                     </Text>
                   </View>
                   <View style={[styles.checkInActionPill, { backgroundColor: activePillBg }]}>
@@ -907,165 +1158,276 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
             )}
           </ScrollView>
         </View>
-      )}
+      ) : (
+        /* ════════════════════════════════════════════════════════════════ */
+        /* LIVE CAMERA VIEW (READY / SCANNING / VERIFYING)                 */
+        /* ════════════════════════════════════════════════════════════════ */
+        <View style={{ flex: 1 }}>
+          {/* 1. Target Scope Banner: Clearly Explains WHO Is Being Scanned */}
+          {kioskMode === 'face_scan' && (
+            <View style={[styles.targetBannerWrap, { backgroundColor: cardSurface, borderBottomColor: borderColor }]}>
+              <View style={styles.targetContextCard}>
+                {activeTargetChild ? (
+                  activeTargetChild.photoUrl ? (
+                    <Image
+                      source={{ uri: activeTargetChild.photoUrl }}
+                      style={styles.targetContextPhoto}
+                    />
+                  ) : (
+                    <View style={[styles.targetContextIconCircle, { backgroundColor: 'rgba(245, 158, 11, 0.18)' }]}>
+                      <Text style={styles.targetContextInitial}>{activeTargetChild.firstName.charAt(0)}</Text>
+                    </View>
+                  )
+                ) : (
+                  <View style={[styles.targetContextIconCircle, { backgroundColor: 'rgba(59, 130, 246, 0.16)' }]}>
+                    <Users size={18} color="#3B82F6" />
+                  </View>
+                )}
 
-      {/* ── STRICT REJECTION MODAL (ON NON-MATCHING / SERVICE ISSUE / EMPTY FRAME) ── */}
-      {scanRejected && !scannedResult && (
-        <View style={[styles.resultCardOverlay, { paddingBottom: Math.max(20, insets.bottom + 12) }]}>
-          <View style={[styles.resultCard, styles.rejectedCard, { backgroundColor: cardSurface }]}>
-            <View style={styles.resultHeader}>
-              <View style={styles.verifiedRow}>
-                <AlertTriangle size={18} color="#EF4444" />
-                <Text style={styles.rejectedHeaderText}>VERIFICATION REJECTED</Text>
-              </View>
-              <TouchableOpacity
-                onPress={resetScanToIdle}
-                style={styles.closeResultBtn}
-              >
-                <X size={16} color={secondaryText} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={[styles.rejectedTitle, { color: primaryText }]}>{scanRejected.title}</Text>
-            <Text style={[styles.rejectedReason, { color: secondaryText }]}>{scanRejected.reason}</Text>
-
-            <View style={styles.resultActionRow}>
-              <TouchableOpacity
-                style={styles.retryScanBtn}
-                onPress={resetScanToIdle}
-                activeOpacity={0.85}
-              >
-                <Camera size={15} color="#000000" />
-                <Text style={styles.confirmCheckInText}>Try Again</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.cancelResultBtn, { backgroundColor: secondarySurface, borderWidth: 1, borderColor }]}
-                onPress={() => {
-                  resetScanToIdle();
-                  setKioskMode('scan_qr');
-                  setCameraFacing('back');
-                }}
-              >
-                <Text style={[styles.cancelResultText, { color: primaryText }]}>Use QR Code</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      )}
-
-      {/* ── SUCCESS RESULT MODAL (ON STRICT VERIFICATION MATCH) ── */}
-      {scannedResult && (
-        <View style={[styles.resultCardOverlay, { paddingBottom: Math.max(20, insets.bottom + 12) }]}>
-          <View style={[styles.resultCard, { backgroundColor: cardSurface }]}>
-            <View style={styles.resultHeader}>
-              <View style={styles.verifiedRow}>
-                <CheckCircle size={16} color="#10B981" />
-                <Text style={styles.verifiedText}>
-                  {scannedResult.confidence < 100
-                    ? `VERIFICATION SUCCESSFUL (${scannedResult.confidence}%)`
-                    : 'CHILD IDENTIFIED'}
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={resetScanToIdle}
-                style={styles.closeResultBtn}
-              >
-                <X size={16} color={secondaryText} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.childInfoRow}>
-              {scannedResult.child.photoUrl ? (
-                <Image
-                  source={{ uri: scannedResult.child.photoUrl }}
-                  style={styles.matchedAvatarPhoto}
-                />
-              ) : (
-                <View style={styles.matchedAvatar}>
-                  <Text style={styles.matchedAvatarText}>
-                    {scannedResult.child.firstName.charAt(0)}
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.targetContextTitle, { color: primaryText }]} numberOfLines={1}>
+                    {activeTargetChild
+                      ? `Scanning for: ${activeTargetChild.fullName}`
+                      : `Searching: All Enrolled Children (${childrenWithPhotos.length} photos)`}
+                  </Text>
+                  <Text style={[styles.targetContextSub, { color: secondaryText }]} numberOfLines={2}>
+                    {activeTargetChild
+                      ? `1:1 Check · Verifying live face strictly against ${activeTargetChild.firstName}'s registered photo.`
+                      : '1:N Search · Scanning across all enrolled children to identify who is checking in.'}
                   </Text>
                 </View>
+              </View>
+
+              {/* Child Selector Chips */}
+              {enrolledChildren.length > 0 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.targetChipsRow}
+                >
+                  <TouchableOpacity
+                    style={[
+                      styles.targetChip,
+                      { backgroundColor: secondarySurface, borderColor },
+                      selectedChildId === null && styles.targetChipActive,
+                    ]}
+                    disabled={isScanningOrVerifying}
+                    onPress={() => {
+                      setSelectedChildId(null);
+                      resetScanToReady();
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.targetChipText,
+                        { color: primaryText },
+                        selectedChildId === null && styles.targetChipTextActive,
+                      ]}
+                    >
+                      All Children
+                    </Text>
+                  </TouchableOpacity>
+
+                  {enrolledChildren.map(kid => {
+                    const isSelected = selectedChildId === kid.id;
+                    const hasPhoto = Boolean(kid.photoUrl && kid.photoUrl.trim().length > 10);
+                    return (
+                      <TouchableOpacity
+                        key={kid.id}
+                        style={[
+                          styles.targetChip,
+                          { backgroundColor: secondarySurface, borderColor },
+                          isSelected && styles.targetChipActive,
+                          !hasPhoto && styles.targetChipNoPhoto,
+                        ]}
+                        disabled={isScanningOrVerifying}
+                        onPress={() => {
+                          setSelectedChildId(kid.id);
+                          resetScanToReady();
+                        }}
+                      >
+                        {hasPhoto ? (
+                          <Image
+                            source={{ uri: kid.photoUrl }}
+                            style={{ width: 18, height: 18, borderRadius: 9 }}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <Text style={{ fontSize: 12 }}>
+                            {kid.gender === 'female' ? '👧' : '🧒'}
+                          </Text>
+                        )}
+                        <Text
+                          style={[
+                            styles.targetChipText,
+                            { color: primaryText },
+                            isSelected && styles.targetChipTextActive,
+                          ]}
+                        >
+                          {kid.fullName}
+                        </Text>
+                        {!hasPhoto && <Text style={styles.noPhotoBadge}>No Photo</Text>}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
               )}
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.matchedName, { color: primaryText }]}>{scannedResult.child.fullName}</Text>
-                <Text style={[styles.matchedClass, { color: secondaryText }]}>
-                  {scannedResult.child.assignedClassName || 'Sunday School'} · Room 204
-                </Text>
-                <Text style={[styles.matchedId, { color: isDark ? '#FBBF24' : '#B45309' }]}>
-                  {scannedResult.child.childId}
-                </Text>
+            </View>
+          )}
+
+          {/* 1b. Parent QR Mode Clear Explanation Banner */}
+          {kioskMode === 'scan_qr' && (
+            <View style={[styles.targetBannerWrap, { backgroundColor: cardSurface, borderBottomColor: borderColor }]}>
+              <View style={styles.targetContextCard}>
+                <View style={[styles.targetContextIconCircle, { backgroundColor: 'rgba(16, 185, 129, 0.16)' }]}>
+                  <QrCode size={18} color="#10B981" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.targetContextTitle, { color: primaryText }]}>
+                    Parent Check-In Pass Scanner
+                  </Text>
+                  <Text style={[styles.targetContextSub, { color: secondaryText }]}>
+                    Ask the parent to show their child's QR Pass from the Rhema app, then point the camera at their screen for instant attendance.
+                  </Text>
+                </View>
               </View>
             </View>
+          )}
 
-            {/* ALLERGY WARNING */}
-            {scannedResult.child.medical?.hasAllergies && (
-              <View style={styles.allergyWarningBox}>
-                <AlertTriangle size={14} color="#EF4444" />
-                <Text style={[styles.allergyWarningText, { color: isDark ? '#FCA5A5' : '#DC2626' }]}>
-                  MEDICAL ALERT: {scannedResult.child.medical.allergiesList.join(', ')}
+          {/* 2. Camera Viewport */}
+          <View style={[styles.cameraContainer, { backgroundColor: screenBg }]}>
+            {!permission?.granted ? (
+              <View style={[styles.permissionBox, { backgroundColor: screenBg }]}>
+                <Camera size={38} color="#D97706" />
+                <Text style={[styles.permissionTitle, { color: primaryText }]}>
+                  Camera Permission Required
                 </Text>
+                <Text style={[styles.permissionSub, { color: secondaryText }]}>
+                  Allow camera access to scan registered child faces or parent QR passes.
+                </Text>
+                <TouchableOpacity
+                  style={[styles.permissionBtn, { backgroundColor: activePillBg }]}
+                  onPress={requestPermission}
+                >
+                  <Text style={[styles.permissionBtnText, { color: activePillText }]}>
+                    Grant Camera Access
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.viewfinder}>
+                <CameraView
+                  ref={cameraRef}
+                  style={StyleSheet.absoluteFillObject}
+                  facing={cameraFacing}
+                  barcodeScannerSettings={BARCODE_SETTINGS}
+                  onBarcodeScanned={kioskMode === 'scan_qr' ? handleQrDetected : undefined}
+                />
+
+                {/* Quick Camera Flip Button (e.g. in QR mode or Face Scan) */}
+                {!isScanningOrVerifying && (
+                  <TouchableOpacity
+                    style={[
+                      styles.viewfinderFlipBtn,
+                      kioskMode === 'face_scan' && { top: 16, right: 16, bottom: undefined },
+                    ]}
+                    onPress={() => switchCameraFacing(cameraFacing === 'front' ? 'back' : 'front')}
+                    activeOpacity={0.85}
+                  >
+                    <RefreshCw size={17} color="#FFFFFF" strokeWidth={2.2} />
+                  </TouchableOpacity>
+                )}
+
+                {/* Top Floating Status Pill */}
+                <View style={styles.topStatusWrapper} pointerEvents="none">
+                  <View
+                    style={[
+                      styles.statusPill,
+                      scanPhase === 'scanning' && { borderColor: '#38BDF8' },
+                      scanPhase === 'verifying' && { borderColor: '#818CF8' },
+                    ]}
+                  >
+                    {isScanningOrVerifying ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={scanPhase === 'verifying' ? '#818CF8' : '#38BDF8'}
+                        style={{ marginRight: 7 }}
+                      />
+                    ) : (
+                      <Shield size={14} color="#FBBF24" style={{ marginRight: 7 }} />
+                    )}
+                    <Text style={styles.statusPillText}>
+                      {kioskMode === 'scan_qr'
+                        ? 'Align Parent Check-In QR Code'
+                        : statusMessage}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Clean Centered Frame */}
+                <View style={styles.circularScannerContainer} pointerEvents="none">
+                  <View
+                    style={[
+                      kioskMode === 'scan_qr' ? styles.qrFrame : styles.eggFrame,
+                      { borderColor: getScannerBorderColor() },
+                    ]}
+                  >
+                    {kioskMode === 'face_scan' && isScanningOrVerifying && (
+                      <Animated.View
+                        style={[
+                          styles.circularLaserLine,
+                          {
+                            backgroundColor: getScannerBorderColor(),
+                            shadowColor: getScannerBorderColor(),
+                            transform: [{ translateY: sweepTranslate }],
+                          },
+                        ]}
+                      />
+                    )}
+                  </View>
+
+                  <Text style={styles.instructionFloatText}>
+                    {kioskMode === 'scan_qr'
+                      ? 'Hold QR code steady inside the square frame'
+                      : statusSubMessage}
+                  </Text>
+                </View>
+
+                {/* Bottom Action Trigger Bar (Face Scan mode only) */}
+                {kioskMode === 'face_scan' && (
+                  <View style={[styles.triggerBar, { bottom: Math.max(18, insets.bottom + 12) }]}>
+                    <TouchableOpacity
+                      style={[
+                        styles.scanTriggerBtn,
+                        { backgroundColor: activePillBg },
+                        isScanningOrVerifying && { opacity: 0.85 },
+                      ]}
+                      onPress={triggerFaceRecognition}
+                      disabled={isScanningOrVerifying}
+                      activeOpacity={0.88}
+                    >
+                      {isScanningOrVerifying ? (
+                        <>
+                          <ActivityIndicator size="small" color={activePillText} />
+                          <Text style={[styles.scanTriggerText, { color: activePillText }]}>
+                            {statusMessage}
+                          </Text>
+                        </>
+                      ) : (
+                        <>
+                          <Camera size={18} color={activePillText} />
+                          <Text style={[styles.scanTriggerText, { color: activePillText }]}>
+                            {activeTargetChild
+                              ? `Scan & Verify ${activeTargetChild.firstName}`
+                              : 'Start Face Scan'}
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
             )}
-
-            {/* ATTENDANCE CHECK-IN STATUS */}
-            <View style={[styles.codePreviewBox, { backgroundColor: secondarySurface, borderColor }]}>
-              <Text style={[styles.codePreviewTag, { color: secondaryText }]}>
-                {scannedResult.alreadyCheckedIn
-                  ? 'SUNDAY SCHOOL ATTENDANCE STATUS'
-                  : 'ATTENDANCE VERIFICATION STATUS'}
-              </Text>
-              <Text
-                style={[
-                  styles.codePreviewDigits,
-                  {
-                    color: isDark ? '#34D399' : '#047857',
-                    fontSize: 16,
-                    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-                    letterSpacing: 0.2,
-                    textAlign: 'center',
-                  },
-                ]}
-              >
-                {scannedResult.alreadyCheckedIn
-                  ? `Already Checked In Today ✓`
-                  : 'Identity Verified · Ready to Check In'}
-              </Text>
-              <Text style={[styles.codePreviewSub, { color: secondaryText, textAlign: 'center', marginTop: 2 }]}>
-                {scannedResult.alreadyCheckedIn
-                  ? `${scannedResult.child.firstName} is already marked present today.${scannedResult.pickupCode ? ` Active Pass: ${scannedResult.pickupCode}` : ''}`
-                  : `Tap "Approve & Check-In" below to mark ${scannedResult.child.firstName} present and generate today's pickup code.`}
-              </Text>
-            </View>
-
-            {/* ACTIONS */}
-            <View style={styles.resultActionRow}>
-              <TouchableOpacity
-                style={[
-                  styles.confirmCheckInBtn,
-                  { backgroundColor: activePillBg },
-                  processingCheckIn && { opacity: 0.7 },
-                ]}
-                onPress={handleConfirmCheckIn}
-                disabled={processingCheckIn}
-              >
-                {processingCheckIn ? (
-                  <ActivityIndicator size="small" color={activePillText} />
-                ) : (
-                  <Text style={[styles.confirmCheckInText, { color: activePillText }]}>
-                    {scannedResult.alreadyCheckedIn ? 'View Existing Session' : 'Approve & Check-In'}
-                  </Text>
-                )}
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.cancelResultBtn, { backgroundColor: secondarySurface, borderWidth: 1, borderColor }]}
-                onPress={resetScanToIdle}
-              >
-                <Text style={[styles.cancelResultText, { color: primaryText }]}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
           </View>
         </View>
       )}
@@ -1081,7 +1443,9 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
           <View style={[styles.privacyModalCard, { backgroundColor: cardSurface, borderColor }]}>
             <View style={[styles.privacyModalHeader, { borderBottomColor: borderColor }]}>
               <ShieldCheck size={24} color="#10B981" />
-              <Text style={[styles.privacyModalTitle, { color: primaryText }]}>Biometric Privacy & Consent</Text>
+              <Text style={[styles.privacyModalTitle, { color: primaryText }]}>
+                Biometric Privacy & Consent
+              </Text>
               <TouchableOpacity onPress={() => setShowPrivacyModal(false)}>
                 <X size={18} color={secondaryText} />
               </TouchableOpacity>
@@ -1089,15 +1453,19 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
 
             <ScrollView showsVerticalScrollIndicator={false} style={styles.privacyModalContent}>
               <Text style={[styles.privacyParagraph, { color: secondaryText }]}>
-                Rhema Kids Ministry enforces strict child safety and privacy standards in accordance with child biometric protection regulations.
+                Rhema Kids Ministry enforces strict child safety and privacy standards in accordance
+                with child biometric protection policies.
               </Text>
 
               <View style={[styles.privacyFeatureItem, { backgroundColor: secondarySurface, borderColor }]}>
                 <Lock size={16} color="#D97706" />
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.privacyFeatureTitle, { color: primaryText }]}>Zero Raw Face Vectors Stored</Text>
+                  <Text style={[styles.privacyFeatureTitle, { color: primaryText }]}>
+                    Zero Raw Face Vectors Stored
+                  </Text>
                   <Text style={[styles.privacyFeatureDesc, { color: secondaryText }]}>
-                    We do not store biometric templates or facial feature vectors in accessible public records. Verification executes via secure, sandboxed multimodal vision.
+                    Verification compares the live check-in photo against registered profile photos
+                    without storing extracted biometric templates in public records.
                   </Text>
                 </View>
               </View>
@@ -1105,9 +1473,12 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
               <View style={[styles.privacyFeatureItem, { backgroundColor: secondarySurface, borderColor }]}>
                 <Shield size={16} color="#10B981" />
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.privacyFeatureTitle, { color: primaryText }]}>Parental Consent Required</Text>
+                  <Text style={[styles.privacyFeatureTitle, { color: primaryText }]}>
+                    Parental Consent & Alternatives
+                  </Text>
                   <Text style={[styles.privacyFeatureDesc, { color: secondaryText }]}>
-                    Face enrollment is completely voluntary. Parents may opt out at any time and use QR Code or Manual Search check-in.
+                    Face scan is optional. Parents and teachers can always check in via App QR Code
+                    or Manual List.
                   </Text>
                 </View>
               </View>
@@ -1115,9 +1486,12 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
               <View style={[styles.privacyFeatureItem, { backgroundColor: secondarySurface, borderColor }]}>
                 <Trash2 size={16} color="#EF4444" />
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.privacyFeatureTitle, { color: primaryText }]}>Right to Delete Biometric Data</Text>
+                  <Text style={[styles.privacyFeatureTitle, { color: primaryText }]}>
+                    Right to Remove Photos
+                  </Text>
                   <Text style={[styles.privacyFeatureDesc, { color: secondaryText }]}>
-                    Parents can clear enrolled photos and biometric cached data at any time from the child profile screen or by contacting Sunday School administration.
+                    Enrolled photos can be updated or removed at any time from the child profile
+                    screen.
                   </Text>
                 </View>
               </View>
@@ -1127,13 +1501,15 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
               style={[styles.privacyCloseBtn, { backgroundColor: activePillBg }]}
               onPress={() => setShowPrivacyModal(false)}
             >
-              <Text style={[styles.privacyCloseBtnText, { color: activePillText }]}>Understood & Agreed</Text>
+              <Text style={[styles.privacyCloseBtnText, { color: activePillText }]}>
+                Understood & Agreed
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* ── DIRECT CHILD ENROLLMENT BY SUNDAY SCHOOL TEACHER ── */}
+      {/* ── DIRECT CHILD ENROLLMENT BY TEACHER/ADMIN ── */}
       {showTeacherEnrollModal && (
         <TeacherEnrollChildModal
           visible={showTeacherEnrollModal}
@@ -1141,12 +1517,14 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
           churchId={churchId}
           actingMember={member}
           onChildEnrolled={enrolledChild => {
-            setScanState('success');
+            setScanPhase('success');
+            setStatusMessage('Child Enrolled Successfully');
             setScannedResult({
               child: enrolledChild,
-              confidence: 100.0,
+              confidence: 100,
               pickupCode: enrolledChild.activePickupCode,
               alreadyCheckedIn: enrolledChild.custodyStatus === 'checked_in',
+              method: 'manual',
             });
           }}
         />
@@ -1158,22 +1536,19 @@ export default function KidsFaceScanKiosk({ route, navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
   },
   iconBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#18181B',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1183,7 +1558,7 @@ const styles = StyleSheet.create({
     gap: 4,
     backgroundColor: '#FBBF24',
     paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingVertical: 7,
     borderRadius: 999,
   },
   headerEnrollBtnText: {
@@ -1191,44 +1566,25 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
   },
-  emptyEnrollBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#FBBF24',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 10,
-    marginTop: 12,
-  },
-  emptyEnrollBtnText: {
-    color: '#000000',
-    fontSize: 13,
-    fontWeight: '800',
-  },
   headerCenter: {
     flex: 1,
-    alignItems: 'center',
-    paddingHorizontal: 6,
+    paddingHorizontal: 8,
   },
   headerTitleSerif: {
     fontSize: 16,
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     fontWeight: '800',
-    color: '#FFFFFF',
   },
   headerSubtitle: {
-    fontSize: 10,
-    color: '#9CA3AF',
-    marginTop: 2,
+    fontSize: 10.5,
+    marginTop: 1,
   },
   modeTabsRow: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 8,
     gap: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#121215',
   },
   modeTab: {
     flex: 1,
@@ -1238,587 +1594,534 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 8,
     borderRadius: 999,
-    backgroundColor: '#18181B',
     borderWidth: 1,
-    borderColor: '#27272A',
-  },
-  modeTabActive: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#FFFFFF',
   },
   modeTabText: {
-    fontSize: 10.5,
-    color: '#9CA3AF',
-    fontWeight: '600',
+    fontSize: 11.5,
+    fontWeight: '700',
   },
-  modeTabTextActive: {
-    color: '#000000',
-    fontWeight: '800',
-  },
-  targetChildBar: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: '#09090B',
+  targetBannerWrap: {
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    gap: 9,
   },
-  targetBarLabel: {
-    fontSize: 9,
+  targetContextCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+  },
+  targetContextPhoto: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#FBBF24',
+  },
+  targetContextIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  targetContextInitial: {
+    fontSize: 16,
     fontWeight: '800',
-    color: '#9CA3AF',
-    letterSpacing: 1,
-    marginBottom: 6,
+    color: '#D97706',
+  },
+  targetContextTitle: {
+    fontSize: 13.5,
+    fontWeight: '800',
+  },
+  targetContextSub: {
+    fontSize: 11.5,
+    lineHeight: 16,
+    marginTop: 1,
   },
   targetChipsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'center',
+    gap: 7,
+    paddingRight: 8,
   },
   targetChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    backgroundColor: '#18181B',
-    paddingHorizontal: 12,
+    gap: 6,
+    paddingHorizontal: 11,
     paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#27272A',
   },
   targetChipActive: {
     backgroundColor: '#FBBF24',
     borderColor: '#FBBF24',
   },
   targetChipNoPhoto: {
-    borderColor: '#EF4444',
-  },
-  targetChipEmoji: {
-    fontSize: 12,
+    opacity: 0.72,
   },
   targetChipText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#D4D4D8',
+    fontSize: 11.5,
+    fontWeight: '700',
   },
   targetChipTextActive: {
     color: '#000000',
     fontWeight: '800',
   },
   noPhotoBadge: {
-    fontSize: 8,
-    fontWeight: '800',
+    fontSize: 9.5,
     color: '#EF4444',
-    marginLeft: 3,
+    fontWeight: '800',
   },
   cameraContainer: {
     flex: 1,
-    position: 'relative',
-    backgroundColor: '#000000',
-  },
-  viewfinder: {
-    flex: 1,
-    position: 'relative',
-  },
-  circularScannerContainer: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 2,
-  },
-  eggFrame: {
-    width: OVAL_WIDTH,
-    height: OVAL_HEIGHT,
-    borderRadius: OVAL_WIDTH / 2, // Perfect oval egg geometry: width 270, height 360
-    borderWidth: 2.5,
-    position: 'relative',
-    alignItems: 'center',
-    justifyContent: 'center',
     overflow: 'hidden',
-    backgroundColor: 'rgba(0, 0, 0, 0.08)',
-  },
-  circularLaserLine: {
-    position: 'absolute',
-    width: '100%',
-    height: 2.5,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 10,
-    elevation: 6,
-  },
-  circleTick: {
-    position: 'absolute',
-    borderRadius: 2,
-  },
-  tickTop: {
-    top: 8,
-    width: 3.5,
-    height: 14,
-  },
-  tickBottom: {
-    bottom: 8,
-    width: 3.5,
-    height: 14,
-  },
-  tickLeft: {
-    left: 8,
-    width: 14,
-    height: 3.5,
-  },
-  tickRight: {
-    right: 8,
-    width: 14,
-    height: 3.5,
-  },
-  faceGuideWrapper: {
-    alignItems: 'center',
-    gap: 16,
-    opacity: 0.45,
-  },
-  guideEyesRow: {
-    flexDirection: 'row',
-    gap: 56,
-  },
-  guideDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-  },
-  guideNoseDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-  },
-  guideSmileArc: {
-    width: 38,
-    height: 14,
-    borderBottomWidth: 2.5,
-    borderRadius: 10,
-  },
-  statusPill: {
-    marginTop: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#27272A',
-    maxWidth: width * 0.85,
-  },
-  statusPillSuccess: {
-    borderColor: 'rgba(16, 185, 129, 0.6)',
-    backgroundColor: 'rgba(6, 78, 59, 0.85)',
-  },
-  statusPillRejected: {
-    borderColor: 'rgba(239, 68, 68, 0.6)',
-    backgroundColor: 'rgba(127, 29, 29, 0.85)',
-  },
-  statusPillText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  triggerBar: {
-    position: 'absolute',
-    bottom: 22,
-    left: 20,
-    right: 20,
-    alignItems: 'center',
-    zIndex: 3,
-  },
-  scanTriggerBtn: {
-    backgroundColor: '#FFFFFF',
-    height: 52,
-    width: '100%',
-    borderRadius: 999,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    shadowColor: '#FFFFFF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 8,
-  },
-  scanTriggerText: {
-    color: '#000000',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  securitySubtext: {
-    color: '#9CA3AF',
-    fontSize: 10,
-    marginTop: 8,
-    textAlign: 'center',
   },
   permissionBox: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 32,
-    gap: 12,
+    padding: 28,
+    gap: 10,
   },
   permissionTitle: {
-    fontSize: 18,
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '800',
+    textAlign: 'center',
   },
   permissionSub: {
-    fontSize: 12,
-    color: '#9CA3AF',
+    fontSize: 13,
     textAlign: 'center',
-    lineHeight: 18,
+    lineHeight: 19,
   },
   permissionBtn: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 20,
+    paddingHorizontal: 22,
     paddingVertical: 12,
     borderRadius: 999,
-    marginTop: 8,
+    marginTop: 6,
   },
   permissionBtnText: {
+    fontSize: 13.5,
+    fontWeight: '800',
+  },
+  viewfinder: {
+    flex: 1,
+    position: 'relative',
+    backgroundColor: '#000000',
+  },
+  viewfinderFlipBtn: {
+    position: 'absolute',
+    bottom: 24,
+    right: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(15, 23, 42, 0.78)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    zIndex: 10,
+    elevation: 6,
+  },
+  topStatusWrapper: {
+    position: 'absolute',
+    top: 14,
+    left: 16,
+    right: 16,
+    alignItems: 'center',
+    zIndex: 4,
+  },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    borderColor: '#FBBF24',
+  },
+  statusPillText: {
+    color: '#FFFFFF',
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  circularScannerContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: 56,
+    gap: 14,
+  },
+  eggFrame: {
+    width: OVAL_WIDTH,
+    height: OVAL_HEIGHT,
+    borderRadius: OVAL_WIDTH / 2,
+    borderWidth: 3,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.06)',
+  },
+  qrFrame: {
+    width: OVAL_WIDTH,
+    height: OVAL_WIDTH,
+    borderRadius: 22,
+    borderWidth: 3,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.06)',
+  },
+  circularLaserLine: {
+    width: '86%',
+    height: 3,
+    borderRadius: 2,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  instructionFloatText: {
+    color: '#FFFFFF',
+    backgroundColor: 'rgba(15, 23, 42, 0.78)',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 12,
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+    maxWidth: '86%',
+    overflow: 'hidden',
+  },
+  triggerBar: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    alignItems: 'center',
+  },
+  scanTriggerBtn: {
+    width: '100%',
+    maxWidth: 340,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 15,
+    borderRadius: 999,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  scanTriggerText: {
+    fontSize: 14.5,
+    fontWeight: '800',
+  },
+  // Outcome Screen (Dedicated non-scanning view)
+  outcomeScroll: {
+    padding: 18,
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+  outcomeCard: {
+    borderRadius: 24,
+    borderWidth: 1.5,
+    padding: 18,
+    gap: 14,
+  },
+  outcomeStatusBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    padding: 14,
+    borderRadius: 16,
+  },
+  outcomeBannerLabel: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  outcomeBannerSub: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  verifiedProfileBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  verifiedAvatarPhoto: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 2,
+    borderColor: '#10B981',
+  },
+  verifiedAvatarFallback: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#F59E0B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  verifiedAvatarLetter: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  expectedLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginBottom: 2,
+  },
+  verifiedChildName: {
+    fontSize: 17.5,
+    fontWeight: '800',
+  },
+  verifiedChildMeta: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  verifiedChildId: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    marginTop: 3,
+  },
+  allergyWarningBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    padding: 11,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.35)',
+  },
+  allergyWarningText: {
+    flex: 1,
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  attendanceNoteBox: {
+    padding: 13,
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 4,
+  },
+  attendanceNoteTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  attendanceNoteSub: {
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: 'center',
+  },
+  outcomeBodyText: {
+    fontSize: 13.5,
+    lineHeight: 20,
+  },
+  primaryOutcomeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 999,
+  },
+  primaryOutcomeBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14.5,
+    fontWeight: '800',
+  },
+  secondaryOutcomeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  secondaryOutcomeBtnText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+  },
+  altActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  altActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  altActionText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  // Manual search styles
+  manualContainer: {
+    flex: 1,
+    padding: 16,
+    gap: 12,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    paddingVertical: 2,
+  },
+  manualList: {
+    gap: 10,
+    paddingBottom: 32,
+  },
+  emptySearchCard: {
+    alignItems: 'center',
+    paddingVertical: 38,
+    paddingHorizontal: 20,
+  },
+  emptySearchText: {
+    fontSize: 13.5,
+    textAlign: 'center',
+  },
+  emptyEnrollBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FBBF24',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+    marginTop: 14,
+  },
+  emptyEnrollBtnText: {
     color: '#000000',
     fontSize: 13,
     fontWeight: '800',
   },
-  manualContainer: {
-    flex: 1,
-    padding: 20,
-    gap: 14,
-  },
-  searchBar: {
-    backgroundColor: '#18181B',
-    borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  searchInput: {
-    flex: 1,
-    color: '#FFFFFF',
-    fontSize: 13,
-    padding: 0,
-  },
-  manualList: {
-    gap: 10,
-    paddingBottom: 40,
-  },
   manualCard: {
-    backgroundColor: '#18181B',
-    borderRadius: 16,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#27272A',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
   },
   manualAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#F59E0B',
     alignItems: 'center',
     justifyContent: 'center',
   },
   manualAvatarText: {
-    color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '800',
+    color: '#FFFFFF',
   },
   manualName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontSize: 14.5,
+    fontWeight: '800',
   },
   manualMeta: {
-    fontSize: 11,
-    color: '#9CA3AF',
+    fontSize: 11.5,
     marginTop: 2,
   },
   checkInActionPill: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 999,
   },
   checkInActionText: {
-    color: '#000000',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  emptySearchCard: {
-    padding: 30,
-    alignItems: 'center',
-  },
-  emptySearchText: {
-    color: '#9CA3AF',
-    fontSize: 13,
-    textAlign: 'center',
-  },
-  resultCardOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    justifyContent: 'flex-end',
-    padding: 20,
-    zIndex: 100,
-  },
-  resultCard: {
-    backgroundColor: '#18181B',
-    borderRadius: 24,
-    borderWidth: 1.5,
-    borderColor: '#10B981',
-    padding: 20,
-    gap: 14,
-  },
-  resultHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  verifiedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  verifiedText: {
-    color: '#10B981',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  closeResultBtn: {
-    padding: 4,
-  },
-  childInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  matchedAvatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: '#F59E0B',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  matchedAvatarPhoto: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    borderWidth: 2.5,
-    borderColor: '#10B981',
-  },
-  matchedAvatarText: {
-    color: '#FFFFFF',
-    fontSize: 22,
-    fontWeight: '800',
-  },
-  matchedName: {
-    fontSize: 18,
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  matchedClass: {
     fontSize: 12,
-    color: '#9CA3AF',
-    marginTop: 1,
-  },
-  matchedId: {
-    fontSize: 10,
-    color: '#FBBF24',
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    marginTop: 2,
-  },
-  allergyWarningBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
-    padding: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
-  },
-  allergyWarningText: {
-    color: '#FCA5A5',
-    fontSize: 11,
-    fontWeight: '700',
-    flex: 1,
-  },
-  codePreviewBox: {
-    backgroundColor: '#000000',
-    borderRadius: 16,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#27272A',
-    alignItems: 'center',
-  },
-  codePreviewTag: {
-    fontSize: 9,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    color: '#9CA3AF',
-    fontWeight: '700',
-  },
-  codePreviewDigits: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#FBBF24',
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    letterSpacing: 2,
-    marginVertical: 4,
-  },
-  codePreviewSub: {
-    fontSize: 10,
-    color: '#9CA3AF',
-  },
-  resultActionRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 4,
-  },
-  confirmCheckInBtn: {
-    flex: 1,
-    height: 48,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  confirmCheckInText: {
-    color: '#000000',
-    fontSize: 13,
     fontWeight: '800',
   },
-  cancelResultBtn: {
-    paddingHorizontal: 16,
-    height: 48,
-    backgroundColor: '#27272A',
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cancelResultText: {
-    color: '#D4D4D8',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  rejectedCard: {
-    borderColor: 'rgba(239, 68, 68, 0.7)',
-    borderWidth: 1.5,
-  },
-  rejectedHeaderText: {
-    color: '#EF4444',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  rejectedTitle: {
-    fontSize: 17,
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-    fontWeight: '800',
-    color: '#FFFFFF',
-    marginTop: 4,
-  },
-  rejectedReason: {
-    fontSize: 12.5,
-    color: '#D4D4D8',
-    lineHeight: 19,
-    marginBottom: 8,
-  },
-  retryScanBtn: {
-    flex: 1,
-    height: 48,
-    backgroundColor: '#FBBF24',
-    borderRadius: 14,
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  // Privacy modal styles
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
   privacyModalCard: {
     width: '100%',
-    backgroundColor: '#18181B',
-    borderRadius: 24,
-    padding: 20,
+    maxWidth: 400,
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: '#27272A',
+    padding: 18,
     maxHeight: '80%',
-    gap: 16,
   },
   privacyModalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#27272A',
     paddingBottom: 12,
+    borderBottomWidth: 1,
   },
   privacyModalTitle: {
     flex: 1,
     fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontWeight: '800',
   },
   privacyModalContent: {
-    maxHeight: 320,
+    marginVertical: 14,
   },
   privacyParagraph: {
-    fontSize: 12.5,
-    color: '#D4D4D8',
+    fontSize: 13,
     lineHeight: 19,
-    marginBottom: 14,
+    marginBottom: 12,
   },
   privacyFeatureItem: {
     flexDirection: 'row',
-    gap: 12,
     alignItems: 'flex-start',
-    backgroundColor: '#121215',
+    gap: 10,
     padding: 12,
     borderRadius: 14,
-    marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#27272A',
+    marginBottom: 10,
   },
   privacyFeatureTitle: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontWeight: '800',
     marginBottom: 2,
   },
   privacyFeatureDesc: {
-    fontSize: 11.5,
-    color: '#9CA3AF',
+    fontSize: 12,
     lineHeight: 17,
   },
   privacyCloseBtn: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    height: 46,
+    paddingVertical: 12,
+    borderRadius: 999,
     alignItems: 'center',
-    justifyContent: 'center',
   },
   privacyCloseBtnText: {
-    color: '#000000',
-    fontSize: 13,
+    fontSize: 13.5,
     fontWeight: '800',
   },
 });

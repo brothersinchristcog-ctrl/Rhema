@@ -39,12 +39,14 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useAdminTheme } from '../../utils/adminThemeHelper';
 import KidsMinistryService from '../../services/KidsMinistryService';
-import { ChildRecord, AuthorizedGuardian } from '../../types/KidsMinistryTypes';
+import { ChildRecord, AuthorizedGuardian, resolveChildConsentInfo } from '../../types/KidsMinistryTypes';
 
 const { width } = Dimensions.get('window');
 const BARCODE_SETTINGS: { barcodeTypes: BarcodeType[] } = { barcodeTypes: ['qr'] };
 
-export default function KidsCheckOutScanner({ navigation }: any) {
+export default function KidsCheckOutScanner({ route, navigation }: any) {
+  const targetSessionId: string | undefined = route?.params?.targetSessionId;
+  const sessionTitle: string | undefined = route?.params?.sessionTitle;
   const insets = useSafeAreaInsets();
   const { member } = useAuth();
   const {
@@ -127,8 +129,16 @@ export default function KidsCheckOutScanner({ navigation }: any) {
         return;
       }
 
-      // Find active session for this child
-      const session = activeSessions.find(s => s.childDocId === child.id || s.childId === child.childId);
+      // Find active session for this child (preferring the active program session if opened from Hub)
+      const session =
+        (targetSessionId
+          ? activeSessions.find(
+              s =>
+                s.programSessionId === targetSessionId &&
+                (s.childDocId === child.id || s.childId === child.childId)
+            )
+          : null) ||
+        activeSessions.find(s => s.childDocId === child.id || s.childId === child.childId);
       const expectedCode = session?.pickupCode || child.activePickupCode || '';
       const cleanInput = lookupCode.replace(/RK-/i, '').trim().toUpperCase();
       const cleanExpected = expectedCode.replace(/RK-/i, '').trim().toUpperCase();
@@ -250,6 +260,7 @@ export default function KidsCheckOutScanner({ navigation }: any) {
       const res = await KidsMinistryService.checkOutChild({
         churchId,
         sessionId: matchedCandidate.session?.id,
+        programSessionId: matchedCandidate.session?.programSessionId || targetSessionId,
         childDocId: matchedCandidate.child.id,
         pickupCode: matchedCandidate.session?.pickupCode || matchedCandidate.enteredCode,
         verifiedByTeacherId: member?.id || 'teacher_exit_station',
@@ -313,7 +324,9 @@ export default function KidsCheckOutScanner({ navigation }: any) {
         </TouchableOpacity>
 
         <View style={styles.headerCenter}>
-          <Text style={[styles.headerTitleSerif, { color: primaryText }]}>Sunday School Dismissal</Text>
+          <Text style={[styles.headerTitleSerif, { color: primaryText }]} numberOfLines={1}>
+            {sessionTitle ? `${sessionTitle} Dismissal` : 'Kids Ministry Dismissal'}
+          </Text>
           <Text style={[styles.headerSubtitle, { color: secondaryText }]}>
             Safeguarding Exit & Guardian Match Verification
           </Text>
@@ -661,6 +674,56 @@ export default function KidsCheckOutScanner({ navigation }: any) {
                 </View>
               </View>
 
+              {/* PARENT CONSENT & RELEASE SAFETY CHECK */}
+              {(() => {
+                const consent = resolveChildConsentInfo(matchedCandidate.child);
+                return (
+                  <View
+                    style={[
+                      styles.consentSafetyCard,
+                      {
+                        backgroundColor: consent.isConfirmed
+                          ? secondarySurface
+                          : isDark
+                          ? 'rgba(239, 68, 68, 0.14)'
+                          : '#FEF2F2',
+                        borderColor: consent.isConfirmed
+                          ? borderColor
+                          : '#FCA5A5',
+                      },
+                    ]}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                      {consent.isConfirmed ? (
+                        <ShieldCheck size={14} color="#10B981" />
+                      ) : (
+                        <ShieldAlert size={14} color="#EF4444" />
+                      )}
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontWeight: '800',
+                          color: consent.isConfirmed ? '#10B981' : '#EF4444',
+                          letterSpacing: 0.4,
+                        }}
+                      >
+                        {consent.isConfirmed
+                          ? 'PARENT CONSENT CONFIRMED ✓'
+                          : 'CONSENT MISSING / PENDING — GUARDIAN HANDOVER REQUIRED'}
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 11.5, color: primaryText, fontWeight: '600' }}>
+                      Classroom Exit: {consent.isConfirmed && consent.canLeaveClassroomIndependently ? 'Independent OK' : 'Escort Required'}  ·  Premises: {consent.isConfirmed && consent.canLeavePremisesIndependently ? 'Independent OK' : 'Pickup Only'}
+                    </Text>
+                    {consent.teacherInstructions ? (
+                      <Text style={{ fontSize: 11.5, color: secondaryText, marginTop: 3 }}>
+                        Note from Parent: "{consent.teacherInstructions}"
+                      </Text>
+                    ) : null}
+                  </View>
+                );
+              })()}
+
               {/* AUTHORIZED GUARDIAN PHOTO MATCH */}
               <Text style={[styles.sectionTitle, { color: primaryText }]}>AUTHORIZED PICKUP GUARDIANS</Text>
               <Text style={[styles.sectionSubtitle, { color: secondaryText }]}>
@@ -668,8 +731,8 @@ export default function KidsCheckOutScanner({ navigation }: any) {
               </Text>
 
               <View style={styles.guardiansList}>
-                {matchedCandidate.child.guardians && matchedCandidate.child.guardians.length > 0 ? (
-                  matchedCandidate.child.guardians.map(g => {
+                {resolveChildConsentInfo(matchedCandidate.child).authorizedPickups.length > 0 ? (
+                  resolveChildConsentInfo(matchedCandidate.child).authorizedPickups.map(g => {
                     const isSelected = selectedGuardian?.id === g.id;
                     return (
                       <TouchableOpacity
@@ -1204,6 +1267,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.85)',
     justifyContent: 'flex-end',
     zIndex: 99,
+  },
+  consentSafetyCard: {
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 14,
   },
   candidateCard: {
     backgroundColor: '#18181B',

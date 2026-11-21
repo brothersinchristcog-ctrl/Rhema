@@ -353,7 +353,7 @@ export default function KidsTeacherKiosk({ navigation }: any) {
         </TouchableOpacity>
 
         <View style={styles.headerCenter}>
-          <Text style={[styles.headerTitleSerif, { color: primaryText }]}>Teacher Attendance Kiosk</Text>
+          <Text style={[styles.headerTitleSerif, { color: primaryText }]}>Teacher Attendance</Text>
           <Text style={[styles.headerSubtitle, { color: secondaryText }]}>
             Sunday School Faculty & Safeguarding Clock-In
           </Text>

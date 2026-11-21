@@ -654,6 +654,21 @@ class NotificationService {
           }
           break;
         }
+        case 'kids_check_in':
+        case 'kids_check_out':
+        case 'kids_absent':
+        case 'kids_teacher_enrollment': {
+          const initialCategory =
+            rawData.initialCategory ||
+            (type === 'kids_teacher_enrollment' ? 'consent' : 'attendance');
+          nav.navigate('KidsMinistry', {
+            initialCategory,
+            childDocId: rawData.childDocId,
+            programSessionId: rawData.programSessionId,
+            timestamp: Date.now(),
+          });
+          break;
+        }
         default:
           if (id) {
             nav.navigate('Updates', { highlightId: id, highlightType: type });

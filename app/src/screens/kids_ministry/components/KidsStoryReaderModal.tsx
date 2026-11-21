@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   StyleSheet,
   View,
@@ -11,7 +12,7 @@ import {
   StatusBar,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, initialWindowMetrics } from 'react-native-safe-area-context';
-import { ArrowLeft, Sparkles } from 'lucide-react-native';
+import { ArrowLeft, CheckCircle2 } from 'lucide-react-native';
 import { KidsBibleStory } from '../../../types/KidsMinistryTypes';
 import { useTheme } from '../../../context/ThemeContext';
 import BibleStoryReaderContent, {
@@ -22,30 +23,60 @@ import BibleStoryReaderContent, {
 interface KidsStoryReaderModalProps {
   visible: boolean;
   story: KidsBibleStory | null;
+  churchId?: string;
+  childId?: string;
   onClose: () => void;
 }
 
 export default function KidsStoryReaderModal({
   visible,
   story,
+  churchId = 'rhema',
+  childId = 'family',
   onClose,
 }: KidsStoryReaderModalProps) {
   const { isDark, colors: themeColors } = useTheme();
+  const [isCompleted, setIsCompleted] = useState(false);
+
+  const storageKey = story
+    ? `@rhema_kids_story_done_${churchId}_${childId}_${story.id}`
+    : '';
+
+  useEffect(() => {
+    let active = true;
+    if (!visible || !storageKey) {
+      return;
+    }
+    AsyncStorage.getItem(storageKey)
+      .then(val => {
+        if (active) setIsCompleted(val === '1');
+      })
+      .catch(() => {
+        if (active) setIsCompleted(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [visible, storageKey]);
 
   if (!story) return null;
 
-  const screenBg = isDark ? '#000000' : (themeColors.background || '#FAF7F2');
-  const cardBg = isDark ? '#18181B' : (themeColors.surface || '#FFFFFF');
-  const border = isDark ? '#27272A' : (themeColors.border || '#E2E8F0');
-  const textPrimary = isDark ? '#FFFFFF' : (themeColors.text || '#0F172A');
-  const textSecondary = isDark ? '#9CA3AF' : (themeColors.textSecondary || '#64748B');
-  const goldAccent = isDark ? '#FBBF24' : '#D97706';
+  const screenBg = isDark ? '#0B0F19' : (themeColors.background || '#FFFDF9');
+  const cardBg = isDark ? '#161C2E' : (themeColors.surface || '#FFFFFF');
+  const border = isDark ? '#283149' : (themeColors.border || '#E2E8F0');
+  const textPrimary = isDark ? '#F8FAFC' : (themeColors.text || '#0F172A');
+  const goldAccent = isDark ? '#FBBF24' : '#B45309';
   const barStyle = isDark ? 'light-content' : 'dark-content';
 
   const fullStoryContent = getFullStoryContent(story);
   const fullTeluguContent = getFullStoryTeluguContent(story);
 
-  const handleCompleteStory = () => {
+  const handleCompleteStory = async () => {
+    if (isCompleted) return;
+    setIsCompleted(true);
+    if (storageKey) {
+      await AsyncStorage.setItem(storageKey, '1').catch(() => {});
+    }
     Alert.alert(
       'Story Completed!',
       `Great job reading "${story.title}"!\n\n+15 Bible Star Points earned!`,
@@ -93,16 +124,48 @@ export default function KidsStoryReaderModal({
               reflectionQuestions={story.reflectionQuestions}
             />
 
-            <TouchableOpacity
-              style={[styles.finishBtn, { backgroundColor: goldAccent }]}
-              onPress={handleCompleteStory}
-              activeOpacity={0.88}
-            >
-              <Sparkles size={16} color={isDark ? '#000000' : '#FFFFFF'} />
-              <Text style={[styles.finishBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>
-                Finish Reading Story
-              </Text>
-            </TouchableOpacity>
+            {/* Completion State: Hide Finish button once completed */}
+            {isCompleted ? (
+              <View
+                style={[
+                  styles.completedBanner,
+                  {
+                    backgroundColor: isDark ? '#112A22' : '#ECFDF5',
+                    borderColor: isDark ? '#1E523D' : '#A7F3D0',
+                  },
+                ]}
+              >
+                <View style={styles.completedIconCircle}>
+                  <CheckCircle2 size={20} color="#10B981" strokeWidth={2.4} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={[
+                      styles.completedTitle,
+                      { color: isDark ? '#6EE7B7' : '#065F46' },
+                    ]}
+                  >
+                    Already Completed
+                  </Text>
+                  <Text
+                    style={[
+                      styles.completedSub,
+                      { color: isDark ? '#A7F3D0' : '#047857' },
+                    ]}
+                  >
+                    You have finished reading this Bible story.
+                  </Text>
+                </View>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.finishBtn}
+                onPress={handleCompleteStory}
+                activeOpacity={0.86}
+              >
+                <Text style={styles.finishBtnText}>Finish Reading Story</Text>
+              </TouchableOpacity>
+            )}
           </ScrollView>
         </SafeAreaView>
       </SafeAreaProvider>
@@ -154,20 +217,52 @@ const styles = StyleSheet.create({
   scroll: {
     paddingHorizontal: 18,
     paddingTop: 18,
-    paddingBottom: 38,
+    paddingBottom: 40,
   },
   finishBtn: {
-    marginTop: 28,
-    flexDirection: 'row',
+    marginTop: 26,
+    height: 54,
+    borderRadius: 999,
+    backgroundColor: '#7C3AED',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    paddingHorizontal: 22,
-    borderRadius: 14,
+    paddingHorizontal: 24,
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28,
+    shadowRadius: 12,
+    elevation: 5,
   },
   finishBtnText: {
-    fontSize: 14,
+    color: '#FFFFFF',
+    fontSize: 15.5,
     fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  completedBanner: {
+    marginTop: 26,
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  completedIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(16, 185, 129, 0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  completedTitle: {
+    fontSize: 14.5,
+    fontWeight: '800',
+  },
+  completedSub: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 1,
   },
 });
