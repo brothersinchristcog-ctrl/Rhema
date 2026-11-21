@@ -7,6 +7,83 @@ const getDb = () => getFirestore();
 
 let cachedZoomToken: { token: string; expiresAt: number } | null = null;
 
+export interface OnlineMeetingTopicMessageParams {
+  title: string;
+  body: string;
+  churchId: string;
+  meetingId: string;
+  provider?: string | undefined;
+  url?: string | undefined;
+  password?: string | undefined;
+}
+
+/**
+ * Build a high-priority FCM topic message for online meeting alerts
+ * targeting Android's 'church_alerts' channel and iOS APNs alerts.
+ */
+export function buildOnlineMeetingTopicMessage({
+  title,
+  body,
+  churchId,
+  meetingId,
+  provider = '',
+  url = '',
+  password = '',
+}: OnlineMeetingTopicMessageParams) {
+  const safeTitle = String(title || '');
+  const safeBody = String(body || '');
+  const safePassword = password ? String(password) : '';
+
+  return {
+    notification: {
+      title: safeTitle,
+      body: safeBody,
+    },
+    data: {
+      type: 'online_meeting',
+      id: String(meetingId),
+      meetingId: String(meetingId),
+      churchId: String(churchId),
+      provider: String(provider || ''),
+      url: String(url || ''),
+      ...(safePassword ? { password: safePassword } : {}),
+      title: safeTitle,
+      body: safeBody,
+      channelId: 'church_alerts',
+      sound: 'default',
+      priority: 'high',
+    },
+    android: {
+      priority: 'high' as const,
+      notification: {
+        channelId: 'church_alerts',
+        sound: 'default',
+        priority: 'max' as const,
+        defaultSound: true,
+        defaultVibrateTimings: true,
+        visibility: 'public' as const,
+      },
+    },
+    apns: {
+      headers: {
+        'apns-priority': '10',
+        'apns-push-type': 'alert',
+      },
+      payload: {
+        aps: {
+          alert: {
+            title: safeTitle,
+            body: safeBody,
+          },
+          sound: 'default',
+          badge: 1,
+        },
+      },
+    },
+    topic: `church_${churchId}`,
+  };
+}
+
 /**
  * Helper: Acquire Server-to-Server OAuth access token from Zoom
  */
@@ -261,20 +338,18 @@ export const createBibleClass = onCall(
       // Notify subscribed church members once
       try {
         const providerLabel = data.provider === 'google_meet' ? 'Google Meet' : 'Zoom';
-        await getMessaging().send({
-          notification: {
-            title: `📅 New ${providerLabel}: ${title}`,
-            body: `${data.date ? `${data.date} · ` : ''}${data.startTime ? `${data.startTime} — ` : ''}Tap to view meeting link.`,
-          },
-          data: {
-            type: 'online_meeting',
-            meetingId: meetingRef.id,
+        const pushTitle = `📅 New ${providerLabel}: ${title}`;
+        const pushBody = `${data.date ? `${data.date} · ` : ''}${data.startTime ? `${data.startTime} — ` : ''}Tap to view meeting link.`;
+        await getMessaging().send(
+          buildOnlineMeetingTopicMessage({
+            title: pushTitle,
+            body: pushBody,
             churchId,
+            meetingId: meetingRef.id,
             provider: String(data.provider || ''),
             url: meetingLink,
-          },
-          topic: `church_${churchId}`,
-        });
+          })
+        );
       } catch (pushErr: any) {
         console.warn('[createBibleClass] FCM topic push warning:', pushErr?.message || pushErr);
       }

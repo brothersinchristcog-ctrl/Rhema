@@ -5,6 +5,7 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { buildOnlineMeetingTopicMessage } from './meetings.js';
 /**
  * 🔔 SEND MEETING NOTIFICATION
  * Triggered when a new online meeting is scheduled in Firestore.
@@ -59,21 +60,15 @@ export const pushMeetingLive = onDocumentCreated('churches/{churchId}/online_mee
     }
     catch (_) { }
     const timeNotice = timeString ? ` for today at ${timeString}` : '';
-    const payload = {
-        notification: {
-            title: `📅 New Online Meeting`,
-            body: `${meeting.title || 'An online meeting'} has been scheduled${timeNotice}. Tap to join!`,
-        },
-        data: {
-            type: 'online_meeting',
-            meetingId: meetingId,
-            churchId: churchId,
-            provider: meeting.provider || '',
-            url: meeting.meetingLink || meeting.meetingUrl || meeting.url || '',
-            password: meeting.password || '',
-        },
-        topic: `church_${churchId}`,
-    };
+    const payload = buildOnlineMeetingTopicMessage({
+        title: `📅 New Online Meeting`,
+        body: `${meeting.title || 'An online meeting'} has been scheduled${timeNotice}. Tap to join!`,
+        churchId,
+        meetingId,
+        provider: meeting.provider || '',
+        url: meeting.meetingLink || meeting.meetingUrl || meeting.url || '',
+        password: meeting.password || '',
+    });
     try {
         const response = await getMessaging().send(payload);
         console.log('Successfully sent meeting creation notification:', response);
@@ -891,6 +886,12 @@ export const publishScheduledSermons = onSchedule({ schedule: '* * * * *', timeZ
         console.error('Error in publishScheduledSermons cron job:', err);
     }
 });
+function parseMeetingDate(value) {
+    if (!value)
+        return null;
+    const dt = typeof value?.toDate === 'function' ? value.toDate() : new Date(value);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+}
 export const monitorMeetingLive = onSchedule({ schedule: '* * * * *', timeZone: 'Asia/Kolkata', region: 'asia-south1' }, async (event) => {
     const db = getFirestore();
     const now = new Date();
@@ -899,59 +900,71 @@ export const monitorMeetingLive = onSchedule({ schedule: '* * * * *', timeZone: 
         const churchesSnapshot = await db.collection('Rhema Church').get();
         for (const churchDoc of churchesSnapshot.docs) {
             const churchId = churchDoc.id;
-            // Query meetings that are scheduled or live
+            // Query meetings that are scheduled, upcoming, or live
             const meetingsSnapshot = await churchDoc.ref.collection('online_meetings')
-                .where('status', 'in', ['scheduled', 'live'])
+                .where('status', 'in', ['scheduled', 'upcoming', 'live'])
                 .get();
             for (const meetingDoc of meetingsSnapshot.docs) {
                 const meeting = meetingDoc.data();
-                if (!meeting.startTime)
+                const startTime = parseMeetingDate(meeting.startTime);
+                if (!startTime)
                     continue;
-                const startTime = meeting.startTime.toDate();
+                const endTime = parseMeetingDate(meeting.endTime) ||
+                    new Date(startTime.getTime() + 2 * 60 * 60 * 1000);
                 const updates = {};
-                // 1. Check for "Live" notification
-                if (startTime <= now && !meeting.liveNotified) {
-                    const payload = {
-                        notification: {
+                if (endTime <= now) {
+                    // Meeting already ended: mark completed without sending stale pushes
+                    updates.status = 'completed';
+                    if (!meeting.liveNotified)
+                        updates.liveNotified = true;
+                    if (!meeting.reminderNotified)
+                        updates.reminderNotified = true;
+                }
+                else {
+                    const meetingTitle = meeting.title || 'Online Meeting';
+                    const meetingUrl = meeting.meetingLink || meeting.meetingUrl || meeting.url || '';
+                    let pushAlert = null;
+                    // 1. Check for "Live" notification at startTime
+                    if (startTime <= now && !meeting.liveNotified) {
+                        pushAlert = {
                             title: `🔴 Live Meeting Now`,
-                            body: `${meeting.title} is now live.`,
-                        },
-                        data: {
-                            type: 'online_meeting',
+                            body: `${meetingTitle} is now live.`,
+                            errorLabel: 'Live',
+                        };
+                        updates.liveNotified = true;
+                        if (meeting.status !== 'live')
+                            updates.status = 'live';
+                    }
+                    // 2. Check for "Reminder" notification (5 mins after start)
+                    if (startTime <= fiveMinsAgo && !meeting.reminderNotified) {
+                        if (!updates.liveNotified) {
+                            pushAlert = {
+                                title: `🔔 Meeting Reminder`,
+                                body: `${meetingTitle} is still live. Join now to participate.`,
+                                errorLabel: 'Reminder',
+                            };
+                        }
+                        updates.reminderNotified = true;
+                    }
+                    if (pushAlert) {
+                        const payload = buildOnlineMeetingTopicMessage({
+                            title: pushAlert.title,
+                            body: pushAlert.body,
+                            churchId,
                             meetingId: meetingDoc.id,
-                            churchId: churchId,
                             provider: meeting.provider || '',
-                            url: meeting.meetingLink || meeting.meetingUrl || meeting.url || '',
-                        },
-                        topic: `church_${churchId}`,
-                    };
-                    await getMessaging().send(payload).catch(e => console.error('Error sending Live notification', e));
-                    updates.liveNotified = true;
-                    if (meeting.status !== 'live')
-                        updates.status = 'live';
+                            url: meetingUrl,
+                            password: meeting.password || '',
+                        });
+                        await getMessaging()
+                            .send(payload)
+                            .catch(e => console.error(`Error sending ${pushAlert.errorLabel} notification`, e));
+                    }
                 }
-                // 2. Check for "Reminder" notification (5 mins after start)
-                if (startTime <= fiveMinsAgo && !meeting.reminderNotified) {
-                    const payload = {
-                        notification: {
-                            title: `🔔 Meeting Reminder`,
-                            body: `${meeting.title} is still live. Join now to participate.`,
-                        },
-                        data: {
-                            type: 'online_meeting',
-                            meetingId: meetingDoc.id,
-                            churchId: churchId,
-                            provider: meeting.provider || '',
-                            url: meeting.meetingLink || meeting.meetingUrl || meeting.url || '',
-                        },
-                        topic: `church_${churchId}`,
-                    };
-                    await getMessaging().send(payload).catch(e => console.error('Error sending Reminder notification', e));
-                    updates.reminderNotified = true;
-                }
-                // Apply updates if any notifications were sent
+                // Apply updates to both member and admin meeting docs
                 if (Object.keys(updates).length > 0) {
                     await meetingDoc.ref.update(updates);
+                    await db.collection('churches').doc('default').collection('online_meetings').doc(meetingDoc.id).update(updates).catch(() => { });
                 }
             }
             // ─── 2.5 Check Scheduled Sermons for this church ───
