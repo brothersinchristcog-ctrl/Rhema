@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   TextInput,
   ScrollView,
+  KeyboardAvoidingView,
   Platform,
   Alert,
   ActivityIndicator,
@@ -55,6 +56,11 @@ import BibleStoryReaderContent, {
   getFullStoryTeluguContent,
   estimateStoryReadTime,
 } from '../../../kids_ministry/components/BibleStoryReaderContent';
+import KidsQuizDocumentService, {
+  MAX_KIDS_QUIZ_QUESTIONS,
+  estimateQuizMinutes,
+} from '../../../../services/KidsQuizDocumentService';
+import { KidsQuizExperienceView } from '../../../kids_ministry/components/KidsQuizPlayerModal';
 
 const { width } = Dimensions.get('window');
 
@@ -108,18 +114,25 @@ export default function AdminContentManagerModal({
   const [storyTeluguContent, setStoryTeluguContent] = useState('');
   const [storyPublished, setStoryPublished] = useState(true);
   const [storyPreviewMode, setStoryPreviewMode] = useState(false);
+  const storyScrollRef = useRef<ScrollView>(null);
 
-  // ── QUIZ STATE & FORM ──
+  // ── QUIZ STATE & FORM (DOC UPLOAD + MANUAL + 16:9 THUMBNAIL + PREVIEW) ──
   const [showQuizModal, setShowQuizModal] = useState(false);
   const [editingQuizId, setEditingQuizId] = useState<string | null>(null);
+  const [quizCreationMode, setQuizCreationMode] = useState<'document' | 'manual'>('document');
+  const [quizPreviewMode, setQuizPreviewMode] = useState(false);
   const [quizTitle, setQuizTitle] = useState('');
   const [quizTelugu, setQuizTelugu] = useState('');
   const [quizRef, setQuizRef] = useState('');
+  const [quizThumbnailUrl, setQuizThumbnailUrl] = useState('');
+  const [quizSourceDocName, setQuizSourceDocName] = useState('');
   const [quizReward, setQuizReward] = useState('50');
   const [quizBadge, setQuizBadge] = useState('Bible Star');
   const [quizEmoji, setQuizEmoji] = useState('🏆');
   const [quizDifficulty, setQuizDifficulty] = useState<'beginner' | 'intermediate' | 'advanced'>('beginner');
   const [quizPublished, setQuizPublished] = useState(true);
+  const [extractingDoc, setExtractingDoc] = useState(false);
+  const [translatingQIdx, setTranslatingQIdx] = useState<number | null>(null);
   const [quizQuestions, setQuizQuestions] = useState<KidsQuizQuestion[]>([
     {
       id: 'q1',
@@ -184,7 +197,7 @@ export default function AdminContentManagerModal({
     setShowStoryModal(true);
   };
 
-  const handlePickStoryCover = async () => {
+  const pick16x9Thumbnail = async (onSelected: (uri: string) => void) => {
     try {
       const res = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -204,12 +217,14 @@ export default function AdminContentManagerModal({
             return;
           }
         }
-        setStoryCoverUrl(asset.uri);
+        onSelected(asset.uri);
       }
     } catch (err: any) {
       Alert.alert('Image Picker Error', err?.message || 'Could not pick image');
     }
   };
+
+  const handlePickStoryCover = () => pick16x9Thumbnail(uri => setStoryCoverUrl(uri));
 
   const persistStory = async (publishNow: boolean) => {
     const trimmedTitle = storyTitle.trim();
@@ -319,89 +334,253 @@ export default function AdminContentManagerModal({
   };
 
   // ──────────────────────────────────────────
-  // QUIZ ACTIONS
+  // QUIZ ACTIONS (DOC EXTRACTION + MANUAL + PREVIEW + SAVE/PUBLISH)
   // ──────────────────────────────────────────
+  const makeBlankQuizQuestion = (index: number): KidsQuizQuestion => ({
+    id: `q${index + 1}_${Date.now().toString().slice(-4)}`,
+    questionEnglish: '',
+    questionTelugu: '',
+    options: ['', '', '', ''],
+    optionsTelugu: ['', '', '', ''],
+    correctIndex: 0,
+    explanation: '',
+    explanationTelugu: '',
+  });
+
   const openNewQuizForm = () => {
     setEditingQuizId(null);
+    setQuizCreationMode('document');
+    setQuizPreviewMode(false);
     setQuizTitle('');
     setQuizTelugu('');
-    setQuizRef('Genesis 1');
+    setQuizRef('');
+    setQuizThumbnailUrl('');
+    setQuizSourceDocName('');
     setQuizReward('50');
     setQuizBadge('Bible Star');
     setQuizEmoji('🏆');
     setQuizDifficulty('beginner');
-    setQuizPublished(true);
-    setQuizQuestions([
-      {
-        id: 'q1',
-        questionEnglish: 'How many days did God take to create the world?',
-        questionTelugu: 'దేవుడు ఎన్ని దినములలో సమస్తమును సృజించెను?',
-        options: ['6 Days', '7 Days', '3 Days', '1 Day'],
-        optionsTelugu: ['6 దినములు', '7 దినములు', '3 దినములు', '1 దినము'],
-        correctIndex: 0,
-        explanation: 'God created the heavens and earth in 6 days and rested on the 7th day.',
-      },
-    ]);
+    setQuizPublished(false);
+    setQuizQuestions([makeBlankQuizQuestion(0)]);
     setShowQuizModal(true);
   };
 
   const openEditQuizForm = (q: KidsQuiz) => {
     setEditingQuizId(q.id);
+    setQuizCreationMode('manual');
+    setQuizPreviewMode(false);
     setQuizTitle(q.title);
-    setQuizTelugu(q.titleTelugu || '');
+    setQuizTelugu(q.titleTelugu && q.titleTelugu !== q.title ? q.titleTelugu : '');
     setQuizRef(q.scriptureRef || '');
+    setQuizThumbnailUrl(q.thumbnailUrl || '');
+    setQuizSourceDocName(q.sourceDocumentName || '');
     setQuizReward(String(q.pointsReward || 50));
     setQuizBadge(q.badgeReward || 'Bible Star');
     setQuizEmoji(q.coverEmoji || '🏆');
     setQuizDifficulty(q.difficulty || 'beginner');
     setQuizPublished(q.isPublished ?? true);
-    setQuizQuestions(
-      q.questions && q.questions.length > 0
-        ? q.questions
-        : [
-            {
-              id: 'q1',
-              questionEnglish: '',
-              questionTelugu: '',
-              options: ['', '', '', ''],
-              correctIndex: 0,
-              explanation: '',
-            },
-          ]
-    );
+    const normalized = (q.questions && q.questions.length > 0
+      ? q.questions.slice(0, MAX_KIDS_QUIZ_QUESTIONS)
+      : [makeBlankQuizQuestion(0)]
+    ).map((item, idx) => ({
+      ...item,
+      id: item.id || `q${idx + 1}`,
+      options:
+        item.options && item.options.length >= 2
+          ? [...item.options]
+          : ['', '', '', ''],
+      optionsTelugu:
+        item.optionsTelugu && item.optionsTelugu.length === (item.options?.length || 4)
+          ? [...item.optionsTelugu]
+          : (item.options || ['', '', '', '']).map((_, i) => item.optionsTelugu?.[i] || ''),
+      correctIndex:
+        typeof item.correctIndex === 'number' &&
+        item.correctIndex >= 0 &&
+        item.correctIndex < (item.options?.length || 4)
+          ? item.correctIndex
+          : 0,
+    }));
+    setQuizQuestions(normalized);
     setShowQuizModal(true);
   };
 
-  const handleSaveQuiz = async () => {
-    if (!quizTitle.trim()) {
-      Alert.alert('Required', 'Please enter a quiz title');
+  const handlePickQuizCover = () => pick16x9Thumbnail(uri => setQuizThumbnailUrl(uri));
+
+  const handleUploadQuizDocument = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: [
+          'application/pdf',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'application/msword',
+        ],
+        copyToCacheDirectory: true,
+      });
+      if (res.canceled || !res.assets || !res.assets[0]) return;
+      const asset = res.assets[0];
+      setExtractingDoc(true);
+      const draft = await KidsQuizDocumentService.extractAndTranslateQuizDocument({
+        uri: asset.uri,
+        name: asset.name || 'quiz.pdf',
+        mimeType: asset.mimeType || undefined,
+      });
+      if (!quizTitle.trim()) setQuizTitle(draft.title);
+      if (!quizTelugu.trim()) setQuizTelugu(draft.titleTelugu);
+      if (!quizRef.trim() && draft.scriptureRef) setQuizRef(draft.scriptureRef);
+      setQuizSourceDocName(draft.sourceDocumentName);
+      setQuizQuestions(draft.questions.slice(0, MAX_KIDS_QUIZ_QUESTIONS));
+      Alert.alert(
+        'Questions Extracted! Review Before Publishing',
+        `Extracted ${draft.questions.length} bilingual (English & Telugu) questions from "${draft.sourceDocumentName}".\n\nPlease review questions, options, and correct answers below, then upload a 16:9 thumbnail and publish.`
+      );
+    } catch (err: any) {
+      Alert.alert(
+        'Document Extraction Failed',
+        err?.message || 'Could not extract quiz questions from this PDF/DOCX file.'
+      );
+    } finally {
+      setExtractingDoc(false);
+    }
+  };
+
+  const handleTranslateQuestion = async (qIdx: number) => {
+    const q = quizQuestions[qIdx];
+    if (!q || !q.questionEnglish.trim()) {
+      Alert.alert('Enter Question First', 'Please type the English question before translating.');
       return;
     }
     try {
+      setTranslatingQIdx(qIdx);
+      const translated = await KidsQuizDocumentService.translateQuestionToTelugu(q);
+      setQuizQuestions(prev => prev.map((item, i) => (i === qIdx ? translated : item)));
+    } catch (err: any) {
+      Alert.alert('Translation Error', err?.message || 'Could not translate question to Telugu.');
+    } finally {
+      setTranslatingQIdx(null);
+    }
+  };
+
+  const buildPreviewQuizObject = (): KidsQuiz => ({
+    id: editingQuizId || 'preview_quiz',
+    quizId: 'PREVIEW',
+    churchId,
+    title: quizTitle.trim() || 'Bible Quiz Preview',
+    titleTelugu: quizTelugu.trim() || quizTitle.trim() || 'బైబిల్ క్విజ్',
+    scriptureRef: quizRef.trim() || 'Bible Quiz',
+    pointsReward: parseInt(quizReward, 10) || 50,
+    badgeReward: quizBadge.trim() || 'Bible Star',
+    coverEmoji: quizEmoji.trim() || '🏆',
+    thumbnailUrl: quizThumbnailUrl.trim() || undefined,
+    estimatedMinutes: Math.max(2, Math.ceil(quizQuestions.length * 0.5)),
+    sourceDocumentName: quizSourceDocName || undefined,
+    difficulty: quizDifficulty,
+    isPublished: quizPublished,
+    questions: quizQuestions,
+    createdAt: Date.now(),
+  });
+
+  const persistQuiz = async (publishNow: boolean) => {
+    const trimmedTitle = quizTitle.trim();
+    if (!trimmedTitle) {
+      Alert.alert('Title Required', 'Please enter a Quiz Title.');
+      return;
+    }
+
+    const validQuestions = quizQuestions
+      .slice(0, MAX_KIDS_QUIZ_QUESTIONS)
+      .filter(q => q.questionEnglish.trim().length > 0 && q.options.some(o => o.trim().length > 0));
+
+    if (validQuestions.length === 0) {
+      Alert.alert(
+        'Questions Required',
+        'Please upload a quiz document or add at least 1 question with answer options.'
+      );
+      return;
+    }
+
+    if (publishNow && !quizThumbnailUrl.trim()) {
+      Alert.alert(
+        '16:9 Thumbnail Required',
+        'Please upload a 16:9 thumbnail image for this Bible quiz before publishing.'
+      );
+      return;
+    }
+
+    // Validate every question has >= 2 non-empty options and valid correctIndex
+    const cleanedQuestions: KidsQuizQuestion[] = validQuestions.map((q, idx) => {
+      const pairs = (q.options || [])
+        .map((optEn, oIdx) => ({
+          en: (optEn || '').trim(),
+          te: (q.optionsTelugu?.[oIdx] || '').trim(),
+          wasCorrect: q.correctIndex === oIdx,
+        }))
+        .filter(p => p.en.length > 0);
+
+      const finalOpts = pairs.length >= 2 ? pairs : [{ en: 'True', te: 'సత్యము', wasCorrect: true }, { en: 'False', te: 'అసత్యము', wasCorrect: false }];
+      const newCorrectIdx = finalOpts.findIndex(p => p.wasCorrect);
+      const safeCorrectIdx = newCorrectIdx >= 0 ? newCorrectIdx : 0;
+
+      return {
+        id: q.id || `q${idx + 1}`,
+        questionEnglish: q.questionEnglish.trim(),
+        questionTelugu: (q.questionTelugu || '').trim() || q.questionEnglish.trim(),
+        options: finalOpts.map(p => p.en),
+        optionsTelugu: finalOpts.map(p => p.te || p.en),
+        correctIndex: safeCorrectIdx,
+        explanation: (q.explanation || '').trim(),
+        explanationTelugu: (q.explanationTelugu || '').trim(),
+      };
+    });
+
+    try {
       setSaving(true);
+      const uploadedThumbUrl = quizThumbnailUrl.trim()
+        ? await KidsMinistryService.uploadQuizThumbnail(churchId, quizThumbnailUrl.trim())
+        : '';
+      if (uploadedThumbUrl) {
+        setQuizThumbnailUrl(uploadedThumbUrl);
+      }
+
+      const estMins = Math.max(2, Math.ceil(cleanedQuestions.length * 0.5));
       const payload: Partial<KidsQuiz> = {
-        title: quizTitle.trim(),
-        titleTelugu: quizTelugu.trim() || quizTitle.trim(),
+        title: trimmedTitle,
+        titleTelugu: quizTelugu.trim() || trimmedTitle,
         scriptureRef: quizRef.trim(),
-        pointsReward: parseInt(quizReward, 10) || 50,
+        pointsReward: parseInt(quizReward, 10) || cleanedQuestions.length * 10 || 50,
         badgeReward: quizBadge.trim() || 'Bible Star',
         coverEmoji: quizEmoji.trim() || '🏆',
+        thumbnailUrl: uploadedThumbUrl || undefined,
+        estimatedMinutes: estMins,
+        sourceDocumentName: quizSourceDocName || undefined,
         difficulty: quizDifficulty,
-        isPublished: quizPublished,
-        questions: quizQuestions,
+        isPublished: publishNow,
+        questions: cleanedQuestions,
       };
+
+      setQuizPublished(publishNow);
 
       if (editingQuizId) {
         await KidsMinistryService.updateQuiz(churchId, editingQuizId, payload);
-        Alert.alert('Quiz Updated! 🏆', `"${quizTitle}" has been saved.`);
       } else {
-        await KidsMinistryService.createQuiz(churchId, {
+        const createdId = await KidsMinistryService.createQuiz(churchId, {
           quizId: `QUIZ-${Date.now().toString().slice(-4)}`,
           ...payload,
         });
-        Alert.alert('Quiz Created! 🎉', `"${quizTitle}" is now live for children.`);
+        setEditingQuizId(createdId);
       }
-      setShowQuizModal(false);
+
+      if (publishNow) {
+        Alert.alert(
+          'Quiz Published!',
+          `"${trimmedTitle}" (${cleanedQuestions.length} questions) is now live in Member View.`
+        );
+        setShowQuizModal(false);
+      } else {
+        Alert.alert(
+          'Quiz Saved',
+          `"${trimmedTitle}" has been saved as a draft. Tap Publish when ready for members.`
+        );
+      }
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Could not save quiz');
     } finally {
@@ -779,8 +958,12 @@ export default function AdminContentManagerModal({
                       !isDark && styles.cardShadowLight,
                     ]}
                   >
-                    <View style={[styles.cardCoverBox, { backgroundColor: 'rgba(245, 158, 11, 0.14)' }]}>
-                      <Text style={{ fontSize: 22 }}>{q.coverEmoji || '🏆'}</Text>
+                    <View style={[styles.storyThumb16x9List, { backgroundColor: 'rgba(245, 158, 11, 0.14)' }]}>
+                      {q.thumbnailUrl ? (
+                        <Image source={{ uri: q.thumbnailUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                      ) : (
+                        <Text style={{ fontSize: 22 }}>{q.coverEmoji || '🏆'}</Text>
+                      )}
                     </View>
 
                     <View style={{ flex: 1, justifyContent: 'center' }}>
@@ -795,7 +978,7 @@ export default function AdminContentManagerModal({
                               q.isPublished !== false ? styles.publishedPillText : styles.draftPillText,
                             ]}
                           >
-                            {q.isPublished !== false ? 'Active' : 'Draft'}
+                            {q.isPublished !== false ? 'Live' : 'Draft'}
                           </Text>
                         </View>
                       </View>
@@ -804,8 +987,9 @@ export default function AdminContentManagerModal({
                           {q.titleTelugu}
                         </Text>
                       ) : null}
-                      <Text style={[styles.cardRef, { color: secondaryText }]}>
-                        {q.questions?.length || 0} Qs · +{q.pointsReward || 50} pts
+                      <Text style={[styles.cardRef, { color: secondaryText }]} numberOfLines={1}>
+                        {(q.scriptureRef ? `${q.scriptureRef} · ` : '') +
+                          `${q.questions?.length || 0} Qs · ~${estimateQuizMinutes(q)} min · +${q.pointsReward || 50} ★`}
                       </Text>
                     </View>
 
@@ -914,8 +1098,20 @@ export default function AdminContentManagerModal({
             }
           }}
         >
-          <View style={[styles.container, { backgroundColor: screenBg, paddingTop: safeTop }]}>
-            <StatusBar barStyle={barStyle} backgroundColor={screenBg} />
+          <KeyboardAvoidingView
+            style={[
+              styles.container,
+              {
+                backgroundColor: isDark ? '#0B0F19' : '#FFFDF9',
+                paddingTop: safeTop,
+              },
+            ]}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            <StatusBar
+              barStyle={barStyle}
+              backgroundColor={isDark ? '#0B0F19' : '#FFFDF9'}
+            />
 
             {/* Top Single-Page Header */}
             <View style={[styles.topHeader, { borderBottomColor: borderColor }]}>
@@ -924,7 +1120,7 @@ export default function AdminContentManagerModal({
                   if (storyPreviewMode) setStoryPreviewMode(false);
                   else setShowStoryModal(false);
                 }}
-                style={[styles.closeHeaderBtn, { backgroundColor: secondarySurface, borderColor }]}
+                style={[styles.closeHeaderBtn, { backgroundColor: cardSurface, borderColor }]}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 {storyPreviewMode ? (
@@ -945,8 +1141,8 @@ export default function AdminContentManagerModal({
                   {storyPreviewMode
                     ? 'Member View appearance & layout'
                     : storyPublished
-                    ? 'Status: Published'
-                    : 'Status: Draft'}
+                    ? 'Published to Member View'
+                    : 'Saved as Draft'}
                 </Text>
               </View>
               <View
@@ -966,11 +1162,16 @@ export default function AdminContentManagerModal({
               </View>
             </View>
 
-            {/* Single-Page Content (Either Edit Canvas or Inline Preview) */}
+            {/* Full-Scrollable Single-Page Content (Edit or Preview) */}
             <ScrollView
+              ref={storyScrollRef}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
-              contentContainerStyle={styles.singleStoryScroll}
+              automaticallyAdjustKeyboardInsets
+              contentContainerStyle={[
+                styles.singleStoryScroll,
+                { paddingBottom: safeBottom + 36 },
+              ]}
             >
               {storyPreviewMode ? (
                 <BibleStoryReaderContent
@@ -986,43 +1187,56 @@ export default function AdminContentManagerModal({
                 />
               ) : (
                 <View style={styles.singlePageCanvas}>
-                  {/* Prominent Story Title */}
-                  <View style={styles.singleFieldBlock}>
-                    <Text style={[styles.singleFieldEyebrow, { color: accentBlue }]}>
+                  {/* 1. Prominent Story Title Card */}
+                  <View
+                    style={[
+                      styles.storySectionCard,
+                      {
+                        backgroundColor: isDark ? '#161C2E' : '#FFFFFF',
+                        borderColor: isDark ? '#283149' : '#EAE4D7',
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.singleFieldEyebrow, { color: isDark ? '#C4B5FD' : '#6D28D9' }]}>
                       STORY TITLE *
                     </Text>
                     <TextInput
                       style={[
                         styles.prominentTitleInput,
-                        { color: primaryText, borderBottomColor: borderColor },
+                        {
+                          color: primaryText,
+                          borderBottomColor: isDark ? '#283149' : '#F1EDE4',
+                        },
                       ]}
                       value={storyTitle}
                       onChangeText={setStoryTitle}
                       placeholder="Enter Bible Story Title..."
                       placeholderTextColor={placeholderColor}
                       multiline
+                      scrollEnabled={false}
                     />
                     <View style={styles.inlineMetaInputsRow}>
                       <TextInput
                         style={[
                           styles.compactMetaInput,
                           {
-                            backgroundColor: secondarySurface,
-                            borderColor,
+                            backgroundColor: isDark ? '#1E2538' : '#FBF8F1',
+                            borderColor: isDark ? '#2D374E' : '#E7E0D0',
                             color: primaryText,
                           },
                         ]}
                         value={storyRef}
                         onChangeText={setStoryRef}
-                        placeholder="Scripture (e.g. 1 Samuel 17)"
+                        placeholder="Scripture (1 Sam 17)"
                         placeholderTextColor={placeholderColor}
+                        numberOfLines={1}
                       />
                       <TextInput
                         style={[
                           styles.compactMetaInput,
                           {
-                            backgroundColor: secondarySurface,
-                            borderColor,
+                            backgroundColor: isDark ? '#1E2538' : '#FBF8F1',
+                            borderColor: isDark ? '#2D374E' : '#E7E0D0',
                             color: primaryText,
                           },
                         ]}
@@ -1030,18 +1244,34 @@ export default function AdminContentManagerModal({
                         onChangeText={setStoryTelugu}
                         placeholder="Telugu Title (optional)"
                         placeholderTextColor={placeholderColor}
+                        numberOfLines={1}
                       />
                     </View>
                   </View>
 
-                  {/* Mandatory 16:9 Thumbnail Upload */}
-                  <View style={styles.singleFieldBlock}>
+                  {/* 2. Mandatory 16:9 Story Cover */}
+                  <View
+                    style={[
+                      styles.storySectionCard,
+                      {
+                        backgroundColor: isDark ? '#161C2E' : '#FFFFFF',
+                        borderColor: isDark ? '#283149' : '#EAE4D7',
+                      },
+                    ]}
+                  >
                     <View style={styles.singleFieldLabelRow}>
-                      <Text style={[styles.singleFieldEyebrow, { color: accentBlue }]}>
-                        STORY THUMBNAIL *
+                      <Text style={[styles.singleFieldEyebrow, { color: isDark ? '#C4B5FD' : '#6D28D9' }]}>
+                        STORY COVER IMAGE *
                       </Text>
-                      <View style={styles.aspectRequiredPill}>
-                        <Text style={styles.aspectRequiredText}>16:9 Mandatory</Text>
+                      <View
+                        style={[
+                          styles.aspectRequiredPill,
+                          { backgroundColor: isDark ? 'rgba(251, 191, 36, 0.16)' : '#FEF3C7' },
+                        ]}
+                      >
+                        <Text style={[styles.aspectRequiredText, { color: isDark ? '#FBBF24' : '#B45309' }]}>
+                          16:9 Ratio
+                        </Text>
                       </View>
                       {storyCoverUrl ? (
                         <TouchableOpacity
@@ -1057,8 +1287,14 @@ export default function AdminContentManagerModal({
                       style={[
                         styles.storyUpload16x9Box,
                         {
-                          backgroundColor: secondarySurface,
-                          borderColor: storyCoverUrl ? borderColor : '#3B82F6',
+                          backgroundColor: isDark ? '#1E2538' : '#FBF8F1',
+                          borderColor: storyCoverUrl
+                            ? isDark
+                              ? '#2D374E'
+                              : '#E7E0D0'
+                            : isDark
+                            ? '#7C3AED'
+                            : '#C4B5FD',
                           borderStyle: storyCoverUrl ? 'solid' : 'dashed',
                         },
                       ]}
@@ -1074,7 +1310,7 @@ export default function AdminContentManagerModal({
                           />
                           <View style={styles.changeThumbOverlay}>
                             <Upload size={13} color="#FFFFFF" />
-                            <Text style={styles.changeThumbOverlayText}>Change 16:9 Image</Text>
+                            <Text style={styles.changeThumbOverlayText}>Change 16:9 Cover</Text>
                           </View>
                         </>
                       ) : (
@@ -1082,27 +1318,35 @@ export default function AdminContentManagerModal({
                           <View
                             style={[
                               styles.uploadIconCircle,
-                              { backgroundColor: isDark ? '#1E3A8A' : 'rgba(37, 99, 235, 0.12)' },
+                              { backgroundColor: isDark ? 'rgba(124, 58, 237, 0.25)' : '#EFE9FE' },
                             ]}
                           >
-                            <ImageIcon size={24} color={accentBlue} />
+                            <ImageIcon size={24} color="#7C3AED" />
                           </View>
                           <Text style={[styles.uploadPlaceholderTitle, { color: primaryText }]}>
                             Tap to Upload 16:9 Thumbnail
                           </Text>
                           <Text style={[styles.uploadPlaceholderSub, { color: secondaryText }]}>
-                            Widescreen 16:9 crop required for Admin & Member views
+                            Auto-cropped to 16:9 for Admin & Member views
                           </Text>
                         </View>
                       )}
                     </TouchableOpacity>
                   </View>
 
-                  {/* Story Content + Live Drop-Cap Showcase */}
-                  <View style={styles.singleFieldBlock}>
+                  {/* 3. Editorial Complete Story Canvas with Drop-Cap Accent */}
+                  <View
+                    style={[
+                      styles.storySectionCard,
+                      {
+                        backgroundColor: isDark ? '#161C2E' : '#FFFFFF',
+                        borderColor: isDark ? '#283149' : '#EAE4D7',
+                      },
+                    ]}
+                  >
                     <View style={styles.singleFieldLabelRow}>
-                      <Text style={[styles.singleFieldEyebrow, { color: accentBlue }]}>
-                        COMPLETE BIBLE STORY CONTENT *
+                      <Text style={[styles.singleFieldEyebrow, { color: isDark ? '#C4B5FD' : '#6D28D9' }]}>
+                        BIBLE STORY CONTENT *
                       </Text>
                       <Text style={[styles.readTimeCounter, { color: secondaryText }]}>
                         {estimateStoryReadTime(storyContent)}
@@ -1116,56 +1360,61 @@ export default function AdminContentManagerModal({
                         storyTitle.trim().charAt(0) ||
                         'B'
                       ).toUpperCase();
-                      const leadSnippet =
-                        trimmed.length > 1
-                          ? trimmed.slice(1, 130).replace(/\n+/g, ' ')
-                          : '';
-                      const dropCapBg = isDark ? 'rgba(251, 191, 36, 0.14)' : '#FEF3C7';
-                      const dropCapBorder = isDark ? 'rgba(251, 191, 36, 0.4)' : '#F59E0B';
+                      const dropCapGlowBg = isDark ? 'rgba(251, 191, 36, 0.14)' : '#FEF3C7';
                       const dropCapColor = isDark ? '#FBBF24' : '#B45309';
 
                       return (
-                        <View
-                          style={[
-                            styles.storyEditorialSurface,
-                            { backgroundColor: cardSurface, borderColor },
-                          ]}
-                        >
-                          {/* Live Large Decorative Drop-Cap */}
-                          <View style={[styles.editorDropCapRow, { borderBottomColor: borderColor }]}>
-                            <View
-                              style={[
-                                styles.editorDropCapTile,
-                                { backgroundColor: dropCapBg, borderColor: dropCapBorder },
-                              ]}
-                            >
-                              <Text style={[styles.editorDropCapLetter, { color: dropCapColor }]}>
+                        <View style={styles.storyPaperBody}>
+                          {/* Graceful Serif Drop-Cap + Opening */}
+                          <View style={styles.editorDropCapHeaderRow}>
+                            <View style={styles.editorDropCapFrame}>
+                              <View
+                                style={[
+                                  styles.editorDropCapGlowCircle,
+                                  { backgroundColor: dropCapGlowBg },
+                                ]}
+                              />
+                              <Text style={[styles.editorDropCapGlyph, { color: dropCapColor }]}>
                                 {firstChar}
                               </Text>
                             </View>
-                            <View style={{ flex: 1, justifyContent: 'center' }}>
-                              <Text style={[styles.editorDropCapCaption, { color: secondaryText }]}>
-                                DROP-CAP OPENING STYLE
-                              </Text>
+                            <View style={{ flex: 1 }}>
                               <Text
-                                style={[styles.editorDropCapPreviewText, { color: primaryText }]}
-                                numberOfLines={3}
+                                style={[styles.editorDropCapHintTitle, { color: primaryText }]}
+                                numberOfLines={2}
                               >
-                                {leadSnippet ||
-                                  'Your story opening letter is highlighted in decorative drop-cap style.'}
+                                {trimmed
+                                  ? trimmed.replace(/\n+/g, ' ').slice(0, 80) +
+                                    (trimmed.length > 80 ? '...' : '')
+                                  : 'Write your Bible story below'}
+                              </Text>
+                              <Text style={[styles.editorDropCapHintSub, { color: secondaryText }]}>
+                                Opening letter “{firstChar}” displays as a large drop-cap
                               </Text>
                             </View>
                           </View>
 
-                          {/* Single-Page Complete Story Text Input */}
                           <TextInput
-                            style={[styles.storyBodyTextArea, { color: primaryText }]}
+                            style={[
+                              styles.storyBodyTextArea,
+                              {
+                                color: primaryText,
+                                backgroundColor: isDark ? '#1E2538' : '#FBF8F1',
+                                borderColor: isDark ? '#2D374E' : '#EAE4D7',
+                              },
+                            ]}
                             value={storyContent}
                             onChangeText={setStoryContent}
-                            placeholder="Write or paste the complete Bible story here. Kids will read the full story comfortably from top to bottom..."
+                            placeholder="Write or paste the complete Bible story here. Kids will read it comfortably from top to bottom..."
                             placeholderTextColor={placeholderColor}
                             multiline
+                            scrollEnabled={false}
                             textAlignVertical="top"
+                            onFocus={() => {
+                              setTimeout(() => {
+                                storyScrollRef.current?.scrollToEnd({ animated: true });
+                              }, 220);
+                            }}
                           />
                         </View>
                       );
@@ -1173,271 +1422,889 @@ export default function AdminContentManagerModal({
 
                     <TextInput
                       style={[
-                        themedInputStyle,
+                        styles.storyTeluguOptionalArea,
                         {
-                          marginTop: 10,
-                          minHeight: 74,
-                          textAlignVertical: 'top',
+                          backgroundColor: isDark ? '#1E2538' : '#FBF8F1',
+                          borderColor: isDark ? '#2D374E' : '#EAE4D7',
+                          color: primaryText,
                         },
                       ]}
                       value={storyTeluguContent}
                       onChangeText={setStoryTeluguContent}
-                      placeholder="Telugu Story Content (optional) — తెలుగు కథనం (ఐచ్ఛికం)..."
+                      placeholder="Telugu Story Content (optional) — తెలుగు కథనం..."
                       placeholderTextColor={placeholderColor}
                       multiline
+                      scrollEnabled={false}
+                      textAlignVertical="top"
+                      onFocus={() => {
+                        setTimeout(() => {
+                          storyScrollRef.current?.scrollToEnd({ animated: true });
+                        }, 220);
+                      }}
                     />
                   </View>
                 </View>
               )}
-            </ScrollView>
 
-            {/* Bottom Actions Bar: Save · Preview · Publish */}
-            <View
-              style={[
-                styles.editorBottomBar,
-                {
-                  backgroundColor: screenBg,
-                  borderTopColor: borderColor,
-                  paddingBottom: safeBottom,
-                },
-              ]}
-            >
-              <TouchableOpacity
-                style={[
-                  styles.storyActionSecondaryBtn,
-                  { backgroundColor: secondarySurface, borderColor },
-                ]}
-                onPress={() => persistStory(false)}
-                disabled={saving}
-                activeOpacity={0.82}
-              >
-                <Save size={15} color={primaryText} />
-                <Text style={[styles.storyActionSecondaryText, { color: primaryText }]}>
-                  Save
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.storyActionSecondaryBtn,
-                  {
-                    backgroundColor: storyPreviewMode
-                      ? isDark
-                        ? '#1E3A8A'
-                        : '#DBEAFE'
-                      : secondarySurface,
-                    borderColor: storyPreviewMode ? '#3B82F6' : borderColor,
-                  },
-                ]}
-                onPress={() => setStoryPreviewMode(prev => !prev)}
-                disabled={saving}
-                activeOpacity={0.82}
-              >
-                <Eye size={15} color={storyPreviewMode ? accentBlue : primaryText} />
-                <Text
+              {/* Inline Bottom Actions Row inside ScrollView so nothing covers text when keyboard opens */}
+              <View style={styles.storyInlineActionsRow}>
+                <TouchableOpacity
                   style={[
-                    styles.storyActionSecondaryText,
-                    { color: storyPreviewMode ? accentBlue : primaryText },
+                    styles.storyActionSecondaryBtn,
+                    {
+                      backgroundColor: isDark ? '#161C2E' : '#FFFFFF',
+                      borderColor: isDark ? '#2D374E' : '#DDD6FE',
+                    },
                   ]}
+                  onPress={() => persistStory(false)}
+                  disabled={saving}
+                  activeOpacity={0.82}
                 >
-                  {storyPreviewMode ? 'Edit' : 'Preview'}
-                </Text>
-              </TouchableOpacity>
+                  <Save size={15} color={primaryText} />
+                  <Text style={[styles.storyActionSecondaryText, { color: primaryText }]}>
+                    Save
+                  </Text>
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.storyActionPublishBtn}
-                onPress={() => persistStory(true)}
-                disabled={saving}
-                activeOpacity={0.86}
-              >
-                {saving ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Send size={15} color="#FFFFFF" />
-                    <Text style={styles.storyActionPublishText}>Publish</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
+                <TouchableOpacity
+                  style={[
+                    styles.storyActionSecondaryBtn,
+                    {
+                      backgroundColor: storyPreviewMode
+                        ? isDark
+                          ? '#271E4A'
+                          : '#EFE9FE'
+                        : isDark
+                        ? '#161C2E'
+                        : '#FFFFFF',
+                      borderColor: storyPreviewMode
+                        ? '#7C3AED'
+                        : isDark
+                        ? '#2D374E'
+                        : '#DDD6FE',
+                    },
+                  ]}
+                  onPress={() => setStoryPreviewMode(prev => !prev)}
+                  disabled={saving}
+                  activeOpacity={0.82}
+                >
+                  <Eye size={15} color={storyPreviewMode ? '#7C3AED' : primaryText} />
+                  <Text
+                    style={[
+                      styles.storyActionSecondaryText,
+                      { color: storyPreviewMode ? '#7C3AED' : primaryText },
+                    ]}
+                  >
+                    {storyPreviewMode ? 'Edit' : 'Preview'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.storyActionPublishBtn}
+                  onPress={() => persistStory(true)}
+                  disabled={saving}
+                  activeOpacity={0.86}
+                >
+                  {saving ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Send size={15} color="#FFFFFF" />
+                      <Text style={styles.storyActionPublishText}>Publish</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
         </Modal>
 
         {/* ══════════════════════════════════════════════════════════════ */}
-        {/* QUIZ CREATE / EDIT MODAL                                     */}
+        {/* QUIZ CREATE / EDIT MODAL (FULL SCREEN SCROLLABLE)            */}
         {/* ══════════════════════════════════════════════════════════════ */}
-        <Modal visible={showQuizModal} animationType="slide" transparent onRequestClose={() => setShowQuizModal(false)}>
-          <View style={styles.editorBackdrop}>
-            <View style={[styles.editorCard, { backgroundColor: screenBg, borderColor, paddingBottom: safeBottom }]}>
-              <View style={[styles.editorHeader, { borderBottomColor: borderColor }]}>
-                <View>
-                  <Text style={[styles.editorTag, { color: accentBlue }]}>INTERACTIVE BIBLE QUIZ</Text>
-                  <Text style={[styles.editorTitle, { color: primaryText }]}>{editingQuizId ? 'Edit Quiz' : 'Create New Bible Quiz'}</Text>
-                </View>
+        <Modal
+          visible={showQuizModal}
+          animationType="slide"
+          presentationStyle="fullScreen"
+          onRequestClose={() => {
+            if (quizPreviewMode) {
+              setQuizPreviewMode(false);
+            } else {
+              setShowQuizModal(false);
+            }
+          }}
+        >
+          {quizPreviewMode ? (
+            <KidsQuizExperienceView
+              quiz={buildPreviewQuizObject()}
+              onClose={() => setQuizPreviewMode(false)}
+              isPreview
+            />
+          ) : (
+            <KeyboardAvoidingView
+              style={[
+                styles.container,
+                {
+                  backgroundColor: isDark ? '#0B0F19' : '#FFFDF9',
+                  paddingTop: safeTop,
+                },
+              ]}
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            >
+              <StatusBar
+                barStyle={barStyle}
+                backgroundColor={isDark ? '#0B0F19' : '#FFFDF9'}
+              />
+
+              {/* Top Header */}
+              <View style={[styles.topHeader, { borderBottomColor: borderColor }]}>
                 <TouchableOpacity
                   onPress={() => setShowQuizModal(false)}
-                  style={[styles.editorCloseBtn, { backgroundColor: secondarySurface }]}
+                  style={[styles.closeHeaderBtn, { backgroundColor: cardSurface, borderColor }]}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <X size={18} color={primaryText} />
+                  <X size={20} color={primaryText} />
                 </TouchableOpacity>
+                <View style={styles.headerCenter}>
+                  <Text style={[styles.headerTitle, { color: primaryText }]} numberOfLines={1}>
+                    {editingQuizId ? 'Edit Bible Quiz' : 'Create Bible Quiz'}
+                  </Text>
+                  <Text style={[styles.headerSubtitle, { color: secondaryText }]} numberOfLines={1}>
+                    {quizPublished
+                      ? 'Published to Member View'
+                      : 'Review & approve before publishing'}
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.statusPill,
+                    quizPublished ? styles.publishedPill : styles.draftPill,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.statusPillText,
+                      quizPublished ? styles.publishedPillText : styles.draftPillText,
+                    ]}
+                  >
+                    {quizPublished ? 'Live' : 'Draft'}
+                  </Text>
+                </View>
               </View>
 
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.editorFormScroll}>
-                <Text style={[styles.formSectionHeading, { color: accentBlue }]}>1. QUIZ OVERVIEW</Text>
-                <TextInput
-                  style={themedInputStyle}
-                  value={quizTitle}
-                  onChangeText={setQuizTitle}
-                  placeholder="Quiz Title (e.g. Life of Moses Quiz)"
-                  placeholderTextColor={placeholderColor}
-                />
-                <TextInput
-                  style={themedInputStyle}
-                  value={quizTelugu}
-                  onChangeText={setQuizTelugu}
-                  placeholder="Telugu Title (e.g. మోషే జీవిత చరిత్ర క్విజ్)"
-                  placeholderTextColor={placeholderColor}
-                />
-                <TextInput
-                  style={themedInputStyle}
-                  value={quizRef}
-                  onChangeText={setQuizRef}
-                  placeholder="Scripture Reference (e.g. Exodus 1-14)"
-                  placeholderTextColor={placeholderColor}
-                />
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                automaticallyAdjustKeyboardInsets
+                contentContainerStyle={[
+                  styles.singleStoryScroll,
+                  { paddingBottom: safeBottom + 40 },
+                ]}
+              >
+                <View style={styles.singlePageCanvas}>
+                  {/* Mode Selector: Upload Document vs Manual */}
+                  <View
+                    style={[
+                      styles.quizModeSwitch,
+                      {
+                        backgroundColor: isDark ? '#161C2E' : '#F3EFE6',
+                        borderColor: isDark ? '#283149' : '#E7E0D0',
+                      },
+                    ]}
+                  >
+                    <TouchableOpacity
+                      style={[
+                        styles.quizModeTab,
+                        quizCreationMode === 'document' && {
+                          backgroundColor: isDark ? '#7C3AED' : '#FFFFFF',
+                        },
+                      ]}
+                      onPress={() => setQuizCreationMode('document')}
+                      activeOpacity={0.85}
+                    >
+                      <FileText
+                        size={14}
+                        color={
+                          quizCreationMode === 'document'
+                            ? isDark
+                              ? '#FFFFFF'
+                              : '#6D28D9'
+                            : secondaryText
+                        }
+                      />
+                      <Text
+                        style={[
+                          styles.quizModeTabText,
+                          {
+                            color:
+                              quizCreationMode === 'document'
+                                ? isDark
+                                  ? '#FFFFFF'
+                                  : '#6D28D9'
+                                : secondaryText,
+                          },
+                        ]}
+                      >
+                        Upload PDF / DOCX
+                      </Text>
+                    </TouchableOpacity>
 
-                <View style={{ flexDirection: 'row', gap: 10 }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.inputMiniLabel, { color: primaryText }]}>Star Points Reward</Text>
-                    <TextInput
-                      style={themedInputStyle}
-                      value={quizReward}
-                      onChangeText={setQuizReward}
-                      keyboardType="numeric"
-                      placeholder="50"
-                      placeholderTextColor={placeholderColor}
-                    />
+                    <TouchableOpacity
+                      style={[
+                        styles.quizModeTab,
+                        quizCreationMode === 'manual' && {
+                          backgroundColor: isDark ? '#7C3AED' : '#FFFFFF',
+                        },
+                      ]}
+                      onPress={() => setQuizCreationMode('manual')}
+                      activeOpacity={0.85}
+                    >
+                      <Sparkles
+                        size={14}
+                        color={
+                          quizCreationMode === 'manual'
+                            ? isDark
+                              ? '#FFFFFF'
+                              : '#6D28D9'
+                            : secondaryText
+                        }
+                      />
+                      <Text
+                        style={[
+                          styles.quizModeTabText,
+                          {
+                            color:
+                              quizCreationMode === 'manual'
+                                ? isDark
+                                  ? '#FFFFFF'
+                                  : '#6D28D9'
+                                : secondaryText,
+                          },
+                        ]}
+                      >
+                        Manual Creation
+                      </Text>
+                    </TouchableOpacity>
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.inputMiniLabel, { color: primaryText }]}>Badge Title</Text>
-                    <TextInput
-                      style={themedInputStyle}
-                      value={quizBadge}
-                      onChangeText={setQuizBadge}
-                      placeholder="Torah Champion"
-                      placeholderTextColor={placeholderColor}
-                    />
-                  </View>
-                </View>
 
-                <Text style={[styles.formSectionHeading, { color: accentBlue }]}>2. MULTIPLE CHOICE QUESTIONS</Text>
-                {quizQuestions.map((q, qIdx) => (
-                  <View key={qIdx} style={[styles.questionCard, { backgroundColor: cardSurface, borderColor }]}>
-                    <Text style={[styles.pageCardTitle, { color: '#D97706' }]}>Question {qIdx + 1}</Text>
-                    <TextInput
-                      style={themedInputStyle}
-                      value={q.questionEnglish}
-                      onChangeText={txt => {
-                        const updated = [...quizQuestions];
-                        updated[qIdx].questionEnglish = txt;
-                        setQuizQuestions(updated);
-                      }}
-                      placeholder="Question in English..."
-                      placeholderTextColor={placeholderColor}
-                    />
-                    <TextInput
-                      style={themedInputStyle}
-                      value={q.questionTelugu}
-                      onChangeText={txt => {
-                        const updated = [...quizQuestions];
-                        updated[qIdx].questionTelugu = txt;
-                        setQuizQuestions(updated);
-                      }}
-                      placeholder="ప్రశ్న తెలుగులో..."
-                      placeholderTextColor={placeholderColor}
-                    />
-
-                    <Text style={[styles.inputMiniLabel, { color: primaryText, marginTop: 6 }]}>
-                      Answer Options (Tap circle to mark correct answer):
-                    </Text>
-                    {q.options.map((opt, oIdx) => (
-                      <View key={oIdx} style={styles.optionRow}>
-                        <TouchableOpacity
-                          style={[styles.radioCircle, q.correctIndex === oIdx && styles.radioCircleActive]}
-                          onPress={() => {
-                            const updated = [...quizQuestions];
-                            updated[qIdx].correctIndex = oIdx;
-                            setQuizQuestions(updated);
-                          }}
+                  {/* Document Upload Panel */}
+                  {quizCreationMode === 'document' && (
+                    <View
+                      style={[
+                        styles.storySectionCard,
+                        {
+                          backgroundColor: isDark ? '#161C2E' : '#FFFFFF',
+                          borderColor: isDark ? '#283149' : '#EAE4D7',
+                        },
+                      ]}
+                    >
+                      <View style={styles.singleFieldLabelRow}>
+                        <Text style={[styles.singleFieldEyebrow, { color: isDark ? '#C4B5FD' : '#6D28D9' }]}>
+                          UPLOAD ENGLISH QUIZ DOCUMENT
+                        </Text>
+                        <View
+                          style={[
+                            styles.aspectRequiredPill,
+                            { backgroundColor: isDark ? 'rgba(59,130,246,0.18)' : '#DBEAFE' },
+                          ]}
                         >
-                          {q.correctIndex === oIdx && <View style={styles.radioDot} />}
-                        </TouchableOpacity>
+                          <Text style={[styles.aspectRequiredText, { color: isDark ? '#93C5FD' : '#1D4ED8' }]}>
+                            Max 10 Qs · Auto TE
+                          </Text>
+                        </View>
+                      </View>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.quizDocUploadCard,
+                          {
+                            backgroundColor: isDark ? '#1E2538' : '#FBF8F1',
+                            borderColor: isDark ? '#7C3AED' : '#C4B5FD',
+                          },
+                        ]}
+                        onPress={handleUploadQuizDocument}
+                        disabled={extractingDoc}
+                        activeOpacity={0.85}
+                      >
+                        {extractingDoc ? (
+                          <View style={styles.uploadPlaceholderInner}>
+                            <ActivityIndicator size="large" color="#7C3AED" />
+                            <Text style={[styles.uploadPlaceholderTitle, { color: primaryText }]}>
+                              Extracting & Translating to Telugu...
+                            </Text>
+                            <Text style={[styles.uploadPlaceholderSub, { color: secondaryText }]}>
+                              Preserving numbering, options, and correct answers
+                            </Text>
+                          </View>
+                        ) : (
+                          <View style={styles.uploadPlaceholderInner}>
+                            <View
+                              style={[
+                                styles.uploadIconCircle,
+                                { backgroundColor: isDark ? 'rgba(124, 58, 237, 0.25)' : '#EFE9FE' },
+                              ]}
+                            >
+                              <Upload size={22} color="#7C3AED" />
+                            </View>
+                            <Text style={[styles.uploadPlaceholderTitle, { color: primaryText }]}>
+                              {quizSourceDocName
+                                ? 'Replace Quiz Document (PDF / DOCX)'
+                                : 'Tap to Upload PDF or DOCX Quiz'}
+                            </Text>
+                            <Text style={[styles.uploadPlaceholderSub, { color: secondaryText }]}>
+                              Auto-extracts up to 10 English questions & generates aligned Telugu translations
+                            </Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+
+                      {quizSourceDocName ? (
+                        <View
+                          style={[
+                            styles.quizReviewBanner,
+                            {
+                              backgroundColor: isDark ? 'rgba(16, 185, 129, 0.14)' : '#ECFDF5',
+                              borderColor: isDark ? '#065F46' : '#A7F3D0',
+                            },
+                          ]}
+                        >
+                          <CheckCircle size={16} color={isDark ? '#34D399' : '#059669'} />
+                          <Text
+                            style={[
+                              styles.quizReviewBannerText,
+                              { color: isDark ? '#A7F3D0' : '#065F46' },
+                            ]}
+                          >
+                            Extracted from "{quizSourceDocName}". Please review and edit questions, options, correct answers & Telugu text below before publishing.
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  )}
+
+                  {/* 1. Quiz Overview */}
+                  <View
+                    style={[
+                      styles.storySectionCard,
+                      {
+                        backgroundColor: isDark ? '#161C2E' : '#FFFFFF',
+                        borderColor: isDark ? '#283149' : '#EAE4D7',
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.singleFieldEyebrow, { color: isDark ? '#C4B5FD' : '#6D28D9' }]}>
+                      QUIZ DETAILS *
+                    </Text>
+                    <TextInput
+                      style={[
+                        styles.prominentTitleInput,
+                        {
+                          color: primaryText,
+                          borderBottomColor: isDark ? '#283149' : '#F1EDE4',
+                        },
+                      ]}
+                      value={quizTitle}
+                      onChangeText={setQuizTitle}
+                      placeholder="Enter Bible Quiz Title..."
+                      placeholderTextColor={placeholderColor}
+                      multiline
+                      scrollEnabled={false}
+                    />
+                    <View style={styles.inlineMetaInputsRow}>
+                      <TextInput
+                        style={[
+                          styles.compactMetaInput,
+                          {
+                            backgroundColor: isDark ? '#1E2538' : '#FBF8F1',
+                            borderColor: isDark ? '#2D374E' : '#E7E0D0',
+                            color: primaryText,
+                          },
+                        ]}
+                        value={quizRef}
+                        onChangeText={setQuizRef}
+                        placeholder="Scripture (Exodus 1-14)"
+                        placeholderTextColor={placeholderColor}
+                      />
+                      <TextInput
+                        style={[
+                          styles.compactMetaInput,
+                          {
+                            backgroundColor: isDark ? '#1E2538' : '#FBF8F1',
+                            borderColor: isDark ? '#2D374E' : '#E7E0D0',
+                            color: primaryText,
+                          },
+                        ]}
+                        value={quizTelugu}
+                        onChangeText={setQuizTelugu}
+                        placeholder="Telugu Title (తెలుగు శీర్షిక)"
+                        placeholderTextColor={placeholderColor}
+                      />
+                    </View>
+
+                    <View style={styles.inlineMetaInputsRow}>
+                      <View style={{ flex: 0.7 }}>
+                        <Text style={[styles.inputMiniLabel, { color: secondaryText }]}>Star Points</Text>
                         <TextInput
-                          style={[themedInputStyle, { flex: 1, marginBottom: 0 }]}
-                          value={opt}
-                          onChangeText={txt => {
-                            const updated = [...quizQuestions];
-                            updated[qIdx].options[oIdx] = txt;
-                            setQuizQuestions(updated);
-                          }}
-                          placeholder={`Option ${String.fromCharCode(65 + oIdx)}`}
+                          style={[
+                            styles.compactMetaInput,
+                            {
+                              backgroundColor: isDark ? '#1E2538' : '#FBF8F1',
+                              borderColor: isDark ? '#2D374E' : '#E7E0D0',
+                              color: primaryText,
+                            },
+                          ]}
+                          value={quizReward}
+                          onChangeText={setQuizReward}
+                          keyboardType="numeric"
+                          placeholder="50"
                           placeholderTextColor={placeholderColor}
+                        />
+                      </View>
+                      <View style={{ flex: 1.3 }}>
+                        <Text style={[styles.inputMiniLabel, { color: secondaryText }]}>Reward Badge</Text>
+                        <TextInput
+                          style={[
+                            styles.compactMetaInput,
+                            {
+                              backgroundColor: isDark ? '#1E2538' : '#FBF8F1',
+                              borderColor: isDark ? '#2D374E' : '#E7E0D0',
+                              color: primaryText,
+                            },
+                          ]}
+                          value={quizBadge}
+                          onChangeText={setQuizBadge}
+                          placeholder="Bible Star"
+                          placeholderTextColor={placeholderColor}
+                        />
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* 2. Mandatory 16:9 Quiz Thumbnail */}
+                  <View
+                    style={[
+                      styles.storySectionCard,
+                      {
+                        backgroundColor: isDark ? '#161C2E' : '#FFFFFF',
+                        borderColor: isDark ? '#283149' : '#EAE4D7',
+                      },
+                    ]}
+                  >
+                    <View style={styles.singleFieldLabelRow}>
+                      <Text style={[styles.singleFieldEyebrow, { color: isDark ? '#C4B5FD' : '#6D28D9' }]}>
+                        QUIZ THUMBNAIL *
+                      </Text>
+                      <View
+                        style={[
+                          styles.aspectRequiredPill,
+                          { backgroundColor: isDark ? 'rgba(251, 191, 36, 0.16)' : '#FEF3C7' },
+                        ]}
+                      >
+                        <Text style={[styles.aspectRequiredText, { color: isDark ? '#FBBF24' : '#B45309' }]}>
+                          16:9 Required
+                        </Text>
+                      </View>
+                      {quizThumbnailUrl ? (
+                        <TouchableOpacity
+                          onPress={() => setQuizThumbnailUrl('')}
+                          style={{ marginLeft: 'auto' }}
+                        >
+                          <Text style={styles.removeImageText}>Remove</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.storyUpload16x9Box,
+                        {
+                          backgroundColor: isDark ? '#1E2538' : '#FBF8F1',
+                          borderColor: quizThumbnailUrl
+                            ? isDark
+                              ? '#2D374E'
+                              : '#E7E0D0'
+                            : isDark
+                            ? '#7C3AED'
+                            : '#C4B5FD',
+                          borderStyle: quizThumbnailUrl ? 'solid' : 'dashed',
+                        },
+                      ]}
+                      onPress={handlePickQuizCover}
+                      activeOpacity={0.85}
+                    >
+                      {quizThumbnailUrl ? (
+                        <>
+                          <Image
+                            source={{ uri: quizThumbnailUrl }}
+                            style={styles.imagePreviewImg}
+                            resizeMode="cover"
+                          />
+                          <View style={styles.changeThumbOverlay}>
+                            <Upload size={13} color="#FFFFFF" />
+                            <Text style={styles.changeThumbOverlayText}>Crop / Change 16:9 Thumbnail</Text>
+                          </View>
+                        </>
+                      ) : (
+                        <View style={styles.uploadPlaceholderInner}>
+                          <View
+                            style={[
+                              styles.uploadIconCircle,
+                              { backgroundColor: isDark ? 'rgba(124, 58, 237, 0.25)' : '#EFE9FE' },
+                            ]}
+                          >
+                            <ImageIcon size={24} color="#7C3AED" />
+                          </View>
+                          <Text style={[styles.uploadPlaceholderTitle, { color: primaryText }]}>
+                            Tap to Upload & Crop 16:9 Thumbnail
+                          </Text>
+                          <Text style={[styles.uploadPlaceholderSub, { color: secondaryText }]}>
+                            Same 16:9 cover appears in Admin & Member views
+                          </Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* 3. Questions Review & Edit Section (Max 10) */}
+                  <View
+                    style={[
+                      styles.storySectionCard,
+                      {
+                        backgroundColor: isDark ? '#161C2E' : '#FFFFFF',
+                        borderColor: isDark ? '#283149' : '#EAE4D7',
+                      },
+                    ]}
+                  >
+                    <View style={styles.singleFieldLabelRow}>
+                      <Text style={[styles.singleFieldEyebrow, { color: isDark ? '#C4B5FD' : '#6D28D9' }]}>
+                        QUESTIONS ({quizQuestions.length}/{MAX_KIDS_QUIZ_QUESTIONS})
+                      </Text>
+                      <Text style={[styles.quizHintRight, { color: secondaryText }]}>
+                        Consistent EN & TE Answers
+                      </Text>
+                    </View>
+
+                    {quizQuestions.map((q, qIdx) => (
+                      <View
+                        key={q.id || qIdx}
+                        style={[
+                          styles.quizQCard,
+                          {
+                            backgroundColor: isDark ? '#1E2538' : '#FBF8F1',
+                            borderColor: isDark ? '#2D374E' : '#E7E0D0',
+                          },
+                        ]}
+                      >
+                        {/* Question Card Top Header */}
+                        <View style={styles.quizQHeaderRow}>
+                          <View style={styles.quizQNumberPill}>
+                            <Text style={styles.quizQNumberText}>Question {qIdx + 1}</Text>
+                          </View>
+
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <TouchableOpacity
+                              style={[
+                                styles.quizTranslateMiniBtn,
+                                {
+                                  backgroundColor: isDark ? 'rgba(59,130,246,0.18)' : '#EFF6FF',
+                                  borderColor: isDark ? '#1D4ED8' : '#BFDBFE',
+                                },
+                              ]}
+                              onPress={() => handleTranslateQuestion(qIdx)}
+                              disabled={translatingQIdx === qIdx}
+                            >
+                              {translatingQIdx === qIdx ? (
+                                <ActivityIndicator size="small" color={accentBlue} />
+                              ) : (
+                                <>
+                                  <Globe size={12} color={accentBlue} />
+                                  <Text style={[styles.quizTranslateMiniText, { color: accentBlue }]}>
+                                    Auto Telugu
+                                  </Text>
+                                </>
+                              )}
+                            </TouchableOpacity>
+
+                            {quizQuestions.length > 1 && (
+                              <TouchableOpacity
+                                style={[
+                                  styles.quizDeleteQBtn,
+                                  { backgroundColor: isDark ? 'rgba(239,68,68,0.18)' : '#FEE2E2' },
+                                ]}
+                                onPress={() =>
+                                  setQuizQuestions(prev => prev.filter((_, i) => i !== qIdx))
+                                }
+                              >
+                                <Trash2 size={14} color="#EF4444" />
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        </View>
+
+                        {/* English & Telugu Question Prompts */}
+                        <TextInput
+                          style={[
+                            styles.quizFieldInput,
+                            {
+                              backgroundColor: isDark ? '#141A29' : '#FFFFFF',
+                              borderColor: isDark ? '#2D374E' : '#E2DDD2',
+                              color: primaryText,
+                            },
+                          ]}
+                          value={q.questionEnglish}
+                          onChangeText={txt => {
+                            setQuizQuestions(prev =>
+                              prev.map((item, i) => (i === qIdx ? { ...item, questionEnglish: txt } : item))
+                            );
+                          }}
+                          placeholder={`Question ${qIdx + 1} in English...`}
+                          placeholderTextColor={placeholderColor}
+                          multiline
+                        />
+                        <TextInput
+                          style={[
+                            styles.quizFieldInput,
+                            {
+                              backgroundColor: isDark ? '#141A29' : '#FFFFFF',
+                              borderColor: isDark ? '#2D374E' : '#E2DDD2',
+                              color: primaryText,
+                            },
+                          ]}
+                          value={q.questionTelugu}
+                          onChangeText={txt => {
+                            setQuizQuestions(prev =>
+                              prev.map((item, i) => (i === qIdx ? { ...item, questionTelugu: txt } : item))
+                            );
+                          }}
+                          placeholder={`ప్రశ్న ${qIdx + 1} తెలుగులో...`}
+                          placeholderTextColor={placeholderColor}
+                          multiline
+                        />
+
+                        {/* Answer Options (A/B/C/D consistent across English & Telugu) */}
+                        <Text style={[styles.inputMiniLabel, { color: secondaryText, marginTop: 4 }]}>
+                          Tap letter to mark the Correct Answer (same for English & Telugu):
+                        </Text>
+
+                        {q.options.map((opt, oIdx) => {
+                          const isCorrect = q.correctIndex === oIdx;
+                          const teOpt = q.optionsTelugu?.[oIdx] ?? '';
+                          const letter = String.fromCharCode(65 + oIdx);
+                          return (
+                            <View
+                              key={oIdx}
+                              style={[
+                                styles.quizOptionPairCard,
+                                {
+                                  backgroundColor: isCorrect
+                                    ? isDark
+                                      ? 'rgba(16, 185, 129, 0.12)'
+                                      : '#ECFDF5'
+                                    : isDark
+                                    ? '#141A29'
+                                    : '#FFFFFF',
+                                  borderColor: isCorrect
+                                    ? '#10B981'
+                                    : isDark
+                                    ? '#2D374E'
+                                    : '#E2DDD2',
+                                },
+                              ]}
+                            >
+                              <TouchableOpacity
+                                style={[
+                                  styles.quizOptionLetterCircle,
+                                  {
+                                    backgroundColor: isCorrect
+                                      ? '#10B981'
+                                      : isDark
+                                      ? '#283149'
+                                      : '#EFECE6',
+                                  },
+                                ]}
+                                onPress={() => {
+                                  setQuizQuestions(prev =>
+                                    prev.map((item, i) =>
+                                      i === qIdx ? { ...item, correctIndex: oIdx } : item
+                                    )
+                                  );
+                                }}
+                              >
+                                <Text
+                                  style={[
+                                    styles.quizOptionLetterText,
+                                    { color: isCorrect ? '#FFFFFF' : primaryText },
+                                  ]}
+                                >
+                                  {letter}
+                                </Text>
+                              </TouchableOpacity>
+
+                              <View style={{ flex: 1, gap: 6 }}>
+                                <TextInput
+                                  style={[
+                                    styles.quizOptionSubInput,
+                                    {
+                                      color: primaryText,
+                                      borderBottomColor: isDark ? '#283149' : '#EEE9DE',
+                                    },
+                                  ]}
+                                  value={opt}
+                                  onChangeText={txt => {
+                                    setQuizQuestions(prev =>
+                                      prev.map((item, i) => {
+                                        if (i !== qIdx) return item;
+                                        const nextOpts = [...item.options];
+                                        nextOpts[oIdx] = txt;
+                                        return { ...item, options: nextOpts };
+                                      })
+                                    );
+                                  }}
+                                  placeholder={`Option ${letter} (English)`}
+                                  placeholderTextColor={placeholderColor}
+                                />
+                                <TextInput
+                                  style={[styles.quizOptionSubInput, { color: accentBlue, borderBottomWidth: 0 }]}
+                                  value={teOpt}
+                                  onChangeText={txt => {
+                                    setQuizQuestions(prev =>
+                                      prev.map((item, i) => {
+                                        if (i !== qIdx) return item;
+                                        const nextTe = item.options.map(
+                                          (_, idx) => item.optionsTelugu?.[idx] || ''
+                                        );
+                                        nextTe[oIdx] = txt;
+                                        return { ...item, optionsTelugu: nextTe };
+                                      })
+                                    );
+                                  }}
+                                  placeholder={`ఎంపిక ${letter} (తెలుగు)`}
+                                  placeholderTextColor={placeholderColor}
+                                />
+                              </View>
+                            </View>
+                          );
+                        })}
+
+                        {/* Bilingual Explanations */}
+                        <TextInput
+                          style={[
+                            styles.quizFieldInput,
+                            {
+                              backgroundColor: isDark ? '#141A29' : '#FFFFFF',
+                              borderColor: isDark ? '#2D374E' : '#E2DDD2',
+                              color: primaryText,
+                              marginTop: 4,
+                            },
+                          ]}
+                          value={q.explanation}
+                          onChangeText={txt => {
+                            setQuizQuestions(prev =>
+                              prev.map((item, i) => (i === qIdx ? { ...item, explanation: txt } : item))
+                            );
+                          }}
+                          placeholder="Bible verse explanation / answer note (English)"
+                          placeholderTextColor={placeholderColor}
+                          multiline
+                        />
+                        <TextInput
+                          style={[
+                            styles.quizFieldInput,
+                            {
+                              backgroundColor: isDark ? '#141A29' : '#FFFFFF',
+                              borderColor: isDark ? '#2D374E' : '#E2DDD2',
+                              color: primaryText,
+                            },
+                          ]}
+                          value={q.explanationTelugu || ''}
+                          onChangeText={txt => {
+                            setQuizQuestions(prev =>
+                              prev.map((item, i) =>
+                                i === qIdx ? { ...item, explanationTelugu: txt } : item
+                              )
+                            );
+                          }}
+                          placeholder="వివరణ తెలుగులో (ఐచ్ఛికం)"
+                          placeholderTextColor={placeholderColor}
+                          multiline
                         />
                       </View>
                     ))}
 
-                    <TextInput
-                      style={[themedInputStyle, { marginTop: 8 }]}
-                      value={q.explanation}
-                      onChangeText={txt => {
-                        const updated = [...quizQuestions];
-                        updated[qIdx].explanation = txt;
-                        setQuizQuestions(updated);
-                      }}
-                      placeholder="Bible Verse Explanation / Answer Note"
-                      placeholderTextColor={placeholderColor}
-                    />
+                    {quizQuestions.length < MAX_KIDS_QUIZ_QUESTIONS ? (
+                      <TouchableOpacity
+                        style={[
+                          styles.addPageBtn,
+                          {
+                            backgroundColor: isDark ? 'rgba(59,130,246,0.12)' : '#EFF6FF',
+                            borderColor: '#3B82F6',
+                          },
+                        ]}
+                        onPress={() =>
+                          setQuizQuestions(prev => [...prev, makeBlankQuizQuestion(prev.length)])
+                        }
+                      >
+                        <Plus size={14} color={accentBlue} />
+                        <Text style={[styles.addPageBtnText, { color: accentBlue }]}>
+                          Add Question ({quizQuestions.length}/{MAX_KIDS_QUIZ_QUESTIONS})
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={[styles.quizMaxReachedNote, { color: secondaryText }]}>
+                        Maximum of {MAX_KIDS_QUIZ_QUESTIONS} questions reached for this Bible Quiz.
+                      </Text>
+                    )}
                   </View>
-                ))}
 
-                <TouchableOpacity
-                  style={[styles.addPageBtn, { backgroundColor: secondarySurface, borderColor: '#3B82F6' }]}
-                  onPress={() => {
-                    setQuizQuestions([
-                      ...quizQuestions,
-                      {
-                        id: `q${quizQuestions.length + 1}`,
-                        questionEnglish: '',
-                        questionTelugu: '',
-                        options: ['', '', '', ''],
-                        correctIndex: 0,
-                        explanation: '',
-                      },
-                    ]);
-                  }}
-                >
-                  <Plus size={14} color={accentBlue} />
-                  <Text style={[styles.addPageBtnText, { color: accentBlue }]}>Add Another Question</Text>
-                </TouchableOpacity>
+                  {/* Inline Bottom Actions Row: Save | Preview | Publish */}
+                  <View style={styles.storyInlineActionsRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.storyActionSecondaryBtn,
+                        { backgroundColor: cardSurface, borderColor },
+                      ]}
+                      onPress={() => persistQuiz(false)}
+                      disabled={saving}
+                    >
+                      <Save size={15} color={primaryText} />
+                      <Text style={[styles.storyActionSecondaryText, { color: primaryText }]}>
+                        Save
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.storyActionSecondaryBtn,
+                        { backgroundColor: cardSurface, borderColor },
+                      ]}
+                      onPress={() => setQuizPreviewMode(true)}
+                      disabled={saving}
+                    >
+                      <Eye size={15} color={accentBlue} />
+                      <Text style={[styles.storyActionSecondaryText, { color: accentBlue }]}>
+                        Preview
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.storyActionPublishBtn}
+                      onPress={() => persistQuiz(true)}
+                      disabled={saving}
+                    >
+                      {saving ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <>
+                          <Send size={15} color="#FFFFFF" />
+                          <Text style={styles.storyActionPublishText}>Publish</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
               </ScrollView>
-
-              <View style={[styles.editorActionsRow, { borderTopColor: borderColor }]}>
-                <TouchableOpacity
-                  style={[styles.cancelActionBtn, { backgroundColor: secondarySurface, borderColor, borderWidth: 1 }]}
-                  onPress={() => setShowQuizModal(false)}
-                >
-                  <Text style={[styles.cancelActionText, { color: primaryText }]}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.saveActionBtn} onPress={handleSaveQuiz} disabled={saving}>
-                  {saving ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.saveActionText}>{editingQuizId ? 'Save Changes' : 'Publish Quiz'}</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
+            </KeyboardAvoidingView>
+          )}
         </Modal>
 
         {/* ══════════════════════════════════════════════════════════════ */}
@@ -2324,15 +3191,17 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   singleStoryScroll: {
-    paddingHorizontal: 18,
-    paddingTop: 18,
-    paddingBottom: 120,
+    paddingHorizontal: 16,
+    paddingTop: 14,
   },
   singlePageCanvas: {
-    gap: 20,
+    gap: 14,
   },
-  singleFieldBlock: {
-    gap: 8,
+  storySectionCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 15,
+    gap: 10,
   },
   singleFieldLabelRow: {
     flexDirection: 'row',
@@ -2340,46 +3209,45 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   singleFieldEyebrow: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '800',
     letterSpacing: 0.9,
   },
   prominentTitleInput: {
-    fontSize: 24,
-    lineHeight: 31,
+    fontSize: 22,
+    lineHeight: 28,
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     fontWeight: '800',
-    paddingVertical: 8,
-    borderBottomWidth: 1.5,
+    paddingVertical: 6,
+    borderBottomWidth: 1,
   },
   inlineMetaInputsRow: {
     flexDirection: 'row',
     gap: 10,
-    marginTop: 4,
+    marginTop: 2,
   },
   compactMetaInput: {
     flex: 1,
-    borderRadius: 10,
+    height: 42,
+    borderRadius: 12,
     borderWidth: 1,
     fontSize: 12.5,
-    paddingHorizontal: 11,
+    paddingHorizontal: 12,
     paddingVertical: 8,
   },
   aspectRequiredPill: {
-    backgroundColor: 'rgba(245, 158, 11, 0.16)',
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 6,
+    borderRadius: 999,
   },
   aspectRequiredText: {
-    color: '#D97706',
     fontSize: 10,
     fontWeight: '800',
   },
   storyUpload16x9Box: {
     width: '100%',
     aspectRatio: 16 / 9,
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1.5,
     overflow: 'hidden',
     alignItems: 'center',
@@ -2406,12 +3274,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
-    gap: 6,
+    gap: 5,
   },
   uploadIconCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 2,
@@ -2429,56 +3297,74 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
-  storyEditorialSurface: {
-    borderRadius: 16,
-    borderWidth: 1,
-    overflow: 'hidden',
+  storyPaperBody: {
+    gap: 12,
   },
-  editorDropCapRow: {
+  editorDropCapHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    padding: 14,
-    borderBottomWidth: 1,
+    gap: 10,
   },
-  editorDropCapTile: {
-    width: 66,
-    height: 74,
-    borderRadius: 14,
-    borderWidth: 1.5,
+  editorDropCapFrame: {
+    width: 52,
+    height: 58,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
   },
-  editorDropCapLetter: {
-    fontSize: 52,
-    lineHeight: 58,
+  editorDropCapGlowCircle: {
+    position: 'absolute',
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    opacity: 0.7,
+  },
+  editorDropCapGlyph: {
+    fontSize: 48,
+    lineHeight: 54,
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     fontWeight: '900',
     includeFontPadding: false,
   },
-  editorDropCapCaption: {
-    fontSize: 9.5,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-    marginBottom: 3,
-  },
-  editorDropCapPreviewText: {
+  editorDropCapHintTitle: {
     fontSize: 13.5,
-    lineHeight: 19,
+    fontWeight: '700',
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+  },
+  editorDropCapHintSub: {
+    fontSize: 11,
+    marginTop: 2,
   },
   storyBodyTextArea: {
-    minHeight: 220,
+    minHeight: 190,
+    borderRadius: 14,
+    borderWidth: 1,
     paddingHorizontal: 14,
-    paddingVertical: 14,
-    fontSize: 16,
-    lineHeight: 26,
+    paddingVertical: 12,
+    fontSize: 15.5,
+    lineHeight: 24,
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+  },
+  storyTeluguOptionalArea: {
+    minHeight: 74,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13.5,
+    lineHeight: 20,
+    marginTop: 2,
+  },
+  storyInlineActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 18,
   },
   storyActionSecondaryBtn: {
     flex: 1,
-    height: 46,
-    borderRadius: 12,
+    height: 48,
+    borderRadius: 999,
     borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
@@ -2491,9 +3377,9 @@ const styles = StyleSheet.create({
   },
   storyActionPublishBtn: {
     flex: 1.4,
-    height: 46,
-    borderRadius: 12,
-    backgroundColor: '#2563EB',
+    height: 48,
+    borderRadius: 999,
+    backgroundColor: '#7C3AED',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -2503,5 +3389,136 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13.5,
     fontWeight: '800',
+  },
+  // ── BILINGUAL QUIZ CREATOR & REVIEW STYLES ──
+  quizModeSwitch: {
+    flexDirection: 'row',
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 4,
+    gap: 6,
+  },
+  quizModeTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 10,
+    borderRadius: 11,
+  },
+  quizModeTabText: {
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  quizDocUploadCard: {
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quizReviewBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: 11,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  quizReviewBannerText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+  },
+  quizHintRight: {
+    marginLeft: 'auto',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  quizQCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 12,
+    gap: 8,
+  },
+  quizQHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
+  quizQNumberPill: {
+    backgroundColor: 'rgba(245, 158, 11, 0.16)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  quizQNumberText: {
+    color: '#D97706',
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  quizTranslateMiniBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  quizTranslateMiniText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  quizDeleteQBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quizFieldInput: {
+    borderRadius: 11,
+    borderWidth: 1,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    fontSize: 13.5,
+    lineHeight: 19,
+  },
+  quizOptionPairCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  quizOptionLetterCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quizOptionLetterText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  quizOptionSubInput: {
+    fontSize: 13,
+    paddingVertical: 3,
+    borderBottomWidth: 1,
+  },
+  quizMaxReachedNote: {
+    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: '600',
+    paddingVertical: 6,
   },
 });

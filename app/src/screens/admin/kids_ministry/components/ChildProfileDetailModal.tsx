@@ -30,7 +30,7 @@ import {
   KeyRound,
   Trash2,
 } from 'lucide-react-native';
-import { ChildRecord } from '../../../../types/KidsMinistryTypes';
+import { ChildRecord, resolveChildConsentInfo } from '../../../../types/KidsMinistryTypes';
 import { useAdminTheme } from '../../../../utils/adminThemeHelper';
 import { formatDateDisplay } from '../../../../utils/DateUtils';
 
@@ -423,6 +423,67 @@ export default function ChildProfileDetailModal({
                 </View>
               )}
             </View>
+
+            {/* Release Permissions & Consent Details */}
+            {(() => {
+              const consent = resolveChildConsentInfo(child);
+              return (
+                <View style={[styles.card, { backgroundColor: cardSurface, borderColor }, !isDark && styles.lightShadow]}>
+                  <View style={styles.sectionHeaderRow}>
+                    <ShieldCheck size={15} color={consent.isConfirmed ? '#10B981' : '#D97706'} />
+                    <Text style={[styles.sectionTitle, { color: primaryText }]}>
+                      Parent Consent & Release Permissions
+                    </Text>
+                  </View>
+
+                  <DetailRow
+                    label="Consent Status"
+                    value={
+                      consent.status === 'confirmed'
+                        ? 'Confirmed ✓'
+                        : consent.status === 'pending_review'
+                        ? 'Pending Review (Escort Required)'
+                        : 'Not Submitted (Escort Required)'
+                    }
+                    primaryText={primaryText}
+                    secondaryText={secondaryText}
+                    borderColor={borderColor}
+                  />
+                  <DetailRow
+                    label="Leave Classroom Alone"
+                    value={consent.isConfirmed && consent.canLeaveClassroomIndependently ? 'Allowed' : 'No (Guardian/Teacher Escort)'}
+                    primaryText={primaryText}
+                    secondaryText={secondaryText}
+                    borderColor={borderColor}
+                  />
+                  <DetailRow
+                    label="Leave Premises Alone"
+                    value={consent.isConfirmed && consent.canLeavePremisesIndependently ? 'Allowed' : 'No (Authorized Pickup Only)'}
+                    primaryText={primaryText}
+                    secondaryText={secondaryText}
+                    borderColor={borderColor}
+                  />
+                  <DetailRow
+                    label="Last Updated"
+                    value={formatTimestamp(consent.updatedAt)}
+                    primaryText={primaryText}
+                    secondaryText={secondaryText}
+                    borderColor={borderColor}
+                    isLast={!consent.teacherInstructions}
+                  />
+                  {consent.teacherInstructions ? (
+                    <DetailRow
+                      label="Teacher Instructions"
+                      value={consent.teacherInstructions}
+                      primaryText={primaryText}
+                      secondaryText={secondaryText}
+                      borderColor={borderColor}
+                      isLast
+                    />
+                  ) : null}
+                </View>
+              );
+            })()}
 
             {/* Notes */}
             {child.notes ? (

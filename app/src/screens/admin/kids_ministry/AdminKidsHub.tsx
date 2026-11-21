@@ -37,12 +37,14 @@ import {
   Clock,
   BookOpen,
   TrendingUp,
+  Layers,
 } from 'lucide-react-native';
 import { useAuth } from '../../../context/AuthContext';
 import { AdminTabContext } from '../../../context/AdminTabContext';
 import KidsMinistryService from '../../../services/KidsMinistryService';
 import { CustomAlert } from '../../../components/CustomAlert';
 import { useAdminTheme } from '../../../utils/adminThemeHelper';
+import { formatDateDisplay, toStandardDateString } from '../../../utils/DateUtils';
 import {
   ChildRecord,
   KidsClassRecord,
@@ -54,10 +56,16 @@ import {
   KidsCurriculumConfig,
   KidsVBSEventRecord,
   KidsCertificateData,
+  KidsCertificateSettings,
+  KidsAttendanceSession,
+  KidsProgramType,
+  KidsSessionRecord,
+  KidsTeacherAttendanceRecord,
   resolveActiveCurriculumLesson,
   splitCurriculumLessons,
   formatCurriculumDateDisplay,
   getCurriculumWeekDate,
+  getKidsProgramVisual,
 } from '../../../types/KidsMinistryTypes';
 import TeacherEnrollChildModal from '../../kids_ministry/components/TeacherEnrollChildModal';
 import EditClassModal from './components/EditClassModal';
@@ -71,8 +79,26 @@ import AdminVBSManagerModal from './components/AdminVBSManagerModal';
 import KidsCertificateModal from '../../kids_ministry/components/KidsCertificateModal';
 import AdminKidsReportsModal from './components/AdminKidsReportsModal';
 import ChildProfileDetailModal from './components/ChildProfileDetailModal';
+import AdminSessionManagerModal from './components/AdminSessionManagerModal';
 
 const { width } = Dimensions.get('window');
+
+const formatDateMonthYear = (dateStr: string | null | undefined): string => {
+  if (!dateStr) return '';
+  const clean = String(dateStr).trim().split('T')[0];
+  const parts = clean.split('-');
+  if (parts.length === 3 && parts[0].length === 4) {
+    const y = parts[0];
+    const m = parseInt(parts[1], 10) - 1;
+    const d = parts[2].padStart(2, '0');
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    if (m >= 0 && m < 12) {
+      return `${d} ${months[m]} ${y}`;
+    }
+    return `${d}-${parts[1]}-${y}`;
+  }
+  return clean;
+};
 
 export default function AdminKidsHub({ navigation }: any) {
   const insets = useSafeAreaInsets();
@@ -111,9 +137,130 @@ export default function AdminKidsHub({ navigation }: any) {
   const [showCurriculumModal, setShowCurriculumModal] = useState(false);
   const [showAICopilotModal, setShowAICopilotModal] = useState(false);
   const [showVBSModal, setShowVBSModal] = useState(false);
+  const [resumeVBSOnCertClose, setResumeVBSOnCertClose] = useState(false);
   const [showReportsModal, setShowReportsModal] = useState(false);
   const [selectedCertData, setSelectedCertData] = useState<KidsCertificateData | null>(null);
+  const [certSettings, setCertSettings] = useState<KidsCertificateSettings | null>(null);
   const [selectedChildProfile, setSelectedChildProfile] = useState<ChildRecord | null>(null);
+
+  // Program-based Attendance Sessions state
+  const [programSessions, setProgramSessions] = useState<KidsAttendanceSession[]>([]);
+  const [selectedSession, setSelectedSession] = useState<KidsAttendanceSession | null>(null);
+  const [sessionCustodyRecords, setSessionCustodyRecords] = useState<KidsSessionRecord[]>([]);
+  const [sessionAttendanceLogs, setSessionAttendanceLogs] = useState<any[]>([]);
+  const [sessionTeacherAttendance, setSessionTeacherAttendance] = useState<KidsTeacherAttendanceRecord[]>([]);
+  const [sessionFilterType, setSessionFilterType] = useState<'all' | KidsProgramType>('all');
+  const [showSessionManagerModal, setShowSessionManagerModal] = useState(false);
+  const [sessionToEdit, setSessionToEdit] = useState<KidsAttendanceSession | null>(null);
+  const [sessionManagerTab, setSessionManagerTab] = useState<'create' | 'list'>('create');
+  const [finalizingSession, setFinalizingSession] = useState(false);
+
+  const handleFinalizeSelectedSession = () => {
+    if (!selectedSession || finalizingSession) return;
+    if (selectedSession.attendanceFinalized) {
+      Alert.alert(
+        'Already Finalized',
+        `Attendance for "${selectedSession.programTitle}" (${formatDateDisplay(selectedSession.date)}) has already been finalized.`
+      );
+      return;
+    }
+
+    const activeEnrolledCount = children.filter(
+      c => c.enrollmentStatus !== 'inactive' && c.enrollmentStatus !== 'graduated'
+    ).length;
+    const presentIds = new Set(sessionCustodyRecords.map(r => r.childDocId));
+    sessionAttendanceLogs.forEach(a => {
+      if (a?.childDocId && a?.status !== 'absent') presentIds.add(a.childDocId);
+    });
+    const unrecordedCount = Math.max(0, activeEnrolledCount - presentIds.size);
+
+    Alert.alert(
+      'Finalize Program Attendance?',
+      `"${selectedSession.programTitle}" (${formatDateDisplay(selectedSession.date)})\n\n• Checked In / Present: ${presentIds.size}\n• Enrolled Not Checked In (will be marked Absent): ${unrecordedCount}\n\nParents of children not checked in will now receive an absent notification.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Finalize & Notify',
+          style: 'default',
+          onPress: async () => {
+            try {
+              setFinalizingSession(true);
+              const staffName =
+                member?.name ||
+                `${member?.firstName || ''} ${member?.lastName || ''}`.trim() ||
+                'Kids Ministry Admin';
+              const res = await KidsMinistryService.finalizeProgramAttendance(churchId, {
+                session: selectedSession,
+                enrolledChildren: children,
+                finalizedByMemberId: member?.id || 'admin',
+                finalizedByName: staffName,
+              });
+              setSelectedSession(prev =>
+                prev && prev.id === selectedSession.id
+                  ? {
+                      ...prev,
+                      status: 'completed',
+                      attendanceFinalized: true,
+                      presentCount: res.presentCount,
+                      absentCount: res.absentCount,
+                    }
+                  : prev
+              );
+              Alert.alert(
+                'Attendance Finalized ✓',
+                `Present: ${res.presentCount} · Absent: ${res.absentCount}. Parent attendance records & notifications updated.`
+              );
+            } catch (err: any) {
+              Alert.alert('Finalization Failed', err?.message || 'Could not finalize attendance.');
+            } finally {
+              setFinalizingSession(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleOpenAddSession = () => {
+    setSessionToEdit(null);
+    setSessionManagerTab('create');
+    setShowSessionManagerModal(true);
+  };
+
+  const handleOpenEditSession = (sess?: KidsAttendanceSession | null) => {
+    const target = sess || selectedSession;
+    if (!target) return;
+    setSessionToEdit(target);
+    setSessionManagerTab('create');
+    setShowSessionManagerModal(true);
+  };
+
+  const handleDeleteSession = (sess?: KidsAttendanceSession | null) => {
+    const target = sess || selectedSession;
+    if (!target) return;
+    Alert.alert(
+      'Delete Program Session',
+      `Are you sure you want to delete "${target.programTitle}" (${formatDateDisplay(target.date)})?\n\nHistorical child attendance and custody logs remain preserved.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await KidsMinistryService.deleteProgramSession(churchId, target.id);
+              if (selectedSession?.id === target.id) {
+                const remaining = programSessions.filter(s => s.id !== target.id);
+                setSelectedSession(remaining.length > 0 ? remaining[0] : null);
+              }
+            } catch (e: any) {
+              Alert.alert('Error', e?.message || 'Could not delete session.');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   // Beautiful Delete Confirmation Modal state
   const [childToDelete, setChildToDelete] = useState<{ id: string; name: string; childId?: string; parentName?: string; assignedClassName?: string } | null>(null);
@@ -185,8 +332,32 @@ export default function AdminKidsHub({ navigation }: any) {
       setVbsEvent(ev);
     });
 
+    // 10. Realtime listener for Program Attendance Sessions
+    const unsubSessions = KidsMinistryService.subscribeToProgramSessions(churchId, sessionList => {
+      setProgramSessions(sessionList);
+      setSelectedSession(prev => {
+        if (prev) {
+          const matching = sessionList.find(s => s.id === prev.id);
+          if (matching) return matching;
+        }
+        if (sessionList.length === 0) return null;
+        const today = toStandardDateString(new Date());
+        const todaySess = sessionList.find(s => s.date === today && s.status === 'active');
+        return todaySess || sessionList[0] || null;
+      });
+    });
+
+    // Do NOT auto-create a Sunday School session with today's date; wait for explicit admin creation.
+
     // Reconcile any unlinked household member profile photos onto Kids records
     KidsMinistryService.reconcileAllChildPhotos(churchId).catch(() => {});
+
+    // Load saved Sunday School Director & Senior Pastor certificate leadership defaults
+    KidsMinistryService.getCertificateSettings(churchId)
+      .then(cfg => {
+        if (cfg) setCertSettings(cfg);
+      })
+      .catch(() => {});
 
     return () => {
       unsubClasses();
@@ -199,13 +370,54 @@ export default function AdminKidsHub({ navigation }: any) {
       unsubCurriculum();
       unsubCurConfig();
       unsubVBS();
+      unsubSessions();
     };
   }, [churchId]);
+
+  // Realtime subscription strictly scoped to the selected Program Session
+  useEffect(() => {
+    if (!selectedSession) {
+      setSessionCustodyRecords([]);
+      setSessionAttendanceLogs([]);
+      setSessionTeacherAttendance([]);
+      return;
+    }
+
+    const unsubCustody = KidsMinistryService.subscribeToSessionCustodyRecords(
+      churchId,
+      selectedSession,
+      records => setSessionCustodyRecords(records)
+    );
+
+    const unsubLogs = KidsMinistryService.subscribeToSessionAttendanceLogs(
+      churchId,
+      selectedSession,
+      logs => setSessionAttendanceLogs(logs)
+    );
+
+    const unsubTeachers = KidsMinistryService.subscribeToSessionTeacherAttendance(
+      churchId,
+      selectedSession,
+      tRecords => setSessionTeacherAttendance(tRecords)
+    );
+
+    return () => {
+      unsubCustody();
+      unsubLogs();
+      unsubTeachers();
+    };
+  }, [churchId, selectedSession?.id]);
 
   // Children eligible for next tier promotion
   const promotionCandidates = useMemo(() => {
     return KidsMinistryService.checkPromotionEligibility(children);
   }, [children]);
+
+  // Filter program sessions by category
+  const filteredSessions = useMemo(() => {
+    if (sessionFilterType === 'all') return programSessions;
+    return programSessions.filter(s => s.programType === sessionFilterType);
+  }, [programSessions, sessionFilterType]);
 
   // Search filter for children roster
   const filteredChildren = useMemo(() => {
@@ -399,7 +611,505 @@ export default function AdminKidsHub({ navigation }: any) {
           {/* ==================================================== */}
           {activeTab === 'overview' && (
             <>
-              {/* 4 Clean & Compact Executive Metric Cards */}
+              {/* ── REDESIGNED MODERN PROGRAM ATTENDANCE CARD ── */}
+              {(() => {
+                if (!selectedSession) {
+                  return (
+                    <View style={[styles.compactEmptySessionCard, { backgroundColor: cardSurface, borderColor }]}>
+                      <View style={styles.compactEmptyTopRow}>
+                        <View
+                          style={[
+                            styles.compactEmptyIconBox,
+                            {
+                              backgroundColor: isDark ? 'rgba(59, 130, 246, 0.14)' : '#EFF6FF',
+                              borderColor: isDark ? 'rgba(96, 165, 250, 0.3)' : '#BFDBFE',
+                            },
+                          ]}
+                        >
+                          <Calendar size={18} color={isDark ? '#60A5FA' : '#2563EB'} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.compactEmptyTitle, { color: primaryText }]} numberOfLines={1}>
+                            No Program Session Created
+                          </Text>
+                          <Text style={[styles.compactEmptySub, { color: secondaryText }]} numberOfLines={2}>
+                            Schedule a Sunday School, VBS, or event date to enable check-in.
+                          </Text>
+                        </View>
+                      </View>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.compactCreateSessionBtn,
+                          {
+                            backgroundColor: isDark ? '#FFFFFF' : '#0F172A',
+                          },
+                        ]}
+                        onPress={handleOpenAddSession}
+                        activeOpacity={0.85}
+                      >
+                        <Plus size={14} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.5} />
+                        <Text
+                          style={[
+                            styles.compactCreateSessionBtnText,
+                            { color: isDark ? '#000000' : '#FFFFFF' },
+                          ]}
+                        >
+                          Create Program Session
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                }
+
+                const visual = getKidsProgramVisual(selectedSession.programType, isDark);
+                const displayTitle = selectedSession.programTitle || visual.label;
+                const normTitle = displayTitle.trim().toLowerCase();
+                const showDistinctCategory =
+                  normTitle !== visual.label.trim().toLowerCase() &&
+                  normTitle !== visual.shortLabel.trim().toLowerCase();
+
+                const isFinalized = Boolean(selectedSession.attendanceFinalized);
+                const statusMeta = isFinalized
+                  ? {
+                      label: 'FINALIZED',
+                      dot: '#10B981',
+                      text: isDark ? '#34D399' : '#047857',
+                      bg: isDark ? 'rgba(16, 185, 129, 0.16)' : '#ECFDF5',
+                      border: isDark ? 'rgba(52, 211, 153, 0.35)' : '#A7F3D0',
+                    }
+                  : selectedSession.status === 'upcoming'
+                  ? {
+                      label: 'UPCOMING',
+                      dot: '#3B82F6',
+                      text: isDark ? '#60A5FA' : '#1D4ED8',
+                      bg: isDark ? 'rgba(59, 130, 246, 0.16)' : '#EFF6FF',
+                      border: isDark ? 'rgba(96, 165, 250, 0.35)' : '#BFDBFE',
+                    }
+                  : selectedSession.status === 'completed'
+                  ? {
+                      label: 'COMPLETED',
+                      dot: '#F59E0B',
+                      text: isDark ? '#FBBF24' : '#B45309',
+                      bg: isDark ? 'rgba(245, 158, 11, 0.16)' : '#FFFBEB',
+                      border: isDark ? 'rgba(251, 191, 36, 0.35)' : '#FDE68A',
+                    }
+                  : {
+                      label: 'ACTIVE',
+                      dot: '#10B981',
+                      text: isDark ? '#34D399' : '#059669',
+                      bg: isDark ? 'rgba(16, 185, 129, 0.16)' : '#ECFDF5',
+                      border: isDark ? 'rgba(52, 211, 153, 0.35)' : '#A7F3D0',
+                    };
+
+                const presentTotal = selectedSession.presentCount ?? sessionCustodyRecords.length;
+                const absentTotal = selectedSession.absentCount ?? 0;
+                const liveCheckedInCount = sessionCustodyRecords.filter(c => c.status === 'active').length;
+                const assignedFacultyCount = selectedSession.assignedTeacherIds?.length || 0;
+
+                return (
+                  <View style={[styles.sessionHeroCard, { backgroundColor: cardSurface, borderColor }]}>
+                    {/* Program Color Accent Strip */}
+                    <View style={[styles.programCardAccentBar, { backgroundColor: visual.accentColor }]} />
+
+                    <View style={styles.sessionCardBody}>
+                      {/* Header Row: Icon + Program Name (+ Single Category Badge if distinct) + Status Pill */}
+                      <View style={styles.sessionHeaderRow}>
+                        <View
+                          style={[
+                            styles.programEmojiBox,
+                            { backgroundColor: visual.softBg, borderColor: visual.softBorder },
+                          ]}
+                        >
+                          <Image
+                            source={visual.iconImage}
+                            style={{ width: 30, height: 30 }}
+                            resizeMode="contain"
+                          />
+                        </View>
+
+                        <View style={{ flex: 1, paddingRight: 8 }}>
+                          {showDistinctCategory && (
+                            <View
+                              style={[
+                                styles.categoryTagInline,
+                                { backgroundColor: visual.softBg, borderColor: visual.softBorder },
+                              ]}
+                            >
+                              <Text style={[styles.categoryTagInlineText, { color: visual.accentColor }]}>
+                                {visual.shortLabel.toUpperCase()}
+                              </Text>
+                            </View>
+                          )}
+                          <Text style={[styles.selectedSessionTitle, { color: primaryText }]} numberOfLines={2}>
+                            {displayTitle}
+                          </Text>
+                          <Text style={[styles.programSessionSub, { color: secondaryText }]} numberOfLines={1}>
+                            {selectedSession.description?.trim() || 'Kids Ministry Attendance Session'}
+                          </Text>
+                        </View>
+
+                        <View
+                          style={[
+                            styles.liveStatusPill,
+                            { backgroundColor: statusMeta.bg, borderColor: statusMeta.border },
+                          ]}
+                        >
+                          <View style={[styles.livePulseDot, { backgroundColor: statusMeta.dot }]} />
+                          <Text style={[styles.liveStatusText, { color: statusMeta.text }]}>
+                            {statusMeta.label}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* 3-Column Equal Metadata Grid (Single Clear Date, Time, Faculty) */}
+                      <View style={styles.sessionMetaGrid}>
+                        <View style={[styles.metaGridTile, { backgroundColor: secondarySurface, borderColor }]}>
+                          <View style={styles.metaGridLabelRow}>
+                            <Calendar size={12} color={visual.accentColor} />
+                            <Text style={[styles.metaGridEyebrow, { color: secondaryText }]}>DATE</Text>
+                          </View>
+                          <Text style={[styles.metaGridValue, { color: primaryText }]} numberOfLines={1}>
+                            {formatDateMonthYear(selectedSession.date) || 'Not Set'}
+                          </Text>
+                        </View>
+
+                        <View style={[styles.metaGridTile, { backgroundColor: secondarySurface, borderColor }]}>
+                          <View style={styles.metaGridLabelRow}>
+                            <Clock size={12} color="#3B82F6" />
+                            <Text style={[styles.metaGridEyebrow, { color: secondaryText }]}>TIME</Text>
+                          </View>
+                          <Text style={[styles.metaGridValue, { color: primaryText }]} numberOfLines={1}>
+                            {selectedSession.startTime || 'Not Set'}
+                          </Text>
+                        </View>
+
+                        <View style={[styles.metaGridTile, { backgroundColor: secondarySurface, borderColor }]}>
+                          <View style={styles.metaGridLabelRow}>
+                            <Users size={12} color="#10B981" />
+                            <Text style={[styles.metaGridEyebrow, { color: secondaryText }]}>FACULTY</Text>
+                          </View>
+                          <Text style={[styles.metaGridValue, { color: primaryText }]} numberOfLines={1}>
+                            {assignedFacultyCount} Assigned
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Attendance Summary Banner */}
+                      {selectedSession ? (
+                        <View
+                          style={[
+                            styles.finalizeBar,
+                            {
+                              backgroundColor: isFinalized
+                                ? isDark
+                                  ? 'rgba(16, 185, 129, 0.12)'
+                                  : '#F0FDF4'
+                                : secondarySurface,
+                              borderColor: isFinalized
+                                ? isDark
+                                  ? 'rgba(52, 211, 153, 0.35)'
+                                  : '#BBF7D0'
+                                : borderColor,
+                            },
+                          ]}
+                        >
+                          <View style={styles.finalizeLeft}>
+                            <CheckCircle
+                              size={16}
+                              color={isFinalized ? '#10B981' : '#3B82F6'}
+                            />
+                            <View style={{ flex: 1 }}>
+                              <Text
+                                style={[
+                                  styles.finalizeBarTitle,
+                                  { color: isFinalized ? (isDark ? '#34D399' : '#047857') : primaryText },
+                                ]}
+                              >
+                                {isFinalized ? 'Attendance Finalized' : 'Attendance Open'}
+                              </Text>
+                              {!isFinalized && (
+                                <Text style={[styles.finalizeBarSub, { color: secondaryText }]}>
+                                  {liveCheckedInCount} checked in · Tap finalize after service
+                                </Text>
+                              )}
+                            </View>
+                          </View>
+
+                          {isFinalized ? (
+                            <View style={styles.attendanceStatsPills}>
+                              <View
+                                style={[
+                                  styles.attStatChip,
+                                  {
+                                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.2)' : '#DCFCE7',
+                                  },
+                                ]}
+                              >
+                                <Text style={[styles.attStatChipText, { color: isDark ? '#6EE7B7' : '#047857' }]}>
+                                  {presentTotal} Present
+                                </Text>
+                              </View>
+                              <View
+                                style={[
+                                  styles.attStatChip,
+                                  {
+                                    backgroundColor: isDark ? 'rgba(239, 68, 68, 0.2)' : '#FEE2E2',
+                                  },
+                                ]}
+                              >
+                                <Text style={[styles.attStatChipText, { color: isDark ? '#FCA5A5' : '#B91C1C' }]}>
+                                  {absentTotal} Absent
+                                </Text>
+                              </View>
+                            </View>
+                          ) : (
+                            <TouchableOpacity
+                              style={[
+                                styles.finalizeActionBtn,
+                                { backgroundColor: '#10B981', opacity: finalizingSession ? 0.7 : 1 },
+                              ]}
+                              onPress={handleFinalizeSelectedSession}
+                              disabled={finalizingSession}
+                              activeOpacity={0.85}
+                            >
+                              {finalizingSession ? (
+                                <ActivityIndicator size="small" color="#FFFFFF" />
+                              ) : (
+                                <Text style={styles.finalizeActionBtnText}>Finalize</Text>
+                              )}
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      ) : null}
+
+                      {/* Clean Uniform 3-Button Action Toolbar (Add | Edit | Delete) */}
+                      <View style={styles.sessionActionsToolbar}>
+                        <TouchableOpacity
+                          style={[
+                            styles.toolbarPrimaryBtn,
+                            { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' },
+                          ]}
+                          onPress={handleOpenAddSession}
+                          activeOpacity={0.85}
+                        >
+                          <Plus size={14} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.5} />
+                          <Text
+                            style={[
+                              styles.toolbarPrimaryBtnText,
+                              { color: isDark ? '#000000' : '#FFFFFF' },
+                            ]}
+                          >
+                            Add
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.toolbarSecondaryBtn,
+                            { backgroundColor: secondarySurface, borderColor },
+                          ]}
+                          onPress={() => handleOpenEditSession(selectedSession)}
+                          activeOpacity={0.82}
+                        >
+                          <Edit3 size={14} color={primaryText} />
+                          <Text style={[styles.toolbarSecondaryBtnText, { color: primaryText }]}>
+                            Edit
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.toolbarDeleteBtn,
+                            {
+                              backgroundColor: isDark ? 'rgba(239, 68, 68, 0.14)' : '#FEF2F2',
+                              borderColor: isDark ? 'rgba(239, 68, 68, 0.35)' : '#FECACA',
+                            },
+                          ]}
+                          onPress={() => handleDeleteSession(selectedSession)}
+                          activeOpacity={0.82}
+                        >
+                          <Trash2 size={14} color="#EF4444" />
+                          <Text style={styles.toolbarDeleteBtnText}>Delete</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {/* Session Switcher Tray */}
+                      {programSessions.length > 0 && (
+                        <View style={[styles.sessionSwitcherTray, { borderTopColor: borderColor }]}>
+                          <View style={styles.trayHeaderRow}>
+                            <Text style={[styles.trayHeading, { color: secondaryText }]}>
+                              PROGRAM SESSIONS
+                            </Text>
+                            <TouchableOpacity
+                              style={[
+                                styles.manageAllBtn,
+                                {
+                                  backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF',
+                                },
+                              ]}
+                              onPress={() => {
+                                setSessionToEdit(null);
+                                setSessionManagerTab('list');
+                                setShowSessionManagerModal(true);
+                              }}
+                              activeOpacity={0.8}
+                            >
+                              <Text style={[styles.trayCount, { color: isDark ? '#60A5FA' : '#2563EB' }]}>
+                                Manage All ({filteredSessions.length})
+                              </Text>
+                              <ChevronRight size={13} color={isDark ? '#60A5FA' : '#2563EB'} />
+                            </TouchableOpacity>
+                          </View>
+
+                          {programSessions.length > 1 && (
+                            <>
+                              {/* Quick Program Type Filter Chips */}
+                              <ScrollView
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                                contentContainerStyle={styles.sessionTypeChipsRow}
+                              >
+                                {(
+                                  [
+                                    'all',
+                                    'sunday_school',
+                                    'vbs',
+                                    'special_meeting',
+                                    'childrens_worship',
+                                    'summer_camp',
+                                    'bible_study',
+                                  ] as const
+                                ).map(pType => {
+                                  const isSel = sessionFilterType === pType;
+                                  const chipLabel =
+                                    pType === 'all'
+                                      ? 'All'
+                                      : getKidsProgramVisual(pType, isDark).shortLabel;
+                                  return (
+                                    <TouchableOpacity
+                                      key={pType}
+                                      style={[
+                                        styles.sessionTypeChip,
+                                        { backgroundColor: secondarySurface, borderColor },
+                                        isSel && {
+                                          backgroundColor: isDark ? '#FFFFFF' : '#0F172A',
+                                          borderColor: isDark ? '#FFFFFF' : '#0F172A',
+                                        },
+                                      ]}
+                                      onPress={() => setSessionFilterType(pType)}
+                                    >
+                                      <Text
+                                        style={[
+                                          styles.sessionTypeChipText,
+                                          { color: secondaryText },
+                                          isSel && {
+                                            color: isDark ? '#000000' : '#FFFFFF',
+                                            fontWeight: '800',
+                                          },
+                                        ]}
+                                      >
+                                        {chipLabel}
+                                      </Text>
+                                    </TouchableOpacity>
+                                  );
+                                })}
+                              </ScrollView>
+
+                              {/* Horizontal Sessions Carousel */}
+                              <ScrollView
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                                contentContainerStyle={styles.sessionsCarousel}
+                              >
+                                {filteredSessions.map(sess => {
+                                  const isSelected = selectedSession?.id === sess.id;
+                                  const sessVisual = getKidsProgramVisual(sess.programType, isDark);
+                                  const pillBadge = sess.attendanceFinalized
+                                    ? 'Finalized'
+                                    : isSelected
+                                    ? 'Active'
+                                    : sess.status === 'upcoming'
+                                    ? 'Upcoming'
+                                    : 'Open';
+                                  return (
+                                    <TouchableOpacity
+                                      key={sess.id}
+                                      style={[
+                                        styles.sessionCardPill,
+                                        { backgroundColor: secondarySurface, borderColor },
+                                        isSelected && {
+                                          borderColor: sessVisual.accentColor,
+                                          borderWidth: 1.5,
+                                          backgroundColor: sessVisual.softBg,
+                                        },
+                                      ]}
+                                      onPress={() => setSelectedSession(sess)}
+                                      activeOpacity={0.82}
+                                    >
+                                      <View style={styles.sessionPillTopRow}>
+                                        <View
+                                          style={[
+                                            styles.sessionPillEmojiWrap,
+                                            { backgroundColor: isSelected ? cardSurface : sessVisual.softBg },
+                                          ]}
+                                        >
+                                          <Image
+                                            source={sessVisual.iconImage}
+                                            style={{ width: 17, height: 17 }}
+                                            resizeMode="contain"
+                                          />
+                                        </View>
+                                        <View
+                                          style={[
+                                            styles.activeTagBadge,
+                                            {
+                                              backgroundColor: isSelected
+                                                ? sessVisual.accentColor
+                                                : isDark
+                                                ? 'rgba(148, 163, 184, 0.2)'
+                                                : '#E2E8F0',
+                                            },
+                                          ]}
+                                        >
+                                          <Text
+                                            style={[
+                                              styles.activeTagText,
+                                              {
+                                                color: isSelected ? '#FFFFFF' : secondaryText,
+                                              },
+                                            ]}
+                                          >
+                                            {pillBadge}
+                                          </Text>
+                                        </View>
+                                      </View>
+
+                                      <Text
+                                        style={[styles.sessionPillTitle, { color: primaryText }]}
+                                        numberOfLines={1}
+                                      >
+                                        {sess.programTitle}
+                                      </Text>
+
+                                      <Text style={[styles.sessionPillDate, { color: secondaryText }]} numberOfLines={1}>
+                                        {formatDateMonthYear(sess.date)}
+                                        {sess.startTime ? ` · ${sess.startTime}` : ''}
+                                      </Text>
+                                    </TouchableOpacity>
+                                  );
+                                })}
+                              </ScrollView>
+                            </>
+                          )}
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                );
+              })()}
+
+              {/* 4 Clean & Truthful Program-Scoped Executive Metric Cards */}
               <View style={styles.kpiGrid}>
                 {/* 1. Enrolled Children */}
                 <View style={[styles.kpiCard, { backgroundColor: cardSurface, borderColor }]}>
@@ -410,102 +1120,137 @@ export default function AdminKidsHub({ navigation }: any) {
                     <Text style={[styles.kpiNumber, { color: primaryText }]}>{children.length}</Text>
                   </View>
                   <Text style={[styles.kpiTitle, { color: primaryText }]}>Enrolled Kids</Text>
-                  <Text style={[styles.kpiSub, { color: secondaryText }]}>Total Sunday School</Text>
+                  <Text style={[styles.kpiSub, { color: secondaryText }]}>Total registered</Text>
                 </View>
 
-                {/* 2. Checked-In Today */}
+                {/* 2. Checked-In for Selected Program Session */}
                 <View style={[styles.kpiCard, { backgroundColor: cardSurface, borderColor }]}>
                   <View style={styles.kpiHeaderRow}>
                     <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
                       <UserCheck size={16} color="#34D399" />
                     </View>
                     <Text style={[styles.kpiNumber, { color: '#34D399' }]}>
-                      {children.filter(c => c.custodyStatus === 'checked_in').length}
+                      {sessionCustodyRecords.filter(c => c.status === 'active').length}
                     </Text>
                   </View>
                   <Text style={[styles.kpiTitle, { color: primaryText }]}>Checked-In</Text>
-                  <Text style={[styles.kpiSub, { color: secondaryText }]}>Active today in class</Text>
+                  <Text style={[styles.kpiSub, { color: secondaryText }]} numberOfLines={1}>
+                    {selectedSession?.programTitle || 'No active session'}
+                  </Text>
                 </View>
 
-                {/* 3. Faculty On Duty */}
+                {/* 3. Faculty On Duty for Selected Session */}
                 <View style={[styles.kpiCard, { backgroundColor: cardSurface, borderColor }]}>
                   <View style={styles.kpiHeaderRow}>
                     <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
                       <Clock size={16} color="#FBBF24" />
                     </View>
                     <Text style={[styles.kpiNumber, { color: '#FBBF24' }]}>
-                      {todayTeacherAttendance.length}/{teachers.length || 5}
+                      {selectedSession
+                        ? `${sessionTeacherAttendance.length}/${selectedSession.assignedTeacherIds?.length || teachers.length || 0}`
+                        : '0/0'}
                     </Text>
                   </View>
                   <Text style={[styles.kpiTitle, { color: primaryText }]}>Faculty On Duty</Text>
-                  <Text style={[styles.kpiSub, { color: secondaryText }]}>Clocked-in teachers</Text>
+                  <Text style={[styles.kpiSub, { color: secondaryText }]}>Present / Assigned</Text>
                 </View>
 
-                {/* 4. Face Scan Ready */}
+                {/* 4. Verified Face Scans in Selected Session */}
                 <View style={[styles.kpiCard, { backgroundColor: cardSurface, borderColor }]}>
                   <View style={styles.kpiHeaderRow}>
                     <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(139, 92, 246, 0.15)' }]}>
                       <Camera size={16} color="#C084FC" />
                     </View>
                     <Text style={[styles.kpiNumber, { color: '#A78BFA' }]}>
-                      {children.filter(c => c.faceEnrolled).length}
+                      {sessionAttendanceLogs.filter(a => a.status !== 'absent' && a.method === 'face_scan').length}
                     </Text>
                   </View>
-                  <Text style={[styles.kpiTitle, { color: primaryText }]}>Face Scan</Text>
-                  <Text style={[styles.kpiSub, { color: secondaryText }]}>Biometric profiles</Text>
+                  <Text style={[styles.kpiTitle, { color: primaryText }]}>Face Scans</Text>
+                  <Text style={[styles.kpiSub, { color: secondaryText }]}>Verified this session</Text>
                 </View>
               </View>
 
-              {/* Sunday Morning Stations */}
+              {/* Active Program Attendance Stations */}
               <View style={{ gap: 8, marginTop: 14, marginBottom: 4 }}>
-                <Text style={[styles.sectionHeading, { color: secondaryText }]}>SUNDAY MORNING ACTIVE STATIONS</Text>
+                <Text style={[styles.sectionHeading, { color: secondaryText }]}>
+                  ACTIVE ATTENDANCE STATIONS ·{' '}
+                  {selectedSession ? selectedSession.programTitle.toUpperCase() : 'NO SESSION SELECTED'}
+                </Text>
 
                 <View style={styles.stationsRow}>
-                  {/* Face Scan Kiosk */}
+                  {/* Face Scan Entrance Check-In */}
                   <TouchableOpacity
                     style={[styles.stationCard, { backgroundColor: cardSurface, borderColor }]}
-                    onPress={() => navigation.navigate('KidsFaceScanKiosk')}
+                    onPress={() => {
+                      if (!selectedSession) {
+                        Alert.alert(
+                          'Create a Program Session First',
+                          'Please create a program session with its event date first so face scans and check-ins are linked to the right event.',
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Create Session', onPress: handleOpenAddSession },
+                          ]
+                        );
+                        return;
+                      }
+                      navigation.navigate('KidsFaceScanKiosk', {
+                        targetSessionId: selectedSession.id,
+                        sessionTitle: selectedSession.programTitle,
+                        programType: selectedSession.programType,
+                        sessionDate: selectedSession.date,
+                      });
+                    }}
                     activeOpacity={0.85}
                   >
                     <View style={[styles.stationIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
                       <Camera size={18} color="#60A5FA" />
                     </View>
-                    <Text style={[styles.stationTitle, { color: primaryText }]}>Face Scan</Text>
-                    <Text style={[styles.stationSub, { color: secondaryText }]}>Entrance kiosk</Text>
+                    <Text style={[styles.stationTitle, { color: primaryText }]}>Entrance Check-In</Text>
+                    <Text style={[styles.stationSub, { color: secondaryText }]}>
+                      {selectedSession
+                        ? `Face, QR · ${formatDateMonthYear(selectedSession.date)}`
+                        : 'Select or create a session'}
+                    </Text>
                     <View style={styles.stationArrow}>
                       <ChevronRight size={14} color="#60A5FA" />
                     </View>
                   </TouchableOpacity>
 
-                  {/* Teacher Exit */}
+                  {/* Teacher Exit Scanner */}
                   <TouchableOpacity
                     style={[styles.stationCard, { backgroundColor: cardSurface, borderColor }]}
-                    onPress={() => navigation.navigate('KidsCheckOutScanner')}
+                    onPress={() => {
+                      if (!selectedSession) {
+                        Alert.alert(
+                          'Create a Program Session First',
+                          'Please create or select a program session before opening the dismissal scanner.',
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Create Session', onPress: handleOpenAddSession },
+                          ]
+                        );
+                        return;
+                      }
+                      navigation.navigate('KidsCheckOutScanner', {
+                        targetSessionId: selectedSession.id,
+                        sessionTitle: selectedSession.programTitle,
+                        programType: selectedSession.programType,
+                        sessionDate: selectedSession.date,
+                      });
+                    }}
                     activeOpacity={0.85}
                   >
                     <View style={[styles.stationIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
                       <UserCheck size={18} color="#34D399" />
                     </View>
                     <Text style={[styles.stationTitle, { color: primaryText }]}>Teacher Exit</Text>
-                    <Text style={[styles.stationSub, { color: secondaryText }]}>Dismissal scanner</Text>
+                    <Text style={[styles.stationSub, { color: secondaryText }]}>
+                      {selectedSession
+                        ? `Dismissal · ${formatDateMonthYear(selectedSession.date)}`
+                        : 'Dismissal scanner'}
+                    </Text>
                     <View style={styles.stationArrow}>
                       <ChevronRight size={14} color="#34D399" />
-                    </View>
-                  </TouchableOpacity>
-
-                  {/* Faculty Clock-In */}
-                  <TouchableOpacity
-                    style={[styles.stationCard, { backgroundColor: cardSurface, borderColor }]}
-                    onPress={() => navigation.navigate('KidsTeacherKiosk')}
-                    activeOpacity={0.85}
-                  >
-                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
-                      <Clock size={18} color="#FBBF24" />
-                    </View>
-                    <Text style={[styles.stationTitle, { color: primaryText }]}>Clock-In</Text>
-                    <Text style={[styles.stationSub, { color: secondaryText }]}>Teacher arrival</Text>
-                    <View style={styles.stationArrow}>
-                      <ChevronRight size={14} color="#FBBF24" />
                     </View>
                   </TouchableOpacity>
                 </View>
@@ -566,7 +1311,7 @@ export default function AdminKidsHub({ navigation }: any) {
                     </View>
                     <Text style={[styles.portalGridTitle, { color: primaryText }]}>Faculty & Helpers</Text>
                     <Text style={[styles.portalGridSub, { color: secondaryText }]}>
-                      {teachers.length} members · {todayTeacherAttendance.length} on duty
+                      {teachers.length} members · {sessionTeacherAttendance.length > 0 ? sessionTeacherAttendance.length : todayTeacherAttendance.length} on duty
                     </Text>
                   </TouchableOpacity>
 
@@ -1219,17 +1964,28 @@ export default function AdminKidsHub({ navigation }: any) {
           onClose={() => setShowVBSModal(false)}
           onOpenCertificateGenerator={() => {
             const sampleChild = children[0];
+            setShowVBSModal(false);
+            setResumeVBSOnCertClose(true);
             setSelectedCertData({
               childName: sampleChild?.fullName || 'Ethan Joshua Raj',
               childId: sampleChild?.childId || 'KID-2026-0001',
-              eventName: 'Kingdom Champions VBS 2026',
-              eventNameTelugu: 'పరలోక రాజ్య వీరులు VBS 2026',
-              tierOrHouse: 'Gold Lions (జయము)',
-              dateIssued: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+              eventName: vbsEvent?.title || 'Kingdom Champions VBS 2026',
+              eventNameTelugu: vbsEvent?.titleTelugu || 'పరలోక రాజ్య వీరులు VBS 2026',
+              tierOrHouse: sampleChild?.assignedClassName || 'Gold Lions (జయము)',
+              dateIssued: new Date().toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+              }),
               academicYear: '2026-2027',
-              directorName: 'Mrs. Sarah Jenkins',
-              pastorName: 'Rev. Dr. P. Johnson',
-              churchName: (member as any)?.churchName || 'Rhema Global Ministries',
+              directorName: certSettings?.directorName || 'Sunday School Director',
+              directorTitle: certSettings?.directorTitle || 'Sunday School Director',
+              pastorName: certSettings?.pastorName || 'Senior Pastor',
+              pastorTitle: certSettings?.pastorTitle || 'Senior Pastor',
+              churchName:
+                certSettings?.churchName ||
+                (member as any)?.churchName ||
+                'Rhema Global Ministries',
               verse: 'Be strong in the Lord and in his mighty power. — Ephesians 6:10',
               verseTelugu: 'ప్రభువు యొక్క మహాబలమునుబట్టి ఆయనయందు బలవంతులై యుండుడి. — ఎఫెసీ 6:10',
             });
@@ -1261,7 +2017,20 @@ export default function AdminKidsHub({ navigation }: any) {
         <KidsCertificateModal
           visible={!!selectedCertData}
           data={selectedCertData}
-          onClose={() => setSelectedCertData(null)}
+          editable
+          childrenList={children}
+          onUpdateData={updated => setSelectedCertData(updated)}
+          onSaveDefaults={async settings => {
+            await KidsMinistryService.saveCertificateSettings(churchId, settings);
+            setCertSettings(settings);
+          }}
+          onClose={() => {
+            setSelectedCertData(null);
+            if (resumeVBSOnCertClose) {
+              setResumeVBSOnCertClose(false);
+              setShowVBSModal(true);
+            }
+          }}
         />
       )}
 
@@ -1352,6 +2121,23 @@ export default function AdminKidsHub({ navigation }: any) {
           teacherAttendance={todayTeacherAttendance}
           churchName={(member as any)?.churchName || 'Rhema Global Ministries'}
           onClose={() => setShowReportsModal(false)}
+        />
+      )}
+
+      {/* ── PROGRAM ATTENDANCE SESSION MANAGER MODAL ── */}
+      {showSessionManagerModal && (
+        <AdminSessionManagerModal
+          visible={showSessionManagerModal}
+          churchId={churchId}
+          teachers={teachers}
+          activeSession={selectedSession}
+          sessionToEdit={sessionToEdit}
+          initialTab={sessionManagerTab}
+          onSelectSession={sess => setSelectedSession(sess)}
+          onClose={() => {
+            setShowSessionManagerModal(false);
+            setSessionToEdit(null);
+          }}
         />
       )}
     </View>
@@ -1458,6 +2244,337 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 40,
     gap: 16,
+  },
+  sessionHeroCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  compactEmptySessionCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 14,
+    gap: 11,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  compactEmptyTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+  },
+  compactEmptyIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  compactEmptyTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  compactEmptySub: {
+    fontSize: 11.5,
+    lineHeight: 16,
+    marginTop: 1.5,
+  },
+  compactCreateSessionBtn: {
+    height: 36,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+  },
+  compactCreateSessionBtnText: {
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  programCardAccentBar: {
+    height: 4,
+    width: '100%',
+  },
+  sessionCardBody: {
+    padding: 16,
+    gap: 13,
+  },
+  sessionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  programEmojiBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryTagInline: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginBottom: 4,
+  },
+  categoryTagInlineText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  selectedSessionTitle: {
+    fontSize: 19,
+    fontWeight: '800',
+    letterSpacing: -0.35,
+    lineHeight: 24,
+  },
+  programSessionSub: {
+    fontSize: 12,
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  liveStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    flexShrink: 0,
+  },
+  livePulseDot: {
+    width: 6.5,
+    height: 6.5,
+    borderRadius: 3.5,
+  },
+  liveStatusText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  sessionMetaGrid: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  metaGridTile: {
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    gap: 4,
+  },
+  metaGridLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  metaGridEyebrow: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  metaGridValue: {
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  finalizeBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  finalizeLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  finalizeBarTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  finalizeBarSub: {
+    fontSize: 11,
+    marginTop: 1,
+  },
+  attendanceStatsPills: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  attStatChip: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  attStatChipText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  finalizeActionBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  finalizeActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  sessionActionsToolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  toolbarPrimaryBtn: {
+    flex: 1,
+    height: 36,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+  },
+  toolbarPrimaryBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  toolbarSecondaryBtn: {
+    flex: 1,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+  },
+  toolbarSecondaryBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  toolbarDeleteBtn: {
+    flex: 1,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  toolbarDeleteBtnText: {
+    color: '#EF4444',
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  sessionSwitcherTray: {
+    borderTopWidth: 1,
+    paddingTop: 13,
+    gap: 10,
+  },
+  trayHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  trayHeading: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  manageAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  trayCount: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  sessionTypeChipsRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  sessionTypeChip: {
+    paddingHorizontal: 11,
+    paddingVertical: 5.5,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  sessionTypeChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  sessionsCarousel: {
+    flexDirection: 'row',
+    gap: 9,
+    paddingTop: 2,
+  },
+  sessionCardPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 5,
+    width: 172,
+  },
+  sessionPillTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  sessionPillEmojiWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activeTagBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  activeTagText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+  },
+  sessionPillTitle: {
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  sessionPillDate: {
+    fontSize: 10.5,
+    fontWeight: '600',
   },
   kpiGrid: {
     flexDirection: 'row',

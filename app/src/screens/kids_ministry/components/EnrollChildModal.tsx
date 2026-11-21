@@ -10,6 +10,7 @@ import {
   Image,
   ActivityIndicator,
   Alert,
+  Switch,
   Platform,
   StatusBar,
 } from 'react-native';
@@ -136,6 +137,11 @@ export default function EnrollChildModal({
   const [newGuardianRelation, setNewGuardianRelation] = useState('Mother');
   const [newGuardianPhone, setNewGuardianPhone] = useState('');
   const [showAddGuardian, setShowAddGuardian] = useState(false);
+
+  // Step 4: Release Consent State (default safe: false)
+  const [canLeaveClassIndependently, setCanLeaveClassIndependently] = useState(false);
+  const [canLeavePremisesIndependently, setCanLeavePremisesIndependently] = useState(false);
+  const [teacherInstructions, setTeacherInstructions] = useState('');
 
   // Derived age & class recommendation + eligible classrooms (including Mixed Age Group)
   const [availableClasses, setAvailableClasses] = useState<KidsClassRecord[]>([]);
@@ -291,6 +297,18 @@ export default function EnrollChildModal({
         medicalNotes,
         bloodGroup,
         guardians,
+        notes: teacherInstructions.trim(),
+        consentPermissions: {
+          canLeaveClassroomIndependently: canLeaveClassIndependently,
+          canLeavePremisesIndependently: canLeavePremisesIndependently,
+          teacherInstructions: teacherInstructions.trim(),
+          status: 'confirmed',
+          updatedAt: new Date().toISOString(),
+          updatedByMemberId: member.id || '',
+          updatedByName: parentName,
+        },
+        parentConsentStatus: 'confirmed',
+        parentConsentConfirmed: true,
         emergencyContact: {
           name: guardians[0]?.name || parentName,
           phone: guardians[0]?.phone || member.phone || '',
@@ -421,7 +439,7 @@ export default function EnrollChildModal({
                 </TouchableOpacity>
               </View>
               <Text style={[styles.photoHint, { color: secondaryText }]}>
-                Synced with Household Card & Face Scan Kiosk
+                Synced with Household Card & Face Check-In
               </Text>
             </View>
 
@@ -714,6 +732,62 @@ export default function EnrollChildModal({
                   </View>
                 </View>
               )}
+            </View>
+
+            {/* Step 4: Parent Consent & Release Permissions */}
+            <View style={[styles.sectionCard, { backgroundColor: cardSurface, borderColor }]}>
+              <Text style={[styles.sectionLabel, { color: amberAccent }]}>4. RELEASE CONSENT & TEACHER INSTRUCTIONS</Text>
+              <Text style={[styles.helpText, { color: secondaryText }]}>
+                Teachers follow these permissions before releasing your child:
+              </Text>
+
+              <View style={[styles.guardianRow, { backgroundColor: secondarySurface, borderColor }]}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={[styles.guardianName, { color: primaryText }]}>
+                    Leave classroom independently
+                  </Text>
+                  <Text style={[styles.guardianPhone, { color: secondaryText }]}>
+                    Keep OFF if pickup person must meet teacher
+                  </Text>
+                </View>
+                <Switch
+                  value={canLeaveClassIndependently}
+                  onValueChange={setCanLeaveClassIndependently}
+                  trackColor={{ false: '#CBD5E1', true: '#10B981' }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+
+              <View style={[styles.guardianRow, { backgroundColor: secondarySurface, borderColor }]}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={[styles.guardianName, { color: primaryText }]}>
+                    Leave church premises independently
+                  </Text>
+                  <Text style={[styles.guardianPhone, { color: secondaryText }]}>
+                    Keep OFF so only approved guardians can pick up
+                  </Text>
+                </View>
+                <Switch
+                  value={canLeavePremisesIndependently}
+                  onValueChange={setCanLeavePremisesIndependently}
+                  trackColor={{ false: '#CBD5E1', true: '#F59E0B' }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+
+              <View style={{ marginTop: 4 }}>
+                <Text style={[styles.inputLabel, { color: secondaryText }]}>
+                  Instructions for Teachers (Optional)
+                </Text>
+                <TextInput
+                  style={[styles.textInput, { height: 62, backgroundColor: secondarySurface, borderColor, color: primaryText }]}
+                  value={teacherInstructions}
+                  onChangeText={setTeacherInstructions}
+                  placeholder="e.g. Please hand over only to Father or Grandmother"
+                  placeholderTextColor={secondaryText}
+                  multiline
+                />
+              </View>
             </View>
 
             {/* Submit Action */}

@@ -730,7 +730,13 @@ service cloud.firestore {
       // Check-In Sessions & Custody Passes
       match /kids_sessions/{sessionId} {
         allow read, create, update: if isAuthenticated();
-        allow delete: if isChurchAdmin();
+        allow delete: if isChurchAdmin() || (
+          request.auth != null && (
+            resource.data.get('parentMemberId', '') == request.auth.uid ||
+            resource.data.get('familyId', '') == request.auth.uid ||
+            (request.auth.token.phone_number != null && resource.data.get('parentPhone', '') == request.auth.token.phone_number)
+          )
+        );
       }
 
       // Program-Based Kids Ministry Sessions (Sunday School, VBS, Special Meetings, etc.)
@@ -742,7 +748,13 @@ service cloud.firestore {
       // Program-Wise Kids Attendance Records (Present & Finalized Absent)
       match /kids_attendance/{attendanceId} {
         allow read, create, update: if isAuthenticated();
-        allow delete: if isChurchAdmin();
+        allow delete: if isChurchAdmin() || (
+          request.auth != null && (
+            resource.data.get('parentMemberId', '') == request.auth.uid ||
+            resource.data.get('familyId', '') == request.auth.uid ||
+            (request.auth.token.phone_number != null && resource.data.get('parentPhone', '') == request.auth.token.phone_number)
+          )
+        );
       }
 
       // Teachers & Volunteers Faculty

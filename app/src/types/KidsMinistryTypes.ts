@@ -9,6 +9,37 @@ export type KidsCustodyStatus = 'checked_out' | 'checked_in' | 'emergency_hold';
 export type KidsGender = 'male' | 'female';
 export type KidsTeacherRole = 'lead_teacher' | 'assistant_teacher' | 'volunteer' | 'director';
 
+export type KidsProgramType =
+  | 'sunday_school'
+  | 'vbs'
+  | 'special_meeting'
+  | 'bible_study'
+  | 'childrens_worship'
+  | 'summer_camp'
+  | 'other';
+
+export interface KidsAttendanceSession {
+  id: string; // Document ID, e.g. "sess_2026-11-22_sunday_school"
+  churchId: string;
+  programType: KidsProgramType;
+  programTitle: string; // "Sunday School", "Kingdom Champions VBS – Day 1", "Kids Prayer Night"
+  date: string; // "YYYY-MM-DD"
+  startTime?: string;
+  endTime?: string;
+  assignedTeacherIds?: string[];
+  description?: string;
+  targetAges?: { min: number; max: number };
+  status: 'active' | 'upcoming' | 'completed';
+  attendanceFinalized?: boolean;
+  attendanceFinalizedAt?: any;
+  attendanceFinalizedBy?: string;
+  attendanceFinalizedByName?: string;
+  presentCount?: number;
+  absentCount?: number;
+  createdAt: any;
+  updatedAt: any;
+}
+
 export interface KidsTeacherRecord {
   id: string; // Firestore doc ID
   teacherId: string; // e.g. "TCH-2026-0001"
@@ -36,6 +67,9 @@ export interface KidsTeacherRecord {
 
 export interface KidsTeacherAttendanceRecord {
   id: string;
+  programSessionId?: string;
+  programType?: KidsProgramType;
+  programTitle?: string;
   teacherDocId: string;
   teacherId: string;
   teacherName: string;
@@ -108,6 +142,8 @@ export interface ChildRecord {
   custodyStatus: KidsCustodyStatus;
   currentSessionId?: string;
   activePickupCode?: string; // 6-8 character dynamic code e.g. "RK-7942"
+  lastCheckInAt?: any;
+  lastCheckOutAt?: any;
   
   medical: MedicalInfo;
   guardians: AuthorizedGuardian[];
@@ -124,10 +160,22 @@ export interface ChildRecord {
   parentConsentConfirmed?: boolean;
   parentConsentConfirmedAt?: any;
   parentConsentConfirmedBy?: string;
+  consentPermissions?: ChildConsentPermissions;
+  hiddenProgramSessionIds?: string[]; // Parent-deleted attendance history entries for this child only
   approvedByAdminId?: string;
   approvedAt?: any;
   enrolledAt: any;
   updatedAt: any;
+}
+
+export interface ChildConsentPermissions {
+  canLeaveClassroomIndependently: boolean;
+  canLeavePremisesIndependently: boolean;
+  teacherInstructions?: string;
+  status: 'confirmed' | 'pending_review' | 'not_submitted';
+  updatedAt?: any;
+  updatedByMemberId?: string;
+  updatedByName?: string;
 }
 
 export interface KidsClassRecord {
@@ -157,13 +205,20 @@ export interface KidsClassRecord {
 export interface KidsSessionRecord {
   id: string;
   sessionId: string;
+  programSessionId?: string; // Links to KidsAttendanceSession.id
+  programType?: KidsProgramType;
+  programTitle?: string;
   churchId: string;
+  familyId?: string;
+  parentMemberId?: string;
+  parentPhone?: string;
   childId: string;
   childDocId: string;
   childName: string;
   childPhotoUrl?: string;
   classId: string;
   className: string;
+  teacherName?: string;
   sessionDate: string; // "YYYY-MM-DD"
   
   pickupCode: string; // "RK-7942"
@@ -180,6 +235,222 @@ export interface KidsSessionRecord {
   
   allergyFlag: boolean;
   notes?: string;
+  deletedByParent?: boolean;
+}
+
+export interface KidsAttendanceLogRecord {
+  id: string;
+  programSessionId?: string;
+  programType?: KidsProgramType;
+  programTitle?: string;
+  familyId?: string;
+  parentMemberId?: string;
+  parentPhone?: string;
+  childDocId: string;
+  childId: string;
+  childName: string;
+  classId?: string;
+  className?: string;
+  classTier: KidsClassTier;
+  teacherName?: string;
+  sessionDate: string; // "YYYY-MM-DD"
+  status?: 'present' | 'absent';
+  checkInTime?: any;
+  method?: 'face_scan' | 'qr_code' | 'manual';
+  finalizedByMemberId?: string;
+  finalizedByName?: string;
+  finalizedAt?: any;
+  deletedByParent?: boolean;
+  createdAt: any;
+}
+
+export type KidsAttendanceDisplayStatus = 'present' | 'checked_out' | 'absent' | 'not_checked_in';
+
+export interface KidsProgramAttendanceEntry {
+  programSessionId: string;
+  programType: KidsProgramType;
+  programTitle: string;
+  date: string; // "YYYY-MM-DD"
+  startTime?: string;
+  endTime?: string;
+  sessionStatus: 'active' | 'upcoming' | 'completed';
+  attendanceFinalized: boolean;
+  attendanceStatus: KidsAttendanceDisplayStatus;
+  checkInTime?: any;
+  checkOutTime?: any;
+  classroomName: string;
+  teacherName: string;
+  checkedInMethod?: string;
+  pickupCode?: string;
+  checkedOutByName?: string;
+  custodyRecordId?: string;
+}
+
+export const KIDS_PROGRAM_LABELS: Record<KidsProgramType, string> = {
+  sunday_school: 'Sunday School',
+  vbs: 'Vacation Bible School (VBS)',
+  special_meeting: 'Special Kids Meeting',
+  bible_study: 'Bible Study Program',
+  childrens_worship: "Children's Worship",
+  summer_camp: 'Summer Camp',
+  other: 'Special Event',
+};
+
+export interface KidsProgramVisualMeta {
+  type: KidsProgramType;
+  label: string;
+  shortLabel: string;
+  emoji: string;
+  iconImage: any;
+  accentColor: string;
+  softBg: string;
+  softBorder: string;
+}
+
+const KIDS_PROGRAM_3D_ICONS = {
+  sunday_school: require('../../assets/kids_cat_lessons.png'),
+  vbs: require('../../assets/gallery_3d_church.png'),
+  special_meeting: require('../../assets/3d_party_popper.png'),
+  childrens_worship: require('../../assets/gallery_3d_stage.png'),
+  summer_camp: require('../../assets/gallery_3d_fireworks.png'),
+  bible_study: require('../../assets/3d_daily_verse.png'),
+  other: require('../../assets/3d_events.png'),
+} as const;
+
+/**
+ * Returns consistent visual theme tokens (3D icon, labels, accent colors) across all Kids Ministry program types.
+ */
+export function getKidsProgramVisual(
+  programType?: KidsProgramType | string,
+  isDark: boolean = false
+): KidsProgramVisualMeta {
+  switch (programType) {
+    case 'vbs':
+      return {
+        type: 'vbs',
+        label: 'Vacation Bible School (VBS)',
+        shortLabel: 'VBS',
+        emoji: '☀️',
+        iconImage: KIDS_PROGRAM_3D_ICONS.vbs,
+        accentColor: isDark ? '#FB923C' : '#EA580C',
+        softBg: isDark ? 'rgba(249, 115, 22, 0.16)' : '#FFF7ED',
+        softBorder: isDark ? 'rgba(251, 146, 60, 0.35)' : '#FED7AA',
+      };
+    case 'special_meeting':
+      return {
+        type: 'special_meeting',
+        label: 'Special Kids Meeting',
+        shortLabel: 'Special',
+        emoji: '✨',
+        iconImage: KIDS_PROGRAM_3D_ICONS.special_meeting,
+        accentColor: isDark ? '#C084FC' : '#7C3AED',
+        softBg: isDark ? 'rgba(139, 92, 246, 0.16)' : '#F5F3FF',
+        softBorder: isDark ? 'rgba(192, 132, 252, 0.35)' : '#DDD6FE',
+      };
+    case 'childrens_worship':
+      return {
+        type: 'childrens_worship',
+        label: "Children's Worship",
+        shortLabel: 'Worship',
+        emoji: '🎵',
+        iconImage: KIDS_PROGRAM_3D_ICONS.childrens_worship,
+        accentColor: isDark ? '#F472B6' : '#DB2777',
+        softBg: isDark ? 'rgba(236, 72, 153, 0.16)' : '#FDF2F8',
+        softBorder: isDark ? 'rgba(244, 114, 182, 0.35)' : '#FBCFE8',
+      };
+    case 'summer_camp':
+      return {
+        type: 'summer_camp',
+        label: 'Summer Camp',
+        shortLabel: 'Camps',
+        emoji: '⛺',
+        iconImage: KIDS_PROGRAM_3D_ICONS.summer_camp,
+        accentColor: isDark ? '#34D399' : '#059669',
+        softBg: isDark ? 'rgba(16, 185, 129, 0.16)' : '#ECFDF5',
+        softBorder: isDark ? 'rgba(52, 211, 153, 0.35)' : '#A7F3D0',
+      };
+    case 'bible_study':
+      return {
+        type: 'bible_study',
+        label: 'Bible Study Program',
+        shortLabel: 'Bible Study',
+        emoji: '📜',
+        iconImage: KIDS_PROGRAM_3D_ICONS.bible_study,
+        accentColor: isDark ? '#60A5FA' : '#2563EB',
+        softBg: isDark ? 'rgba(59, 130, 246, 0.16)' : '#EFF6FF',
+        softBorder: isDark ? 'rgba(96, 165, 250, 0.35)' : '#BFDBFE',
+      };
+    case 'other':
+      return {
+        type: 'other',
+        label: 'Special Event',
+        shortLabel: 'Other',
+        emoji: '🎯',
+        iconImage: KIDS_PROGRAM_3D_ICONS.other,
+        accentColor: isDark ? '#94A3B8' : '#475569',
+        softBg: isDark ? 'rgba(148, 163, 184, 0.16)' : '#F8FAFC',
+        softBorder: isDark ? 'rgba(148, 163, 184, 0.32)' : '#CBD5E1',
+      };
+    case 'sunday_school':
+    default:
+      return {
+        type: 'sunday_school',
+        label: 'Sunday School',
+        shortLabel: 'Sunday School',
+        emoji: '📖',
+        iconImage: KIDS_PROGRAM_3D_ICONS.sunday_school,
+        accentColor: isDark ? '#FBBF24' : '#D97706',
+        softBg: isDark ? 'rgba(245, 158, 11, 0.16)' : '#FFFBEB',
+        softBorder: isDark ? 'rgba(251, 191, 36, 0.35)' : '#FDE68A',
+      };
+  }
+}
+
+/**
+ * Resolves unified consent & release permissions for a child record across Member View, Admin, and Scanners.
+ */
+export function resolveChildConsentInfo(child: ChildRecord | null | undefined): {
+  status: 'confirmed' | 'pending_review' | 'not_submitted';
+  isConfirmed: boolean;
+  canLeaveClassroomIndependently: boolean;
+  canLeavePremisesIndependently: boolean;
+  teacherInstructions: string;
+  updatedAt: any;
+  authorizedPickups: AuthorizedGuardian[];
+} {
+  if (!child) {
+    return {
+      status: 'not_submitted',
+      isConfirmed: false,
+      canLeaveClassroomIndependently: false,
+      canLeavePremisesIndependently: false,
+      teacherInstructions: '',
+      updatedAt: null,
+      authorizedPickups: [],
+    };
+  }
+
+  const perms = child.consentPermissions;
+  const legacyPending = child.parentConsentStatus === 'pending_review';
+  const status: 'confirmed' | 'pending_review' | 'not_submitted' = legacyPending
+    ? 'pending_review'
+    : perms?.status
+    ? perms.status
+    : child.parentConsentConfirmed === true || child.parentConsentStatus === 'confirmed'
+    ? 'confirmed'
+    : child.enrollmentSource === 'parent_self' && Boolean(child.guardians?.length)
+    ? 'confirmed'
+    : 'not_submitted';
+
+  return {
+    status,
+    isConfirmed: status === 'confirmed',
+    canLeaveClassroomIndependently: Boolean(perms?.canLeaveClassroomIndependently),
+    canLeavePremisesIndependently: Boolean(perms?.canLeavePremisesIndependently),
+    teacherInstructions: (perms?.teacherInstructions ?? child.notes ?? '').trim(),
+    updatedAt: perms?.updatedAt || child.parentConsentConfirmedAt || child.updatedAt || child.enrolledAt,
+    authorizedPickups: (child.guardians || []).filter(g => g.canPickup !== false),
+  };
 }
 
 /**
@@ -329,6 +600,7 @@ export interface KidsQuizQuestion {
   optionsTelugu?: string[];
   correctIndex: number;
   explanation: string;
+  explanationTelugu?: string;
 }
 
 export interface KidsQuiz {
@@ -341,6 +613,9 @@ export interface KidsQuiz {
   pointsReward: number;
   badgeReward: string;
   coverEmoji: string;
+  thumbnailUrl?: string;
+  estimatedMinutes?: number;
+  sourceDocumentName?: string;
   difficulty?: 'beginner' | 'intermediate' | 'advanced';
   ageGroup?: string;
   isPublished?: boolean;
@@ -503,10 +778,21 @@ export interface KidsCertificateData {
   dateIssued: string;
   academicYear: string;
   directorName: string;
+  directorTitle?: string;
   pastorName: string;
+  pastorTitle?: string;
   churchName: string;
   verse: string;
   verseTelugu: string;
+}
+
+export interface KidsCertificateSettings {
+  directorName: string;
+  directorTitle?: string;
+  pastorName: string;
+  pastorTitle?: string;
+  churchName?: string;
+  updatedAt?: any;
 }
 
 export interface KidsCurriculumConfig {
@@ -688,4 +974,165 @@ export function resolveActiveCurriculumLesson(params: {
     mode: '52_week',
     activeDate,
   };
+}
+
+/**
+ * Resolves a child's program-by-program attendance entries without ever mixing sessions.
+ */
+export function buildChildProgramAttendanceEntries(params: {
+  child: ChildRecord | null | undefined;
+  programSessions: KidsAttendanceSession[];
+  custodyRecords: KidsSessionRecord[];
+  attendanceLogs: KidsAttendanceLogRecord[];
+  classes: KidsClassRecord[];
+  teachers: KidsTeacherRecord[];
+}): KidsProgramAttendanceEntry[] {
+  const { child, programSessions, custodyRecords, attendanceLogs, classes, teachers } = params;
+  if (!child) return [];
+
+  // Enforce strict per-child filtering by unique ID and skip parent-deleted history entries.
+  const belongsToChild = (rec: { childDocId?: string; childId?: string }): boolean => {
+    if (rec.childDocId) return rec.childDocId === child.id;
+    if (rec.childId && child.childId) return rec.childId === child.childId;
+    return false;
+  };
+  const hiddenSessionIds = new Set(child.hiddenProgramSessionIds || []);
+  const childCustodyRecords = custodyRecords.filter(r => belongsToChild(r) && !r.deletedByParent);
+  const childAttendanceLogs = attendanceLogs.filter(l => belongsToChild(l) && !l.deletedByParent);
+
+  const assignedClass =
+    classes.find(c => child.assignedClassId && c.id === child.assignedClassId) ||
+    classes.find(c => child.assignedTier && c.tier === child.assignedTier) ||
+    null;
+
+  const teacherMap = new Map<string, KidsTeacherRecord>();
+  for (const t of teachers) {
+    if (t.id) teacherMap.set(t.id, t);
+    if (t.memberId) teacherMap.set(t.memberId, t);
+  }
+
+  const resolveFacultyName = (
+    sess?: KidsAttendanceSession,
+    custody?: KidsSessionRecord,
+    attLog?: KidsAttendanceLogRecord
+  ): string => {
+    if (custody?.teacherName) return custody.teacherName;
+    if (attLog?.teacherName) return attLog.teacherName;
+    if (sess?.assignedTeacherIds && sess.assignedTeacherIds.length > 0) {
+      const names = sess.assignedTeacherIds
+        .map(tid => teacherMap.get(tid)?.name)
+        .filter((n): n is string => Boolean(n && n.trim()));
+      if (names.length > 0) return names.join(', ');
+    }
+    if (custody?.checkedInByName) return custody.checkedInByName;
+    if (assignedClass?.leadTeacherName) return assignedClass.leadTeacherName;
+    return 'Sunday School Faculty';
+  };
+
+  const matchedCustodyIds = new Set<string>();
+  const matchedLogIds = new Set<string>();
+  const entries: KidsProgramAttendanceEntry[] = [];
+
+  for (const sess of programSessions) {
+    if (hiddenSessionIds.has(sess.id)) continue;
+    const custody = childCustodyRecords.find(r => {
+      if (r.programSessionId && r.programSessionId === sess.id) return true;
+      return !r.programSessionId && r.sessionDate === sess.date && sess.programType === 'sunday_school';
+    });
+    if (custody) matchedCustodyIds.add(custody.id);
+
+    const attLog = childAttendanceLogs.find(l => {
+      if (l.programSessionId && l.programSessionId === sess.id) return true;
+      return !l.programSessionId && l.sessionDate === sess.date && sess.programType === 'sunday_school';
+    });
+    if (attLog) matchedLogIds.add(attLog.id);
+
+    const isFinalized = Boolean(sess.attendanceFinalized);
+    let attendanceStatus: KidsAttendanceDisplayStatus = 'not_checked_in';
+    if (custody) {
+      attendanceStatus = custody.status === 'checked_out' ? 'checked_out' : 'present';
+    } else if (attLog && attLog.status !== 'absent') {
+      attendanceStatus = 'present';
+    } else if (isFinalized) {
+      attendanceStatus = 'absent';
+    }
+
+    entries.push({
+      programSessionId: sess.id,
+      programType: sess.programType || 'sunday_school',
+      programTitle: sess.programTitle || KIDS_PROGRAM_LABELS[sess.programType || 'sunday_school'] || 'Program',
+      date: sess.date,
+      startTime: sess.startTime,
+      endTime: sess.endTime,
+      sessionStatus: sess.status || 'active',
+      attendanceFinalized: isFinalized,
+      attendanceStatus,
+      checkInTime: custody?.checkInTime || (attLog?.status !== 'absent' ? attLog?.checkInTime : undefined),
+      checkOutTime: custody?.checkOutTime,
+      classroomName:
+        custody?.className ||
+        attLog?.className ||
+        assignedClass?.name ||
+        child.assignedClassName ||
+        'Sunday School Classroom',
+      teacherName: resolveFacultyName(sess, custody, attLog),
+      checkedInMethod: custody?.checkedInMethod || attLog?.method,
+      pickupCode: custody?.status === 'active' ? custody.pickupCode : undefined,
+      checkedOutByName: custody?.checkedOutByName,
+      custodyRecordId: custody?.id,
+    });
+  }
+
+  // Include any legacy custody/attendance records that predate kids_program_sessions
+  for (const custody of childCustodyRecords) {
+    if (matchedCustodyIds.has(custody.id)) continue;
+    const key = custody.programSessionId || `legacy_${custody.sessionDate}_${custody.programType || 'sunday_school'}`;
+    if (hiddenSessionIds.has(key)) continue;
+    if (entries.some(e => e.programSessionId === key)) continue;
+
+    entries.push({
+      programSessionId: key,
+      programType: custody.programType || 'sunday_school',
+      programTitle: custody.programTitle || KIDS_PROGRAM_LABELS[custody.programType || 'sunday_school'] || 'Sunday School',
+      date: custody.sessionDate,
+      sessionStatus: 'completed',
+      attendanceFinalized: true,
+      attendanceStatus: custody.status === 'checked_out' ? 'checked_out' : 'present',
+      checkInTime: custody.checkInTime,
+      checkOutTime: custody.checkOutTime,
+      classroomName: custody.className || assignedClass?.name || child.assignedClassName || 'Sunday School',
+      teacherName: resolveFacultyName(undefined, custody, undefined),
+      checkedInMethod: custody.checkedInMethod,
+      pickupCode: custody.status === 'active' ? custody.pickupCode : undefined,
+      checkedOutByName: custody.checkedOutByName,
+      custodyRecordId: custody.id,
+    });
+  }
+
+  for (const log of childAttendanceLogs) {
+    if (matchedLogIds.has(log.id)) continue;
+    const key = log.programSessionId || `legacy_${log.sessionDate}_${log.programType || 'sunday_school'}`;
+    if (hiddenSessionIds.has(key)) continue;
+    if (entries.some(e => e.programSessionId === key)) continue;
+
+    // Respect rule: never mark absent without finalized session unless the record explicitly represents a finalized absent log
+    const isAbsentLog = log.status === 'absent' && Boolean(log.finalizedAt);
+    entries.push({
+      programSessionId: key,
+      programType: log.programType || 'sunday_school',
+      programTitle: log.programTitle || KIDS_PROGRAM_LABELS[log.programType || 'sunday_school'] || 'Sunday School',
+      date: log.sessionDate,
+      sessionStatus: 'completed',
+      attendanceFinalized: true,
+      attendanceStatus: isAbsentLog ? 'absent' : 'present',
+      checkInTime: isAbsentLog ? undefined : log.checkInTime,
+      classroomName: log.className || assignedClass?.name || child.assignedClassName || 'Sunday School',
+      teacherName: resolveFacultyName(undefined, undefined, log),
+      checkedInMethod: log.method,
+    });
+  }
+
+  // Sort descending by date so newest sessions appear first
+  entries.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  return entries;
 }

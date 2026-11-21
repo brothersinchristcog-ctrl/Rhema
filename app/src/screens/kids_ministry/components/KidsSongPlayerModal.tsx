@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -10,22 +10,47 @@ import {
   Dimensions,
   Linking,
   StatusBar,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, initialWindowMetrics } from 'react-native-safe-area-context';
-import { X, Music, Play, ExternalLink, Heart } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import {
+  ArrowLeft,
+  Clock,
+  ExternalLink,
+  Music,
+  Pause,
+  Play,
+  Volume2,
+} from 'lucide-react-native';
 import YoutubePlayer from 'react-native-youtube-iframe';
+import { Audio } from 'expo-av';
 import { KidsWorshipSong } from '../../../types/KidsMinistryTypes';
 import { useTheme } from '../../../context/ThemeContext';
+import { isColorLight } from '../../SongsScreen';
+import { getSermonCardColor, POSTER as SERMON_POSTER_GRADIENTS } from '../../SermonsScreen';
 
 const { width } = Dimensions.get('window');
+const STAGE_WIDTH = width - 32;
+const STAGE_HEIGHT = Math.round((STAGE_WIDTH * 9) / 16);
 
 function extractYoutubeId(urlOrId?: string): string {
   if (!urlOrId || typeof urlOrId !== 'string') return '';
   const clean = urlOrId.trim();
-  const match = clean.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/|live\/))([\w-]{11})/);
+  const match = clean.match(
+    /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/|live\/))([\w-]{11})/
+  );
   if (match) return match[1];
   if (/^[a-zA-Z0-9_-]{11}$/.test(clean)) return clean;
   return clean;
+}
+
+function formatMillis(ms: number): string {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const mins = Math.floor(totalSec / 60);
+  const secs = totalSec % 60;
+  return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
 }
 
 interface KidsSongPlayerModalProps {
@@ -43,159 +68,432 @@ export default function KidsSongPlayerModal({
   onClose,
   onSelectSong,
 }: KidsSongPlayerModalProps) {
-  const { isDark, colors: themeColors } = useTheme();
-  const [lyricsTab, setLyricsTab] = useState<'both' | 'telugu' | 'english'>('both');
-  const [playing, setPlaying] = useState(false);
+  const { isDark } = useTheme();
+  const [lyricsTab, setLyricsTab] = useState<'both' | 'english' | 'telugu'>('both');
+  const [playingVideo, setPlayingVideo] = useState(false);
+
+  // Audio playback state when song has an uploaded audioUrl
+  const soundRef = useRef<Audio.Sound | null>(null);
+  const [audioPlaying, setAudioPlaying] = useState(false);
+  const [audioLoading, setAudioLoading] = useState(false);
+  const [audioPositionMs, setAudioPositionMs] = useState(0);
+  const [audioDurationMs, setAudioDurationMs] = useState(0);
+
+  const unloadAudio = async () => {
+    if (soundRef.current) {
+      try {
+        await soundRef.current.unloadAsync();
+      } catch {
+        // Ignore cleanup errors
+      }
+      soundRef.current = null;
+    }
+    setAudioPlaying(false);
+    setAudioLoading(false);
+    setAudioPositionMs(0);
+    setAudioDurationMs(0);
+  };
+
+  useEffect(() => {
+    setPlayingVideo(false);
+    unloadAudio();
+    return () => {
+      unloadAudio();
+    };
+  }, [song?.id, visible]);
 
   if (!song) return null;
 
-  const screenBg = isDark ? '#000000' : (themeColors.background || '#FAF7F2');
-  const cardBg = isDark ? '#18181B' : (themeColors.surface || '#FFFFFF');
-  const innerBg = isDark ? '#09090B' : '#F1F5F9';
-  const border = isDark ? '#27272A' : (themeColors.border || '#E2E8F0');
-  const textPrimary = isDark ? '#FFFFFF' : (themeColors.text || '#0F172A');
-  const textSecondary = isDark ? '#9CA3AF' : (themeColors.textSecondary || '#64748B');
-  const goldAccent = isDark ? '#FBBF24' : '#D97706';
-  const pillActiveBg = isDark ? '#FFFFFF' : '#0F172A';
-  const pillActiveText = isDark ? '#000000' : '#FFFFFF';
+  const screenBg = isDark ? '#0B0F19' : '#FFFDF9';
+  const cardBg = isDark ? '#151B2B' : '#FFFFFF';
+  const innerBg = isDark ? '#1E2538' : '#F8F4EC';
+  const border = isDark ? '#283149' : '#EAE4D7';
+  const textPrimary = isDark ? '#F8FAFC' : '#111827';
+  const textSecondary = isDark ? '#94A3B8' : '#64748B';
+  const goldAccent = isDark ? '#FBBF24' : '#B45309';
+  const goldBg = isDark ? 'rgba(251, 191, 36, 0.14)' : '#FEF3C7';
+  const violetAccent = isDark ? '#A78BFA' : '#7C3AED';
+  const violetSoft = isDark ? 'rgba(139, 92, 246, 0.16)' : '#EFE9FE';
   const barStyle = isDark ? 'light-content' : 'dark-content';
 
-  const videoId = extractYoutubeId(song.youtubeVideoId) || 'AyKSwGvUbcY';
+  const videoId = extractYoutubeId(song.youtubeVideoId);
+  const hasAudio = Boolean(song.audioUrl && song.audioUrl.trim().length > 0);
+  const thumbUri =
+    song.thumbnailUrl ||
+    (videoId ? `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` : '');
+
+  const categoryLabel =
+    song.category === 'action_dance'
+      ? 'Action Dance'
+      : song.category === 'praise'
+      ? 'Kids Praise'
+      : song.category === 'hymn'
+      ? 'Kids Hymn'
+      : 'Action Song';
+
+  const handleToggleAudio = async () => {
+    if (!song.audioUrl) return;
+    try {
+      if (soundRef.current) {
+        if (audioPlaying) {
+          await soundRef.current.pauseAsync();
+          setAudioPlaying(false);
+        } else {
+          await soundRef.current.playAsync();
+          setAudioPlaying(true);
+        }
+        return;
+      }
+
+      setAudioLoading(true);
+      await Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+      });
+
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: song.audioUrl },
+        { shouldPlay: true },
+        status => {
+          if (!status.isLoaded) return;
+          setAudioPositionMs(status.positionMillis || 0);
+          setAudioDurationMs(status.durationMillis || 0);
+          setAudioPlaying(status.isPlaying);
+          if (status.didJustFinish) {
+            setAudioPlaying(false);
+            setAudioPositionMs(0);
+            sound.setPositionAsync(0).catch(() => {});
+          }
+        }
+      );
+      soundRef.current = sound;
+    } catch {
+      setAudioPlaying(false);
+    } finally {
+      setAudioLoading(false);
+    }
+  };
+
+  const openYoutubeExternal = () => {
+    if (!videoId) return;
+    const appUrl = `vnd.youtube://${videoId}`;
+    const webUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    Linking.canOpenURL(appUrl)
+      .then(supported => Linking.openURL(supported ? appUrl : webUrl))
+      .catch(() => Linking.openURL(webUrl));
+  };
+
+  const audioProgressPct =
+    audioDurationMs > 0 ? Math.min(100, Math.round((audioPositionMs / audioDurationMs) * 100)) : 0;
+
+  const otherSongs = allSongs.filter(s => s.id !== song.id);
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
         <SafeAreaView style={[styles.container, { backgroundColor: screenBg }]} edges={['top', 'bottom']}>
           <StatusBar barStyle={barStyle} backgroundColor={screenBg} />
-          {/* Header */}
+
+          {/* Clean Editorial Header */}
           <View style={[styles.headerRow, { borderBottomColor: border }]}>
             <TouchableOpacity
               onPress={onClose}
-              style={[styles.closeBtn, { backgroundColor: isDark ? '#18181B' : '#F1F5F9' }]}
+              style={[styles.backBtn, { backgroundColor: cardBg, borderColor: border }]}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <X size={20} color={textPrimary} />
+              <ArrowLeft size={19} color={textPrimary} />
             </TouchableOpacity>
 
-            <View style={styles.headerTitles}>
+            <View style={styles.headerCenter}>
+              <Text style={[styles.headerEyebrow, { color: violetAccent }]}>
+                {categoryLabel.toUpperCase()}
+              </Text>
               <Text style={[styles.headerTitleSerif, { color: textPrimary }]} numberOfLines={1}>
                 {song.title}
               </Text>
-              <Text style={[styles.headerTeluguSub, { color: textSecondary }]} numberOfLines={1}>
-                {song.titleTelugu}
-              </Text>
             </View>
 
-            <View style={[styles.categoryBadge, { backgroundColor: isDark ? '#18181B' : '#FEF3C7', borderColor: isDark ? '#27272A' : '#FDE68A' }]}>
-              <Text style={[styles.categoryBadgeText, { color: goldAccent }]}>Action Song</Text>
-            </View>
+            <View style={{ width: 38 }} />
           </View>
 
-          {/* Video Player */}
-          <View style={[styles.playerContainer, { backgroundColor: innerBg }]}>
-            <YoutubePlayer
-              height={220}
-              width={width}
-              videoId={videoId}
-              play={playing}
-              onChangeState={(state) => {
-                if (state === 'ended') setPlaying(false);
-              }}
-            />
-            <TouchableOpacity
-              style={[styles.openYoutubeBtn, { backgroundColor: cardBg, borderTopColor: border, borderBottomWidth: 1, borderBottomColor: border }]}
-              onPress={() => {
-                const appUrl = `vnd.youtube://${videoId}`;
-                const webUrl = `https://www.youtube.com/watch?v=${videoId}`;
-                Linking.canOpenURL(appUrl).then(supported => {
-                  if (supported) {
-                    Linking.openURL(appUrl);
-                  } else {
-                    Linking.openURL(webUrl);
-                  }
-                }).catch(() => Linking.openURL(webUrl));
-              }}
-              activeOpacity={0.8}
-            >
-              <ExternalLink size={13} color={goldAccent} />
-              <Text style={[styles.openYoutubeText, { color: goldAccent }]}>Watch on YouTube App (Full Screen)</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Lyrics Language Switcher */}
-          <View style={[styles.lyricsTabRow, { backgroundColor: isDark ? '#18181B' : '#F1F5F9', borderWidth: 1, borderColor: border }]}>
-            <TouchableOpacity
-              style={[styles.lyricsTab, lyricsTab === 'both' && { backgroundColor: pillActiveBg }]}
-              onPress={() => setLyricsTab('both')}
-            >
-              <Text style={[styles.lyricsTabText, { color: textSecondary }, lyricsTab === 'both' && { color: pillActiveText, fontWeight: '700' }]}>
-                Bilingual Lyrics
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.lyricsTab, lyricsTab === 'telugu' && { backgroundColor: pillActiveBg }]}
-              onPress={() => setLyricsTab('telugu')}
-            >
-              <Text style={[styles.lyricsTabText, { color: textSecondary }, lyricsTab === 'telugu' && { color: pillActiveText, fontWeight: '700' }]}>
-                తెలుగు (Telugu)
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.lyricsTab, lyricsTab === 'english' && { backgroundColor: pillActiveBg }]}
-              onPress={() => setLyricsTab('english')}
-            >
-              <Text style={[styles.lyricsTabText, { color: textSecondary }, lyricsTab === 'english' && { color: pillActiveText, fontWeight: '700' }]}>
-                English
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Lyrics & Playlist Scroll */}
+          {/* Full Scrollable Page (Media + Audio + Bilingual Lyrics + Up Next) */}
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-            {/* Lyrics Box */}
-            <View style={[styles.lyricsCard, { backgroundColor: cardBg, borderColor: border }, !isDark && styles.lightShadow]}>
-              {(lyricsTab === 'both' || lyricsTab === 'english') && (
-                <View style={styles.lyricsBlock}>
-                  <Text style={[styles.lyricsLangTag, { color: textSecondary }]}>ENGLISH LYRICS</Text>
-                  <Text style={[styles.lyricsTextEng, { color: textPrimary }]}>{song.lyricsEnglish}</Text>
-                </View>
-              )}
-
-              {(lyricsTab === 'both' || lyricsTab === 'telugu') && (
-                <View style={[styles.lyricsBlock, { marginTop: lyricsTab === 'both' ? 14 : 0 }]}>
-                  <Text style={[styles.lyricsLangTag, { color: goldAccent }]}>తెలుగు సాహిత్యం</Text>
-                  <Text style={[styles.lyricsTextTel, { color: textPrimary }]}>{song.lyricsTelugu}</Text>
-                </View>
-              )}
-            </View>
-
-            {/* More Action Songs Playlist */}
-            <Text style={[styles.playlistHeader, { color: textSecondary }]}>MORE SUNDAY SCHOOL SONGS</Text>
-            <View style={styles.playlistCol}>
-              {allSongs
-                .filter(s => s.id !== song.id)
-                .map(other => (
-                  <TouchableOpacity
-                    key={other.id}
-                    style={[styles.playlistItem, { backgroundColor: cardBg, borderColor: border }, !isDark && styles.lightShadow]}
-                    onPress={() => onSelectSong(other)}
-                    activeOpacity={0.88}
+            {/* Rounded 16:9 Media Stage */}
+            <View style={[styles.stageCard, { backgroundColor: cardBg, borderColor: border }]}>
+              <View style={styles.stage16x9Frame}>
+                {videoId ? (
+                  <YoutubePlayer
+                    height={STAGE_HEIGHT}
+                    width={STAGE_WIDTH}
+                    videoId={videoId}
+                    play={playingVideo}
+                    onChangeState={state => {
+                      if (state === 'ended') setPlayingVideo(false);
+                    }}
+                  />
+                ) : thumbUri ? (
+                  <Image
+                    source={{ uri: thumbUri }}
+                    style={StyleSheet.absoluteFill}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <LinearGradient
+                    colors={SERMON_POSTER_GRADIENTS[0]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={[StyleSheet.absoluteFill, styles.posterFallback]}
                   >
-                    <View style={[styles.songEmojiBox, { backgroundColor: innerBg }]}>
-                      <Text style={{ fontSize: 22 }}>{other.coverEmoji || '🎵'}</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.playlistTitle, { color: textPrimary }]}>{other.title}</Text>
-                      <Text style={[styles.playlistSub, { color: textSecondary }]}>
-                        {other.titleTelugu} · {other.duration}
+                    <Text style={{ fontSize: 44 }}>{song.coverEmoji || '🎵'}</Text>
+                    <Text style={styles.posterTitleFallback} numberOfLines={2}>
+                      {song.title}
+                    </Text>
+                  </LinearGradient>
+                )}
+              </View>
+
+              {/* Built-In Audio Player Bar (when uploaded audio exists) */}
+              {hasAudio && (
+                <View
+                  style={[
+                    styles.audioBar,
+                    { backgroundColor: innerBg, borderTopColor: border },
+                  ]}
+                >
+                  <TouchableOpacity
+                    style={[styles.audioPlayCircle, { backgroundColor: violetAccent }]}
+                    onPress={handleToggleAudio}
+                    disabled={audioLoading}
+                    activeOpacity={0.85}
+                  >
+                    {audioLoading ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : audioPlaying ? (
+                      <Pause size={16} color="#FFFFFF" fill="#FFFFFF" />
+                    ) : (
+                      <Play size={16} color="#FFFFFF" fill="#FFFFFF" style={{ marginLeft: 2 }} />
+                    )}
+                  </TouchableOpacity>
+
+                  <View style={{ flex: 1, gap: 5 }}>
+                    <View style={styles.audioLabelRow}>
+                      <Text style={[styles.audioTrackName, { color: textPrimary }]} numberOfLines={1}>
+                        {song.audioFileName || 'Worship Audio Track'}
+                      </Text>
+                      <Text style={[styles.audioTimeLabel, { color: textSecondary }]}>
+                        {audioDurationMs > 0
+                          ? `${formatMillis(audioPositionMs)} / ${formatMillis(audioDurationMs)}`
+                          : song.duration || 'Audio'}
                       </Text>
                     </View>
-                    <Play size={16} color={goldAccent} />
-                  </TouchableOpacity>
-                ))}
+                    <View style={[styles.audioTrackBg, { backgroundColor: border }]}>
+                      <View
+                        style={[
+                          styles.audioTrackFill,
+                          { width: `${audioProgressPct}%`, backgroundColor: violetAccent },
+                        ]}
+                      />
+                    </View>
+                  </View>
+                </View>
+              )}
             </View>
+
+            {/* Title, Telugu Subtitle & Action Pills */}
+            <View style={styles.titleBlock}>
+              <View style={styles.badgesRow}>
+                <View style={[styles.metaPill, { backgroundColor: violetSoft }]}>
+                  <Music size={12} color={violetAccent} />
+                  <Text style={[styles.metaPillText, { color: violetAccent }]}>{categoryLabel}</Text>
+                </View>
+
+                <View style={[styles.metaPill, { backgroundColor: goldBg }]}>
+                  <Clock size={12} color={goldAccent} />
+                  <Text style={[styles.metaPillText, { color: goldAccent }]}>
+                    {song.duration || '3:00'}
+                  </Text>
+                </View>
+
+                {videoId ? (
+                  <TouchableOpacity
+                    style={[
+                      styles.metaPill,
+                      {
+                        backgroundColor: cardBg,
+                        borderWidth: 1,
+                        borderColor: border,
+                        marginLeft: 'auto',
+                      },
+                    ]}
+                    onPress={openYoutubeExternal}
+                    activeOpacity={0.82}
+                  >
+                    <ExternalLink size={12} color={textPrimary} />
+                    <Text style={[styles.metaPillText, { color: textPrimary }]}>YouTube App</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+
+              <Text style={[styles.heroTitleSerif, { color: textPrimary }]}>{song.title}</Text>
+              {song.titleTelugu ? (
+                <Text style={[styles.heroSubtitleTe, { color: textSecondary }]}>
+                  {song.titleTelugu}
+                </Text>
+              ) : null}
+            </View>
+
+            {/* Lyrics Language Switcher */}
+            <View style={[styles.langSwitcherRow, { backgroundColor: innerBg, borderColor: border }]}>
+              {(
+                [
+                  { id: 'both', label: 'Bilingual' },
+                  { id: 'english', label: 'English' },
+                  { id: 'telugu', label: 'తెలుగు' },
+                ] as const
+              ).map(tab => {
+                const active = lyricsTab === tab.id;
+                return (
+                  <TouchableOpacity
+                    key={tab.id}
+                    style={[
+                      styles.langTab,
+                      active && { backgroundColor: cardBg, borderColor: border, borderWidth: 1 },
+                    ]}
+                    onPress={() => setLyricsTab(tab.id)}
+                    activeOpacity={0.85}
+                  >
+                    <Text
+                      style={[
+                        styles.langTabText,
+                        { color: active ? violetAccent : textSecondary },
+                        active && { fontWeight: '800' },
+                      ]}
+                    >
+                      {tab.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Clean Editorial Lyrics Card */}
+            <View style={[styles.lyricsCard, { backgroundColor: cardBg, borderColor: border }]}>
+              {(lyricsTab === 'both' || lyricsTab === 'english') && (
+                <View style={styles.lyricsSection}>
+                  <View style={styles.lyricsSectionHeader}>
+                    <Volume2 size={14} color={violetAccent} />
+                    <Text style={[styles.lyricsSectionEyebrow, { color: violetAccent }]}>
+                      ENGLISH LYRICS
+                    </Text>
+                  </View>
+                  <Text style={[styles.lyricsBodyEng, { color: textPrimary }]}>
+                    {song.lyricsEnglish?.trim() || 'Sing along with joyful praise!'}
+                  </Text>
+                </View>
+              )}
+
+              {lyricsTab === 'both' && <View style={[styles.lyricsDivider, { backgroundColor: border }]} />}
+
+              {(lyricsTab === 'both' || lyricsTab === 'telugu') && (
+                <View
+                  style={[
+                    styles.lyricsSection,
+                    {
+                      backgroundColor: isDark ? 'rgba(251, 191, 36, 0.06)' : '#FFFDF6',
+                      borderRadius: 14,
+                      padding: lyricsTab === 'both' ? 14 : 0,
+                      borderWidth: lyricsTab === 'both' ? 1 : 0,
+                      borderColor: isDark ? 'rgba(251, 191, 36, 0.16)' : '#F5E8C8',
+                    },
+                  ]}
+                >
+                  <View style={styles.lyricsSectionHeader}>
+                    <Music size={14} color={goldAccent} />
+                    <Text style={[styles.lyricsSectionEyebrow, { color: goldAccent }]}>
+                      తెలుగు సాహిత్యం (TELUGU LYRICS)
+                    </Text>
+                  </View>
+                  <Text style={[styles.lyricsBodyTel, { color: textPrimary }]}>
+                    {song.lyricsTelugu?.trim() || 'తెలుగు సాహిత్యం త్వరలో జోడించబడుతుంది.'}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {/* More Sunday School Action Songs */}
+            {otherSongs.length > 0 && (
+              <View style={styles.queueSection}>
+                <Text style={[styles.queueHeader, { color: textSecondary }]}>
+                  MORE ACTION SONGS ({otherSongs.length})
+                </Text>
+                <View style={styles.queueList}>
+                  {otherSongs.map((other, idx) => {
+                    const cardColor = getSermonCardColor(idx).color;
+                    const isLight = isColorLight(cardColor);
+                    const qTitleColor = isLight ? '#0F172A' : '#FFFFFF';
+                    const qSubColor = isLight ? '#334155' : 'rgba(255, 255, 255, 0.82)';
+                    const qActionBg = isLight ? 'rgba(15, 23, 42, 0.10)' : 'rgba(255, 255, 255, 0.20)';
+                    const otherVid = extractYoutubeId(other.youtubeVideoId);
+                    const otherThumb =
+                      other.thumbnailUrl ||
+                      (otherVid ? `https://img.youtube.com/vi/${otherVid}/mqdefault.jpg` : '');
+                    const posterColors =
+                      SERMON_POSTER_GRADIENTS[idx % SERMON_POSTER_GRADIENTS.length];
+
+                    return (
+                      <TouchableOpacity
+                        key={other.id}
+                        style={[
+                          styles.queueCard,
+                          {
+                            backgroundColor: cardColor,
+                            borderColor: isLight
+                              ? 'rgba(15, 23, 42, 0.08)'
+                              : 'rgba(255, 255, 255, 0.14)',
+                          },
+                        ]}
+                        onPress={() => onSelectSong(other)}
+                        activeOpacity={0.86}
+                      >
+                        <View style={styles.queueThumbBox}>
+                          {otherThumb ? (
+                            <Image
+                              source={{ uri: otherThumb }}
+                              style={StyleSheet.absoluteFill}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <LinearGradient
+                              colors={posterColors}
+                              start={{ x: 0, y: 0 }}
+                              end={{ x: 1, y: 1 }}
+                              style={[StyleSheet.absoluteFill, styles.queueThumbFallback]}
+                            >
+                              <Text style={{ fontSize: 20 }}>{other.coverEmoji || '🎵'}</Text>
+                            </LinearGradient>
+                          )}
+                        </View>
+
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={[styles.queueTitle, { color: qTitleColor }]} numberOfLines={1}>
+                            {other.title}
+                          </Text>
+                          <Text style={[styles.queueSub, { color: qSubColor }]} numberOfLines={1}>
+                            {other.titleTelugu
+                              ? `${other.titleTelugu} · ${other.duration || '3:00'}`
+                              : `Worship & Lyrics · ${other.duration || '3:00'}`}
+                          </Text>
+                        </View>
+
+                        <View style={[styles.queuePlayCircle, { backgroundColor: qActionBg }]}>
+                          <Play size={13} color={qTitleColor} fill={qTitleColor} />
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
           </ScrollView>
         </SafeAreaView>
       </SafeAreaProvider>
@@ -206,180 +504,245 @@ export default function KidsSongPlayerModal({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingTop: 10,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
   },
-  closeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#18181B',
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerTitles: {
-    alignItems: 'center',
-    justifyContent: 'center',
+  headerCenter: {
     flex: 1,
-    paddingHorizontal: 8,
+    alignItems: 'center',
+    paddingHorizontal: 10,
+  },
+  headerEyebrow: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.1,
   },
   headerTitleSerif: {
-    fontSize: 16,
+    fontSize: 16.5,
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     fontWeight: '800',
-    color: '#FFFFFF',
-    textAlign: 'center',
-  },
-  headerTeluguSub: {
-    fontSize: 11,
-    color: '#9CA3AF',
-    marginTop: 2,
-    textAlign: 'center',
-  },
-  categoryBadge: {
-    backgroundColor: '#18181B',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#27272A',
-  },
-  categoryBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#FBBF24',
-  },
-  playerContainer: {
-    width: '100%',
-    backgroundColor: '#09090B',
-  },
-  openYoutubeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    backgroundColor: '#18181B',
-    borderTopWidth: 1,
-    borderTopColor: '#27272A',
-  },
-  openYoutubeText: {
-    color: '#FBBF24',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  lyricsTabRow: {
-    flexDirection: 'row',
-    backgroundColor: '#18181B',
-    marginHorizontal: 16,
-    marginVertical: 12,
-    borderRadius: 10,
-    padding: 3,
-  },
-  lyricsTab: {
-    flex: 1,
-    paddingVertical: 7,
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  lyricsTabActive: {
-    backgroundColor: '#FFFFFF',
-  },
-  lyricsTabText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#9CA3AF',
-  },
-  lyricsTabTextActive: {
-    color: '#000000',
-    fontWeight: '700',
+    marginTop: 1,
   },
   scroll: {
     paddingHorizontal: 16,
-    paddingBottom: 36,
-    gap: 14,
+    paddingTop: 16,
+    paddingBottom: 42,
+    gap: 16,
   },
-  lyricsCard: {
-    backgroundColor: '#18181B',
-    borderRadius: 18,
-    padding: 18,
+  stageCard: {
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#27272A',
-  },
-  lightShadow: {
+    overflow: 'hidden',
     shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 1,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
-  lyricsBlock: {
-    gap: 6,
+  stage16x9Frame: {
+    width: STAGE_WIDTH,
+    height: STAGE_HEIGHT,
+    backgroundColor: '#0F172A',
+    overflow: 'hidden',
   },
-  lyricsLangTag: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#9CA3AF',
-    letterSpacing: 1,
-  },
-  lyricsTextEng: {
-    fontSize: 14,
-    color: '#FFFFFF',
-    lineHeight: 22,
-    fontWeight: '500',
-  },
-  lyricsTextTel: {
-    fontSize: 14,
-    color: '#FFFFFF',
-    lineHeight: 24,
-    fontWeight: '500',
-  },
-  playlistHeader: {
-    fontSize: 11,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    fontWeight: '700',
-    color: '#9CA3AF',
-    letterSpacing: 1.5,
-    marginTop: 8,
-  },
-  playlistCol: {
+  posterFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
     gap: 8,
   },
-  playlistItem: {
+  posterTitleFallback: {
+    color: '#FDE68A',
+    fontSize: 18,
+    fontWeight: '800',
+    textAlign: 'center',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+  },
+  audioBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#18181B',
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#27272A',
     gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderTopWidth: 1,
   },
-  songEmojiBox: {
+  audioPlayCircle: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#09090B',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  playlistTitle: {
+  audioLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  audioTrackName: {
+    flex: 1,
     fontSize: 13,
     fontWeight: '700',
-    color: '#FFFFFF',
   },
-  playlistSub: {
-    fontSize: 10,
-    color: '#9CA3AF',
+  audioTimeLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  audioTrackBg: {
+    height: 5,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  audioTrackFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  titleBlock: {
+    gap: 6,
+  },
+  badgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  metaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  metaPillText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  heroTitleSerif: {
+    fontSize: 22,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontWeight: '800',
+    lineHeight: 28,
     marginTop: 2,
+  },
+  heroSubtitleTe: {
+    fontSize: 14.5,
+    fontWeight: '600',
+    lineHeight: 20,
+  },
+  langSwitcherRow: {
+    flexDirection: 'row',
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 4,
+    gap: 4,
+  },
+  langTab: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+  },
+  langTabText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  lyricsCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 18,
+    gap: 16,
+  },
+  lyricsSection: {
+    gap: 8,
+  },
+  lyricsSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  lyricsSectionEyebrow: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.9,
+  },
+  lyricsBodyEng: {
+    fontSize: 15.5,
+    lineHeight: 24,
+    fontWeight: '500',
+  },
+  lyricsDivider: {
+    height: 1,
+    width: '100%',
+  },
+  lyricsBodyTel: {
+    fontSize: 15.5,
+    lineHeight: 26,
+    fontWeight: '500',
+  },
+  queueSection: {
+    gap: 10,
+    marginTop: 4,
+  },
+  queueHeader: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  queueList: {
+    gap: 10,
+  },
+  queueCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 10,
+  },
+  queueThumbBox: {
+    width: 74,
+    height: 48,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: '#0F172A',
+    flexShrink: 0,
+  },
+  queueThumbFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  queueTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  queueSub: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  queuePlayCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
 });

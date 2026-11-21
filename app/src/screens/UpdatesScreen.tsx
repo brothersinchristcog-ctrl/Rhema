@@ -164,6 +164,10 @@ export default function UpdatesScreen({ navigation, route }: any) {
     if (type === 'registration_request_admin') return 'REGISTRATION APPROVAL';
     if (type === 'registration_approved') return 'REGISTRATION APPROVED';
     if (type === 'registration_rejected') return 'REGISTRATION UPDATE';
+    if (type === 'kids_check_in') return 'KIDS CHECK-IN';
+    if (type === 'kids_check_out') return 'KIDS CHECK-OUT';
+    if (type === 'kids_absent') return 'KIDS ATTENDANCE';
+    if (type === 'kids_teacher_enrollment') return 'RHEMA KIDS ENROLLMENT';
     if (!type) return (t('updates.types.announcement') || 'ANNOUNCEMENT').toUpperCase();
     const trans = t(`updates.types.${type}`);
     return trans && trans !== `updates.types.${type}` ? trans.toUpperCase() : type.toUpperCase();
@@ -732,6 +736,22 @@ export default function UpdatesScreen({ navigation, route }: any) {
       icon = Briefcase;
       color = '#0284c7';
       resolvedType = data.type || 'job_opportunity_new';
+    } else if (data.type === 'kids_check_in') {
+      icon = UserCheck;
+      color = '#10B981';
+      resolvedType = 'kids_check_in';
+    } else if (data.type === 'kids_check_out') {
+      icon = CheckCircle2;
+      color = '#2563EB';
+      resolvedType = 'kids_check_out';
+    } else if (data.type === 'kids_absent') {
+      icon = AlertTriangle;
+      color = '#EF4444';
+      resolvedType = 'kids_absent';
+    } else if (data.type === 'kids_teacher_enrollment') {
+      icon = Sparkles;
+      color = '#7C3AED';
+      resolvedType = 'kids_teacher_enrollment';
     }
 
     let dateStr = '';
@@ -812,6 +832,9 @@ export default function UpdatesScreen({ navigation, route }: any) {
       serviceDate: data.serviceDate || null,
       requestId: data.requestId || null,
       prayerId: data.prayerId || null,
+      childDocId: data.childDocId || null,
+      programSessionId: data.programSessionId || null,
+      initialCategory: data.initialCategory || null,
       opportunityId:
         data.opportunityId ||
         (data.referenceType === 'job_circle_opportunity' ? data.referenceId : null) ||
@@ -1310,6 +1333,19 @@ export default function UpdatesScreen({ navigation, route }: any) {
                       targetTab: 'Approvals',
                       requestId: update.requestId || update.referenceId || update.id,
                       timestamp: Date.now(),
+                    });
+                  } else if (
+                    update.type === 'kids_check_in' ||
+                    update.type === 'kids_check_out' ||
+                    update.type === 'kids_absent' ||
+                    update.type === 'kids_teacher_enrollment'
+                  ) {
+                    navigation.navigate('KidsMinistry', {
+                      initialCategory:
+                        update.initialCategory ||
+                        (update.type === 'kids_teacher_enrollment' ? 'consent' : 'attendance'),
+                      childDocId: update.childDocId || undefined,
+                      programSessionId: update.programSessionId || undefined,
                     });
                   } else if (update.type === 'job_opportunity_new') {
                     markJobCircleNotificationsRead([String(update.id)]);

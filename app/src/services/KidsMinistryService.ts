@@ -4,10 +4,16 @@ import { RHEMA_CHURCH_ID, RHEMA_ROOT_COLLECTION } from '../constants/ChurchConfi
 import FirestoreService from './FirestoreService';
 import {
   ChildRecord,
+  ChildConsentPermissions,
+  AuthorizedGuardian,
   KidsClassRecord,
   KidsClassTier,
   KidsTeacherRecord,
   KidsTeacherAttendanceRecord,
+  KidsAttendanceSession,
+  KidsAttendanceLogRecord,
+  KidsProgramType,
+  KidsSessionRecord,
   KidsBibleStory,
   KidsQuiz,
   KidsWorshipSong,
@@ -18,6 +24,7 @@ import {
   KidsVBSEventRecord,
   KidsBadge,
   KidsCertificateData,
+  KidsCertificateSettings,
   KidsVBSHouse,
   calculateChildAge,
   getRecommendedClassTier,
@@ -26,6 +33,16 @@ import {
   KidsCurriculumConfig,
   calculateCurriculumWeek,
 } from '../types/KidsMinistryTypes';
+
+/**
+ * Formats a Date into local YYYY-MM-DD (avoids UTC midnight date-shift issues).
+ */
+function formatLocalYMD(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
 /**
  * Sanitizes an object before writing to Firestore.
@@ -85,6 +102,14 @@ class KidsMinistryService {
       .collection(RHEMA_ROOT_COLLECTION)
       .doc(cId)
       .collection('kids_sessions');
+  }
+
+  private getProgramSessionsCollection(churchId?: string) {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getDb()
+      .collection(RHEMA_ROOT_COLLECTION)
+      .doc(cId)
+      .collection('kids_program_sessions');
   }
 
   private getAttendanceCollection(churchId?: string) {
@@ -196,35 +221,67 @@ class KidsMinistryService {
   }
 
   /**
-   * Realtime listener for children belonging to a family.
+   * Realtime listener for children belonging strictly to the signed-in family/parent.
    */
   subscribeToFamilyChildren(
     churchId: string,
     familyId: string,
-    callback: (children: ChildRecord[]) => void
+    callback: (children: ChildRecord[]) => void,
+    options?: { parentMemberId?: string }
   ): () => void {
-    if (!familyId) {
+    const parentId = options?.parentMemberId;
+    if (!familyId && !parentId) {
       callback([]);
       return () => {};
     }
-    return this.getKidsCollection(churchId)
-      .where('familyId', '==', familyId)
-      .onSnapshot(
-        snap => {
-          if (!snap) {
-            callback([]);
-            return;
-          }
-          const children: ChildRecord[] = snap.docs.map(doc => ({
-            id: doc.id,
-            ...(doc.data() as any),
-          }));
-          callback(children);
-        },
-        err => {
-          console.error('subscribeToFamilyChildren error:', err);
-        }
-      );
+
+    let familyList: ChildRecord[] = [];
+    let parentList: ChildRecord[] = [];
+
+    const emitMerged = () => {
+      const byId = new Map<string, ChildRecord>();
+      for (const c of familyList) byId.set(c.id, c);
+      for (const c of parentList) {
+        if (!byId.has(c.id)) byId.set(c.id, c);
+      }
+      callback(Array.from(byId.values()));
+    };
+
+    const unsubs: Array<() => void> = [];
+
+    if (familyId) {
+      const u1 = this.getKidsCollection(churchId)
+        .where('familyId', '==', familyId)
+        .onSnapshot(
+          snap => {
+            familyList = snap
+              ? snap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }))
+              : [];
+            emitMerged();
+          },
+          err => console.error('subscribeToFamilyChildren error:', err)
+        );
+      unsubs.push(u1);
+    }
+
+    if (parentId && parentId !== familyId) {
+      const u2 = this.getKidsCollection(churchId)
+        .where('parentMemberId', '==', parentId)
+        .onSnapshot(
+          snap => {
+            parentList = snap
+              ? snap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }))
+              : [];
+            emitMerged();
+          },
+          err => console.error('subscribeToFamilyChildren(parentId) error:', err)
+        );
+      unsubs.push(u2);
+    }
+
+    return () => {
+      unsubs.forEach(u => u());
+    };
   }
 
   /**
@@ -292,6 +349,7 @@ class KidsMinistryService {
       enrolledByRole?: 'teacher' | 'admin';
       parentConsentStatus?: 'confirmed' | 'pending_review';
       parentConsentConfirmed?: boolean;
+      consentPermissions?: ChildConsentPermissions;
     }
   ): Promise<ChildRecord> {
     const cId = churchId || RHEMA_CHURCH_ID;
@@ -423,6 +481,21 @@ class KidsMinistryService {
       ...(data.enrolledByRole ? { enrolledByRole: data.enrolledByRole } : {}),
       ...(data.parentConsentStatus ? { parentConsentStatus: data.parentConsentStatus } : {}),
       ...(data.parentConsentConfirmed !== undefined ? { parentConsentConfirmed: data.parentConsentConfirmed } : {}),
+      ...(data.consentPermissions
+        ? { consentPermissions: data.consentPermissions }
+        : data.enrollmentSource !== 'teacher_direct' && data.parentConsentStatus !== 'pending_review'
+        ? {
+            consentPermissions: {
+              canLeaveClassroomIndependently: false,
+              canLeavePremisesIndependently: false,
+              teacherInstructions: data.notes || '',
+              status: 'confirmed',
+              updatedAt: now,
+              updatedByMemberId: data.parentMemberId,
+              updatedByName: data.parentName || '',
+            },
+          }
+        : {}),
       enrolledAt: now,
       updatedAt: now,
     };
@@ -1389,7 +1462,59 @@ class KidsMinistryService {
   }
 
   /**
-   * Performs check-in for a child with duplicate check-in prevention.
+   * Dispatches a targeted, deterministic in-app notification to a child's linked parent/household.
+   * Deterministic docId matches Cloud Function push triggers so zero duplicates occur.
+   */
+  private async sendKidsParentInAppNotification(params: {
+    churchId: string;
+    docId: string;
+    type: 'kids_check_in' | 'kids_check_out' | 'kids_absent';
+    title: string;
+    body: string;
+    targetMemberId?: string;
+    targetAccountId?: string;
+    targetPhone?: string;
+    childDocId: string;
+    childId?: string;
+    childName: string;
+    programSessionId?: string;
+    programTitle?: string;
+  }): Promise<void> {
+    try {
+      const cId = params.churchId || RHEMA_CHURCH_ID;
+      await firestore()
+        .collection(RHEMA_ROOT_COLLECTION)
+        .doc(cId)
+        .collection('notifications')
+        .doc(params.docId)
+        .set(
+          sanitizeForFirestore({
+            type: params.type,
+            title: params.title,
+            body: params.body,
+            content: params.body,
+            targetMemberId: params.targetMemberId || '',
+            targetAccountId: params.targetAccountId || '',
+            targetPhone: params.targetPhone || '',
+            childDocId: params.childDocId,
+            childId: params.childId || '',
+            childName: params.childName,
+            programSessionId: params.programSessionId || '',
+            programTitle: params.programTitle || '',
+            screen: 'KidsMinistry',
+            initialCategory: 'attendance',
+            read: false,
+            createdAt: firestore.FieldValue.serverTimestamp(),
+          }),
+          { merge: true }
+        );
+    } catch (notifErr) {
+      console.warn('[KidsMinistryService] Could not write parent attendance notification:', notifErr);
+    }
+  }
+
+  /**
+   * Performs check-in for a child with duplicate check-in prevention scoped to program session.
    */
   async checkInChild(params: {
     churchId?: string;
@@ -1397,22 +1522,38 @@ class KidsMinistryService {
     method: 'face_scan' | 'qr_code' | 'manual';
     checkedInByMemberId: string;
     checkedInByName: string;
+    programSessionId?: string;
+    programType?: KidsProgramType;
+    programTitle?: string;
+    sessionDate?: string;
   }): Promise<{ session: any; alreadyCheckedIn: boolean }> {
     const cId = params.churchId || RHEMA_CHURCH_ID;
-    const today = new Date().toISOString().split('T')[0]; // "YYYY-MM-DD"
+    const effectiveDate = params.sessionDate || formatLocalYMD(); // "YYYY-MM-DD"
     const sessionsRef = this.getSessionsCollection(cId);
 
-    // 1. DUPLICATE CHECK-IN PREVENTION
-    const existingSnap = await sessionsRef
-      .where('childDocId', '==', params.child.id)
-      .where('sessionDate', '==', today)
-      .where('status', '==', 'active')
-      .get();
+    const programSessionId =
+      params.programSessionId || `sess_${effectiveDate}_${params.programType || 'sunday_school'}`;
+    const programType = params.programType || 'sunday_school';
+    const programTitle = params.programTitle || 'Sunday School';
 
-    if (!existingSnap.empty) {
-      const existingDoc = existingSnap.docs[0];
+    // 1. DUPLICATE CHECK-IN PREVENTION
+    // Scoped strictly to the program session to allow checking in to multiple distinct programs on different dates or same day
+    let dupQuery = sessionsRef
+      .where('childDocId', '==', params.child.id)
+      .where('status', '==', 'active');
+
+    if (params.programSessionId) {
+      dupQuery = dupQuery.where('programSessionId', '==', params.programSessionId);
+    } else {
+      dupQuery = dupQuery.where('sessionDate', '==', effectiveDate);
+    }
+
+    const existingSnap = await dupQuery.get();
+    const activeExistingDoc = existingSnap.docs.find(d => !(d.data() as any)?.deletedByParent);
+
+    if (activeExistingDoc) {
       return {
-        session: { id: existingDoc.id, ...(existingDoc.data() as any) },
+        session: { id: activeExistingDoc.id, ...(activeExistingDoc.data() as any) },
         alreadyCheckedIn: true,
       };
     }
@@ -1420,17 +1561,25 @@ class KidsMinistryService {
     // 2. GENERATE SECURE DYNAMIC PICKUP CODE (e.g. "RK-7942")
     const pickupCode = generateDynamicPickupCode();
     const now = firestore.FieldValue.serverTimestamp();
+    const classNameResolved = params.child.assignedClassName || programTitle;
 
     const sessionData = {
-      sessionId: `SESS_${today.replace(/-/g, '')}_${Date.now().toString().slice(-4)}`,
+      sessionId: `SESS_${effectiveDate.replace(/-/g, '')}_${Date.now().toString().slice(-4)}`,
+      programSessionId,
+      programType,
+      programTitle,
       churchId: cId,
+      familyId: params.child.familyId || '',
+      parentMemberId: params.child.parentMemberId || '',
+      parentPhone: params.child.parentPhone || '',
       childId: params.child.childId,
       childDocId: params.child.id,
       childName: params.child.fullName,
       childPhotoUrl: params.child.photoUrl || '',
       classId: params.child.assignedClassId || params.child.assignedTier || 'general',
-      className: params.child.assignedClassName || 'Sunday School',
-      sessionDate: today,
+      className: classNameResolved,
+      teacherName: params.checkedInByName,
+      sessionDate: effectiveDate,
 
       pickupCode,
       checkInTime: now,
@@ -1446,25 +1595,60 @@ class KidsMinistryService {
 
     const docRef = await sessionsRef.add(sanitizeForFirestore(sessionData));
 
-    // 3. UPDATE CHILD LIVE STATUS
+    // 3. UPDATE CHILD LIVE STATUS & unhide program session if previously removed
     await this.getKidsCollection(cId).doc(params.child.id).update({
       custodyStatus: 'checked_in',
       activePickupCode: pickupCode,
       currentSessionId: docRef.id,
       lastCheckInAt: now,
+      hiddenProgramSessionIds: firestore.FieldValue.arrayRemove(programSessionId),
       updatedAt: now,
     });
 
-    // 4. LOG ATTENDANCE
-    await this.getAttendanceCollection(cId).add({
+    // 4. LOG ATTENDANCE LINKED TO THIS PROGRAM SESSION (deterministic per-session doc prevents duplicates)
+    const attendanceDocId = `att_${programSessionId}_${params.child.id}`;
+    await this.getAttendanceCollection(cId)
+      .doc(attendanceDocId)
+      .set(
+        sanitizeForFirestore({
+          childDocId: params.child.id,
+          childId: params.child.childId,
+          childName: params.child.fullName,
+          familyId: params.child.familyId || '',
+          parentMemberId: params.child.parentMemberId || '',
+          parentPhone: params.child.parentPhone || '',
+          classId: params.child.assignedClassId || '',
+          className: classNameResolved,
+          classTier: params.child.assignedTier || 'primary',
+          teacherName: params.checkedInByName,
+          sessionDate: effectiveDate,
+          programSessionId,
+          programType,
+          programTitle,
+          status: 'present',
+          checkInTime: now,
+          method: params.method,
+          deletedByParent: false,
+          createdAt: now,
+        }),
+        { merge: true }
+      );
+
+    // 5. NOTIFY PARENT OF CHECK-IN (deterministic in-app doc; FCM handled by Cloud Function)
+    await this.sendKidsParentInAppNotification({
+      churchId: cId,
+      docId: `kids_in_${docRef.id}`,
+      type: 'kids_check_in',
+      title: `Checked In: ${params.child.fullName}`,
+      body: `${params.child.fullName} safely checked into ${programTitle} (${classNameResolved}). Active Pickup Code: ${pickupCode}.`,
+      targetMemberId: params.child.parentMemberId,
+      targetAccountId: params.child.familyId,
+      targetPhone: params.child.parentPhone,
       childDocId: params.child.id,
       childId: params.child.childId,
       childName: params.child.fullName,
-      classTier: params.child.assignedTier || 'primary',
-      sessionDate: today,
-      checkInTime: now,
-      method: params.method,
-      createdAt: now,
+      programSessionId,
+      programTitle,
     });
 
     return {
@@ -1479,6 +1663,7 @@ class KidsMinistryService {
   async checkOutChild(params: {
     churchId?: string;
     sessionId?: string;
+    programSessionId?: string;
     childDocId?: string;
     pickupCode: string;
     verifiedByTeacherId: string;
@@ -1496,25 +1681,33 @@ class KidsMinistryService {
       if (snap.exists) sessionDoc = snap;
     } else if (params.childDocId) {
       const today = new Date().toISOString().split('T')[0];
-      const snap = await sessionsRef
+      let q = sessionsRef
         .where('childDocId', '==', params.childDocId)
-        .where('sessionDate', '==', today)
-        .where('status', '==', 'active')
-        .get();
+        .where('status', '==', 'active');
+      if (params.programSessionId) {
+        q = q.where('programSessionId', '==', params.programSessionId);
+      } else {
+        q = q.where('sessionDate', '==', today);
+      }
+      const snap = await q.get();
       if (!snap.empty) sessionDoc = snap.docs[0];
     } else if (params.pickupCode) {
       const today = new Date().toISOString().split('T')[0];
       const cleanCode = params.pickupCode.trim().toUpperCase();
-      const snap = await sessionsRef
+      let q = sessionsRef
         .where('pickupCode', '==', cleanCode)
-        .where('sessionDate', '==', today)
-        .where('status', '==', 'active')
-        .get();
+        .where('status', '==', 'active');
+      if (params.programSessionId) {
+        q = q.where('programSessionId', '==', params.programSessionId);
+      } else {
+        q = q.where('sessionDate', '==', today);
+      }
+      const snap = await q.get();
       if (!snap.empty) sessionDoc = snap.docs[0];
     }
 
     if (!sessionDoc) {
-      return { success: false, error: 'No active Sunday School session found with this code.' };
+      return { success: false, error: 'No active Kids Ministry session found with this code.' };
     }
 
     const sData = sessionDoc.data() as any;
@@ -1525,12 +1718,13 @@ class KidsMinistryService {
     }
 
     const now = firestore.FieldValue.serverTimestamp();
+    const guardianLabel = params.checkedOutByName || 'Authorized Guardian';
 
     // Update Session
     await sessionsRef.doc(sessionDoc.id).update({
       status: 'checked_out',
       checkOutTime: now,
-      checkedOutByName: params.checkedOutByName || 'Authorized Guardian',
+      checkedOutByName: guardianLabel,
       checkedOutByPhone: params.checkedOutByPhone || '',
       verifiedByTeacherId: params.verifiedByTeacherId,
       overrideReason: params.overrideReason || null,
@@ -1552,11 +1746,43 @@ class KidsMinistryService {
       childDocId: sData.childDocId,
       childName: sData.childName,
       sessionId: sessionDoc.id,
+      programSessionId: sData.programSessionId || '',
       pickupCode: sData.pickupCode,
-      checkedOutByName: params.checkedOutByName || '',
+      checkedOutByName: guardianLabel,
       verifiedByTeacherId: params.verifiedByTeacherId,
       overrideReason: params.overrideReason || '',
       timestamp: now,
+    });
+
+    // Notify linked parent of check-out handover
+    let pMemberId = sData.parentMemberId;
+    let pFamilyId = sData.familyId;
+    let pPhone = sData.parentPhone;
+    if (!pMemberId && !pPhone && sData.childDocId) {
+      try {
+        const cSnap = await this.getKidsCollection(cId).doc(sData.childDocId).get();
+        const cData = cSnap.data() as ChildRecord | undefined;
+        pMemberId = cData?.parentMemberId || '';
+        pFamilyId = cData?.familyId || '';
+        pPhone = cData?.parentPhone || '';
+      } catch (_) {}
+    }
+
+    const progTitle = sData.programTitle || 'Sunday School';
+    await this.sendKidsParentInAppNotification({
+      churchId: cId,
+      docId: `kids_out_${sessionDoc.id}`,
+      type: 'kids_check_out',
+      title: `Checked Out: ${sData.childName}`,
+      body: `${sData.childName} was safely checked out from ${progTitle} and handed over to ${guardianLabel}.`,
+      targetMemberId: pMemberId,
+      targetAccountId: pFamilyId,
+      targetPhone: pPhone,
+      childDocId: sData.childDocId,
+      childId: sData.childId,
+      childName: sData.childName,
+      programSessionId: sData.programSessionId,
+      programTitle: progTitle,
     });
 
     return { success: true, childName: sData.childName };
@@ -2254,6 +2480,8 @@ class KidsMinistryService {
             childDocId: enrolledChild.id,
             childId: enrolledChild.childId,
             enrolledByTeacherName: enrollingTeacherName,
+            screen: 'KidsMinistry',
+            initialCategory: 'consent',
             read: false,
             createdAt: firestore.FieldValue.serverTimestamp(),
           })
@@ -2275,16 +2503,122 @@ class KidsMinistryService {
   async confirmParentConsent(
     churchId: string,
     childDocId: string,
-    parentMemberId: string
+    parentMemberId: string,
+    parentName?: string
   ): Promise<void> {
     const cId = churchId || RHEMA_CHURCH_ID;
-    await this.getKidsCollection(cId).doc(childDocId).update(
+    const childRef = this.getKidsCollection(cId).doc(childDocId);
+    const snap = await childRef.get();
+    const existing = snap.data() as ChildRecord | undefined;
+    const now = firestore.FieldValue.serverTimestamp();
+
+    await childRef.update(
       sanitizeForFirestore({
         parentConsentStatus: 'confirmed',
         parentConsentConfirmed: true,
-        parentConsentConfirmedAt: firestore.FieldValue.serverTimestamp(),
+        parentConsentConfirmedAt: now,
         parentConsentConfirmedBy: parentMemberId,
-        updatedAt: firestore.FieldValue.serverTimestamp(),
+        consentPermissions: {
+          canLeaveClassroomIndependently: Boolean(existing?.consentPermissions?.canLeaveClassroomIndependently),
+          canLeavePremisesIndependently: Boolean(existing?.consentPermissions?.canLeavePremisesIndependently),
+          teacherInstructions: existing?.consentPermissions?.teacherInstructions ?? existing?.notes ?? '',
+          status: 'confirmed',
+          updatedAt: now,
+          updatedByMemberId: parentMemberId,
+          updatedByName: parentName || existing?.parentName || 'Parent',
+        },
+        updatedAt: now,
+      })
+    );
+  }
+
+  /**
+   * Allows a parent to update consent permissions, authorized pickups, emergency contact,
+   * and teacher instructions directly on the existing child profile (no duplicates).
+   */
+  async updateParentConsentAndSafety(
+    churchId: string,
+    childDocId: string,
+    params: {
+      parentMemberId: string;
+      parentName: string;
+      canLeaveClassroomIndependently: boolean;
+      canLeavePremisesIndependently: boolean;
+      teacherInstructions: string;
+      guardians: AuthorizedGuardian[];
+      emergencyContact: {
+        name: string;
+        phone: string;
+        relationship: string;
+      };
+    }
+  ): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const childRef = this.getKidsCollection(cId).doc(childDocId);
+    const snap = await childRef.get();
+    if (!snap.exists) {
+      throw new Error('Child profile could not be found.');
+    }
+
+    const existing = snap.data() as ChildRecord;
+    const now = firestore.FieldValue.serverTimestamp();
+    const cleanInstructions = (params.teacherInstructions || '').trim();
+    const normalizedGuardians = (params.guardians || []).map((g, idx) => ({
+      ...g,
+      id: g.id || `g_${idx}_${Date.now()}`,
+      name: (g.name || '').trim(),
+      phone: (g.phone || '').trim(),
+      relationship: g.relationship || 'Guardian',
+      isPrimaryContact: idx === 0 ? true : Boolean(g.isPrimaryContact),
+      canPickup: g.canPickup !== false,
+    }));
+
+    const existingMedical = existing.medical || {
+      hasAllergies: false,
+      allergiesList: [],
+    };
+
+    await childRef.update(
+      sanitizeForFirestore({
+        parentConsentStatus: 'confirmed',
+        parentConsentConfirmed: true,
+        parentConsentConfirmedAt: now,
+        parentConsentConfirmedBy: params.parentMemberId,
+        consentPermissions: {
+          canLeaveClassroomIndependently: Boolean(params.canLeaveClassroomIndependently),
+          canLeavePremisesIndependently: Boolean(params.canLeavePremisesIndependently),
+          teacherInstructions: cleanInstructions,
+          status: 'confirmed',
+          updatedAt: now,
+          updatedByMemberId: params.parentMemberId,
+          updatedByName: params.parentName,
+        },
+        guardians: normalizedGuardians,
+        notes: cleanInstructions,
+        medical: {
+          ...existingMedical,
+          emergencyContact: {
+            name: (params.emergencyContact?.name || '').trim() || existing.parentName || params.parentName,
+            phone: (params.emergencyContact?.phone || '').trim() || existing.parentPhone || '',
+            relationship: (params.emergencyContact?.relationship || '').trim() || 'Parent',
+          },
+        },
+        updatedAt: now,
+      })
+    );
+
+    // Log audit trail for safety & compliance
+    await this.getAuditLogsCollection(cId).add(
+      sanitizeForFirestore({
+        action: 'CONSENT_UPDATED',
+        childDocId,
+        childName: existing.fullName,
+        canLeaveClassroomIndependently: Boolean(params.canLeaveClassroomIndependently),
+        canLeavePremisesIndependently: Boolean(params.canLeavePremisesIndependently),
+        guardiansCount: normalizedGuardians.length,
+        updatedByMemberId: params.parentMemberId,
+        updatedByName: params.parentName,
+        timestamp: now,
       })
     );
   }
@@ -2320,15 +2654,28 @@ class KidsMinistryService {
     churchId?: string;
     teacher: KidsTeacherRecord;
     method: 'face_scan' | 'pin';
+    programSessionId?: string;
+    programType?: KidsProgramType;
+    programTitle?: string;
+    sessionDate?: string;
   }): Promise<{ record: any; alreadyCheckedIn: boolean }> {
     const cId = params.churchId || RHEMA_CHURCH_ID;
-    const today = new Date().toISOString().split('T')[0];
+    const today = params.sessionDate || formatLocalYMD();
     const attRef = this.getTeacherAttendanceCollection(cId);
 
-    const existingSnap = await attRef
-      .where('teacherDocId', '==', params.teacher.id)
-      .where('date', '==', today)
-      .get();
+    const programSessionId =
+      params.programSessionId || `sess_${today}_${params.programType || 'sunday_school'}`;
+    const programType = params.programType || 'sunday_school';
+    const programTitle = params.programTitle || 'Sunday School';
+
+    let dupQuery = attRef.where('teacherDocId', '==', params.teacher.id);
+    if (params.programSessionId) {
+      dupQuery = dupQuery.where('programSessionId', '==', params.programSessionId);
+    } else {
+      dupQuery = dupQuery.where('date', '==', today);
+    }
+
+    const existingSnap = await dupQuery.get();
 
     if (!existingSnap.empty) {
       const existingDoc = existingSnap.docs[0];
@@ -2344,6 +2691,9 @@ class KidsMinistryService {
       teacherId: params.teacher.teacherId,
       teacherName: params.teacher.name,
       date: today,
+      programSessionId,
+      programType,
+      programTitle,
       checkInTime: now,
       method: params.method,
       classTier: params.teacher.assignedClassTier,
@@ -2388,8 +2738,605 @@ class KidsMinistryService {
   }
 
   // ==========================================
+  // PROGRAM-BASED ATTENDANCE SESSIONS MANAGEMENT
+  // ==========================================
+
+  /**
+   * Realtime subscription to all Program Attendance Sessions.
+   */
+  subscribeToProgramSessions(
+    churchId: string,
+    callback: (sessions: KidsAttendanceSession[]) => void
+  ): () => void {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getProgramSessionsCollection(cId)
+      .onSnapshot(
+        snap => {
+          if (!snap) return callback([]);
+          const list: KidsAttendanceSession[] = snap.docs.map(d => ({
+            id: d.id,
+            ...(d.data() as any),
+          }));
+          list.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+          callback(list);
+        },
+        () => callback([])
+      );
+  }
+
+  /**
+   * Gets or creates a daily program session (e.g. Sunday School for today, or a specific program).
+   */
+  async getOrCreateDailyProgramSession(
+    churchId: string,
+    programType: KidsProgramType = 'sunday_school',
+    programTitle?: string,
+    dateStr?: string
+  ): Promise<KidsAttendanceSession> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const today = dateStr || new Date().toISOString().split('T')[0];
+    const ref = this.getProgramSessionsCollection(cId);
+
+    const snap = await ref
+      .where('date', '==', today)
+      .where('programType', '==', programType)
+      .limit(1)
+      .get();
+
+    if (!snap.empty) {
+      const doc = snap.docs[0];
+      return { id: doc.id, ...(doc.data() as any) };
+    }
+
+    const defaultTitles: Record<KidsProgramType, string> = {
+      sunday_school: 'Sunday School',
+      vbs: 'Vacation Bible School',
+      special_meeting: 'Special Kids Meeting',
+      bible_study: 'Kids Bible Study',
+      childrens_worship: "Children's Worship Rally",
+      summer_camp: 'Kids Summer Camp',
+      other: 'Kids Ministry Event',
+    };
+
+    const docId = `sess_${today}_${programType}`;
+    const now = firestore.FieldValue.serverTimestamp();
+    const sessionData: KidsAttendanceSession = {
+      id: docId,
+      churchId: cId,
+      programType,
+      programTitle: programTitle || defaultTitles[programType] || 'Kids Ministry Event',
+      date: today,
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await ref.doc(docId).set(sanitizeForFirestore(sessionData), { merge: true });
+    return sessionData;
+  }
+
+  /**
+   * Creates a custom scheduled or active program session.
+   */
+  async createProgramSession(
+    churchId: string,
+    data: {
+      programType: KidsProgramType;
+      programTitle: string;
+      date: string;
+      startTime?: string;
+      endTime?: string;
+      assignedTeacherIds?: string[];
+      description?: string;
+      status?: 'active' | 'upcoming' | 'completed';
+    }
+  ): Promise<KidsAttendanceSession> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const ref = this.getProgramSessionsCollection(cId);
+    const now = firestore.FieldValue.serverTimestamp();
+    const docId = `sess_${data.date}_${data.programType}_${Date.now().toString().slice(-4)}`;
+
+    const sessionData: KidsAttendanceSession = {
+      id: docId,
+      churchId: cId,
+      programType: data.programType,
+      programTitle: data.programTitle,
+      date: data.date,
+      startTime: data.startTime || '',
+      endTime: data.endTime || '',
+      assignedTeacherIds: data.assignedTeacherIds || [],
+      description: data.description || '',
+      status: data.status || 'active',
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await ref.doc(docId).set(sanitizeForFirestore(sessionData));
+    return sessionData;
+  }
+
+  /**
+   * Updates an existing program session.
+   */
+  async updateProgramSession(
+    churchId: string,
+    sessionId: string,
+    updates: Partial<KidsAttendanceSession>
+  ): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const now = firestore.FieldValue.serverTimestamp();
+    await this.getProgramSessionsCollection(cId)
+      .doc(sessionId)
+      .update(sanitizeForFirestore({ ...updates, updatedAt: now }));
+  }
+
+  /**
+   * Deletes a program session.
+   */
+  async deleteProgramSession(churchId: string, sessionId: string): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    await this.getProgramSessionsCollection(cId).doc(sessionId).delete();
+  }
+
+  /**
+   * Realtime subscription to child custody records for a specific program session.
+   * Scoped strictly by programSessionId, with fallback to date for legacy records.
+   */
+  subscribeToSessionCustodyRecords(
+    churchId: string,
+    session: KidsAttendanceSession,
+    callback: (records: KidsSessionRecord[]) => void
+  ): () => void {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getSessionsCollection(cId)
+      .onSnapshot(
+        snap => {
+          if (!snap) return callback([]);
+          const all: KidsSessionRecord[] = snap.docs.map(d => ({
+            id: d.id,
+            ...(d.data() as any),
+          }));
+          const filtered = all.filter(r => {
+            if ((r as any).deletedByParent) return false;
+            if (r.programSessionId && r.programSessionId === session.id) return true;
+            if (
+              !r.programSessionId &&
+              r.sessionDate === session.date &&
+              session.programType === 'sunday_school'
+            ) {
+              return true;
+            }
+            return false;
+          });
+          callback(filtered);
+        },
+        () => callback([])
+      );
+  }
+
+  /**
+   * Realtime subscription to attendance logs for a specific program session.
+   */
+  subscribeToSessionAttendanceLogs(
+    churchId: string,
+    session: KidsAttendanceSession,
+    callback: (logs: any[]) => void
+  ): () => void {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getAttendanceCollection(cId)
+      .onSnapshot(
+        snap => {
+          if (!snap) return callback([]);
+          const all = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+          const filtered = all.filter(r => {
+            if ((r as any).deletedByParent) return false;
+            if (r.programSessionId && r.programSessionId === session.id) return true;
+            if (
+              !r.programSessionId &&
+              r.sessionDate === session.date &&
+              session.programType === 'sunday_school'
+            ) {
+              return true;
+            }
+            return false;
+          });
+          callback(filtered);
+        },
+        () => callback([])
+      );
+  }
+
+  /**
+   * Realtime subscription to teacher attendance for a specific program session.
+   */
+  subscribeToSessionTeacherAttendance(
+    churchId: string,
+    session: KidsAttendanceSession,
+    callback: (records: KidsTeacherAttendanceRecord[]) => void
+  ): () => void {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getTeacherAttendanceCollection(cId)
+      .onSnapshot(
+        snap => {
+          if (!snap) return callback([]);
+          const all: KidsTeacherAttendanceRecord[] = snap.docs.map(d => ({
+            id: d.id,
+            ...(d.data() as any),
+          }));
+          const filtered = all.filter(r => {
+            if ((r as any).deletedByParent) return false;
+            if (r.programSessionId && r.programSessionId === session.id) return true;
+            if (
+              !r.programSessionId &&
+              r.date === session.date &&
+              session.programType === 'sunday_school'
+            ) {
+              return true;
+            }
+            return false;
+          });
+          callback(filtered);
+        },
+        () => callback([])
+      );
+  }
+
+  /**
+   * Realtime subscription to custody check-in/check-out records for ONE child (Member View).
+   * Strictly scoped to `childDocId == childDocId` so parents only see their own child's records.
+   */
+  subscribeToChildCustodyHistory(
+    churchId: string,
+    childDocId: string,
+    callback: (records: KidsSessionRecord[]) => void
+  ): () => void {
+    if (!childDocId) {
+      callback([]);
+      return () => {};
+    }
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getSessionsCollection(cId)
+      .where('childDocId', '==', childDocId)
+      .onSnapshot(
+        snap => {
+          if (!snap) return callback([]);
+          const list: KidsSessionRecord[] = snap.docs
+            .map(d => ({
+              id: d.id,
+              ...(d.data() as any),
+            }))
+            .filter(r => r.childDocId === childDocId && !r.deletedByParent);
+          list.sort((a, b) => (b.sessionDate || '').localeCompare(a.sessionDate || ''));
+          callback(list);
+        },
+        err => {
+          console.warn('[KidsMinistryService] subscribeToChildCustodyHistory error:', err);
+          callback([]);
+        }
+      );
+  }
+
+  /**
+   * Realtime subscription to attendance logs (Present & finalized Absent) for ONE child (Member View).
+   */
+  subscribeToChildAttendanceLogs(
+    churchId: string,
+    childDocId: string,
+    callback: (logs: KidsAttendanceLogRecord[]) => void
+  ): () => void {
+    if (!childDocId) {
+      callback([]);
+      return () => {};
+    }
+    const cId = churchId || RHEMA_CHURCH_ID;
+    return this.getAttendanceCollection(cId)
+      .where('childDocId', '==', childDocId)
+      .onSnapshot(
+        snap => {
+          if (!snap) return callback([]);
+          const list: KidsAttendanceLogRecord[] = snap.docs
+            .map(d => ({
+              id: d.id,
+              ...(d.data() as any),
+            }))
+            .filter(l => l.childDocId === childDocId && !l.deletedByParent);
+          list.sort((a, b) => (b.sessionDate || '').localeCompare(a.sessionDate || ''));
+          callback(list);
+        },
+        err => {
+          console.warn('[KidsMinistryService] subscribeToChildAttendanceLogs error:', err);
+          callback([]);
+        }
+      );
+  }
+
+  /**
+   * Deletes an attendance history entry for a specific child and program session.
+   * Removes/soft-deletes matching custody sessions and attendance logs and hides the session
+   * for this child only (preserving sibling & other families' records).
+   */
+  async deleteChildAttendanceHistoryRecord(params: {
+    churchId?: string;
+    childDocId: string;
+    programSessionId: string;
+    date?: string;
+    custodyRecordId?: string;
+    deletedByMemberId?: string;
+  }): Promise<void> {
+    const cId = params.churchId || RHEMA_CHURCH_ID;
+    const { childDocId, programSessionId, date, custodyRecordId, deletedByMemberId } = params;
+    if (!childDocId || !programSessionId) return;
+
+    const now = firestore.FieldValue.serverTimestamp();
+    const deleteOrSoftDelete = async (docRef: any) => {
+      try {
+        await docRef.delete();
+      } catch {
+        await docRef.update({
+          deletedByParent: true,
+          deletedAt: now,
+          deletedByMemberId: deletedByMemberId || '',
+        });
+      }
+    };
+
+    const isLegacyKey = programSessionId.startsWith('legacy_');
+    const deletedCustodyIds = new Set<string>();
+
+    // 1. Delete matching custody sessions for this child + program session
+    const custodySnap = await this.getSessionsCollection(cId)
+      .where('childDocId', '==', childDocId)
+      .get();
+
+    for (const d of custodySnap.docs) {
+      const data = d.data() as any;
+      const matchesExplicitId = custodyRecordId && d.id === custodyRecordId;
+      const matchesProgram = data.programSessionId && data.programSessionId === programSessionId;
+      const matchesLegacy =
+        !data.programSessionId &&
+        date &&
+        data.sessionDate === date &&
+        (isLegacyKey || programSessionId.includes(data.programType || 'sunday_school'));
+
+      if (matchesExplicitId || matchesProgram || matchesLegacy) {
+        deletedCustodyIds.add(d.id);
+        await deleteOrSoftDelete(d.ref);
+      }
+    }
+
+    // 2. Delete matching attendance logs for this child + program session
+    const attSnap = await this.getAttendanceCollection(cId)
+      .where('childDocId', '==', childDocId)
+      .get();
+
+    for (const d of attSnap.docs) {
+      const data = d.data() as any;
+      const matchesProgram = data.programSessionId && data.programSessionId === programSessionId;
+      const matchesDeterministic =
+        d.id === `att_${programSessionId}_${childDocId}` ||
+        d.id === `absent_${programSessionId}_${childDocId}`;
+      const matchesLegacy =
+        !data.programSessionId &&
+        date &&
+        data.sessionDate === date &&
+        (isLegacyKey || programSessionId.includes(data.programType || 'sunday_school'));
+
+      if (matchesProgram || matchesDeterministic || matchesLegacy) {
+        await deleteOrSoftDelete(d.ref);
+      }
+    }
+
+    // 3. Hide this program session for this child only & reset active custody status if deleted
+    const childRef = this.getKidsCollection(cId).doc(childDocId);
+    const childSnap = await childRef.get();
+    const childUpdate: Record<string, any> = {
+      hiddenProgramSessionIds: firestore.FieldValue.arrayUnion(programSessionId),
+      updatedAt: now,
+    };
+
+    const childData = childSnap.data() as any;
+    if (
+      childData &&
+      childData.custodyStatus === 'checked_in' &&
+      childData.currentSessionId &&
+      deletedCustodyIds.has(childData.currentSessionId)
+    ) {
+      childUpdate.custodyStatus = 'checked_out';
+      childUpdate.activePickupCode = '';
+      childUpdate.currentSessionId = '';
+    }
+
+    await childRef.update(childUpdate);
+  }
+
+  /**
+   * Finalizes attendance for a Kids Ministry program session.
+   * - Never marks absent before finalization.
+   * - Creates deterministic `absent_{sessionId}_{childDocId}` docs only for enrolled kids without check-in.
+   * - Marks `kids_program_sessions/{sessionId}` as finalized BEFORE writing absent logs so Cloud Function guards see finalized=true.
+   */
+  async finalizeProgramAttendance(
+    churchId: string,
+    params: {
+      session: KidsAttendanceSession;
+      enrolledChildren: ChildRecord[];
+      finalizedByMemberId: string;
+      finalizedByName: string;
+    }
+  ): Promise<{ presentCount: number; absentCount: number; alreadyFinalized: boolean }> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    const { session, enrolledChildren } = params;
+    const sessRef = this.getProgramSessionsCollection(cId).doc(session.id);
+
+    const freshSessSnap = await sessRef.get();
+    const freshData = freshSessSnap.data() as KidsAttendanceSession | undefined;
+    if (freshData?.attendanceFinalized) {
+      return {
+        presentCount: freshData.presentCount || 0,
+        absentCount: freshData.absentCount || 0,
+        alreadyFinalized: true,
+      };
+    }
+
+    // 1. Gather all kids already checked in or marked present for this specific program session
+    const [custodySnap, attSnap] = await Promise.all([
+      this.getSessionsCollection(cId).where('programSessionId', '==', session.id).get(),
+      this.getAttendanceCollection(cId).where('programSessionId', '==', session.id).get(),
+    ]);
+
+    const presentChildIds = new Set<string>();
+    custodySnap.docs.forEach(d => {
+      const r = d.data();
+      if (r?.childDocId) presentChildIds.add(r.childDocId);
+    });
+    attSnap.docs.forEach(d => {
+      const r = d.data();
+      if (r?.childDocId && r?.status !== 'absent') presentChildIds.add(r.childDocId);
+    });
+
+    // Legacy Sunday School fallback if older check-ins lacked programSessionId
+    if (session.programType === 'sunday_school') {
+      const legacyCustodySnap = await this.getSessionsCollection(cId)
+        .where('sessionDate', '==', session.date)
+        .get();
+      legacyCustodySnap.docs.forEach(d => {
+        const r = d.data();
+        if (!r?.programSessionId && r?.childDocId) presentChildIds.add(r.childDocId);
+      });
+    }
+
+    const activeEnrolled = enrolledChildren.filter(
+      c => c.enrollmentStatus !== 'inactive' && c.enrollmentStatus !== 'graduated'
+    );
+    const absentChildren = activeEnrolled.filter(c => !presentChildIds.has(c.id));
+    const presentCount = presentChildIds.size;
+    const absentCount = absentChildren.length;
+    const now = firestore.FieldValue.serverTimestamp();
+
+    // 2. Mark program session finalized FIRST so downstream listeners & Cloud Functions verify attendanceFinalized=true
+    await sessRef.set(
+      sanitizeForFirestore({
+        attendanceFinalized: true,
+        status: 'completed',
+        attendanceFinalizedAt: now,
+        attendanceFinalizedBy: params.finalizedByMemberId,
+        attendanceFinalizedByName: params.finalizedByName,
+        presentCount,
+        absentCount,
+        updatedAt: now,
+      }),
+      { merge: true }
+    );
+
+    // 3. Write deterministic absent records and notify parents in batches
+    const attCol = this.getAttendanceCollection(cId);
+    for (let i = 0; i < absentChildren.length; i += 20) {
+      const chunk = absentChildren.slice(i, i + 20);
+      await Promise.all(
+        chunk.map(async child => {
+          const docId = `absent_${session.id}_${child.id}`;
+          await attCol.doc(docId).set(
+            sanitizeForFirestore({
+              childDocId: child.id,
+              childId: child.childId,
+              childName: child.fullName,
+              familyId: child.familyId || '',
+              parentMemberId: child.parentMemberId || '',
+              parentPhone: child.parentPhone || '',
+              classId: child.assignedClassId || '',
+              className: child.assignedClassName || 'Sunday School',
+              classTier: child.assignedTier || 'primary',
+              sessionDate: session.date,
+              programSessionId: session.id,
+              programType: session.programType,
+              programTitle: session.programTitle,
+              status: 'absent',
+              finalizedByMemberId: params.finalizedByMemberId,
+              finalizedByName: params.finalizedByName,
+              finalizedAt: now,
+              createdAt: now,
+            }),
+            { merge: true }
+          );
+
+          await this.sendKidsParentInAppNotification({
+            churchId: cId,
+            docId: `kids_absent_${session.id}_${child.id}`,
+            type: 'kids_absent',
+            title: `Absent Notice: ${child.fullName}`,
+            body: `${child.fullName} was marked absent for ${session.programTitle} (${session.date}) after attendance was finalized.`,
+            targetMemberId: child.parentMemberId,
+            targetAccountId: child.familyId,
+            targetPhone: child.parentPhone,
+            childDocId: child.id,
+            childId: child.childId,
+            childName: child.fullName,
+            programSessionId: session.id,
+            programTitle: session.programTitle,
+          });
+        })
+      );
+    }
+
+    // 4. Write safeguarding audit trail
+    await this.getAuditLogsCollection(cId).add(
+      sanitizeForFirestore({
+        action: 'ATTENDANCE_FINALIZED',
+        programSessionId: session.id,
+        programTitle: session.programTitle,
+        sessionDate: session.date,
+        presentCount,
+        absentCount,
+        finalizedByMemberId: params.finalizedByMemberId,
+        finalizedByName: params.finalizedByName,
+        timestamp: now,
+      })
+    );
+
+    return { presentCount, absentCount, alreadyFinalized: false };
+  }
+
+  // ==========================================
   // PHASE 5: BIBLE STORIES MANAGEMENT & SEEDING
   // ==========================================
+
+  private toTimestampMs(val: any): number {
+    if (!val) return 0;
+    if (typeof val === 'number') return val;
+    if (typeof val?.toMillis === 'function') return val.toMillis();
+    if (typeof val?.seconds === 'number') return val.seconds * 1000;
+    if (typeof val?._seconds === 'number') return val._seconds * 1000;
+    const parsed = Date.parse(String(val));
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+
+  private sortByNewest<T extends { createdAt?: any; updatedAt?: any; id: string }>(
+    list: T[],
+    fallbackKeyFn?: (item: T) => string
+  ): T[] {
+    return [...list].sort((a, b) => {
+      const aTime = Math.max(
+        this.toTimestampMs(a.createdAt),
+        this.toTimestampMs(a.updatedAt)
+      );
+      const bTime = Math.max(
+        this.toTimestampMs(b.createdAt),
+        this.toTimestampMs(b.updatedAt)
+      );
+      if (bTime !== aTime) return bTime - aTime;
+      const aKey = fallbackKeyFn ? fallbackKeyFn(a) : a.id;
+      const bKey = fallbackKeyFn ? fallbackKeyFn(b) : b.id;
+      return String(aKey).localeCompare(String(bKey));
+    });
+  }
+
+  private sortStoriesNewestFirst(list: KidsBibleStory[]): KidsBibleStory[] {
+    return this.sortByNewest(list, s => s.storyId || s.id);
+  }
+
+  private sortQuizzesNewestFirst(list: KidsQuiz[]): KidsQuiz[] {
+    return this.sortByNewest(list, q => q.quizId || q.id);
+  }
 
   async getOrInitStories(churchId?: string): Promise<KidsBibleStory[]> {
     const cId = churchId || RHEMA_CHURCH_ID;
@@ -2397,7 +3344,8 @@ class KidsMinistryService {
     const snap = await storiesRef.get();
 
     if (!snap.empty) {
-      return snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      const list = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      return this.sortStoriesNewestFirst(list);
     }
 
     const now = firestore.FieldValue.serverTimestamp();
@@ -2565,7 +3513,7 @@ class KidsMinistryService {
           return;
         }
         const list = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-        callback(list);
+        callback(this.sortStoriesNewestFirst(list));
       },
       () => callback([])
     );
@@ -2581,7 +3529,8 @@ class KidsMinistryService {
     const snap = await quizzesRef.get();
 
     if (!snap.empty) {
-      return snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      const list = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      return this.sortQuizzesNewestFirst(list);
     }
 
     const now = firestore.FieldValue.serverTimestamp();
@@ -2689,7 +3638,7 @@ class KidsMinistryService {
           return;
         }
         const list = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-        callback(list);
+        callback(this.sortQuizzesNewestFirst(list));
       },
       () => callback([])
     );
@@ -3955,7 +4904,11 @@ class KidsMinistryService {
       };
     });
   }
-  async uploadStoryThumbnail(churchId: string, localUri: string): Promise<string> {
+  private async uploadMediaThumbnail(
+    churchId: string,
+    folder: string,
+    localUri: string
+  ): Promise<string> {
     const trimmed = (localUri || '').trim();
     if (!trimmed) return '';
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
@@ -3965,10 +4918,18 @@ class KidsMinistryService {
     const rawExt = trimmed.split('.').pop()?.split('?')[0]?.toLowerCase() || 'jpg';
     const safeExt = /^[a-z0-9]{2,5}$/.test(rawExt) ? rawExt : 'jpg';
     const storageRef = storage().ref(
-      `churches/${cId}/kids_stories/${Date.now()}_thumb.${safeExt}`
+      `churches/${cId}/${folder}/${Date.now()}_thumb.${safeExt}`
     );
     await storageRef.putFile(trimmed);
     return storageRef.getDownloadURL();
+  }
+
+  async uploadStoryThumbnail(churchId: string, localUri: string): Promise<string> {
+    return this.uploadMediaThumbnail(churchId, 'kids_stories', localUri);
+  }
+
+  async uploadQuizThumbnail(churchId: string, localUri: string): Promise<string> {
+    return this.uploadMediaThumbnail(churchId, 'kids_quizzes', localUri);
   }
 
   async createStory(churchId: string, story: Partial<KidsBibleStory>): Promise<string> {
@@ -4200,6 +5161,41 @@ class KidsMinistryService {
         category: 'vbs',
       },
     ];
+  }
+
+  async getCertificateSettings(churchId: string): Promise<KidsCertificateSettings | null> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    try {
+      const snap = await firestore()
+        .collection('churches')
+        .doc(cId)
+        .collection('kids_settings')
+        .doc('certificate')
+        .get();
+      if (!snap.exists) return null;
+      return snap.data() as KidsCertificateSettings;
+    } catch {
+      return null;
+    }
+  }
+
+  async saveCertificateSettings(
+    churchId: string,
+    settings: KidsCertificateSettings
+  ): Promise<void> {
+    const cId = churchId || RHEMA_CHURCH_ID;
+    await firestore()
+      .collection('churches')
+      .doc(cId)
+      .collection('kids_settings')
+      .doc('certificate')
+      .set(
+        sanitizeForFirestore({
+          ...settings,
+          updatedAt: firestore.FieldValue.serverTimestamp(),
+        }),
+        { merge: true }
+      );
   }
 }
 

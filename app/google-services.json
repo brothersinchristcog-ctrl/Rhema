@@ -1,6 +1,7 @@
 {
   "project_info": {
     "project_number": "771098328860",
+    "firebase_url": "https://rhema-global-ministries-default-rtdb.firebaseio.com",
     "project_id": "rhema-global-ministries",
     "storage_bucket": "rhema-global-ministries.firebasestorage.app"
   },
@@ -12,7 +13,20 @@
           "package_name": "com.rhemaglobalministries.app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "771098328860-k02endo9bi6pd53l8usg4vnn53hcvabv.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.rhemaglobalministries.app",
+            "certificate_hash": "450091f97b66f80af6a353f61f4fca08bf61b4d9"
+          }
+        },
+        {
+          "client_id": "771098328860-0r004ljmkk09bhrivtahav1gpe37892p.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAaBqR9uZhARSF6kvBNwu6BBikcHUsLoXo"
@@ -20,7 +34,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "771098328860-0r004ljmkk09bhrivtahav1gpe37892p.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

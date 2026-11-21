@@ -1873,6 +1873,13 @@ export {
   declineResponsibilitySlotHttp,
 } from './rosterNotifications.js';
 
+export {
+  createZoomMeeting,
+  createZoomMeetingHttp,
+  generateZoomMeetingLink,
+  createBibleClass,
+} from './meetings.js';
+
 export { guestInviteLanding } from './guestInvite.js';
 
 export {
