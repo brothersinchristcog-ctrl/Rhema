@@ -1,20 +1,10 @@
+import { type ResolvedMemberEntitlements } from './entitlements.js';
 type BinaryGender = 'male' | 'female';
 /**
  * 1. getMatrimonyMatches
  * Returns real verified opposite-gender matches scored by Partner Preferences, Age, & Hobbies/Interests.
  */
 export declare const getMatrimonyMatches: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
-    success: boolean;
-    matches: never[];
-    totalCount: number;
-    viewerGender: null;
-    targetGender: null;
-    viewerPhoto: string | null;
-    totalAvailableCount?: never;
-    hiddenCount?: never;
-    viewerPreferencesFilter?: never;
-    preferencesUpdatedAtMs?: never;
-} | {
     success: boolean;
     matches: {
         uid: string;
@@ -40,6 +30,18 @@ export declare const getMatrimonyMatches: import("firebase-functions/v2/https").
         maskedDob: string | null;
         maskedPhone: string | null;
         contactPhone: any;
+        isContactUnlocked: boolean;
+        canUnlockContact: boolean;
+        candidateTier: import("./entitlements.js").MatrimonyTier;
+        isHighlighted: "gold" | "platinum" | "none";
+        visibilityPriority: number;
+        verificationSummary: {
+            adminApproved: boolean;
+            churchMemberVerified: boolean;
+            photoVerified: boolean;
+            baptismVerified: boolean;
+            trustLevel: "prime_verified" | "verified";
+        };
         partnerPreferencesComparison: {
             matchedCount: number;
             totalCount: number;
@@ -60,12 +62,16 @@ export declare const getMatrimonyMatches: import("firebase-functions/v2/https").
         matchReasons: string[];
         breakdown: {
             ageScore: number;
+            educationScore: number;
             interestsScore: number;
             heightScore: number;
             maritalScore: number;
+            familyScore: number;
             faithScore: number;
             careerScore: number;
             locationScore: number;
+            lifestyleScore: number;
+            additionalScore: number;
             habitsScore: number;
         };
         isShortlisted: boolean;
@@ -76,6 +82,8 @@ export declare const getMatrimonyMatches: import("firebase-functions/v2/https").
         updatedAtMs: number;
     }[];
     totalCount: number;
+    hasMore: boolean;
+    nextOffset: number;
     totalAvailableCount: number;
     hiddenCount: number;
     viewerGender: BinaryGender;
@@ -83,6 +91,23 @@ export declare const getMatrimonyMatches: import("firebase-functions/v2/https").
     viewerPhoto: string | null;
     viewerPreferencesFilter: Record<string, any>;
     preferencesUpdatedAtMs: number;
+    viewerEntitlements: ResolvedMemberEntitlements;
+    lockedAdvancedFilters: boolean;
+} | {
+    success: boolean;
+    matches: never[];
+    totalCount: number;
+    viewerGender: null;
+    targetGender: null;
+    viewerPhoto: string | null;
+    hasMore?: never;
+    nextOffset?: never;
+    totalAvailableCount?: never;
+    hiddenCount?: never;
+    viewerPreferencesFilter?: never;
+    preferencesUpdatedAtMs?: never;
+    viewerEntitlements?: never;
+    lockedAdvancedFilters?: never;
 }>, unknown>;
 /**
  * 2. toggleMatrimonyShortlist
@@ -120,12 +145,33 @@ export declare const sendMatrimonyInterest: import("firebase-functions/v2/https"
     success: boolean;
     interestStatus: string;
     isMutual: boolean;
+    interestsSentThisMonth: number;
+    interestsRemaining: number;
+    monthlyInterestLimit: number;
+}>, unknown>;
+/**
+ * 4b. unlockMatrimonyContact
+ * Unlocks verified contact phone & DOB for a target profile, consuming 1 contact credit
+ * for Silver (10) / Gold (40) or free for Platinum (-1). Idempotent within active cycle.
+ */
+export declare const unlockMatrimonyContact: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
+    success: boolean;
+    alreadyUnlocked: boolean;
+    contactPhone: string | null;
+    dob: string | null;
+    contactNumbersViewedCount: number;
+    contactNumbersRemaining: number;
 }>, unknown>;
 /**
  * 5. getMatrimonyInterestsHub
  * Returns real received and sent interest records with hydrated candidate profiles.
  */
 export declare const getMatrimonyInterestsHub: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
+    success: boolean;
+    received: never[];
+    sent: never[];
+    viewerEntitlements?: never;
+} | {
     success: boolean;
     received: {
         id: string;
@@ -158,6 +204,18 @@ export declare const getMatrimonyInterestsHub: import("firebase-functions/v2/htt
             maskedDob: string | null;
             maskedPhone: string | null;
             contactPhone: any;
+            isContactUnlocked: boolean;
+            canUnlockContact: boolean;
+            candidateTier: import("./entitlements.js").MatrimonyTier;
+            isHighlighted: "gold" | "platinum" | "none";
+            visibilityPriority: number;
+            verificationSummary: {
+                adminApproved: boolean;
+                churchMemberVerified: boolean;
+                photoVerified: boolean;
+                baptismVerified: boolean;
+                trustLevel: "prime_verified" | "verified";
+            };
             partnerPreferencesComparison: {
                 matchedCount: number;
                 totalCount: number;
@@ -178,12 +236,16 @@ export declare const getMatrimonyInterestsHub: import("firebase-functions/v2/htt
             matchReasons: string[];
             breakdown: {
                 ageScore: number;
+                educationScore: number;
                 interestsScore: number;
                 heightScore: number;
                 maritalScore: number;
+                familyScore: number;
                 faithScore: number;
                 careerScore: number;
                 locationScore: number;
+                lifestyleScore: number;
+                additionalScore: number;
                 habitsScore: number;
             };
             isShortlisted: boolean;
@@ -225,6 +287,18 @@ export declare const getMatrimonyInterestsHub: import("firebase-functions/v2/htt
             maskedDob: string | null;
             maskedPhone: string | null;
             contactPhone: any;
+            isContactUnlocked: boolean;
+            canUnlockContact: boolean;
+            candidateTier: import("./entitlements.js").MatrimonyTier;
+            isHighlighted: "gold" | "platinum" | "none";
+            visibilityPriority: number;
+            verificationSummary: {
+                adminApproved: boolean;
+                churchMemberVerified: boolean;
+                photoVerified: boolean;
+                baptismVerified: boolean;
+                trustLevel: "prime_verified" | "verified";
+            };
             partnerPreferencesComparison: {
                 matchedCount: number;
                 totalCount: number;
@@ -245,12 +319,16 @@ export declare const getMatrimonyInterestsHub: import("firebase-functions/v2/htt
             matchReasons: string[];
             breakdown: {
                 ageScore: number;
+                educationScore: number;
                 interestsScore: number;
                 heightScore: number;
                 maritalScore: number;
+                familyScore: number;
                 faithScore: number;
                 careerScore: number;
                 locationScore: number;
+                lifestyleScore: number;
+                additionalScore: number;
                 habitsScore: number;
             };
             isShortlisted: boolean;
@@ -259,6 +337,7 @@ export declare const getMatrimonyInterestsHub: import("firebase-functions/v2/htt
             updatedAtMs: number;
         };
     }[];
+    viewerEntitlements: ResolvedMemberEntitlements;
 }>, unknown>;
 /**
  * 6. respondMatrimonyInterest

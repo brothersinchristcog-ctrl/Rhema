@@ -35,6 +35,18 @@ export function getViewedByCol(db, uid) {
 export function getBlocksCol(db, uid) {
     return getProfileRef(db, uid).collection(SUBCOLLECTIONS.BLOCKS);
 }
+export function getUnlockedContactsCol(db, uid) {
+    return getProfileRef(db, uid).collection(SUBCOLLECTIONS.UNLOCKED_CONTACTS);
+}
+export function getSubscriptionRef(db, uid) {
+    return db.collection(COLLECTIONS.SUBSCRIPTIONS).doc(uid);
+}
+export function getEntitlementRef(db, uid) {
+    return db.collection(COLLECTIONS.ENTITLEMENTS).doc(uid);
+}
+export function getUsageRef(db, uid) {
+    return db.collection(COLLECTIONS.USAGE).doc(uid);
+}
 export function getAdminProfileRef(db, uid) {
     return db.collection(COLLECTIONS.ADMIN_PROFILES).doc(uid);
 }

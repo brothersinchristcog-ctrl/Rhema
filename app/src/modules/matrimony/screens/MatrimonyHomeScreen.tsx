@@ -57,24 +57,28 @@ const HOME_MATCHES_PARAMS = {
   matchBasis: 'partner_preferences' as const,
   sortBy: 'best_match' as const,
   filters: {},
+  limit: 10,
 };
 const HOME_NEW_MATCHES_PARAMS = {
   tab: 'newly_joined' as const,
   matchBasis: 'partner_preferences' as const,
   sortBy: 'best_match' as const,
   filters: {},
+  limit: 6,
 };
 const HOME_VIEWED_YOU_PARAMS = {
   tab: 'viewed_you' as const,
   matchBasis: 'all_filters' as const,
   sortBy: 'last_active' as const,
   filters: {},
+  limit: 5,
 };
 const HOME_VIEWED_BY_YOU_PARAMS = {
   tab: 'viewed_by_you' as const,
   matchBasis: 'all_filters' as const,
   sortBy: 'last_active' as const,
   filters: {},
+  limit: 5,
 };
 
 function formatCompactHeight(cm?: number | null): string | null {
@@ -117,7 +121,7 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
     matrimonyApi.getCachedRegistration()
   );
   const [matchesData, setMatchesData] = useState<GetMatrimonyMatchesResponse | null>(
-    () => matrimonyApi.getCachedMatches(HOME_MATCHES_PARAMS) || matrimonyApi.getCachedMatches()
+    () => matrimonyApi.getCachedMatches(HOME_MATCHES_PARAMS)
   );
   const [newMatchesData, setNewMatchesData] = useState<GetMatrimonyMatchesResponse | null>(() =>
     matrimonyApi.getCachedMatches(HOME_NEW_MATCHES_PARAMS)
@@ -210,8 +214,7 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
     const unsub = navigation.addListener('focus', () => {
       const cachedStatus = matrimonyApi.getCachedStatus();
       const cachedReg = matrimonyApi.getCachedRegistration();
-      const cachedMatches =
-        matrimonyApi.getCachedMatches(HOME_MATCHES_PARAMS) || matrimonyApi.getCachedMatches();
+      const cachedMatches = matrimonyApi.getCachedMatches(HOME_MATCHES_PARAMS);
       const cachedNewMatches = matrimonyApi.getCachedMatches(HOME_NEW_MATCHES_PARAMS);
       const cachedViewedYou = matrimonyApi.getCachedMatches(HOME_VIEWED_YOU_PARAMS);
       const cachedViewedByYou = matrimonyApi.getCachedMatches(HOME_VIEWED_BY_YOU_PARAMS);
@@ -411,6 +414,35 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
                   </Text>
                 </TouchableOpacity>
               </View>
+              {matchesData?.viewerEntitlements ? (
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => navigation.navigate('MatrimonyUpgrade')}
+                  style={{ marginTop: 2 }}
+                >
+                  <Text
+                    style={{
+                      color: colors.textSecondary,
+                      fontSize: 11,
+                      fontWeight: '600',
+                      fontFamily,
+                    }}
+                    numberOfLines={1}
+                  >
+                    {`Interests: ${
+                      matchesData.viewerEntitlements.interestsRemaining < 0
+                        ? 'Unlimited'
+                        : `${matchesData.viewerEntitlements.interestsRemaining}/${matchesData.viewerEntitlements.monthlyInterestLimit}`
+                    } · Contacts: ${
+                      matchesData.viewerEntitlements.contactNumberLimit === 0
+                        ? 'Locked'
+                        : matchesData.viewerEntitlements.contactNumberLimit < 0
+                        ? 'Unlimited'
+                        : `${matchesData.viewerEntitlements.contactNumbersRemaining}/${matchesData.viewerEntitlements.contactNumberLimit}`
+                    }`}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
           </View>
 

@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Dimensions,
   FlatList,
   Image,
+  Linking,
   Modal,
   Platform,
   RefreshControl,
@@ -28,10 +29,13 @@ import {
   HeartHandshake,
   Home,
   Image as ImageIcon,
+  Mail,
   MessageCircle,
   MoreVertical,
+  Phone,
   ShieldCheck,
   SlidersHorizontal,
+  Undo2,
   User,
   Users,
   X,
@@ -50,6 +54,7 @@ import {
   MatrimonyMatchCandidate,
   MatrimonyMatchesFilter,
   MatrimonyMatchTab,
+  MemberEntitlements,
 } from '../types/matrimony';
 
 const CORAL_RED = '#E04B5A';
@@ -190,13 +195,13 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
   const [sortBy, setSortByState] = useState<SortOption>('best_match');
   const [filters, setFiltersState] = useState<MatrimonyMatchesFilter>({});
   const [filterMode, setFilterModeState] = useState<MatchFilterMode>('preferences');
-  const initialMatchesSnapshot =
-    matrimonyApi.getCachedMatches({
-      tab: requestedInitialTab || 'all',
-      matchBasis: 'partner_preferences',
-      sortBy: 'best_match',
-      filters: {},
-    }) || matrimonyApi.getCachedMatches();
+  const initialMatchesSnapshot = matrimonyApi.getCachedMatches({
+    tab: requestedInitialTab || 'all',
+    matchBasis: 'partner_preferences',
+    matchTier: 'regular',
+    sortBy: 'best_match',
+    filters: {},
+  });
   const [partnerPreferencesFilter, setPartnerPreferencesFilter] = useState<MatrimonyMatchesFilter>(
     () => initialMatchesSnapshot?.viewerPreferencesFilter || {}
   );
@@ -368,35 +373,124 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
   const [draftSameCity, setDraftSameCity] = useState(false);
   const [draftSameState, setDraftSameState] = useState(false);
   const [filterModalOpen, setFilterModalOpen] = useState(false);
+  const [entitlements, setEntitlements] = useState<MemberEntitlements | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [totalMatchedCount, setTotalMatchedCount] = useState<number>(
+    () => initialMatchesSnapshot?.totalCount ?? initialMatchesSnapshot?.matches?.length ?? 0
+  );
+  const loadSeqRef = useRef(0);
+  const mountedRef = useRef(true);
+  const lastLoadTriggerAtRef = useRef(0);
+  const pendingSendMapRef = useRef<Map<string, Promise<any>>>(new Map());
+  const interestToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [interestToast, setInterestToast] = useState<{
+    kind: 'sent' | 'cancelled';
+    uid: string;
+    name: string;
+    isMutual?: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      loadSeqRef.current += 1;
+      if (interestToastTimerRef.current) clearTimeout(interestToastTimerRef.current);
+    };
+  }, []);
 
   const [galleryPreviewPhotos, setGalleryPreviewPhotos] = useState<string[]>([]);
   const [galleryIndex, setGalleryIndex] = useState(0);
 
+  const streamRemainingMatches = useCallback(
+    async (seq: number, startOffset: number) => {
+      if (loadSeqRef.current !== seq || !mountedRef.current) return;
+      setLoadingMore(true);
+      let cursor = startOffset;
+      let hasMore = true;
+
+      try {
+        while (hasMore && loadSeqRef.current === seq && mountedRef.current) {
+          const nextPage = await matrimonyApi.getMatches(
+            { tab, matchBasis, matchTier, sortBy, filters, offset: cursor, limit: 150 },
+            { force: true }
+          );
+          if (loadSeqRef.current !== seq || !mountedRef.current) return;
+
+          const incoming = nextPage.matches || [];
+          if (incoming.length > 0) {
+            setMatches((prev) => {
+              const existingMap = new Map(prev.map((m) => [m.uid, m]));
+              const merged = [...prev];
+              for (const item of incoming) {
+                if (item?.uid && !existingMap.has(item.uid)) {
+                  merged.push(item);
+                }
+              }
+              return merged;
+            });
+          }
+
+          if (typeof nextPage.totalCount === 'number') {
+            setTotalMatchedCount(nextPage.totalCount);
+          }
+          hasMore = Boolean(nextPage.hasMore && incoming.length > 0);
+          cursor =
+            typeof nextPage.nextOffset === 'number'
+              ? nextPage.nextOffset
+              : cursor + incoming.length;
+        }
+      } catch (err) {
+        console.warn('streamRemainingMatches error:', err);
+      } finally {
+        if (loadSeqRef.current === seq && mountedRef.current) {
+          setLoadingMore(false);
+        }
+      }
+    },
+    [tab, matchBasis, matchTier, sortBy, filters]
+  );
+
   const loadMatches = useCallback(
     async (silent = false, force = false) => {
       if (!prefsHydrated) return;
-      const cached = matrimonyApi.getCachedMatches({ tab, matchBasis, sortBy, filters });
+      lastLoadTriggerAtRef.current = Date.now();
+      const seq = ++loadSeqRef.current;
+      const cached = matrimonyApi.getCachedMatches({ tab, matchBasis, matchTier, sortBy, filters });
       if (cached && !force) {
-        setMatches(cached.matches || []);
+        const cachedList = cached.matches || [];
+        setMatches(cachedList);
+        setTotalMatchedCount(cached.totalCount ?? cachedList.length);
         setHiddenCount(cached.hiddenCount ?? 0);
-        setTotalAvailableCount(cached.totalAvailableCount ?? cached.matches?.length ?? 0);
+        setTotalAvailableCount(cached.totalAvailableCount ?? cachedList.length);
         if (cached.viewerPhoto !== undefined) setViewerPhoto(cached.viewerPhoto || null);
         if (cached.viewerPreferencesFilter) setPartnerPreferencesFilter(cached.viewerPreferencesFilter);
+        if (cached.viewerEntitlements) setEntitlements(cached.viewerEntitlements);
         setLoading(false);
-      } else if (!silent && matches.length === 0) {
+      } else if (!silent) {
+        setMatches([]);
+        setTotalMatchedCount(0);
         setLoading(true);
       }
       setErrorMsg(null);
       try {
+        // Fast initial page: fetch top 10 match cards immediately (Amazon/Flipkart progressive pattern)
         const res = await matrimonyApi.getMatches(
-          { tab, matchBasis, sortBy, filters },
+          { tab, matchBasis, matchTier, sortBy, filters, offset: 0, limit: 10 },
           { force }
         );
-        setMatches(res.matches || []);
+        if (loadSeqRef.current !== seq || !mountedRef.current) return;
+
+        const firstBatch = res.matches || [];
+        setMatches(firstBatch);
+        setTotalMatchedCount(res.totalCount ?? firstBatch.length);
         setHiddenCount(res.hiddenCount ?? 0);
-        setTotalAvailableCount(res.totalAvailableCount ?? res.matches?.length ?? 0);
+        setTotalAvailableCount(res.totalAvailableCount ?? res.totalCount ?? firstBatch.length);
         if (res.viewerPhoto !== undefined) {
           setViewerPhoto(res.viewerPhoto || null);
+        }
+        if (res.viewerEntitlements) {
+          setEntitlements(res.viewerEntitlements);
         }
 
         const remotePrefFilter = res.viewerPreferencesFilter || {};
@@ -417,7 +511,18 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
             setFilters({});
           }
         }
+
+        setLoading(false);
+        setRefreshing(false);
+
+        // Automatically stream remaining match cards in background after first 10 render
+        if (res.hasMore && typeof res.nextOffset === 'number') {
+          void streamRemainingMatches(seq, res.nextOffset);
+        } else {
+          setLoadingMore(false);
+        }
       } catch (err: any) {
+        if (loadSeqRef.current !== seq || !mountedRef.current) return;
         if (isMatrimonyInactiveError(err)) {
           navigation.reset({ index: 0, routes: [{ name: 'MatrimonyStatus' }] });
           return;
@@ -426,15 +531,16 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
         if (!cached && matches.length === 0) {
           setErrorMsg(err?.message || 'Unable to load matches right now.');
         }
-      } finally {
         setLoading(false);
         setRefreshing(false);
+        setLoadingMore(false);
       }
     },
     [
       prefsHydrated,
       tab,
       matchBasis,
+      matchTier,
       sortBy,
       filters,
       filterMode,
@@ -442,6 +548,7 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
       prefTsStorageKey,
       setFilterMode,
       setFilters,
+      streamRemainingMatches,
     ]
   );
 
@@ -453,9 +560,9 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
 
   useEffect(() => {
     const unsub = navigation.addListener('focus', () => {
-      if (prefsHydrated) {
-        loadMatches(true, false);
-      }
+      if (!prefsHydrated) return;
+      if (Date.now() - lastLoadTriggerAtRef.current < 4000) return;
+      loadMatches(true, false);
     });
     return unsub;
   }, [navigation, prefsHydrated, loadMatches]);
@@ -465,8 +572,9 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
       matchTier === 'prime'
         ? matches.filter(
             (m) =>
-              Boolean(m.signedProfilePhoto) &&
-              (m.matchScore >= 65 || m.faithSummary?.baptized === true)
+              m.candidateTier === 'silver' ||
+              m.candidateTier === 'gold' ||
+              m.candidateTier === 'platinum'
           )
         : matches,
     [matches, matchTier]
@@ -505,7 +613,18 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
       }
     } catch (err: any) {
       loadMatches(true);
-      Alert.alert('Error', err?.message || 'Could not update shortlist.');
+      if (err?.details?.reasonCode === 'SHORTLIST_LIMIT_REACHED' || String(err?.message || '').toLowerCase().includes('shortlist')) {
+        Alert.alert(
+          'Shortlist Limit Reached',
+          err?.message || 'Upgrade your membership to shortlist more profiles.',
+          [
+            { text: 'Not Now', style: 'cancel' },
+            { text: 'Upgrade', onPress: () => navigation.navigate('MatrimonyUpgrade') },
+          ]
+        );
+      } else {
+        Alert.alert('Error', err?.message || 'Could not update shortlist.');
+      }
     }
   };
 
@@ -544,29 +663,227 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
     }
   };
 
-  const handleSendInterest = async (candidate: MatrimonyMatchCandidate) => {
-    if (candidate.interestStatus) return;
-    setActionBusyUid(candidate.uid);
-    try {
-      const res = await matrimonyApi.sendInterest(candidate.uid);
+  const showInterestToast = useCallback(
+    (
+      next: { kind: 'sent' | 'cancelled'; uid: string; name: string; isMutual?: boolean },
+      durationMs: number
+    ) => {
+      if (interestToastTimerRef.current) clearTimeout(interestToastTimerRef.current);
+      setInterestToast(next);
+      interestToastTimerRef.current = setTimeout(() => {
+        setInterestToast((prev) => (prev?.uid === next.uid && prev?.kind === next.kind ? null : prev));
+      }, durationMs);
+    },
+    []
+  );
+
+  const handleUndoSendInterest = useCallback(
+    async (targetUid: string, targetName: string) => {
       setMatches((prev) =>
         prev.map((m) =>
-          m.uid === candidate.uid
-            ? { ...m, interestStatus: res.interestStatus, interestSentAtMs: Date.now() }
+          m.uid === targetUid ? { ...m, interestStatus: null, interestSentAtMs: undefined } : m
+        )
+      );
+      showInterestToast({ kind: 'cancelled', uid: targetUid, name: targetName }, 3000);
+      try {
+        const pendingReq = pendingSendMapRef.current.get(targetUid);
+        if (pendingReq) {
+          await pendingReq.catch(() => undefined);
+        }
+        await matrimonyApi.respondInterest(targetUid, 'withdraw');
+      } catch (err: any) {
+        console.warn('handleUndoSendInterest warning:', err);
+      }
+    },
+    [showInterestToast]
+  );
+
+  const handleSendInterest = async (candidate: MatrimonyMatchCandidate) => {
+    if (candidate.interestStatus) return;
+    const optimisticSentAt = Date.now();
+    // Instant optimistic transition: immediately show Call Now + Send Message & Undo toast
+    setMatches((prev) =>
+      prev.map((m) =>
+        m.uid === candidate.uid
+          ? { ...m, interestStatus: 'pending', interestSentAtMs: optimisticSentAt }
+          : m
+      )
+    );
+    showInterestToast({ kind: 'sent', uid: candidate.uid, name: candidate.displayName }, 5500);
+
+    const sendPromise = matrimonyApi.sendInterest(candidate.uid);
+    pendingSendMapRef.current.set(candidate.uid, sendPromise);
+
+    try {
+      const res = await sendPromise;
+      setMatches((prev) =>
+        prev.map((m) =>
+          m.uid === candidate.uid && m.interestSentAtMs === optimisticSentAt
+            ? { ...m, interestStatus: res.interestStatus, interestSentAtMs: optimisticSentAt }
             : m
         )
       );
       if (res.isMutual) {
+        setInterestToast((prev) => (prev?.uid === candidate.uid ? null : prev));
         Alert.alert(
           'Mutual Match!',
           `${candidate.displayName} also expressed interest in you.`
         );
       }
+      if (typeof (res as any).interestsSentThisMonth === 'number') {
+        setEntitlements((prev) =>
+          prev
+            ? {
+                ...prev,
+                interestsSentThisMonth: (res as any).interestsSentThisMonth,
+                interestsRemaining:
+                  typeof (res as any).interestsRemaining === 'number'
+                    ? (res as any).interestsRemaining
+                    : prev.interestsRemaining,
+              }
+            : prev
+        );
+      }
     } catch (err: any) {
-      Alert.alert('Error', err?.message || 'Unable to send interest.');
+      // Revert optimistic interest state on failure
+      setMatches((prev) =>
+        prev.map((m) =>
+          m.uid === candidate.uid && m.interestSentAtMs === optimisticSentAt
+            ? { ...m, interestStatus: null, interestSentAtMs: undefined }
+            : m
+        )
+      );
+      setInterestToast((prev) => (prev?.uid === candidate.uid ? null : prev));
+      if (
+        err?.details?.reasonCode === 'MONTHLY_INTEREST_LIMIT_REACHED' ||
+        String(err?.message || '').toLowerCase().includes('month')
+      ) {
+        Alert.alert(
+          'Monthly Interest Limit Reached',
+          err?.message ||
+            'Free members can send up to 20 interests per month. Upgrade to Silver, Gold, or Platinum for unlimited interests.',
+          [
+            { text: 'Not Now', style: 'cancel' },
+            { text: 'Upgrade Plan', onPress: () => navigation.navigate('MatrimonyUpgrade') },
+          ]
+        );
+      } else {
+        Alert.alert('Error', err?.message || 'Unable to send interest.');
+      }
     } finally {
-      setActionBusyUid(null);
+      if (pendingSendMapRef.current.get(candidate.uid) === sendPromise) {
+        pendingSendMapRef.current.delete(candidate.uid);
+      }
     }
+  };
+
+  const handleCallCard = (candidate: MatrimonyMatchCandidate) => {
+    if (!entitlements || entitlements.tier === 'free' || !entitlements.callAccess) {
+      Alert.alert(
+        'Upgrade to Call',
+        'Calling members directly is unlocked for Silver, Gold, and Platinum members.',
+        [
+          { text: 'Not Now', style: 'cancel' },
+          { text: 'Upgrade Plan', onPress: () => navigation.navigate('MatrimonyUpgrade') },
+        ]
+      );
+      return;
+    }
+    if (candidate.contactPhone) {
+      Linking.openURL(`tel:${candidate.contactPhone}`).catch(() => {
+        Alert.alert('Call Failed', 'Could not open phone dialer.');
+      });
+      return;
+    }
+    Alert.alert(
+      'Unlock Contact Number',
+      `Unlock ${candidate.displayName}'s contact number (${
+        entitlements.contactNumberLimit < 0
+          ? 'Unlimited'
+          : `${entitlements.contactNumbersRemaining}/${entitlements.contactNumberLimit} left`
+      }) to call?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Unlock & Call',
+          onPress: async () => {
+            try {
+              const res = await matrimonyApi.unlockContact(candidate.uid);
+              if (res.contactPhone) {
+                setMatches((prev) =>
+                  prev.map((m) =>
+                    m.uid === candidate.uid
+                      ? {
+                          ...m,
+                          contactPhone: res.contactPhone ?? m.contactPhone,
+                          dob: res.dob ?? m.dob,
+                          isContactUnlocked: true,
+                        }
+                      : m
+                  )
+                );
+                Linking.openURL(`tel:${res.contactPhone}`).catch(() => undefined);
+              } else {
+                Alert.alert('Unavailable', 'Contact number is not added for this profile.');
+              }
+            } catch (err: any) {
+              if (err?.details?.reasonCode === 'CONTACT_UNLOCK_LIMIT_REACHED') {
+                Alert.alert(
+                  'Contact Limit Reached',
+                  err?.message || 'Upgrade to Platinum for unlimited contacts.',
+                  [
+                    { text: 'Not Now', style: 'cancel' },
+                    { text: 'Upgrade', onPress: () => navigation.navigate('MatrimonyUpgrade') },
+                  ]
+                );
+              } else {
+                Alert.alert('Unlock Failed', err?.message || 'Unable to unlock contact.');
+              }
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleSendMessageCard = (candidate: MatrimonyMatchCandidate) => {
+    if (candidate.interestStatus !== 'accepted') {
+      Alert.alert(
+        'Send Message',
+        `Direct messaging opens once ${candidate.displayName} accepts your interest.`
+      );
+      return;
+    }
+    const openChat = () => {
+      navigation.navigate('MatrimonyChat', {
+        targetUid: candidate.uid,
+        peer: {
+          uid: candidate.uid,
+          displayName: candidate.displayName,
+          profileCode: candidate.profileCode,
+          signedProfilePhoto: candidate.signedProfilePhoto || null,
+          age: candidate.age ?? null,
+          city:
+            candidate.location?.village ||
+            candidate.location?.city ||
+            candidate.location?.state ||
+            '',
+          contactPhone: candidate.contactPhone || null,
+        },
+      });
+    };
+    if (entitlements && !entitlements.messageAccess) {
+      Alert.alert(
+        'Upgrade to Send Messages',
+        'Sending personalised messages requires an active Silver, Gold, or Platinum membership.',
+        [
+          { text: 'View History', style: 'cancel', onPress: openChat },
+          { text: 'Upgrade Plan', onPress: () => navigation.navigate('MatrimonyUpgrade') },
+        ]
+      );
+      return;
+    }
+    openChat();
   };
 
   const openPhotoViewer = (item: MatrimonyMatchCandidate, idx: number, photoIdx = 0) => {
@@ -604,59 +921,80 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
       item.joinedAtMs && Date.now() - item.joinedAtMs <= THIRTY_DAYS_MS
     );
 
-    const renderCardActions = () => (
-      <View style={styles.cardActionsRow}>
-        <TouchableOpacity
-          style={[
-            styles.dontShowBtn,
-            { borderColor: isDark ? '#475569' : '#CBD5E1' },
-          ]}
-          disabled={actionBusyUid === item.uid}
-          onPress={() => handleDismiss(item.uid)}
-          activeOpacity={0.8}
-        >
-          <X size={16} color={colors.textSecondary} />
-          <Text
-            style={[
-              styles.dontShowText,
-              { color: colors.textSecondary, fontFamily, fontSize: scaleFont(14) },
-            ]}
-          >
-            Don&apos;t Show
-          </Text>
-        </TouchableOpacity>
+    const renderCardActions = () => {
+      if (hasSentInterest && item.interestStatus !== 'declined') {
+        const isFemale = String(item.gender || '').toLowerCase().includes('female') || String(item.gender || '').toLowerCase() === 'f';
+        const pronoun = isFemale ? 'her' : 'him';
+        return (
+          <View style={{ marginTop: 12 }}>
+            <Text style={[styles.sentStatusHint, { color: colors.text, fontFamily, fontSize: scaleFont(13.5) }]}>
+              {isMutual
+                ? `Interest accepted by ${item.displayName}`
+                : `You sent ${pronoun} an interest`}
+            </Text>
+            <View style={[styles.cardActionsRow, { marginTop: 10 }]}>
+              <TouchableOpacity
+                style={[styles.callOutlineBtn, { borderColor: CORAL_RED }]}
+                activeOpacity={0.82}
+                onPress={() => handleCallCard(item)}
+              >
+                <Phone size={15} color={CORAL_RED} strokeWidth={2} />
+                <Text style={[styles.callOutlineText, { fontFamily, fontSize: scaleFont(14) }]}>
+                  Call Now
+                </Text>
+              </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[
-            styles.sendInterestBtn,
-            hasSentInterest && {
-              backgroundColor: isMutual ? GREEN : '#15803D',
-            },
-          ]}
-          disabled={hasSentInterest || actionBusyUid === item.uid}
-          onPress={() => handleSendInterest(item)}
-          activeOpacity={0.88}
-        >
-          {actionBusyUid === item.uid ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
-          ) : hasSentInterest ? (
-            <>
-              <Check size={16} color="#FFFFFF" strokeWidth={2.5} />
-              <Text style={[styles.sendInterestText, { fontFamily, fontSize: scaleFont(14) }]}>
-                {isMutual ? 'Mutual Match' : 'Interest Sent'}
-              </Text>
-            </>
-          ) : (
-            <>
-              <Heart size={16} color="#FFFFFF" />
-              <Text style={[styles.sendInterestText, { fontFamily, fontSize: scaleFont(14) }]}>
-                Send Interest
-              </Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
-    );
+              <TouchableOpacity
+                style={styles.sendMessageSolidBtn}
+                activeOpacity={0.85}
+                onPress={() => handleSendMessageCard(item)}
+              >
+                <Mail size={15} color="#FFFFFF" strokeWidth={2} />
+                <Text style={[styles.sendMessageSolidText, { fontFamily, fontSize: scaleFont(14) }]}>
+                  Send Message
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+      }
+
+      return (
+        <View style={styles.cardActionsRow}>
+          <TouchableOpacity
+            style={[
+              styles.dontShowBtn,
+              { borderColor: isDark ? '#475569' : '#CBD5E1' },
+            ]}
+            disabled={actionBusyUid === item.uid}
+            onPress={() => handleDismiss(item.uid)}
+            activeOpacity={0.8}
+          >
+            <X size={16} color={colors.textSecondary} />
+            <Text
+              style={[
+                styles.dontShowText,
+                { color: colors.textSecondary, fontFamily, fontSize: scaleFont(14) },
+              ]}
+            >
+              Don&apos;t Show
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.sendInterestBtn}
+            disabled={actionBusyUid === item.uid}
+            onPress={() => handleSendInterest(item)}
+            activeOpacity={0.88}
+          >
+            <Heart size={16} color="#FFFFFF" />
+            <Text style={[styles.sendInterestText, { fontFamily, fontSize: scaleFont(14) }]}>
+              Send Interest
+            </Text>
+          </TouchableOpacity>
+        </View>
+      );
+    };
 
     if (displayLayout === 'list') {
       return (
@@ -741,7 +1079,11 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
               onPress={() => openMatchDetail(index)}
               style={styles.listRightCol}
             >
-              <VerifiedRibbonBadge fontFamily={fontFamily} />
+              <VerifiedRibbonBadge
+                fontFamily={fontFamily}
+                variant={matchTier === 'prime' ? 'prime_verified' : 'verified'}
+                tier={item.candidateTier}
+              />
 
               <Text
                 style={[
@@ -871,7 +1213,11 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
           style={styles.cardBody}
         >
           <View style={styles.verifiedRow}>
-            <VerifiedRibbonBadge fontFamily={fontFamily} />
+            <VerifiedRibbonBadge
+              fontFamily={fontFamily}
+              variant={matchTier === 'prime' ? 'prime_verified' : 'verified'}
+              tier={item.candidateTier}
+            />
           </View>
 
           <Text
@@ -1024,9 +1370,21 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
       {/* Subheader: Count & Preferences + Filter/Sort Pills */}
       <View style={[styles.subHeaderWrap, { backgroundColor: softBg }]}>
         <View style={styles.countRow}>
-          {tab === 'all' ? (
+          {loading && displayedMatches.length === 0 ? (
+            <Text style={[styles.countText, { color: colors.textSecondary, fontFamily, fontSize: scaleFont(14.5) }]}>
+              {tab === 'all' ? 'Finding matches based on your preferences...' : 'Finding your matches...'}
+            </Text>
+          ) : tab === 'all' ? (
             <Text style={[styles.countText, { color: colors.text, fontFamily, fontSize: scaleFont(14.5) }]}>
-              {displayedMatches.length} {displayedMatches.length === 1 ? 'Match' : 'Matches'} based on your{' '}
+              {matchTier === 'prime'
+                ? displayedMatches.length
+                : Math.max(displayedMatches.length, totalMatchedCount)}{' '}
+              {(matchTier === 'prime'
+                ? displayedMatches.length
+                : Math.max(displayedMatches.length, totalMatchedCount)) === 1
+                ? 'Match'
+                : 'Matches'}{' '}
+              based on your{' '}
               <Text
                 style={styles.prefLink}
                 onPress={() =>
@@ -1040,7 +1398,14 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
             </Text>
           ) : (
             <Text style={[styles.countText, { color: colors.text, fontFamily, fontSize: scaleFont(14.5), flex: 1, paddingRight: 8 }]}>
-              {displayedMatches.length} {displayedMatches.length === 1 ? 'Match' : 'Matches'}{' '}
+              {matchTier === 'prime'
+                ? displayedMatches.length
+                : Math.max(displayedMatches.length, totalMatchedCount)}{' '}
+              {(matchTier === 'prime'
+                ? displayedMatches.length
+                : Math.max(displayedMatches.length, totalMatchedCount)) === 1
+                ? 'Match'
+                : 'Matches'}{' '}
               {TAB_COUNT_SUBTITLE_SUFFIX[tab] || 'in this view'}
             </Text>
           )}
@@ -1052,6 +1417,52 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
             <MoreVertical size={18} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
+
+        {entitlements ? (
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate('MatrimonyUpgrade')}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingHorizontal: 14,
+              paddingVertical: 5,
+              marginBottom: 4,
+              backgroundColor: isDark ? 'rgba(217,119,6,0.12)' : '#FFFBEB',
+              borderRadius: 8,
+              marginHorizontal: 12,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 11.5,
+                fontWeight: '700',
+                color: isDark ? '#FDE68A' : '#92400E',
+                fontFamily,
+              }}
+              numberOfLines={1}
+            >
+              {entitlements.tier === 'free'
+                ? `Free Plan · ${entitlements.interestsRemaining}/${entitlements.monthlyInterestLimit} interests left this month`
+                : `${entitlements.planName} · Unlimited Interests · ${
+                    entitlements.contactNumberLimit < 0
+                      ? 'Unlimited Contacts'
+                      : `${entitlements.contactNumbersRemaining}/${entitlements.contactNumberLimit} Contacts left`
+                  }`}
+            </Text>
+            <Text
+              style={{
+                fontSize: 11,
+                fontWeight: '800',
+                color: '#D97706',
+                fontFamily,
+              }}
+            >
+              {entitlements.tier === 'free' ? 'Upgrade' : 'Plan'}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
 
         <ScrollView
           horizontal
@@ -1203,12 +1614,67 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
 
       {/* Matches Feed */}
       {loading ? (
-        <View style={styles.centerBox}>
-          <ActivityIndicator size="large" color={CORAL_RED} />
-          <Text style={[styles.loadingText, { color: colors.textSecondary, fontFamily }]}>
-            Loading your matches...
-          </Text>
-        </View>
+        <ScrollView
+          contentContainerStyle={[styles.listContent, { gap: 14 }]}
+          showsVerticalScrollIndicator={false}
+        >
+          {[0, 1, 2].map((idx) => (
+            <View
+              key={idx}
+              style={[
+                styles.matchCard,
+                {
+                  backgroundColor: cardSurface,
+                  borderColor: isDark ? colors.border : '#E5E7EB',
+                  padding: 12,
+                  gap: 10,
+                },
+              ]}
+            >
+              <View
+                style={{
+                  height: 220,
+                  borderRadius: 12,
+                  backgroundColor: isDark ? '#1E293B' : '#E2E8F0',
+                }}
+              />
+              <View
+                style={{
+                  height: 18,
+                  width: '55%',
+                  borderRadius: 6,
+                  backgroundColor: isDark ? '#334155' : '#E2E8F0',
+                }}
+              />
+              <View
+                style={{
+                  height: 13,
+                  width: '80%',
+                  borderRadius: 6,
+                  backgroundColor: isDark ? '#1E293B' : '#F1F5F9',
+                }}
+              />
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+                <View
+                  style={{
+                    flex: 1,
+                    height: 38,
+                    borderRadius: 20,
+                    backgroundColor: isDark ? '#1E293B' : '#F1F5F9',
+                  }}
+                />
+                <View
+                  style={{
+                    flex: 1,
+                    height: 38,
+                    borderRadius: 20,
+                    backgroundColor: isDark ? '#334155' : '#FEE2E2',
+                  }}
+                />
+              </View>
+            </View>
+          ))}
+        </ScrollView>
       ) : errorMsg ? (
         <View style={styles.centerBox}>
           <Text style={[styles.emptyTitle, { color: colors.text, fontFamily }]}>
@@ -1228,10 +1694,29 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
           renderItem={renderMatchCard}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
-          initialNumToRender={5}
-          maxToRenderPerBatch={5}
-          windowSize={5}
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={7}
           removeClippedSubviews={Platform.OS === 'android'}
+          ListFooterComponent={
+            loadingMore && displayedMatches.length > 0 ? (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  paddingVertical: 16,
+                }}
+              >
+                <ActivityIndicator size="small" color={CORAL_RED} />
+                <Text style={{ fontSize: 12.5, color: colors.textSecondary, fontFamily }}>
+                  Loading remaining matches ({displayedMatches.length} of{' '}
+                  {Math.max(displayedMatches.length, totalMatchedCount)})...
+                </Text>
+              </View>
+            ) : null
+          }
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -1249,7 +1734,7 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
               </View>
               <Text style={[styles.emptyTitle, { color: colors.text, fontFamily }]}>
                 {matchTier === 'prime'
-                  ? 'No Prime Matches Found Right Now'
+                  ? 'No Paid Members Found Right Now'
                   : tab === 'shortlisted' || tab === 'shortlisted_by_you'
                   ? 'No Shortlisted Profiles Yet'
                   : tab === 'shortlisted_you'
@@ -1264,7 +1749,7 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
               </Text>
               <Text style={[styles.emptySub, { color: colors.textSecondary, fontFamily }]}>
                 {matchTier === 'prime'
-                  ? 'PRIME highlights verified members with uploaded photos and high compatibility or baptism verification. Switch to Regular to see all matches.'
+                  ? 'PRIME shows members with an active Silver, Gold, or Platinum plan. Switch to Regular to see all matching paid and free members.'
                   : tab === 'shortlisted' || tab === 'shortlisted_by_you'
                   ? 'Tap Shortlist on any match card to save profiles here.'
                   : tab === 'shortlisted_you'
@@ -1337,6 +1822,33 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
             <Text style={[styles.undoToastAction, { fontFamily }]}>Undo</Text>
           </TouchableOpacity>
         </View>
+      ) : null}
+
+      {interestToast ? (
+        interestToast.kind === 'sent' ? (
+          <View style={styles.interestUndoToast}>
+            <Text style={[styles.interestToastText, { fontFamily }]} numberOfLines={1}>
+              Interest sent to {interestToast.name}
+            </Text>
+            <View style={styles.interestToastDivider} />
+            <TouchableOpacity
+              style={styles.interestToastUndoBtn}
+              onPress={() => handleUndoSendInterest(interestToast.uid, interestToast.name)}
+              activeOpacity={0.8}
+            >
+              <Undo2 size={15} color="#FFFFFF" strokeWidth={2.2} />
+              <Text style={[styles.interestToastUndoText, { fontFamily }]}>Undo</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.interestCancelledToastWrap} pointerEvents="none">
+            <View style={styles.interestCancelledToast}>
+              <Text style={[styles.interestCancelledText, { fontFamily }]}>
+                Your interest has been cancelled
+              </Text>
+            </View>
+          </View>
+        )
       ) : null}
       </View>
 
@@ -1773,6 +2285,8 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
         tab={tab}
         matchBasis={matchBasis}
         sortBy={sortBy}
+        canUseAdvancedFilters={entitlements ? entitlements.advancedFilters : false}
+        onPressUpgrade={() => navigation.navigate('MatrimonyUpgrade')}
         onClose={() => setFilterModalOpen(false)}
         onReset={() => {
           setFilterMode('preferences');
@@ -2148,6 +2662,34 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '800',
   },
+  callOutlineBtn: {
+    flex: 0.9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 11,
+    borderRadius: 24,
+    borderWidth: 1.2,
+  },
+  callOutlineText: {
+    color: CORAL_RED,
+    fontWeight: '700',
+  },
+  sendMessageSolidBtn: {
+    flex: 1.45,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 11,
+    borderRadius: 24,
+    backgroundColor: CORAL_RED,
+  },
+  sendMessageSolidText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
   centerBox: {
     flex: 1,
     alignItems: 'center',
@@ -2456,6 +2998,75 @@ const styles = StyleSheet.create({
     color: '#FCA5A5',
     fontSize: 14,
     fontWeight: '800',
+  },
+  sentStatusHint: {
+    fontWeight: '700',
+  },
+  interestUndoToast: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    bottom: 14,
+    backgroundColor: '#3F3F46',
+    borderRadius: 12,
+    paddingLeft: 18,
+    paddingRight: 16,
+    paddingVertical: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 7,
+  },
+  interestToastText: {
+    color: '#FFFFFF',
+    fontSize: 13.5,
+    fontWeight: '600',
+    flex: 1,
+    marginRight: 12,
+  },
+  interestToastDivider: {
+    width: 1,
+    height: 22,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    marginRight: 14,
+  },
+  interestToastUndoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 2,
+  },
+  interestToastUndoText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  interestCancelledToastWrap: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    bottom: 14,
+    alignItems: 'center',
+  },
+  interestCancelledToast: {
+    backgroundColor: '#3F3F46',
+    borderRadius: 12,
+    paddingHorizontal: 22,
+    paddingVertical: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 7,
+  },
+  interestCancelledText: {
+    color: '#FFFFFF',
+    fontSize: 13.5,
+    fontWeight: '600',
   },
   filterHeading: {
     fontSize: 14.5,

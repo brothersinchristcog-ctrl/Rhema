@@ -8,7 +8,9 @@ import {
   useWindowDimensions, 
   StatusBar, 
   Platform, 
-  Image 
+  Image,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -47,6 +49,8 @@ import {
   Headset,
   HelpCircle,
   Crown,
+  UserPlus,
+  Trash2,
 } from 'lucide-react-native';
 import { useChurch } from '../../context/ChurchContext';
 import { AdminTabContext } from '../../context/AdminTabContext';
@@ -198,6 +202,8 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
 
   const isFocused = useIsFocused();
   const [matrimonyCounts, setMatrimonyCounts] = useState<AdminMatrimonyCounts | null>(null);
+  const [seedingTestUsers, setSeedingTestUsers] = useState(false);
+  const [deletingTestUsers, setDeletingTestUsers] = useState(false);
 
   const loadMatrimonyCounts = useCallback(async () => {
     try {
@@ -209,6 +215,67 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
       console.warn('AdminDashboard matrimony counts error:', err?.code, err?.message);
     }
   }, []);
+
+  const handleAdd30TestUsers = () => {
+    if (seedingTestUsers || deletingTestUsers) return;
+    Alert.alert(
+      'Add 30 Test Users',
+      'Create 30 synthetic test accounts (15 Men and 15 Women) with complete Rhema Member and Rhema Matrimony profiles?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Create 30 Users',
+          onPress: async () => {
+            setSeedingTestUsers(true);
+            try {
+              const res = await matrimonyApi.seedTestUsers();
+              await loadMatrimonyCounts();
+              Alert.alert(
+                'Test Users Created',
+                `Added ${res.createdCount} test users (${res.maleCount} Men, ${res.femaleCount} Women) to Rhema & Rhema Matrimony.`
+              );
+            } catch (err: any) {
+              Alert.alert('Error', err?.message || 'Unable to create test users.');
+            } finally {
+              setSeedingTestUsers(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteTestUsers = () => {
+    if (seedingTestUsers || deletingTestUsers) return;
+    Alert.alert(
+      'Delete Test Users',
+      'Remove all synthetic test users from Rhema & Rhema Matrimony? Real user accounts will NOT be affected.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Test Users',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingTestUsers(true);
+            try {
+              const res = await matrimonyApi.deleteTestUsers();
+              await loadMatrimonyCounts();
+              Alert.alert(
+                'Test Users Deleted',
+                res.deletedCount > 0
+                  ? `Removed ${res.deletedCount} test user accounts.`
+                  : 'No synthetic test users were found.'
+              );
+            } catch (err: any) {
+              Alert.alert('Error', err?.message || 'Unable to delete test users.');
+            } finally {
+              setDeletingTestUsers(false);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   useEffect(() => {
     loadMatrimonyCounts();
@@ -372,7 +439,7 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
         {/* ── Main Structured Sections: Modern Vector Icon Tab Cards ── */}
         <View style={[styles.sectionsContainer, { paddingHorizontal: horizontalPadding }]}>
           {matrimonyTabIndex !== -1 && (
-            <TouchableOpacity
+            <View
               style={[
                 styles.matrimonyBannerCard,
                 {
@@ -380,99 +447,157 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
                   borderColor: isDark ? '#3F3F46' : '#FBCFE8',
                 },
               ]}
-              onPress={handleOpenMatrimony}
-              activeOpacity={0.86}
             >
-              <View style={styles.matrimonyBannerTop}>
-                <View style={styles.matrimonyIconCircle}>
-                  <HeartHandshake size={22} color="#E05A5A" />
+              <TouchableOpacity
+                onPress={handleOpenMatrimony}
+                activeOpacity={0.86}
+              >
+                <View style={styles.matrimonyBannerTop}>
+                  <View style={styles.matrimonyIconCircle}>
+                    <HeartHandshake size={22} color="#E05A5A" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={[
+                        styles.matrimonyBannerTitle,
+                        { color: primaryText, fontFamily: appFontFamily, fontSize: scaleFont(16) },
+                      ]}
+                    >
+                      Rhema Matrimony
+                    </Text>
+                    <Text
+                      style={[
+                        styles.matrimonyBannerSub,
+                        { color: secondaryText, fontFamily: appFontFamily, fontSize: scaleFont(12) },
+                      ]}
+                    >
+                      Review & verify member profiles
+                    </Text>
+                  </View>
+                  <ChevronRight size={20} color={secondaryText} />
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text
-                    style={[
-                      styles.matrimonyBannerTitle,
-                      { color: primaryText, fontFamily: appFontFamily, fontSize: scaleFont(16) },
-                    ]}
-                  >
-                    Rhema Matrimony
-                  </Text>
-                  <Text
-                    style={[
-                      styles.matrimonyBannerSub,
-                      { color: secondaryText, fontFamily: appFontFamily, fontSize: scaleFont(12) },
-                    ]}
-                  >
-                    Review & verify member profiles
-                  </Text>
+
+                <View
+                  style={[
+                    styles.matrimonyStatsRow,
+                    { borderTopColor: isDark ? '#27272A' : '#F1F5F9' },
+                  ]}
+                >
+                  <View style={styles.matrimonyStatItem}>
+                    <View style={styles.matrimonyStatLabelRow}>
+                      <Users size={13} color="#2563EB" />
+                      <Text style={[styles.matrimonyStatLabel, { color: secondaryText, fontFamily: appFontFamily }]}>
+                        Profiles
+                      </Text>
+                    </View>
+                    <Text style={[styles.matrimonyStatVal, { color: primaryText, fontFamily: appFontFamily }]}>
+                      {matrimonyCounts?.total ?? '—'}
+                    </Text>
+                  </View>
+
+                  <View style={[styles.matrimonyStatDivider, { backgroundColor: isDark ? '#27272A' : '#E2E8F0' }]} />
+
+                  <View style={styles.matrimonyStatItem}>
+                    <View style={styles.matrimonyStatLabelRow}>
+                      <CheckCircle2 size={13} color="#16A34A" />
+                      <Text style={[styles.matrimonyStatLabel, { color: secondaryText, fontFamily: appFontFamily }]}>
+                        Verified
+                      </Text>
+                    </View>
+                    <Text style={[styles.matrimonyStatVal, { color: '#16A34A', fontFamily: appFontFamily }]}>
+                      {matrimonyCounts?.verified ?? '—'}
+                    </Text>
+                  </View>
+
+                  <View style={[styles.matrimonyStatDivider, { backgroundColor: isDark ? '#27272A' : '#E2E8F0' }]} />
+
+                  <View style={styles.matrimonyStatItem}>
+                    <View style={styles.matrimonyStatLabelRow}>
+                      <Clock size={13} color="#D97706" />
+                      <Text style={[styles.matrimonyStatLabel, { color: secondaryText, fontFamily: appFontFamily }]}>
+                        Pending
+                      </Text>
+                    </View>
+                    <Text style={[styles.matrimonyStatVal, { color: '#D97706', fontFamily: appFontFamily }]}>
+                      {matrimonyCounts?.pending ?? '—'}
+                    </Text>
+                  </View>
+
+                  {((matrimonyCounts?.openReports ?? 0) > 0 || (matrimonyCounts?.inactive ?? 0) > 0) && (
+                    <>
+                      <View style={[styles.matrimonyStatDivider, { backgroundColor: isDark ? '#27272A' : '#E2E8F0' }]} />
+                      <View style={styles.matrimonyStatItem}>
+                        <View style={styles.matrimonyStatLabelRow}>
+                          <Text style={[styles.matrimonyStatLabel, { color: '#DC2626', fontFamily: appFontFamily }]}>
+                            {(matrimonyCounts?.openReports ?? 0) > 0 ? 'Reports' : 'Inactive'}
+                          </Text>
+                        </View>
+                        <Text style={[styles.matrimonyStatVal, { color: '#DC2626', fontFamily: appFontFamily }]}>
+                          {(matrimonyCounts?.openReports ?? 0) > 0
+                            ? matrimonyCounts?.openReports
+                            : matrimonyCounts?.inactive}
+                        </Text>
+                      </View>
+                    </>
+                  )}
                 </View>
-                <ChevronRight size={20} color={secondaryText} />
-              </View>
+              </TouchableOpacity>
 
               <View
                 style={[
-                  styles.matrimonyStatsRow,
+                  styles.matrimonyTestActionsRow,
                   { borderTopColor: isDark ? '#27272A' : '#F1F5F9' },
                 ]}
               >
-                <View style={styles.matrimonyStatItem}>
-                  <View style={styles.matrimonyStatLabelRow}>
-                    <Users size={13} color="#2563EB" />
-                    <Text style={[styles.matrimonyStatLabel, { color: secondaryText, fontFamily: appFontFamily }]}>
-                      Profiles
-                    </Text>
-                  </View>
-                  <Text style={[styles.matrimonyStatVal, { color: primaryText, fontFamily: appFontFamily }]}>
-                    {matrimonyCounts?.total ?? '—'}
-                  </Text>
-                </View>
-
-                <View style={[styles.matrimonyStatDivider, { backgroundColor: isDark ? '#27272A' : '#E2E8F0' }]} />
-
-                <View style={styles.matrimonyStatItem}>
-                  <View style={styles.matrimonyStatLabelRow}>
-                    <CheckCircle2 size={13} color="#16A34A" />
-                    <Text style={[styles.matrimonyStatLabel, { color: secondaryText, fontFamily: appFontFamily }]}>
-                      Verified
-                    </Text>
-                  </View>
-                  <Text style={[styles.matrimonyStatVal, { color: '#16A34A', fontFamily: appFontFamily }]}>
-                    {matrimonyCounts?.verified ?? '—'}
-                  </Text>
-                </View>
-
-                <View style={[styles.matrimonyStatDivider, { backgroundColor: isDark ? '#27272A' : '#E2E8F0' }]} />
-
-                <View style={styles.matrimonyStatItem}>
-                  <View style={styles.matrimonyStatLabelRow}>
-                    <Clock size={13} color="#D97706" />
-                    <Text style={[styles.matrimonyStatLabel, { color: secondaryText, fontFamily: appFontFamily }]}>
-                      Pending
-                    </Text>
-                  </View>
-                  <Text style={[styles.matrimonyStatVal, { color: '#D97706', fontFamily: appFontFamily }]}>
-                    {matrimonyCounts?.pending ?? '—'}
-                  </Text>
-                </View>
-
-                {((matrimonyCounts?.openReports ?? 0) > 0 || (matrimonyCounts?.inactive ?? 0) > 0) && (
-                  <>
-                    <View style={[styles.matrimonyStatDivider, { backgroundColor: isDark ? '#27272A' : '#E2E8F0' }]} />
-                    <View style={styles.matrimonyStatItem}>
-                      <View style={styles.matrimonyStatLabelRow}>
-                        <Text style={[styles.matrimonyStatLabel, { color: '#DC2626', fontFamily: appFontFamily }]}>
-                          {(matrimonyCounts?.openReports ?? 0) > 0 ? 'Reports' : 'Inactive'}
-                        </Text>
-                      </View>
-                      <Text style={[styles.matrimonyStatVal, { color: '#DC2626', fontFamily: appFontFamily }]}>
-                        {(matrimonyCounts?.openReports ?? 0) > 0
-                          ? matrimonyCounts?.openReports
-                          : matrimonyCounts?.inactive}
+                <TouchableOpacity
+                  style={[
+                    styles.matrimonyTestBtn,
+                    styles.matrimonyAddTestBtn,
+                    (seedingTestUsers || deletingTestUsers) && { opacity: 0.65 },
+                  ]}
+                  onPress={handleAdd30TestUsers}
+                  disabled={seedingTestUsers || deletingTestUsers}
+                  activeOpacity={0.8}
+                >
+                  {seedingTestUsers ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <UserPlus size={14} color="#FFFFFF" />
+                      <Text style={[styles.matrimonyAddTestBtnTxt, { fontFamily: appFontFamily }]}>
+                        Add 30 Test Users
                       </Text>
-                    </View>
-                  </>
-                )}
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.matrimonyTestBtn,
+                    styles.matrimonyDeleteTestBtn,
+                    {
+                      backgroundColor: isDark ? 'rgba(220, 38, 38, 0.16)' : '#FEF2F2',
+                      borderColor: isDark ? 'rgba(220, 38, 38, 0.45)' : '#FECACA',
+                    },
+                    (seedingTestUsers || deletingTestUsers) && { opacity: 0.65 },
+                  ]}
+                  onPress={handleDeleteTestUsers}
+                  disabled={seedingTestUsers || deletingTestUsers}
+                  activeOpacity={0.8}
+                >
+                  {deletingTestUsers ? (
+                    <ActivityIndicator size="small" color="#DC2626" />
+                  ) : (
+                    <>
+                      <Trash2 size={14} color="#DC2626" />
+                      <Text style={[styles.matrimonyDeleteTestBtnTxt, { fontFamily: appFontFamily }]}>
+                        Delete Test Users
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
               </View>
-            </TouchableOpacity>
+            </View>
           )}
 
           {SECTIONS.map((section) => {
@@ -934,5 +1059,39 @@ const styles = StyleSheet.create({
   matrimonyStatDivider: {
     width: 1,
     height: 28,
+  },
+  matrimonyTestActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+  },
+  matrimonyTestBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    gap: 6,
+  },
+  matrimonyAddTestBtn: {
+    backgroundColor: '#E05A5A',
+  },
+  matrimonyAddTestBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  matrimonyDeleteTestBtn: {
+    borderWidth: 1,
+  },
+  matrimonyDeleteTestBtnTxt: {
+    color: '#DC2626',
+    fontSize: 12.5,
+    fontWeight: '700',
   },
 });

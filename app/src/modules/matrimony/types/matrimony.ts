@@ -19,12 +19,76 @@ export type MatrimonyMembershipTier = 'free' | 'silver' | 'gold' | 'platinum';
 
 export interface MatrimonyMembershipInfo {
   tier: MatrimonyMembershipTier;
+  planId?: string;
   planName?: string;
   status?: 'active' | 'expired';
   amountInr?: number;
   durationMonths?: number;
   validUntilMs?: number;
   paymentId?: string;
+}
+
+export interface MatrimonyPlanLimits {
+  monthlyInterestLimit: number;
+  contactNumberLimit: number;
+  shortlistLimit: number;
+  messageAccess: boolean;
+  callAccess: boolean;
+  whatsappAccess: boolean;
+  advancedFilters: boolean;
+  visibilityPriority: number;
+  highlightStyle: 'none' | 'gold' | 'platinum';
+  prioritySupport: boolean;
+}
+
+export interface MatrimonyPlanSpec {
+  planId: string;
+  tier: 'silver' | 'gold' | 'platinum';
+  planName: string;
+  tagline: string;
+  durationMonths: number;
+  priceInr: number;
+  originalPriceInr: number;
+  discountPercentage: number;
+  badgeText: string;
+  benefits: string[];
+  limits: MatrimonyPlanLimits;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export interface MemberEntitlements {
+  tier: MatrimonyMembershipTier;
+  planId: string | null;
+  planName: string;
+  subscriptionStatus: 'free' | 'active' | 'expired';
+  subscriptionId: string | null;
+  startDateMs: number | null;
+  expiryDateMs: number | null;
+  monthlyInterestLimit: number;
+  interestsSentThisMonth: number;
+  interestsRemaining: number;
+  contactNumberLimit: number;
+  contactNumbersViewedCount: number;
+  contactNumbersRemaining: number;
+  shortlistLimit: number;
+  messageAccess: boolean;
+  callAccess: boolean;
+  whatsappAccess: boolean;
+  advancedFilters: boolean;
+  visibilityPriority: number;
+  highlightStyle: 'none' | 'gold' | 'platinum';
+  prioritySupport: boolean;
+  unlockedContactUids: string[];
+  monthKey: string;
+}
+
+export interface MatrimonyVerificationSummary {
+  adminApproved: boolean;
+  churchMemberVerified: boolean;
+  photoVerified: boolean;
+  baptismVerified: boolean;
+  trustLevel: 'prime_verified' | 'verified';
 }
 
 export interface MatrimonyConsent {
@@ -437,6 +501,12 @@ export interface MatrimonyMatchCandidate {
   maskedDob?: string | null;
   maskedPhone?: string | null;
   contactPhone?: string | null;
+  isContactUnlocked?: boolean;
+  canUnlockContact?: boolean;
+  candidateTier?: MatrimonyMembershipTier;
+  isHighlighted?: 'none' | 'gold' | 'platinum';
+  visibilityPriority?: number;
+  verificationSummary?: MatrimonyVerificationSummary;
   partnerPreferencesComparison?: PartnerPreferenceMatchSummary;
   signedProfilePhoto?: string | null;
   signedGallery?: string[];
@@ -446,12 +516,16 @@ export interface MatrimonyMatchCandidate {
   matchReasons: string[];
   breakdown?: {
     ageScore: number;
+    educationScore?: number;
     interestsScore: number;
     heightScore: number;
     maritalScore: number;
+    familyScore?: number;
     faithScore: number;
     careerScore: number;
     locationScore: number;
+    lifestyleScore?: number;
+    additionalScore?: number;
     habitsScore: number;
   };
   isShortlisted: boolean;
@@ -466,6 +540,8 @@ export interface GetMatrimonyMatchesResponse {
   success: boolean;
   matches: MatrimonyMatchCandidate[];
   totalCount: number;
+  hasMore?: boolean;
+  nextOffset?: number;
   totalAvailableCount?: number;
   hiddenCount?: number;
   viewerGender: 'male' | 'female' | null;
@@ -473,6 +549,8 @@ export interface GetMatrimonyMatchesResponse {
   viewerPhoto?: string | null;
   viewerPreferencesFilter?: MatrimonyMatchesFilter;
   preferencesUpdatedAtMs?: number;
+  viewerEntitlements?: MemberEntitlements;
+  lockedAdvancedFilters?: boolean;
 }
 
 export interface MatrimonyInterestEntry {
@@ -488,6 +566,51 @@ export interface GetMatrimonyInterestsHubResponse {
   success: boolean;
   received: MatrimonyInterestEntry[];
   sent: MatrimonyInterestEntry[];
+  viewerEntitlements?: MemberEntitlements;
+}
+
+export interface AdminSubscriptionItem {
+  uid: string;
+  subscriptionId: string;
+  planId: string;
+  planName: string;
+  tier: string;
+  status: string;
+  durationMonths: number;
+  amountInr: number;
+  source: string;
+  grantedBy: string | null;
+  note: string | null;
+  startDateMs: number | null;
+  expiryDateMs: number | null;
+}
+
+export interface AdminPaymentHistoryItem {
+  id: string;
+  uid: string;
+  planId: string;
+  tier: string;
+  amountInr: number;
+  status: string;
+  source: string;
+  paymentId: string | null;
+  orderId: string | null;
+  createdAtMs: number;
+}
+
+export interface AdminMatrimonyPlansAndSubsResponse {
+  success: boolean;
+  plans: MatrimonyPlanSpec[];
+  subscriptions: AdminSubscriptionItem[];
+  paymentHistory: AdminPaymentHistoryItem[];
+  summary: {
+    activeCount: number;
+    expiredCount: number;
+    silverActive: number;
+    goldActive: number;
+    platinumActive: number;
+    totalRevenueInr: number;
+  };
 }
 
 export interface MatrimonyChatPeer {
