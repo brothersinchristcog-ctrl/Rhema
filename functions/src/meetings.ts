@@ -12,13 +12,20 @@ export interface OnlineMeetingTopicMessageParams {
   body: string;
   churchId: string;
   meetingId: string;
+  notificationType?: 'online_meeting' | 'online_meeting_scheduled';
   provider?: string | undefined;
   url?: string | undefined;
   password?: string | undefined;
+  date?: string | undefined;
+  startTimeLabel?: string | undefined;
+  endTimeLabel?: string | undefined;
+  teacherName?: string | undefined;
+  topic?: string | undefined;
+  bibleBook?: string | undefined;
 }
 
 /**
- * Build a high-priority FCM topic message for online meeting alerts
+ * Build a high-priority FCM payload for online meeting alerts
  * targeting Android's 'church_alerts' channel and iOS APNs alerts.
  */
 export function buildOnlineMeetingTopicMessage({
@@ -26,9 +33,16 @@ export function buildOnlineMeetingTopicMessage({
   body,
   churchId,
   meetingId,
+  notificationType = 'online_meeting',
   provider = '',
   url = '',
   password = '',
+  date = '',
+  startTimeLabel = '',
+  endTimeLabel = '',
+  teacherName = '',
+  topic = '',
+  bibleBook = '',
 }: OnlineMeetingTopicMessageParams) {
   const safeTitle = String(title || '');
   const safeBody = String(body || '');
@@ -40,13 +54,21 @@ export function buildOnlineMeetingTopicMessage({
       body: safeBody,
     },
     data: {
-      type: 'online_meeting',
+      type: notificationType,
       id: String(meetingId),
       meetingId: String(meetingId),
       churchId: String(churchId),
       provider: String(provider || ''),
       url: String(url || ''),
+      screen: 'OnlineMeetingDetail',
+      click_action: 'FLUTTER_NOTIFICATION_CLICK',
       ...(safePassword ? { password: safePassword } : {}),
+      ...(date ? { date: String(date) } : {}),
+      ...(startTimeLabel ? { startTimeLabel: String(startTimeLabel) } : {}),
+      ...(endTimeLabel ? { endTimeLabel: String(endTimeLabel) } : {}),
+      ...(teacherName ? { teacherName: String(teacherName) } : {}),
+      ...(topic ? { topic: String(topic) } : {}),
+      ...(bibleBook ? { bibleBook: String(bibleBook) } : {}),
       title: safeTitle,
       body: safeBody,
       channelId: 'church_alerts',
@@ -82,6 +104,212 @@ export function buildOnlineMeetingTopicMessage({
     },
     topic: `church_${churchId}`,
   };
+}
+
+function collectTokensFromSnapshot(snap: any, tokenSet: Set<string>) {
+  if (!snap) return;
+  snap.forEach((doc: any) => {
+    const d = doc.data();
+    if (!d) return;
+    if (d.fcmToken && typeof d.fcmToken === 'string' && d.fcmToken.trim().length > 10) {
+      tokenSet.add(d.fcmToken.trim());
+    }
+    if (Array.isArray(d.fcmTokens)) {
+      d.fcmTokens.forEach((tk: unknown) => {
+        if (typeof tk === 'string' && tk.trim().length > 10) {
+          tokenSet.add(tk.trim());
+        }
+      });
+    }
+  });
+}
+
+async function collectChurchMemberTokens(db: any, churchId: string): Promise<string[]> {
+  const tokenSet = new Set<string>();
+  const [rhemaMembersRes, legacyMembersRes, usersRes] = await Promise.allSettled([
+    db.collection('Rhema Church').doc(churchId).collection('members').get(),
+    db.collection('churches').doc(churchId).collection('members').get(),
+    db.collection('users').get(),
+  ]);
+
+  if (rhemaMembersRes.status === 'fulfilled') {
+    collectTokensFromSnapshot(rhemaMembersRes.value, tokenSet);
+  }
+  if (legacyMembersRes.status === 'fulfilled') {
+    collectTokensFromSnapshot(legacyMembersRes.value, tokenSet);
+  }
+  if (usersRes.status === 'fulfilled' && usersRes.value) {
+    usersRes.value.forEach((doc: any) => {
+      const u = doc.data();
+      if (!u) return;
+      const uChurch = normalizeChurchId(u.primaryChurchId || u.churchId || 'rhema');
+      if (uChurch !== churchId) return;
+      if (u.fcmToken && typeof u.fcmToken === 'string' && u.fcmToken.trim().length > 10) {
+        tokenSet.add(u.fcmToken.trim());
+      }
+      if (Array.isArray(u.fcmTokens)) {
+        u.fcmTokens.forEach((tk: unknown) => {
+          if (typeof tk === 'string' && tk.trim().length > 10) {
+            tokenSet.add(tk.trim());
+          }
+        });
+      }
+    });
+  }
+
+  return Array.from(tokenSet);
+}
+
+interface DispatchMeetingAlertParams {
+  db: any;
+  churchId: string;
+  meetingId: string;
+  notifDocId: string;
+  eventKind: 'scheduled' | 'live';
+  meetingData: Record<string, any>;
+}
+
+async function dispatchOnlineMeetingAlert({
+  db,
+  churchId,
+  meetingId,
+  notifDocId,
+  eventKind,
+  meetingData,
+}: DispatchMeetingAlertParams): Promise<{ pushSent: boolean; inAppWritten: boolean }> {
+  const title = String(meetingData.title || 'Online Meeting').trim();
+  const provider = String(meetingData.provider || meetingData.meetingType || 'google_meet');
+  const providerLabel = provider === 'google_meet' ? 'Google Meet' : 'Zoom Meeting';
+  const meetingLink = String(
+    meetingData.meetingLink || meetingData.meetingUrl || meetingData.url || ''
+  ).trim();
+  const teacherName = String(meetingData.teacherName || meetingData.teacher || '').trim();
+  const date = String(meetingData.date || meetingData.scheduledDate || '').trim();
+  const startTimeLabel = String(meetingData.startTimeLabel || '').trim();
+  const endTimeLabel = String(meetingData.endTimeLabel || '').trim();
+  const topic = String(meetingData.topic || '').trim();
+  const bibleBook = String(meetingData.bibleBook || '').trim();
+  const password = String(meetingData.password || '').trim();
+
+  const timeRange =
+    startTimeLabel && endTimeLabel
+      ? `${startTimeLabel} - ${endTimeLabel}`
+      : startTimeLabel;
+
+  let pushTitle = '';
+  let pushBody = '';
+  if (eventKind === 'scheduled') {
+    pushTitle = `New Meeting Scheduled: ${title}`;
+    const detailParts = [
+      providerLabel,
+      date ? `on ${date}` : '',
+      timeRange ? `at ${timeRange}` : '',
+      teacherName ? `Host: ${teacherName}` : '',
+      topic || bibleBook || '',
+    ].filter(Boolean);
+    pushBody = `${detailParts.join(' • ')}. Tap to view meeting details.`;
+  } else {
+    pushTitle = `🔴 Live Now: ${title}`;
+    const liveParts = [
+      providerLabel,
+      teacherName ? `hosted by ${teacherName}` : '',
+      'is now live',
+    ].filter(Boolean);
+    pushBody = `${liveParts.join(' ')}! Tap to join the live meeting.`;
+  }
+
+  const notificationType: 'online_meeting' | 'online_meeting_scheduled' =
+    eventKind === 'live' ? 'online_meeting' : 'online_meeting_scheduled';
+
+  // Persist deterministic in-app notification docs so Member View -> Notifications
+  // shows both Scheduled & Live alerts cleanly without duplicate entries or duplicate push triggers.
+  const churchRef = db.collection('Rhema Church').doc(churchId);
+  const notifRef = churchRef.collection('notifications').doc(notifDocId);
+  const bcastRef = churchRef.collection('broadcasts').doc(notifDocId);
+
+  const inAppPayload: Record<string, any> = {
+    id: notifDocId,
+    meetingId,
+    churchId,
+    type: notificationType,
+    eventKind,
+    title: pushTitle,
+    body: pushBody,
+    content: pushBody,
+    provider,
+    meetingType: provider,
+    url: meetingLink,
+    meetingLink,
+    date,
+    startTimeLabel,
+    endTimeLabel,
+    teacherName,
+    topic,
+    bibleBook,
+    password,
+    status: eventKind === 'live' ? 'live' : 'scheduled',
+    screen: 'OnlineMeetingDetail',
+    read: false,
+    createdAt: FieldValue.serverTimestamp(),
+  };
+
+  let inAppWritten = false;
+  try {
+    const existingNotifSnap = await notifRef.get();
+    if (!existingNotifSnap.exists) {
+      await Promise.all([
+        notifRef.set(inAppPayload, { merge: true }),
+        bcastRef.set({ ...inAppPayload, silent: true }, { merge: true }),
+      ]);
+      inAppWritten = true;
+    } else {
+      inAppWritten = true;
+    }
+  } catch (inAppErr: any) {
+    console.warn('[dispatchOnlineMeetingAlert] In-app notification write warning:', inAppErr?.message || inAppErr);
+  }
+
+  const payload = buildOnlineMeetingTopicMessage({
+    title: pushTitle,
+    body: pushBody,
+    churchId,
+    meetingId,
+    notificationType,
+    provider,
+    url: meetingLink,
+    password,
+    date,
+    startTimeLabel,
+    endTimeLabel,
+    teacherName,
+    topic,
+    bibleBook,
+  });
+
+  let pushSent = false;
+  try {
+    const tokens = await collectChurchMemberTokens(db, churchId);
+    if (tokens.length > 0) {
+      const { topic: _omitTopic, ...multicastBase } = payload;
+      for (let i = 0; i < tokens.length; i += 500) {
+        const batch = tokens.slice(i, i + 500);
+        const res = await getMessaging().sendEachForMulticast({
+          ...multicastBase,
+          tokens: batch,
+        });
+        if (res.successCount > 0) {
+          pushSent = true;
+        }
+      }
+    } else {
+      await getMessaging().send(payload);
+      pushSent = true;
+    }
+  } catch (pushErr: any) {
+    console.warn('[dispatchOnlineMeetingAlert] FCM push warning:', pushErr?.message || pushErr);
+  }
+
+  return { pushSent, inAppWritten };
 }
 
 /**
@@ -280,6 +508,8 @@ function buildMeetingPayload(data: Record<string, any>, churchId: string) {
     provider: String(data.provider || 'zoom'),
     meetingType: String(data.meetingType || data.provider || 'zoom'),
     recurrence: String(data.recurrence || 'NONE'),
+    ...(data.meetingId ? { meetingId: String(data.meetingId).trim() } : {}),
+    ...(data.password ? { password: String(data.password).trim() } : {}),
   };
 }
 
@@ -330,6 +560,8 @@ export const createBibleClass = onCall(
         id: meetingRef.id,
         ...baseFields,
         status: 'scheduled',
+        scheduledNotified: true,
+        scheduledNotifiedAt: FieldValue.serverTimestamp(),
         liveNotified: false,
         reminderNotified: false,
         notificationSent: false,
@@ -339,15 +571,25 @@ export const createBibleClass = onCall(
 
       // Save for Member screens (Rhema Church/{churchId}/online_meetings)
       // and Admin Online Meetings dashboard (churches/default/online_meetings).
-      // Notifications are NOT sent on creation; they are sent only when an admin starts the meeting live.
+      // Send only the Scheduled alert here; Live notification is triggered strictly by startBibleClass.
       await Promise.all([
         meetingRef.set(meetingDoc),
         db.collection('churches').doc('default').collection('online_meetings').doc(meetingRef.id).set(meetingDoc),
       ]);
 
+      const { pushSent } = await dispatchOnlineMeetingAlert({
+        db,
+        churchId,
+        meetingId: meetingRef.id,
+        notifDocId: `meeting_sched_${meetingRef.id}`,
+        eventKind: 'scheduled',
+        meetingData: meetingDoc,
+      });
+
       return {
         success: true,
         id: meetingRef.id,
+        scheduledNotified: pushSent,
       };
     } catch (err: any) {
       if (err instanceof HttpsError) throw err;
@@ -386,63 +628,51 @@ export const startBibleClass = onCall(
         .collection('online_meetings')
         .doc(meetingId);
 
-      const [memberSnap, adminSnap] = await Promise.all([memberRef.get(), adminRef.get()]);
-      const existingData = memberSnap.exists ? memberSnap.data() : adminSnap.exists ? adminSnap.data() : null;
-      if (!existingData) {
-        throw new HttpsError('not-found', 'Meeting not found.');
-      }
+      const txResult = await db.runTransaction(async (tx: any) => {
+        const [memberSnap, adminSnap] = await Promise.all([
+          tx.get(memberRef),
+          tx.get(adminRef),
+        ]);
+        const existingData = memberSnap.exists
+          ? memberSnap.data()
+          : adminSnap.exists
+          ? adminSnap.data()
+          : null;
+        if (!existingData) {
+          throw new HttpsError('not-found', 'Meeting not found.');
+        }
 
-      const alreadyNotified =
-        existingData.status === 'live' && existingData.liveNotified === true;
+        const shouldSendLiveAlert = existingData.liveNotified !== true;
+        const livePatch = {
+          ...existingData,
+          id: meetingId,
+          churchId,
+          status: 'live',
+          liveNotified: true,
+          notificationSent: true,
+          notificationSentAt: FieldValue.serverTimestamp(),
+          startedAt: FieldValue.serverTimestamp(),
+          startedBy: request.auth?.uid || 'admin',
+          updatedAt: FieldValue.serverTimestamp(),
+        };
 
-      const title = String(existingData.title || 'Online Meeting').trim();
-      const provider = String(existingData.provider || existingData.meetingType || 'google_meet');
-      const meetingLink = String(
-        existingData.meetingLink || existingData.meetingUrl || existingData.url || ''
-      ).trim();
-      const teacherName = String(existingData.teacherName || existingData.teacher || '').trim();
+        tx.set(memberRef, livePatch, { merge: true });
+        return { existingData, livePatch, shouldSendLiveAlert };
+      });
 
-      const livePatch = {
-        ...existingData,
-        id: meetingId,
-        churchId,
-        status: 'live',
-        liveNotified: true,
-        notificationSent: true,
-        notificationSentAt: FieldValue.serverTimestamp(),
-        startedAt: FieldValue.serverTimestamp(),
-        startedBy: request.auth?.uid || 'admin',
-        updatedAt: FieldValue.serverTimestamp(),
-      };
-
-      await Promise.all([
-        memberRef.set(livePatch, { merge: true }),
-        adminRef.set(livePatch, { merge: true }),
-      ]);
+      await adminRef.set(txResult.livePatch, { merge: true });
 
       let pushSent = false;
-      if (!alreadyNotified) {
-        try {
-          const providerLabel = provider === 'google_meet' ? 'Google Meet' : 'Zoom Meeting';
-          const pushTitle = `🔴 Live Now: ${title}`;
-          const pushBody = teacherName
-            ? `${providerLabel} started by ${teacherName}. Tap to join live.`
-            : `${providerLabel} is now live. Tap to join now.`;
-          await getMessaging().send(
-            buildOnlineMeetingTopicMessage({
-              title: pushTitle,
-              body: pushBody,
-              churchId,
-              meetingId,
-              provider,
-              url: meetingLink,
-              password: String(existingData.password || ''),
-            })
-          );
-          pushSent = true;
-        } catch (pushErr: any) {
-          console.warn('[startBibleClass] FCM topic push warning:', pushErr?.message || pushErr);
-        }
+      if (txResult.shouldSendLiveAlert) {
+        const dispatchRes = await dispatchOnlineMeetingAlert({
+          db,
+          churchId,
+          meetingId,
+          notifDocId: `meeting_live_${meetingId}`,
+          eventKind: 'live',
+          meetingData: txResult.livePatch,
+        });
+        pushSent = dispatchRes.pushSent;
       }
 
       return {

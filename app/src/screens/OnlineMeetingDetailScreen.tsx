@@ -21,7 +21,12 @@ const SHOW_YOUTUBE_LIVE = false;
 export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
   const { isDark: _adminIsDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const insets = useSafeAreaInsets();
-  const [meeting, setMeeting] = useState<any>(route.params.meeting);
+  const initialMeeting =
+    route.params?.meeting ||
+    (route.params?.meetingId
+      ? { id: String(route.params.meetingId), churchId: String(route.params?.churchId || 'rhema') }
+      : {});
+  const [meeting, setMeeting] = useState<any>(initialMeeting);
   const { isDark } = useTheme();
   const { user, member } = useAuth();
   const { activeChurch } = useChurch();
@@ -33,8 +38,13 @@ export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
   useEffect(() => {
     if (route.params?.meeting) {
       setMeeting(route.params.meeting);
+    } else if (route.params?.meetingId) {
+      setMeeting({
+        id: String(route.params.meetingId),
+        churchId: String(route.params?.churchId || activeChurch?.id || member?.churchId || 'rhema'),
+      });
     }
-  }, [route.params?.meeting]);
+  }, [route.params?.meeting, route.params?.meetingId, route.params?.churchId, activeChurch?.id, member?.churchId]);
 
   const bgColor = screenBg;
   const textColor = primaryText;

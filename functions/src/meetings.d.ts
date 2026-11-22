@@ -3,15 +3,22 @@ export interface OnlineMeetingTopicMessageParams {
     body: string;
     churchId: string;
     meetingId: string;
+    notificationType?: 'online_meeting' | 'online_meeting_scheduled';
     provider?: string | undefined;
     url?: string | undefined;
     password?: string | undefined;
+    date?: string | undefined;
+    startTimeLabel?: string | undefined;
+    endTimeLabel?: string | undefined;
+    teacherName?: string | undefined;
+    topic?: string | undefined;
+    bibleBook?: string | undefined;
 }
 /**
- * Build a high-priority FCM topic message for online meeting alerts
+ * Build a high-priority FCM payload for online meeting alerts
  * targeting Android's 'church_alerts' channel and iOS APNs alerts.
  */
-export declare function buildOnlineMeetingTopicMessage({ title, body, churchId, meetingId, provider, url, password, }: OnlineMeetingTopicMessageParams): {
+export declare function buildOnlineMeetingTopicMessage({ title, body, churchId, meetingId, notificationType, provider, url, password, date, startTimeLabel, endTimeLabel, teacherName, topic, bibleBook, }: OnlineMeetingTopicMessageParams): {
     notification: {
         title: string;
         body: string;
@@ -22,13 +29,21 @@ export declare function buildOnlineMeetingTopicMessage({ title, body, churchId, 
         channelId: string;
         sound: string;
         priority: string;
+        bibleBook?: string;
+        topic?: string;
+        teacherName?: string;
+        endTimeLabel?: string;
+        startTimeLabel?: string;
+        date?: string;
         password?: string;
-        type: string;
+        type: "online_meeting" | "online_meeting_scheduled";
         id: string;
         meetingId: string;
         churchId: string;
         provider: string;
         url: string;
+        screen: string;
+        click_action: string;
     };
     android: {
         priority: "high";
@@ -83,6 +98,7 @@ export declare const generateZoomMeetingLink: import("firebase-functions/v2/http
 export declare const createBibleClass: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
     success: boolean;
     id: string;
+    scheduledNotified: boolean;
 }>, unknown>;
 /**
  * 🔴 START ONLINE MEETING LIVE & NOTIFY MEMBERS (asia-south1)

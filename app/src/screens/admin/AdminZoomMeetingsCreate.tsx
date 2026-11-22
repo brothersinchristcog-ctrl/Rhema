@@ -68,6 +68,8 @@ function buildInitialForm(editingMeeting: any, fallbackTeacher: string) {
       endTime: '',
       teacherName: fallbackTeacher || '',
       meetingLink: '',
+      zoomMeetingId: '',
+      password: '',
     };
   }
   const startDt = toJsDate(editingMeeting.startTime);
@@ -93,6 +95,8 @@ function buildInitialForm(editingMeeting: any, fallbackTeacher: string) {
     endTime: String(editingMeeting.endTimeLabel || (endDt ? formatTime12h(endDt) : '')),
     teacherName: String(editingMeeting.teacherName || editingMeeting.teacher || fallbackTeacher || ''),
     meetingLink: String(editingMeeting.meetingLink || editingMeeting.meetingUrl || editingMeeting.url || ''),
+    zoomMeetingId: String(editingMeeting.meetingId || ''),
+    password: String(editingMeeting.password || ''),
   };
 }
 
@@ -216,7 +220,12 @@ export default function AdminZoomMeetingsCreate({
       const data = response.data as any;
       const resolvedUrl = data?.meetingUri || data?.meetingUrl;
       if (data?.success && resolvedUrl) {
-        setForm(prev => ({ ...prev, meetingLink: resolvedUrl }));
+        setForm(prev => ({
+          ...prev,
+          meetingLink: resolvedUrl,
+          zoomMeetingId: String(data?.meetingId || prev.zoomMeetingId || ''),
+          password: String(data?.password || prev.password || ''),
+        }));
         showPopup('link', 'Zoom Link Generated!', 'Your official Zoom Meeting has been created. Members can join via this link.', resolvedUrl);
       } else {
         showPopup('error', 'Error', data?.message || 'Failed to generate Zoom link.');
@@ -419,6 +428,8 @@ export default function AdminZoomMeetingsCreate({
         provider: provider,
         meetingType: provider,
         recurrence: 'NONE',
+        ...(form.zoomMeetingId ? { meetingId: form.zoomMeetingId } : {}),
+        ...(form.password ? { password: form.password } : {}),
         startTimestamp,
         endTimestamp,
       });
@@ -428,7 +439,7 @@ export default function AdminZoomMeetingsCreate({
         showPopup(
           'success',
           'Meeting Scheduled!',
-          `${provider === 'google_meet' ? 'Google Meet' : 'Zoom Meeting'} has been scheduled. Tap "Go Live" when you are ready to start and notify members.`,
+          `${provider === 'google_meet' ? 'Google Meet' : 'Zoom Meeting'} has been scheduled and members have been notified. Tap "Go Live" when you start the meeting to send a live join alert.`,
           '',
           onBack
         );

@@ -382,16 +382,45 @@ class NotificationService {
           break;
         }
         case 'online_meeting':
+        case 'online_meeting_scheduled': {
+          const meetingId = rawData.meetingId || rawData.id || id;
+          const churchId = rawData.churchId || 'rhema';
           try {
-            nav.navigate('OnlineMeetings');
+            if (meetingId) {
+              nav.navigate('OnlineMeetingDetail', {
+                meetingId: String(meetingId),
+                churchId: String(churchId),
+                meeting: {
+                  id: String(meetingId),
+                  churchId: String(churchId),
+                  title: rawData.title || '',
+                  meetingLink: rawData.url || rawData.meetingLink || '',
+                  meetingUrl: rawData.url || rawData.meetingLink || '',
+                  url: rawData.url || rawData.meetingLink || '',
+                  provider: rawData.provider || 'google_meet',
+                  meetingType: rawData.provider || 'google_meet',
+                  password: rawData.password || '',
+                  date: rawData.date || '',
+                  startTimeLabel: rawData.startTimeLabel || '',
+                  endTimeLabel: rawData.endTimeLabel || '',
+                  teacherName: rawData.teacherName || '',
+                  topic: rawData.topic || '',
+                  bibleBook: rawData.bibleBook || '',
+                  status: type === 'online_meeting' ? 'live' : 'scheduled',
+                },
+              });
+            } else {
+              nav.navigate('OnlineMeetings');
+            }
           } catch (_) {
             try {
-              nav.navigate('AdminRoot', { targetTab: 'Online Meetings' });
+              nav.navigate('OnlineMeetings');
             } catch (e) {
               console.warn('Navigation to online meetings failed:', e);
             }
           }
           break;
+        }
         case 'invoice':
           nav.navigate('AdminRoot', { targetTab: 'Expense', highlightInvoiceId: id });
           break;
