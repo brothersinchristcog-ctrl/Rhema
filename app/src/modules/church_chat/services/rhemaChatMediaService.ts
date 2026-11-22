@@ -163,15 +163,24 @@ export const rhemaChatMediaService = {
 
     await task;
     const url = await ref.getDownloadURL();
-    return {
+    const attachment: ChatMediaAttachment = {
       url,
       mimeType: asset.mimeType,
       fileName: asset.fileName,
-      sizeBytes: asset.sizeBytes,
-      durationMs: asset.durationMs,
-      width: asset.width,
-      height: asset.height,
     };
+    if (typeof asset.sizeBytes === 'number' && Number.isFinite(asset.sizeBytes)) {
+      attachment.sizeBytes = asset.sizeBytes;
+    }
+    if (typeof asset.durationMs === 'number' && Number.isFinite(asset.durationMs)) {
+      attachment.durationMs = asset.durationMs;
+    }
+    if (typeof asset.width === 'number' && Number.isFinite(asset.width)) {
+      attachment.width = asset.width;
+    }
+    if (typeof asset.height === 'number' && Number.isFinite(asset.height)) {
+      attachment.height = asset.height;
+    }
+    return attachment;
   },
 
   async uploadGroupAvatar(

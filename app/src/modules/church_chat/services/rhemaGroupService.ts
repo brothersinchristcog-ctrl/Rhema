@@ -1,9 +1,9 @@
 import functions from '@react-native-firebase/functions';
 import firestore from '@react-native-firebase/firestore';
-import { push, ref, serverTimestamp, update } from 'firebase/database';
+import { push, ref, serverTimestamp } from 'firebase/database';
 import { RHEMA_CHURCH_ID, RHEMA_ROOT_COLLECTION } from '../../../constants/ChurchConfig';
 import { ChatCategory, ChatSystemEvent } from '../types/chat';
-import { getChatRtdb } from './rtdbClient';
+import { getChatRtdb, updateRtdb as update } from './rtdbClient';
 
 const CHAT_FUNCTIONS_REGION = 'us-central1';
 

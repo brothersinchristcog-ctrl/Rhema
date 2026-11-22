@@ -9,8 +9,6 @@ import {
   query,
   ref,
   serverTimestamp,
-  set,
-  update,
 } from 'firebase/database';
 import { RHEMA_CHURCH_ID } from '../../../constants/ChurchConfig';
 import {
@@ -24,7 +22,7 @@ import {
   ChatTypingUser,
   ChurchMemberContact,
 } from '../types/chat';
-import { getChatRtdb } from './rtdbClient';
+import { getChatRtdb, setRtdb as set, updateRtdb as update } from './rtdbClient';
 
 let _presenceCleanup: (() => void) | null = null;
 let _presenceKey: string | null = null;

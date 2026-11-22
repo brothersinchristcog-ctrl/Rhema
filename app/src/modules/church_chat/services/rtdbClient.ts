@@ -71,3 +71,63 @@ export function getChatRtdb(): Database {
 
   return _rtdbInstance;
 }
+
+/**
+ * Recursively strips `undefined` fields and array elements before writing to
+ * Firebase Realtime Database, while preserving `null` (RTDB delete/unset) and
+ * RTDB server sentinels (`serverTimestamp()`, `increment()`).
+ */
+export function sanitizeForRtdb<T>(value: T): T {
+  if (value === null || typeof value !== 'object') {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => sanitizeForRtdb(item))
+      .filter((item) => item !== undefined) as unknown as T;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(value, '.sv')) {
+    return value;
+  }
+
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== null && proto !== Object.prototype) {
+    return value;
+  }
+
+  const cleaned: Record<string, any> = {};
+  for (const [key, val] of Object.entries(value as Record<string, any>)) {
+    if (val === undefined) continue;
+    const nextVal = sanitizeForRtdb(val);
+    if (nextVal !== undefined) {
+      cleaned[key] = nextVal;
+    }
+  }
+  return cleaned as T;
+}
+
+/**
+ * Performs a Firebase Realtime Database `update` after stripping `undefined`
+ * values via `sanitizeForRtdb`.
+ */
+export function updateRtdb(
+  targetRef: Parameters<typeof import('firebase/database').update>[0],
+  values: object
+): Promise<void> {
+  const { update } = require('firebase/database') as typeof import('firebase/database');
+  return update(targetRef, sanitizeForRtdb(values));
+}
+
+/**
+ * Performs a Firebase Realtime Database `set` after stripping `undefined`
+ * values via `sanitizeForRtdb`.
+ */
+export function setRtdb(
+  targetRef: Parameters<typeof import('firebase/database').set>[0],
+  value: unknown
+): Promise<void> {
+  const { set } = require('firebase/database') as typeof import('firebase/database');
+  return set(targetRef, sanitizeForRtdb(value));
+}
