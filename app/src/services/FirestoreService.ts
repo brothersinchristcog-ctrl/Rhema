@@ -2652,7 +2652,7 @@ class FirestoreService {
     }
   }
 
-  /** Fetches verified Super Admins only (from platform_admins and super-admin member records). */
+  /** Fetches verified Super Admins only (from platform_admins and super-admin member records), never kids/dependents. */
   async getSuperAdminMembers(): Promise<any[]> {
     try {
       const col = await this.getCollection('members');
@@ -2662,59 +2662,76 @@ class FirestoreService {
       ]);
 
       const platformMap = new Map<string, any>();
-      const platformPhones = new Set<string>();
       if (platformSnap && !platformSnap.empty) {
         platformSnap.docs.forEach((doc: any) => {
           const data = doc.data() || {};
           const roleStr = String(data.role || '').toLowerCase();
           if (data.superadmin === true || roleStr.includes('super')) {
             platformMap.set(doc.id, { id: doc.id, ...data });
-            const p10 = normalizePhone10(data.phone);
-            if (p10) platformPhones.add(p10);
           }
         });
       }
+
+      const isDependentOrNonAccountDoc = (data: any, docId: string): boolean => {
+        const rel = String(data?.relation || '').trim().toLowerCase();
+        return Boolean(
+          data?.isKidMember === true ||
+          data?.childId ||
+          (data?.parentMemberId && data.parentMemberId !== docId) ||
+          (rel && !['self', 'head'].includes(rel)) ||
+          isGuestMemberDoc(data)
+        );
+      };
 
       const mapped: any[] = [];
       const matchedIds = new Set<string>();
       membersSnap.docs.forEach((doc: any) => {
         const data = doc.data() || {};
         if (data.status === 'Left') return;
-        const p10 = normalizePhone10(data.phone);
-        const uidKey = String(data.uid || data.accountId || '').trim();
-        const isSuper =
-          isSuperAdminMember(data, false) ||
-          platformMap.has(doc.id) ||
-          (uidKey ? platformMap.has(uidKey) : false) ||
-          (p10 ? platformPhones.has(p10) : false);
+        if (isDependentOrNonAccountDoc(data, doc.id)) return;
+
+        // Match strictly by own auth/doc UID or explicit Super Admin flags on this document —
+        // NEVER by family accountId or shared phone number (which would pull in kids/dependents).
+        const uidOnly = String(data.uid || '').trim();
+        const platformMatch =
+          platformMap.get(doc.id) ||
+          (uidOnly ? platformMap.get(uidOnly) : undefined);
+        const isSuper = isSuperAdminMember(data, false) || Boolean(platformMatch);
         if (!isSuper) return;
 
+        const canonicalId = platformMatch?.id || uidOnly || doc.id;
         matchedIds.add(doc.id);
-        if (uidKey) matchedIds.add(uidKey);
+        matchedIds.add(canonicalId);
+        if (uidOnly) matchedIds.add(uidOnly);
 
         const rawName =
           (data.name && data.name.trim()) ||
           (data.displayName && data.displayName.trim()) ||
           (data.fullName && data.fullName.trim()) ||
-          (`${data.firstName || ''} ${data.lastName || ''}`.trim());
+          (`${data.firstName || ''} ${data.lastName || ''}`.trim()) ||
+          (platformMatch?.name && String(platformMatch.name).trim()) ||
+          '';
         const fullName = rawName || (data.phone ? `Super Admin (${data.phone})` : 'Super Admin');
         mapped.push({
           ...data,
-          id: doc.id,
+          id: canonicalId,
+          uid: canonicalId,
           name: fullName,
           displayName: fullName,
-          userType: data.userType || 'Super Admin',
+          phone: data.phone || platformMatch?.phone || '',
+          userType: isSuperAdminMember(data, false)
+            ? (data.userType || data.role || 'Super Admin')
+            : (platformMatch?.role || 'Super Admin'),
+          role: data.role || platformMatch?.role || 'Super Admin',
+          superadmin: true,
+          isSuperAdmin: true,
           email: data.email || '',
           _hasRealName: Boolean(rawName),
         });
       });
 
       platformMap.forEach((pData, pId) => {
-        const p10 = normalizePhone10(pData.phone);
-        const alreadyIncluded =
-          matchedIds.has(pId) ||
-          (p10 ? mapped.some((m) => normalizePhone10(m.phone) === p10) : false);
-        if (alreadyIncluded) return;
+        if (matchedIds.has(pId)) return;
         const rawName = (pData.name && String(pData.name).trim()) || '';
         mapped.push({
           ...pData,

@@ -5727,6 +5727,13 @@ async function resolveSuperAdminRecipients(db, churchId, targetUid, targetPhone1
         const memberById = new Map();
         membersSnap.forEach((doc) => {
             const m = doc.data() || {};
+            const rel = String(m.relation || '').trim().toLowerCase();
+            const isDependent = Boolean(m.isKidMember === true ||
+                m.childId ||
+                (m.parentMemberId && m.parentMemberId !== doc.id) ||
+                (rel && !['self', 'head'].includes(rel)));
+            if (isDependent)
+                return;
             memberById.set(doc.id, m);
             if (isSuperAdminDocData(m)) {
                 verifiedSuperUids.add(doc.id);
