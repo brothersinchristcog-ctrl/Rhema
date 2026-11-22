@@ -22,6 +22,61 @@
           ".indexOn": ["createdAt"]
         }
       }
+    },
+    "rhema_chat": {
+      "$churchId": {
+        "presence": {
+          "$uid": {
+            ".read": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous'",
+            ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid"
+          }
+        },
+        "inbox": {
+          "$uid": {
+            ".read": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid",
+            "$roomId": {
+              ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && (auth.uid === $uid || ($roomId.beginsWith('dm_') && $roomId.contains(auth.uid)) || root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('participants').child(auth.uid).val() === true)"
+            }
+          }
+        },
+        "rooms": {
+          "$roomId": {
+            ".read": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && data.child('participants').child(auth.uid).val() === true",
+            "meta": {
+              ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && ((!data.exists() && $roomId.beginsWith('dm_') && $roomId.contains(auth.uid)) || root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('admins').child(auth.uid).val() === true || (root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('meta').child('onlyAdminsCanEditInfo').val() === false && root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('participants').child(auth.uid).val() === true))"
+            },
+            "participants": {
+              "$memberUid": {
+                ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && (($memberUid === auth.uid && !newData.exists()) || root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('admins').child(auth.uid).val() === true || (!data.parent().exists() && $roomId.beginsWith('dm_') && $roomId.contains(auth.uid) && newData.val() === true) || (root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('meta').child('onlyAdminsCanAddMembers').val() === false && root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('participants').child(auth.uid).val() === true && newData.val() === true))"
+              }
+            },
+            "admins": {
+              "$adminUid": {
+                ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && (root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('admins').child(auth.uid).val() === true || ($adminUid === auth.uid && !newData.exists()))"
+              }
+            },
+            "typing": {
+              "$typingUid": {
+                ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $typingUid && root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('participants').child(auth.uid).val() === true"
+              }
+            },
+            "readWatermarks": {
+              "$readerUid": {
+                ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $readerUid && root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('participants').child(auth.uid).val() === true"
+              }
+            },
+            "messages": {
+              ".indexOn": ["createdAt"],
+              "$msgId": {
+                ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && ((root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('participants').child(auth.uid).val() === true && (data.exists() || root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('meta').child('onlyAdminsCanSend').val() !== true || root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('admins').child(auth.uid).val() === true || newData.child('type').val() === 'system')) || (!data.parent().parent().exists() && $roomId.beginsWith('dm_') && $roomId.contains(auth.uid)))",
+                "deletedForEveryone": {
+                  ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && (data.parent().child('senderUid').val() === auth.uid || root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('admins').child(auth.uid).val() === true)"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

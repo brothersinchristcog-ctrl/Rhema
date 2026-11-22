@@ -97,6 +97,7 @@ import MemberGalleryNavigator from '../screens/gallery/MemberGalleryNavigator';
 import TestimoniesScreen from '../screens/TestimoniesScreen';
 import TestimonyDetailScreen from '../screens/TestimonyDetailScreen';
 import MatrimonyNavigator from '../modules/matrimony/navigation/MatrimonyNavigator';
+import { ChurchChatNavigator } from '../modules/church_chat';
 
 // Bible Quiz Screens
 import BibleQuizHomeScreen from '../screens/quiz/BibleQuizHomeScreen';
@@ -1672,6 +1673,7 @@ function Navigation() {
             <Stack.Screen name="Testimonies" component={renderPremium(TestimoniesScreen)} />
             <Stack.Screen name="TestimonyDetail" component={renderPremium(TestimonyDetailScreen)} />
             <Stack.Screen name="Matrimony" component={renderPremium(MatrimonyNavigator)} />
+            <Stack.Screen name="ChurchChat" component={renderPremium(ChurchChatNavigator)} />
             <Stack.Screen name="Profile" component={renderPremium(ProfileScreen)} />
             <Stack.Screen name="VerseOfTheDay" component={renderPremium(VerseOfTheDayScreen)} />
             <Stack.Screen name="BibleQuizHome" component={BibleQuizHomeScreen} />

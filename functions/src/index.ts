@@ -1946,3 +1946,8 @@ export {
   seedMatrimonyTestUsers,
   deleteMatrimonyTestUsers,
 } from './matrimony/testSeed.js';
+
+export {
+  createRhemaChatGroup,
+  onRhemaChatMessageCreated,
+} from './churchChat/chatFunctions.js';

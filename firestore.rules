@@ -804,6 +804,49 @@ service cloud.firestore {
         allow read, write: if isAuthenticated();
       }
 
+      // --- RHEMA CHURCH CHAT & GROUP MESSAGING (Strict auth: no debug bypass) ---
+      function isRealChurchMember() {
+        return request.auth != null &&
+          request.auth.token.firebase.sign_in_provider != 'anonymous' &&
+          exists(/databases/$(database)/documents/$(churchCollection)/$(churchId)/members/$(request.auth.uid));
+      }
+
+      function isRhemaChatAdmin() {
+        return isChurchAdmin() || (
+          isRealChurchMember() &&
+          get(/databases/$(database)/documents/$(churchCollection)/$(churchId)/members/$(request.auth.uid)).data.get('userType', '') in ['Pastor', 'pastor', 'Admin', 'admin', 'Super Admin', 'super_admin', 'superadmin']
+        );
+      }
+
+      match /chat_groups/{groupId} {
+        allow read: if isRealChurchMember() && (
+          isRhemaChatAdmin() ||
+          request.auth.uid in resource.data.get('participantIds', [])
+        );
+        allow create: if isRhemaChatAdmin() &&
+          request.resource.data.createdBy == request.auth.uid;
+        allow update: if isRealChurchMember() && (
+          isRhemaChatAdmin() ||
+          request.auth.uid in resource.data.get('adminIds', []) ||
+          (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participantIds', 'adminIds', 'updatedAt']) &&
+            request.auth.uid in resource.data.get('participantIds', []) &&
+            !(request.auth.uid in request.resource.data.get('participantIds', []))
+          )
+        );
+        allow delete: if isRhemaChatAdmin();
+      }
+
+      match /chat_blocks/{blockerUid}/blocked/{targetUid} {
+        allow read, write: if isRealChurchMember() && request.auth.uid == blockerUid;
+      }
+
+      match /chat_reports/{reportId} {
+        allow create: if isRealChurchMember() &&
+          request.resource.data.reporterUid == request.auth.uid;
+        allow read, update, delete: if isRhemaChatAdmin();
+      }
+
       // Any other church subcollection: authenticated members can read, admins can write
       match /{subcollection}/{docId} {
         allow read: if isAuthenticated();

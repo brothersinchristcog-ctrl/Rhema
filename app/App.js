@@ -178,6 +178,17 @@ export default function App() {
         return;
       }
 
+      if (rawData.type === 'CHURCH_CHAT' && navigationRef.isReady()) {
+        const currentRoute = navigationRef.getCurrentRoute();
+        if (
+          currentRoute?.name === 'RhemaChatRoom' &&
+          currentRoute?.params?.roomId &&
+          currentRoute.params.roomId === rawData.roomId
+        ) {
+          return;
+        }
+      }
+
       // Also post to Android/iOS system notification bar (with deduplication) so it appears in the device notification drawer
       NotificationService.displaySystemPushNotification(title, body, rawData).catch(() => {});
 

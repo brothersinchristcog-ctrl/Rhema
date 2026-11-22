@@ -168,6 +168,17 @@ class NotificationService {
           enableVibrate: true,
           showBadge: true,
         });
+
+        await Notifications.setNotificationChannelAsync('church_chat', {
+          name: 'Church Messages & Groups',
+          importance: Notifications.AndroidImportance.MAX,
+          sound: 'default',
+          vibrationPattern: [0, 180, 120, 180],
+          lightColor: '#22C55E',
+          enableLights: true,
+          enableVibrate: true,
+          showBadge: true,
+        });
       }
 
       await Notifications.setNotificationCategoryAsync('youtube_live', [
@@ -666,6 +677,16 @@ class NotificationService {
             childDocId: rawData.childDocId,
             programSessionId: rawData.programSessionId,
             timestamp: Date.now(),
+          });
+          break;
+        }
+        case 'CHURCH_CHAT': {
+          nav.navigate('ChurchChat', {
+            roomId: rawData.roomId,
+            roomType: rawData.roomType || 'direct',
+            title: rawData.roomTitle || rawData.senderName || 'Chat',
+            avatarUrl: rawData.avatarUrl || null,
+            peerUid: rawData.peerUid || undefined,
           });
           break;
         }

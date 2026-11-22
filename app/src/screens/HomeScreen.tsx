@@ -29,6 +29,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { formatDateDisplay, formatDateMonthYear, formatSermonDuration, formatTimeTo12Hour } from '../utils/DateUtils';
+import { FloatingChatFab } from '../modules/church_chat';
 import { 
   Bell, 
   Hexagon,
@@ -6103,10 +6104,17 @@ export default function HomeScreen() {
             );
           })()}
           
-          <View style={{ height: 40 }} />
+          <View style={{ height: 112 }} />
         </View>
         </View>
       </Animated.ScrollView>
+
+      <FloatingChatFab
+        churchId={activeChurch?.id || 'rhema'}
+        userId={user?.uid}
+        isGuest={Boolean(user?.isAnonymous)}
+        onPress={() => handleGuestProtectedNavigation('ChurchChat')}
+      />
 
       {liveCelebrations.length > 0 && (
         <Animated.View

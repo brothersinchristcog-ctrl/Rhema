@@ -121,7 +121,20 @@
       [
         "expo-av",
         {
-          "microphonePermission": "Allow Rhema to access your microphone to create events via voice."
+          "microphonePermission": "Allow Rhema to access your microphone to record voice messages and create events via voice."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Rhema to access your camera to take photos and videos in chat."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Rhema to access your photos and videos to share in church chat.",
+          "cameraPermission": "Allow Rhema to access your camera to capture photos and videos in chat."
         }
       ],
       [

@@ -1700,4 +1700,5 @@ export { ensureMatrimonyChatRoom, getMatrimonyChatContacts, notifyMatrimonyChatM
 export { getMatrimonyPlans, getMemberEntitlements, createMatrimonyUpgradeOrder, verifyMatrimonyUpgradePayment, expireMatrimonySubscriptions, } from './matrimony/membership.js';
 export { adminGetMatrimonyPlansAndSubs, adminUpsertMatrimonyPlan, adminGrantComplimentarySubscription, } from './matrimony/adminPlans.js';
 export { seedMatrimonyTestUsers, deleteMatrimonyTestUsers, } from './matrimony/testSeed.js';
+export { createRhemaChatGroup, onRhemaChatMessageCreated, } from './churchChat/chatFunctions.js';
 //# sourceMappingURL=index.js.map
