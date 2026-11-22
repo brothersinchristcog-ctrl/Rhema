@@ -21,12 +21,12 @@ import {
   Archive,
   ArrowLeft,
   BellOff,
-  Camera,
   MessageCircle,
   MoreVertical,
   Search,
   ShieldAlert,
   Star,
+  Trash2,
   UserPlus,
   UsersRound,
   X,
@@ -41,12 +41,12 @@ import {
   ChatBlockRecord,
   ChatInboxItem,
   ChatPresenceState,
+  ChatTypingUser,
   ChurchMemberContact,
 } from '../types/chat';
-import ActiveMembersStrip from '../components/ActiveMembersStrip';
 import AvatarWithStatus from '../components/AvatarWithStatus';
 import ChatListRow from '../components/ChatListRow';
-import FloatingBottomDock, { DockSection } from '../components/FloatingBottomDock';
+import FloatingBottomDock from '../components/FloatingBottomDock';
 
 type FilterChip = 'all' | 'favorites' | 'teams' | 'groups';
 
@@ -69,11 +69,11 @@ export default function RhemaChatsScreen({ navigation }: any) {
   const [inbox, setInbox] = useState<ChatInboxItem[]>([]);
   const [members, setMembers] = useState<ChurchMemberContact[]>([]);
   const [presenceMap, setPresenceMap] = useState<Record<string, ChatPresenceState>>({});
+  const [typingMap, setTypingMap] = useState<Record<string, ChatTypingUser[]>>({});
   const [blockedMap, setBlockedMap] = useState<Record<string, ChatBlockRecord>>({});
   const [loading, setLoading] = useState(true);
 
   const [filterChip, setFilterChip] = useState<FilterChip>('all');
-  const [dockSection, setDockSection] = useState<DockSection>('chats');
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -144,6 +144,35 @@ export default function RhemaChatsScreen({ navigation }: any) {
     return () => unsubs.forEach((u) => u());
   }, [churchId, peerUidsSignature]);
 
+  const inboxRoomSignature = useMemo(
+    () =>
+      inbox
+        .filter((i) => !i.isArchived)
+        .slice(0, 25)
+        .map((i) => i.roomId)
+        .sort()
+        .join(','),
+    [inbox]
+  );
+
+  useEffect(() => {
+    if (!myUid || !inboxRoomSignature) {
+      setTypingMap({});
+      return;
+    }
+    const roomIds = inboxRoomSignature.split(',').filter(Boolean);
+    const unsubs = roomIds.map((rid) =>
+      rhemaChatService.subscribeTyping(churchId, rid, myUid, (users) => {
+        setTypingMap((prev) => {
+          const prevList = prev[rid] || [];
+          if (prevList.length === 0 && users.length === 0) return prev;
+          return { ...prev, [rid]: users };
+        });
+      })
+    );
+    return () => unsubs.forEach((u) => u());
+  }, [churchId, myUid, inboxRoomSignature]);
+
   const activeRows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return inbox.filter((item) => {
@@ -213,21 +242,6 @@ export default function RhemaChatsScreen({ navigation }: any) {
       peerUid: item.peerUid,
       peerPhone: peerMember?.phone || '',
     });
-  };
-
-  const handleDockSelect = (section: DockSection) => {
-    setDockSection(section);
-    if (section === 'chats') {
-      setFilterChip('all');
-    } else if (section === 'groups') {
-      setFilterChip('groups');
-    } else if (section === 'directory') {
-      navigation.navigate('NewChatDirectory');
-      setDockSection('chats');
-    } else if (section === 'archived') {
-      navigation.navigate('ArchivedChats');
-      setDockSection('chats');
-    }
   };
 
   const handlePressPlus = () => {
@@ -308,17 +322,6 @@ export default function RhemaChatsScreen({ navigation }: any) {
               styles.circleIconBtn,
               { backgroundColor: palette.glassBg, borderColor: palette.glassBorder },
             ]}
-            onPress={() => navigation.navigate('NewChatDirectory')}
-            activeOpacity={0.8}
-          >
-            <Camera size={18} color={palette.text} />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.circleIconBtn,
-              { backgroundColor: palette.glassBg, borderColor: palette.glassBorder },
-            ]}
             onPress={() => setMenuOpen(true)}
             activeOpacity={0.8}
           >
@@ -370,20 +373,6 @@ export default function RhemaChatsScreen({ navigation }: any) {
         }}
         ListHeaderComponent={
           <>
-            {/* Active Members Horizontal Strip */}
-            {!searchQuery.trim() ? (
-              <ActiveMembersStrip
-                me={{ uid: myUid, name: myName, photoUrl: myPhoto }}
-                members={members.filter((m) => !blockedMap[m.uid])}
-                presenceMap={presenceMap}
-                palette={palette}
-                fontFamily={fontFamily}
-                scaleFont={scaleFont}
-                onPressMe={() => navigation.navigate('NewChatDirectory')}
-                onPressMember={openDirectChatWithMember}
-              />
-            ) : null}
-
             {/* Filter Pills */}
             <ScrollView
               horizontal
@@ -501,22 +490,33 @@ export default function RhemaChatsScreen({ navigation }: any) {
             ) : null}
           </>
         }
-        renderItem={({ item }) => (
-          <ChatListRow
-            item={item}
-            myUid={myUid}
-            isOnline={
-              item.roomType === 'direct' && item.peerUid
-                ? presenceMap[item.peerUid]?.online === true
-                : false
-            }
-            palette={palette}
-            fontFamily={fontFamily}
-            scaleFont={scaleFont}
-            onPress={() => openInboxItem(item)}
-            onLongPress={() => setSelectedRow(item)}
-          />
-        )}
+        renderItem={({ item }) => {
+          const roomTyping = typingMap[item.roomId] || [];
+          const isRoomTyping = roomTyping.length > 0;
+          const roomTypingLabel =
+            isRoomTyping && item.roomType === 'group'
+              ? `${roomTyping[0].name.split(/\s+/)[0]} is typing...`
+              : 'typing...';
+
+          return (
+            <ChatListRow
+              item={item}
+              myUid={myUid}
+              isOnline={
+                item.roomType === 'direct' && item.peerUid
+                  ? presenceMap[item.peerUid]?.online === true
+                  : false
+              }
+              isTyping={isRoomTyping}
+              typingLabel={roomTypingLabel}
+              palette={palette}
+              fontFamily={fontFamily}
+              scaleFont={scaleFont}
+              onPress={() => openInboxItem(item)}
+              onLongPress={() => setSelectedRow(item)}
+            />
+          );
+        }}
         ListEmptyComponent={
           loading ? (
             <View style={styles.centerBox}>
@@ -587,10 +587,8 @@ export default function RhemaChatsScreen({ navigation }: any) {
         }
       />
 
-      {/* Floating Bottom Glass Dock + Detached '+' FAB */}
+      {/* Floating Bottom '+' Action Button */}
       <FloatingBottomDock
-        activeSection={dockSection}
-        onSelectSection={handleDockSelect}
         onPressPlus={handlePressPlus}
         bottomInset={insets.bottom}
         palette={palette}
@@ -795,6 +793,44 @@ export default function RhemaChatsScreen({ navigation }: any) {
                 <Archive size={18} color={palette.text} />
                 <Text style={[styles.menuItemText, { color: palette.text, fontFamily }]}>
                   Archive Chat
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() => {
+                  const target = selectedRow;
+                  setSelectedRow(null);
+                  Alert.alert(
+                    'Delete Chat',
+                    `Delete conversation with ${target.title} from your Chats list?`,
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Delete Chat',
+                        style: 'destructive',
+                        onPress: async () => {
+                          try {
+                            await rhemaChatService.deleteChatForMe(
+                              churchId,
+                              target.roomId,
+                              myUid
+                            );
+                          } catch (err: any) {
+                            Alert.alert(
+                              'Delete Failed',
+                              err?.message || 'Could not delete chat.'
+                            );
+                          }
+                        },
+                      },
+                    ]
+                  );
+                }}
+              >
+                <Trash2 size={18} color={palette.danger} />
+                <Text style={[styles.menuItemText, { color: palette.danger, fontFamily }]}>
+                  Delete Chat
                 </Text>
               </TouchableOpacity>
             </View>

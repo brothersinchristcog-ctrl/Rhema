@@ -1,22 +1,20 @@
 import React, { useEffect, useState } from 'react';
-import { 
-  StyleSheet, 
-  View, 
-  Text, 
-  FlatList, 
-  TouchableOpacity, 
+import {
+  StyleSheet,
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
   Dimensions,
   Platform,
   StatusBar,
-  Linking,
-  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { 
-  Video, 
+import {
+  Video,
   ArrowLeft,
   ChevronLeft,
   Calendar,
@@ -34,7 +32,11 @@ import { useAdminTheme, createAdminThemedStyles } from '../utils/adminThemeHelpe
 import { useAuth } from '../context/AuthContext';
 import { useChurch } from '../context/ChurchContext';
 import { useLanguage } from '../context/LanguageContext';
-import { openZoomMeeting } from '../utils/ZoomLauncher';
+import {
+  launchOnlineMeetingUrl,
+  parseMeetingTimestamp,
+  resolveMeetingStatus,
+} from '../utils/meetingActions';
 
 const SHOW_YOUTUBE_LIVE = false;
 
@@ -49,11 +51,12 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
   const { user, member } = useAuth();
   const {  isDark, toggleTheme , colors } = useTheme();
   const { t } = useLanguage();
-  
+
   const [meetings, setMeetings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<'live' | 'upcoming' | 'completed'>('upcoming');
+  const hasAutoSelectedTabRef = React.useRef(false);
 
   const fetchMeetings = async () => {
     if (!activeChurch?.id) return;
@@ -76,7 +79,35 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
   };
 
   useEffect(() => {
-    fetchMeetings();
+    if (!activeChurch?.id) {
+      setLoading(false);
+      return;
+    }
+
+    const unsubscribe = firestore()
+      .collection('Rhema Church')
+      .doc(activeChurch.id)
+      .collection('online_meetings')
+      .orderBy('startTime', 'desc')
+      .onSnapshot(
+        (snapshot) => {
+          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setMeetings(data);
+          if (!hasAutoSelectedTabRef.current) {
+            hasAutoSelectedTabRef.current = true;
+            const hasLive = data.some(m => resolveMeetingStatus(m, true) === 'live');
+            if (hasLive) setActiveTab('live');
+          }
+          setLoading(false);
+          setRefreshing(false);
+        },
+        (error) => {
+          console.error('Error listening meetings:', error);
+          fetchMeetings();
+        }
+      );
+
+    return () => unsubscribe();
   }, [activeChurch?.id]);
 
   const onRefresh = () => {
@@ -84,39 +115,16 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
     fetchMeetings();
   };
 
-  const parseDate = (val: any) => {
-    if (!val) return null;
-    if (val.seconds) return new Date(val.seconds * 1000);
-    if (typeof val === 'string' || typeof val === 'number') return new Date(val);
-    if (val instanceof Date) return val;
-    return null;
-  };
-
-  const now = new Date();
-  
   const liveMeetings: any[] = [];
   const upcomingMeetings: any[] = [];
   const pastMeetings: any[] = [];
 
   meetings.forEach(m => {
-    if (m.status === 'cancelled') return;
-
-    const startDt = parseDate(m.startTime);
-    const endDt = parseDate(m.endTime);
-
-    if (startDt && endDt) {
-      if (endDt < now) {
-        pastMeetings.push(m);
-      } else if (startDt <= now && endDt >= now) {
-        liveMeetings.push(m);
-      } else {
-        upcomingMeetings.push(m);
-      }
-    } else {
-      if (m.status === 'live') liveMeetings.push(m);
-      else if (m.status === 'past') pastMeetings.push(m);
-      else upcomingMeetings.push(m);
-    }
+    const status = resolveMeetingStatus(m, true);
+    if (status === 'cancelled') return;
+    if (status === 'live') liveMeetings.push(m);
+    else if (status === 'completed') pastMeetings.push(m);
+    else upcomingMeetings.push(m);
   });
 
   let displayList = upcomingMeetings;
@@ -128,23 +136,12 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
   const textPrimary = primaryText;
   const textMuted = secondaryText;
   const border = adminBorderColor;
-  const pillBg = screenBg;
-
-  const formatDate = (dt: Date) =>
-    dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-  const formatTime = (dt: Date) =>
-    dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   const handleDirectJoin = async (item: any) => {
     const rawLink = item.meetingLink || item.meetingUrl || item.url || item.link || '';
-    if (!rawLink || !rawLink.trim()) {
+    if (!rawLink || !String(rawLink).trim()) {
       navigation.navigate('OnlineMeetingDetail', { meeting: item });
       return;
-    }
-
-    let cleanUrl = rawLink.trim();
-    if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
-      cleanUrl = `https://${cleanUrl}`;
     }
 
     const churchId = activeChurch?.id || item.churchId || member?.churchId;
@@ -165,22 +162,13 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
         .catch(() => {});
     }
 
-    const isZoom = item.provider === 'zoom' || item.meetingType === 'zoom' || cleanUrl.includes('zoom.us');
     try {
-      if (isZoom) {
-        await openZoomMeeting({
-          meetingLink: cleanUrl,
-          meetingId: item.meetingId,
-          password: item.password,
-          userName: member?.name || user?.displayName || 'Church Member'
-        });
-      } else {
-        const canOpen = await Linking.canOpenURL(cleanUrl).catch(() => true);
-        if (canOpen) {
-          await Linking.openURL(cleanUrl);
-        } else {
-          navigation.navigate('OnlineMeetingDetail', { meeting: item });
-        }
+      const opened = await launchOnlineMeetingUrl(
+        item,
+        member?.name || user?.displayName || 'Church Member'
+      );
+      if (!opened) {
+        navigation.navigate('OnlineMeetingDetail', { meeting: item });
       }
     } catch {
       navigation.navigate('OnlineMeetingDetail', { meeting: item });
@@ -188,24 +176,28 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
   };
 
   const renderMeeting = ({ item }: { item: any }) => {
-    const startDt = parseDate(item.startTime);
-    const endDt = parseDate(item.endTime);
-    const isLive =
-      activeTab === 'live' ||
-      item.status === 'live' ||
-      (startDt && endDt && startDt <= now && endDt >= now);
-    const isCompleted = activeTab === 'completed';
+    const startDt = parseMeetingTimestamp(item.startTime);
+    const endDt = parseMeetingTimestamp(item.endTime);
+    const status = resolveMeetingStatus(item, true);
+    const isLive = status === 'live';
+    const isCompleted = status === 'completed';
 
     // App brand colors per status
-    const gradStart = isLive ? '#c0392b' : isCompleted ? '#374151' : '#1a2d5a';
-    const gradEnd   = isLive ? '#991b1b' : isCompleted ? '#1f2937' : '#0f1e3d';
+    const gradStart = isLive ? '#b91c1c' : isCompleted ? '#374151' : '#1a2d5a';
+    const gradEnd = isLive ? '#7f1d1d' : isCompleted ? '#1f2937' : '#0f1e3d';
 
-    const dateStr = startDt ? startDt.toLocaleDateString('en-GB').replace(/\//g, '-') : 'TBA';
+    const dateStr = startDt
+      ? startDt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+      : item.date || 'TBA';
     const timeStr = startDt && endDt
-      ? `${startDt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${endDt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+      ? `${startDt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – ${endDt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
       : startDt
       ? startDt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      : 'TBA';
+      : item.startTimeLabel || 'TBA';
+
+    const subtitleText = String(item.topic || item.subtitle || '').trim();
+    const bookText = String(item.bibleBook || '').trim();
+    const showBookRow = Boolean(bookText && bookText !== subtitleText);
 
     return (
       <TouchableOpacity
@@ -216,42 +208,57 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
           {/* Decorative circle */}
           <View style={[styles.gradCircle, { backgroundColor: gradEnd }]} />
 
-          {/* Platform Badge & Passcode Badge & YouTube Badge */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 6, flexWrap: 'wrap' }}>
-            {item.meetingType === 'zoom' || item.provider === 'zoom' ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(45, 140, 255, 0.35)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#2D8CFF' }}>
-                <Video size={12} color="#ffffff" style={{ marginRight: 4 }} />
-                <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '700' }}>Zoom Meeting</Text>
-              </View>
-            ) : (
-              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(16, 185, 129, 0.35)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#10B981' }}>
-                <Video size={12} color="#ffffff" style={{ marginRight: 4 }} />
-                <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '700' }}>Google Meet</Text>
-              </View>
-            )}
-            {item.password ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(252, 211, 77, 0.25)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#FCD34D' }}>
-                <Key size={11} color="#FCD34D" style={{ marginRight: 4 }} />
-                <Text style={{ color: '#FCD34D', fontSize: 11, fontWeight: '700' }}>Passcode: {item.password}</Text>
-              </View>
-            ) : null}
-            {SHOW_YOUTUBE_LIVE && item.youtubeLive?.enabled ? (
-              <View style={{ 
-                flexDirection: 'row', 
-                alignItems: 'center', 
-                backgroundColor: item.youtubeLive.status === 'live' ? 'rgba(220, 38, 38, 0.5)' : 'rgba(239, 68, 68, 0.25)', 
-                paddingHorizontal: 8, 
-                paddingVertical: 3, 
-                borderRadius: 6, 
-                borderWidth: 1, 
-                borderColor: '#EF4444' 
-              }}>
-                <Radio size={11} color="#ffffff" style={{ marginRight: 4 }} />
-                <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '700' }}>
-                  {item.youtubeLive.status === 'live' ? '🔴 Live on YouTube' : 'YouTube Live'}
-                </Text>
-              </View>
-            ) : null}
+          {/* Platform Badge + Status Pill + Passcode */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 6, flexWrap: 'wrap' }}>
+              {isLive ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.22)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.6)' }}>
+                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#4ADE80', marginRight: 5 }} />
+                  <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '800', letterSpacing: 0.3 }}>LIVE NOW</Text>
+                </View>
+              ) : isCompleted ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.14)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
+                  <Text style={{ color: '#E5E7EB', fontSize: 11, fontWeight: '700' }}>COMPLETED</Text>
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(245, 158, 11, 0.25)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#FBBF24' }}>
+                  <Text style={{ color: '#FDE68A', fontSize: 11, fontWeight: '800' }}>SCHEDULED</Text>
+                </View>
+              )}
+
+              {item.meetingType === 'zoom' || item.provider === 'zoom' ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(45, 140, 255, 0.35)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#2D8CFF' }}>
+                  <Video size={12} color="#ffffff" style={{ marginRight: 4 }} />
+                  <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '700' }}>Zoom Meeting</Text>
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(16, 185, 129, 0.35)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#10B981' }}>
+                  <Video size={12} color="#ffffff" style={{ marginRight: 4 }} />
+                  <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '700' }}>Google Meet</Text>
+                </View>
+              )}
+              {item.password ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(252, 211, 77, 0.25)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#FCD34D' }}>
+                  <Key size={11} color="#FCD34D" style={{ marginRight: 4 }} />
+                  <Text style={{ color: '#FCD34D', fontSize: 11, fontWeight: '700' }}>Passcode: {item.password}</Text>
+                </View>
+              ) : null}
+              {SHOW_YOUTUBE_LIVE && item.youtubeLive?.enabled ? (
+                <View style={{ 
+                  flexDirection: 'row', 
+                  alignItems: 'center', 
+                  backgroundColor: item.youtubeLive.status === 'live' ? 'rgba(220, 38, 38, 0.5)' : 'rgba(239, 68, 68, 0.25)', 
+                  paddingHorizontal: 8, 
+                  paddingVertical: 3, 
+                  borderRadius: 6, 
+                  borderWidth: 1, 
+                  borderColor: '#EF4444' 
+                }}>
+                  <Radio size={11} color="#ffffff" style={{ marginRight: 4 }} />
+                  <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '700' }}>
+                    {item.youtubeLive.status === 'live' ? '🔴 Live on YouTube' : 'YouTube Live'}
+                  </Text>
+                </View>
+              ) : null}
           </View>
 
           {/* Title */}
@@ -260,9 +267,9 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
           </Text>
 
           {/* Subtitle / Topic */}
-          {(item.subtitle || item.topic || item.bibleBook) ? (
-            <Text style={styles.gradSubtitle} numberOfLines={1}>
-              {item.subtitle || item.topic || item.bibleBook}
+          {subtitleText ? (
+            <Text style={styles.gradSubtitle} numberOfLines={2}>
+              {subtitleText}
             </Text>
           ) : null}
 
@@ -280,68 +287,60 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
             <Text style={styles.gradInfoText}>{timeStr}</Text>
           </View>
 
-          {(item.subtitle || item.topic || item.bibleBook) && (
+          {showBookRow ? (
             <View style={styles.gradInfoRow}>
               <BookOpen size={16} color="rgba(255,255,255,0.75)" />
               <Text style={styles.gradInfoText} numberOfLines={1}>
-                {item.subtitle || item.topic || item.bibleBook}
+                {bookText}
               </Text>
             </View>
-          )}
+          ) : null}
 
-          {item.teacher && (
+          {(item.teacher || item.teacherName) ? (
             <View style={styles.gradInfoRow}>
               <User size={16} color="rgba(255,255,255,0.75)" />
               <Text style={styles.gradInfoText} numberOfLines={1}>
-                {t('meetings.hostPrefix')} {item.teacher}
+                {t('meetings.hostPrefix')} {item.teacher || item.teacherName}
               </Text>
             </View>
-          )}
+          ) : null}
 
           {/* Action buttons */}
-          <View style={[styles.gradActions, { flexWrap: 'wrap', gap: 8 }]}>
-            <TouchableOpacity
-              style={styles.gradJoinBtn}
-              onPress={() => isLive ? handleDirectJoin(item) : navigation.navigate('OnlineMeetingDetail', { meeting: item })}
-            >
-              <Video size={15} color={gradStart} />
-              <Text style={[styles.gradJoinText, { color: gradStart }]}>
-                {isLive ? t('meetings.joinLive') : t('meetings.join')}
-              </Text>
-            </TouchableOpacity>
+          <View style={[styles.gradActions, { flexWrap: 'wrap', gap: 8, alignItems: 'center' }]}>
+            {isLive ? (
+              <>
+                <TouchableOpacity
+                  style={styles.gradJoinBtn}
+                  onPress={() => handleDirectJoin(item)}
+                  activeOpacity={0.85}
+                >
+                  <Video size={15} color={gradStart} />
+                  <Text style={[styles.gradJoinText, { color: gradStart }]}>
+                    {t('meetings.joinLive')}
+                  </Text>
+                </TouchableOpacity>
 
-            {SHOW_YOUTUBE_LIVE && item.youtubeLive?.watchUrl ? (
-              <TouchableOpacity
-                style={[
-                  styles.gradJoinBtn,
-                  {
-                    backgroundColor: item.youtubeLive.status === 'live' ? '#DC2626' : 'rgba(255, 255, 255, 0.2)',
-                    borderColor: '#DC2626',
-                  }
-                ]}
-                onPress={() => {
-                  navigation.navigate('YouTubeLive', {
-                    url: item.youtubeLive.watchUrl,
-                    videoId: item.youtubeLive.broadcastId,
-                    title: item.title,
-                  });
-                }}
-              >
-                <Radio size={14} color="#FFFFFF" />
-                <Text style={[styles.gradJoinText, { color: '#FFFFFF', marginLeft: 4 }]}>
-                  {item.youtubeLive.status === 'live' ? 'Watch on YouTube' : 'YouTube Live'}
+                <TouchableOpacity
+                  style={styles.gradLeaveBtn}
+                  onPress={() => navigation.navigate('OnlineMeetingDetail', { meeting: item })}
+                >
+                  <Text style={styles.gradLeaveText}>{t('meetings.details')}</Text>
+                </TouchableOpacity>
+              </>
+            ) : !isCompleted ? (
+              <>
+                <TouchableOpacity
+                  style={styles.gradLeaveBtn}
+                  onPress={() => navigation.navigate('OnlineMeetingDetail', { meeting: item })}
+                >
+                  <Text style={styles.gradLeaveText}>View Details</Text>
+                </TouchableOpacity>
+
+                <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, fontWeight: '600', marginLeft: 2 }}>
+                  Starts when host goes live
                 </Text>
-              </TouchableOpacity>
+              </>
             ) : null}
-
-            {isCompleted ? null : (
-              <TouchableOpacity
-                style={styles.gradLeaveBtn}
-                onPress={() => navigation.navigate('OnlineMeetingDetail', { meeting: item })}
-              >
-                <Text style={styles.gradLeaveText}>{t('meetings.details')}</Text>
-              </TouchableOpacity>
-            )}
           </View>
         </View>
       </TouchableOpacity>
@@ -394,8 +393,12 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
               style={[styles.tabBtn, isActive && { backgroundColor: primaryText }]}
               onPress={() => setActiveTab(tab.key)}
             >
-              <Text style={[styles.tabLabel, { color: isActive ? (isDark ? '#000000' : '#FFFFFF') : textMuted }]}>
-                {tab.label}
+              <Text
+                style={[styles.tabLabel, { color: isActive ? (isDark ? '#000000' : '#FFFFFF') : textMuted }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
+                {tab.label}{tab.count > 0 ? ` (${tab.count})` : ''}
               </Text>
             </TouchableOpacity>
           );

@@ -4,12 +4,20 @@ import {
   Dimensions, ScrollView, Alert, Platform, StatusBar 
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Video, PlusCircle, Calendar, ArrowLeft, Users, Clock } from 'lucide-react-native';
+import { Video, PlusCircle, Calendar, ArrowLeft, Users, Clock, Pencil, Trash2, Play, Square, ExternalLink, AlertCircle } from 'lucide-react-native';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 import { db } from '../../services/firebaseConfig';
 import { useAuth } from '../../context/AuthContext';
 import AdminZoomMeetingsCreate from './AdminZoomMeetingsCreate';
+import {
+  deleteOnlineMeeting,
+  endOnlineMeeting,
+  isMeetingAdmin,
+  launchOnlineMeetingUrl,
+  resolveMeetingStatus,
+  startOnlineMeetingLive,
+} from '../../utils/meetingActions';
 
 const { width } = Dimensions.get('window');
 
@@ -23,17 +31,25 @@ export default function AdminOnlineMeetings() {
   const { isDark, screenBg, cardSurface, primaryText, secondaryText, borderColor: adminBorderColor, barStyle } = useAdminTheme();
   const insets = useSafeAreaInsets();
   const adminContext = useContext(AdminTabContext) as any;
-  const { member } = useAuth();
+  const { member, isPlatformSuperAdmin } = useAuth();
+  const canManageMeetings = isMeetingAdmin(member, isPlatformSuperAdmin);
   
   const [activeTab, setActiveTab] = useState('dashboard');
   const [meetings, setMeetings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [createMode, setCreateMode] = useState(false);
+  const [editingMeeting, setEditingMeeting] = useState<any | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<'zoom' | 'google_meet'>('google_meet');
-  const [historyFilter, setHistoryFilter] = useState<'ALL' | 'UPCOMING' | 'LIVE'>('ALL');
+  const [historyFilter, setHistoryFilter] = useState<'ALL' | 'UPCOMING' | 'LIVE' | 'COMPLETED'>('ALL');
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [actionBusyId, setActionBusyId] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!canManageMeetings) {
+      setLoading(false);
+      return;
+    }
+
     const unsubscribe = db.collection(`churches/default/online_meetings`)
       .orderBy('createdAt', 'desc')
       .onSnapshot(
@@ -52,31 +68,219 @@ export default function AdminOnlineMeetings() {
       );
 
     return () => unsubscribe();
-  }, []);
+  }, [canManageMeetings]);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  const handleStatClick = (filter: 'ALL' | 'UPCOMING' | 'LIVE') => {
+  const handleStatClick = (filter: 'ALL' | 'UPCOMING' | 'LIVE' | 'COMPLETED') => {
     setHistoryFilter(filter);
     setActiveTab('history');
   };
 
   const handleTabChange = (tabId: string) => {
     setActiveTab(tabId);
+    setEditingMeeting(null);
     if (tabId === 'history') setHistoryFilter('ALL');
     if (tabId === 'create') setCreateMode(false);
   };
 
   const getFilteredMeetings = () => {
-    if (historyFilter === 'UPCOMING') return meetings.filter(m => m.status === 'SCHEDULED' || m.status === 'upcoming');
-    if (historyFilter === 'LIVE') return meetings.filter(m => m.status === 'LIVE');
+    if (historyFilter === 'UPCOMING') {
+      return meetings.filter(m => resolveMeetingStatus(m, false) === 'scheduled');
+    }
+    if (historyFilter === 'LIVE') {
+      return meetings.filter(m => resolveMeetingStatus(m, false) === 'live');
+    }
+    if (historyFilter === 'COMPLETED') {
+      return meetings.filter(m => resolveMeetingStatus(m, false) === 'completed');
+    }
     return meetings;
   };
 
+  const getMeetingDisplayDate = (m: any): Date => {
+    if (m.startTime?.toDate) return m.startTime.toDate();
+    if (typeof m.startTime?.seconds === 'number') return new Date(m.startTime.seconds * 1000);
+    if (m.createdAt?.toDate) return m.createdAt.toDate();
+    return new Date();
+  };
+
+  const startEditingMeeting = (m: any) => {
+    const isZoom = m.provider === 'zoom' || m.meetingType === 'zoom';
+    setSelectedProvider(isZoom ? 'zoom' : 'google_meet');
+    setCreateMode(false);
+    setEditingMeeting(m);
+  };
+
+  const handleGoLive = (m: any) => {
+    Alert.alert(
+      'Start Live Meeting?',
+      `Start "${m.title || 'Online Meeting'}" live now and notify all church members?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Go Live Now',
+          onPress: async () => {
+            setActionBusyId(m.id);
+            try {
+              const res = await startOnlineMeetingLive(
+                m.churchId || member?.churchId || 'rhema',
+                m.id
+              );
+              const alertTitle = res.pushSent ? 'Meeting is Live!' : 'Status Set to Live';
+              const alertMsg = res.pushSent
+                ? 'Members have been notified that the meeting has started.'
+                : 'Meeting is now marked Live. Deploy startBibleClass in Cloud Shell to enable push notifications.';
+              Alert.alert(alertTitle, alertMsg, [
+                { text: 'Stay Here', style: 'cancel' },
+                ...(m.meetingLink || m.meetingUrl || m.url
+                  ? [
+                      {
+                        text: 'Open Meeting Link',
+                        onPress: () => {
+                          launchOnlineMeetingUrl(m, member?.name || 'Church Admin').catch(() => {});
+                        },
+                      },
+                    ]
+                  : []),
+              ]);
+            } catch (err: any) {
+              Alert.alert('Start Failed', err?.message || 'Unable to start meeting.');
+            } finally {
+              setActionBusyId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleEndLive = (m: any) => {
+    Alert.alert(
+      'End Meeting?',
+      `Mark "${m.title || 'Online Meeting'}" as Completed?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'End Meeting',
+          style: 'destructive',
+          onPress: async () => {
+            setActionBusyId(m.id);
+            try {
+              await endOnlineMeeting(m.churchId || member?.churchId || 'rhema', m.id);
+            } catch (err: any) {
+              Alert.alert('Error', err?.message || 'Unable to end meeting.');
+            } finally {
+              setActionBusyId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteMeeting = (m: any) => {
+    Alert.alert(
+      'Delete Meeting',
+      `Remove "${m.title || 'Online Meeting'}" from meetings?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteOnlineMeeting(m.churchId || member?.churchId || 'rhema', m.id);
+            } catch (err: any) {
+              Alert.alert('Delete Failed', err?.message || 'Unable to delete meeting.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const renderMeetingActions = (m: any, status: 'scheduled' | 'live' | 'completed' | 'cancelled') => {
+    const busy = actionBusyId === m.id;
+    return (
+      <View style={styles.cardActionRow}>
+        {status === 'scheduled' ? (
+          <TouchableOpacity
+            style={[styles.cardGoLiveBtn, busy && { opacity: 0.6 }]}
+            onPress={() => handleGoLive(m)}
+            disabled={busy}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          >
+            <Play size={12} color="#FFFFFF" fill="#FFFFFF" />
+            <Text style={styles.cardGoLiveText}>Go Live</Text>
+          </TouchableOpacity>
+        ) : null}
+
+        {status === 'live' ? (
+          <>
+            <TouchableOpacity
+              style={[styles.cardGoLiveBtn, { backgroundColor: '#0EA5E9' }]}
+              onPress={() => {
+                launchOnlineMeetingUrl(m, member?.name || 'Church Admin').catch(() => {});
+              }}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <ExternalLink size={12} color="#FFFFFF" />
+              <Text style={styles.cardGoLiveText}>Join</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.cardEndBtn, busy && { opacity: 0.6 }]}
+              onPress={() => handleEndLive(m)}
+              disabled={busy}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <Square size={11} color="#EF4444" fill="#EF4444" />
+              <Text style={styles.cardEndText}>End</Text>
+            </TouchableOpacity>
+          </>
+        ) : null}
+
+        {status !== 'completed' ? (
+          <TouchableOpacity
+            style={[
+              styles.cardActionBtn,
+              {
+                backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9',
+                borderColor: isDark ? 'rgba(255,255,255,0.14)' : '#CBD5E1',
+              },
+            ]}
+            onPress={() => startEditingMeeting(m)}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          >
+            <Pencil size={13} color={primaryText} />
+            <Text style={[styles.cardActionText, { color: primaryText }]}>Edit</Text>
+          </TouchableOpacity>
+        ) : null}
+
+        <TouchableOpacity
+          style={[
+            styles.cardActionIconBtn,
+            {
+              backgroundColor: 'rgba(239, 68, 68, 0.12)',
+              borderColor: 'rgba(239, 68, 68, 0.35)',
+            },
+          ]}
+          onPress={() => handleDeleteMeeting(m)}
+          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+        >
+          <Trash2 size={14} color="#EF4444" />
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   const handleBackNavigation = () => {
+    if (editingMeeting) {
+      setEditingMeeting(null);
+      return;
+    }
     if (createMode) {
       setCreateMode(false);
       return;
@@ -115,7 +319,7 @@ export default function AdminOnlineMeetings() {
           <Text style={[styles.statLabel, { color: secondaryText }]}>Total Meetings</Text>
         </TouchableOpacity>
         
-        {/* Upcoming */}
+        {/* Scheduled */}
         <TouchableOpacity 
           style={[styles.statCard, { backgroundColor: cardSurface, borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : adminBorderColor }]}
           onPress={() => handleStatClick('UPCOMING')}
@@ -125,9 +329,9 @@ export default function AdminOnlineMeetings() {
             <Calendar size={18} color="#F59E0B" />
           </View>
           <Text style={[styles.statValue, { color: primaryText }]}>
-            {meetings.filter(m => m.status === 'SCHEDULED' || m.status === 'upcoming').length}
+            {meetings.filter(m => resolveMeetingStatus(m, false) === 'scheduled').length}
           </Text>
-          <Text style={[styles.statLabel, { color: secondaryText }]}>Upcoming</Text>
+          <Text style={[styles.statLabel, { color: secondaryText }]}>Scheduled</Text>
         </TouchableOpacity>
         
         {/* Live Now */}
@@ -140,22 +344,24 @@ export default function AdminOnlineMeetings() {
             <Video size={18} color="#10B981" />
           </View>
           <Text style={[styles.statValue, { color: primaryText }]}>
-            {meetings.filter(m => m.status === 'LIVE').length}
+            {meetings.filter(m => resolveMeetingStatus(m, false) === 'live').length}
           </Text>
           <Text style={[styles.statLabel, { color: secondaryText }]}>Live Now</Text>
         </TouchableOpacity>
         
-        {/* Total Attendees */}
+        {/* Completed */}
         <TouchableOpacity 
           style={[styles.statCard, { backgroundColor: cardSurface, borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : adminBorderColor }]}
-          onPress={() => Alert.alert('Attendees', 'This feature will show total attendees soon.')}
+          onPress={() => handleStatClick('COMPLETED')}
           activeOpacity={0.8}
         >
           <View style={[styles.statIconBadge, { backgroundColor: isDark ? 'rgba(139, 92, 246, 0.16)' : '#EDE9FE' }]}>
             <Users size={18} color="#8B5CF6" />
           </View>
-          <Text style={[styles.statValue, { color: primaryText }]}>0</Text>
-          <Text style={[styles.statLabel, { color: secondaryText }]}>Total Attendees</Text>
+          <Text style={[styles.statValue, { color: primaryText }]}>
+            {meetings.filter(m => resolveMeetingStatus(m, false) === 'completed').length}
+          </Text>
+          <Text style={[styles.statLabel, { color: secondaryText }]}>Completed</Text>
         </TouchableOpacity>
       </View>
 
@@ -173,41 +379,51 @@ export default function AdminOnlineMeetings() {
         <View style={[styles.emptyContainer, { backgroundColor: cardSurface, borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : adminBorderColor }]}>
           <Video size={36} color={secondaryText} />
           <Text style={[styles.emptyTitle, { color: primaryText }]}>No meetings scheduled yet</Text>
-          <Text style={[styles.emptySub, { color: secondaryText }]}>Tap "Create Meeting" below to schedule a new Zoom session.</Text>
+          <Text style={[styles.emptySub, { color: secondaryText }]}>Tap "Create Meeting" below to schedule a new session.</Text>
         </View>
       ) : (
         meetings.slice(0, 3).map(m => {
-          const d = m.scheduledDate ? new Date(m.scheduledDate) : (m.createdAt?.toDate ? m.createdAt.toDate() : new Date());
-          const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-          const isLive = m.status === 'LIVE';
-          const isUpcoming = m.status === 'SCHEDULED' || m.status === 'upcoming';
-          const badgeColor = isLive ? '#10B981' : (isUpcoming ? '#F59E0B' : '#64748B');
+          const d = getMeetingDisplayDate(m);
+          const dateStr = m.date || d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          const status = resolveMeetingStatus(m, false);
+          const isLive = status === 'live';
+          const isScheduled = status === 'scheduled';
+          const badgeColor = isLive ? '#10B981' : (isScheduled ? '#F59E0B' : '#64748B');
+          const statusLabel = isLive ? 'LIVE' : (isScheduled ? 'SCHEDULED' : 'COMPLETED');
 
           return (
-            <TouchableOpacity 
+            <View 
               key={m.id} 
               style={[
-                styles.classRow, 
+                styles.historyCard, 
                 { 
                   backgroundColor: cardSurface,
                   borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : adminBorderColor,
+                  borderLeftColor: badgeColor,
                 }
               ]}
-              onPress={() => {
-                Alert.alert(m.title || 'Meeting Details', `Status: ${m.status || 'Active'}\nLink: ${m.meetingLink || 'None'}`);
-              }}
-              activeOpacity={0.8}
             >
-              <View style={{ flex: 1, marginRight: 12 }}>
-                <Text style={[styles.classRowTitle, { color: primaryText }]} numberOfLines={1}>
+              <View style={styles.historyCardHeader}>
+                <Text style={[styles.historyTitle, { color: primaryText }]} numberOfLines={1}>
                   {String(m.title || 'Church Online Meeting')}
                 </Text>
-                <Text style={[styles.classRowSub, { color: secondaryText }]}>
-                  {dateStr} • {String(m.status || 'Scheduled')}
-                </Text>
+                <View style={[styles.historyBadge, { backgroundColor: `${badgeColor}24` }]}>
+                  <Text style={[styles.historyBadgeText, { color: badgeColor }]}>
+                    {statusLabel}
+                  </Text>
+                </View>
               </View>
-              <View style={[styles.statusDot, { backgroundColor: badgeColor }]} />
-            </TouchableOpacity>
+
+              <View style={styles.historyCardFooterRow}>
+                <View style={styles.historyCardFooter}>
+                  <Clock size={14} color={secondaryText} />
+                  <Text style={[styles.historySub, { color: secondaryText }]} numberOfLines={1}>
+                    {dateStr}{m.startTimeLabel ? ` • ${m.startTimeLabel}` : ''}
+                  </Text>
+                </View>
+                {renderMeetingActions(m, status)}
+              </View>
+            </View>
           );
         })
       )}
@@ -321,15 +537,57 @@ export default function AdminOnlineMeetings() {
       ]}
       showsVerticalScrollIndicator={false}
     >
-      {/* Filter Pill */}
-      {historyFilter !== 'ALL' ? (
-        <View style={[styles.filterPill, { backgroundColor: cardSurface, borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : adminBorderColor }]}>
-          <Text style={[styles.filterPillText, { color: primaryText }]}>Showing: {historyFilter}</Text>
-          <TouchableOpacity onPress={() => setHistoryFilter('ALL')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={styles.filterPillClear}>Clear</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
+      {/* Status Filter Chips */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filterChipsRow}
+      >
+        {(
+          [
+            { key: 'ALL', label: 'All' },
+            { key: 'UPCOMING', label: 'Scheduled' },
+            { key: 'LIVE', label: 'Live' },
+            { key: 'COMPLETED', label: 'Completed' },
+          ] as const
+        ).map((chip) => {
+          const active = historyFilter === chip.key;
+          return (
+            <TouchableOpacity
+              key={chip.key}
+              style={[
+                styles.filterChipBtn,
+                {
+                  backgroundColor: active
+                    ? isDark
+                      ? '#FFFFFF'
+                      : '#0F172A'
+                    : cardSurface,
+                  borderColor: active
+                    ? isDark
+                      ? '#FFFFFF'
+                      : '#0F172A'
+                    : isDark
+                    ? 'rgba(255, 255, 255, 0.14)'
+                    : adminBorderColor,
+                },
+              ]}
+              onPress={() => setHistoryFilter(chip.key)}
+              activeOpacity={0.8}
+            >
+              <Text
+                style={{
+                  fontSize: 12.5,
+                  fontWeight: '700',
+                  color: active ? (isDark ? '#0F172A' : '#FFFFFF') : primaryText,
+                }}
+              >
+                {chip.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
 
       {getFilteredMeetings().length === 0 ? (
         <View style={[styles.emptyContainer, { backgroundColor: cardSurface, borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : adminBorderColor }]}>
@@ -339,15 +597,17 @@ export default function AdminOnlineMeetings() {
         </View>
       ) : (
         getFilteredMeetings().map(m => {
-          const d = m.scheduledDate ? new Date(m.scheduledDate) : (m.createdAt?.toDate ? m.createdAt.toDate() : new Date());
-          const isLive = m.status === 'LIVE';
-          const isUpcoming = m.status === 'SCHEDULED' || m.status === 'upcoming';
-          const badgeBg = isLive ? 'rgba(16, 185, 129, 0.15)' : (isUpcoming ? 'rgba(245, 158, 11, 0.15)' : (isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9'));
-          const badgeText = isLive ? '#10B981' : (isUpcoming ? '#F59E0B' : secondaryText);
-          const borderStripe = isLive ? '#10B981' : (isUpcoming ? '#F59E0B' : (isDark ? 'rgba(255,255,255,0.12)' : '#CBD5E1'));
+          const d = getMeetingDisplayDate(m);
+          const status = resolveMeetingStatus(m, false);
+          const isLive = status === 'live';
+          const isScheduled = status === 'scheduled';
+          const badgeBg = isLive ? 'rgba(16, 185, 129, 0.15)' : (isScheduled ? 'rgba(245, 158, 11, 0.15)' : (isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9'));
+          const badgeText = isLive ? '#10B981' : (isScheduled ? '#F59E0B' : secondaryText);
+          const borderStripe = isLive ? '#10B981' : (isScheduled ? '#F59E0B' : (isDark ? 'rgba(255,255,255,0.12)' : '#CBD5E1'));
+          const statusLabel = isLive ? 'LIVE' : (isScheduled ? 'SCHEDULED' : 'COMPLETED');
 
           return (
-            <TouchableOpacity 
+            <View 
               key={m.id} 
               style={[
                 styles.historyCard, 
@@ -357,10 +617,6 @@ export default function AdminOnlineMeetings() {
                   borderLeftColor: borderStripe,
                 }
               ]}
-              onPress={() => {
-                Alert.alert(m.title || 'Meeting Details', `Topic: ${m.topic || 'N/A'}\nStatus: ${m.status || 'Active'}\nLink: ${m.meetingLink || 'None'}`);
-              }}
-              activeOpacity={0.8}
             >
               <View style={styles.historyCardHeader}>
                 <Text style={[styles.historyTitle, { color: primaryText }]} numberOfLines={1}>
@@ -368,18 +624,22 @@ export default function AdminOnlineMeetings() {
                 </Text>
                 <View style={[styles.historyBadge, { backgroundColor: badgeBg }]}>
                   <Text style={[styles.historyBadgeText, { color: badgeText }]}>
-                    {String(m.status || 'SCHEDULED')}
+                    {statusLabel}
                   </Text>
                 </View>
               </View>
 
-              <View style={styles.historyCardFooter}>
-                <Clock size={14} color={secondaryText} />
-                <Text style={[styles.historySub, { color: secondaryText }]}>
-                  {d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} • {d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit'})}
-                </Text>
+              <View style={styles.historyCardFooterRow}>
+                <View style={styles.historyCardFooter}>
+                  <Clock size={14} color={secondaryText} />
+                  <Text style={[styles.historySub, { color: secondaryText }]} numberOfLines={1}>
+                    {m.date || d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} • {m.startTimeLabel || d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit'})}
+                  </Text>
+                </View>
+
+                {renderMeetingActions(m, status)}
               </View>
-            </TouchableOpacity>
+            </View>
           );
         })
       )}
@@ -415,7 +675,9 @@ export default function AdminOnlineMeetings() {
           </TouchableOpacity>
 
           <Text style={[styles.headerTitle, { color: primaryText }]} numberOfLines={1}>
-            {createMode 
+            {editingMeeting
+              ? (selectedProvider === 'google_meet' ? 'Edit Google Meet' : 'Edit Zoom Meeting')
+              : createMode 
               ? (selectedProvider === 'google_meet' ? 'Schedule Google Meet' : 'Schedule Zoom Meeting')
               : (activeTab === 'create' ? 'Schedule' : (activeTab === 'history' ? 'All Meetings' : 'Online Meetings'))}
           </Text>
@@ -426,13 +688,31 @@ export default function AdminOnlineMeetings() {
       </View>
 
       {/* Content Area */}
-      {loading ? (
+      {!canManageMeetings ? (
+        <View style={styles.loading}>
+          <AlertCircle size={40} color="#EF4444" style={{ marginBottom: 12 }} />
+          <Text style={[styles.historyTitle, { color: primaryText, textAlign: 'center', marginBottom: 6 }]}>
+            Admin Access Required
+          </Text>
+          <Text style={[styles.historySub, { color: secondaryText, textAlign: 'center', paddingHorizontal: 32 }]}>
+            Only church admins and pastors can create, edit, or manage online meetings.
+          </Text>
+        </View>
+      ) : loading ? (
         <View style={styles.loading}>
           <ActivityIndicator size="large" color={isDark ? '#FFFFFF' : '#000000'} />
         </View>
       ) : (
         <View style={{ flex: 1 }}>
-          {createMode ? (
+          {editingMeeting ? (
+            <AdminZoomMeetingsCreate
+              editingMeeting={editingMeeting}
+              onBack={() => setEditingMeeting(null)}
+              onSaved={() => setEditingMeeting(null)}
+              initialProvider={selectedProvider}
+              hideHeader={true}
+            />
+          ) : createMode ? (
             <AdminZoomMeetingsCreate 
               onBack={() => setCreateMode(false)} 
               initialProvider={selectedProvider} 
@@ -449,7 +729,7 @@ export default function AdminOnlineMeetings() {
       )}
 
       {/* ── Themed Floating Bottom Navigation Tabs ── */}
-      {!loading && !createMode ? (
+      {canManageMeetings && !loading && !createMode && !editingMeeting ? (
         <View 
           style={[
             styles.floatingTabsContainer, 
@@ -637,6 +917,81 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flex: 1,
+    marginRight: 8,
+  },
+  historyCardFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  cardActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cardActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  cardActionText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  cardActionIconBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardGoLiveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    backgroundColor: '#10B981',
+  },
+  cardGoLiveText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  cardEndBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.35)',
+  },
+  cardEndText: {
+    color: '#EF4444',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  filterChipsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingBottom: 14,
+  },
+  filterChipBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 18,
+    borderWidth: 1.2,
   },
   historySub: {
     fontSize: 13,

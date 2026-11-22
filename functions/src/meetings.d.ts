@@ -84,4 +84,38 @@ export declare const createBibleClass: import("firebase-functions/v2/https").Cal
     success: boolean;
     id: string;
 }>, unknown>;
+/**
+ * 🔴 START ONLINE MEETING LIVE & NOTIFY MEMBERS (asia-south1)
+ * Transitions meeting status to 'live' and sends member push notifications once.
+ */
+export declare const startBibleClass: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
+    success: boolean;
+    id: string;
+    status: string;
+    pushSent: boolean;
+}>, unknown>;
+/**
+ * ⏹️ END ONLINE MEETING (asia-south1)
+ * Marks a live or scheduled meeting as 'completed' without sending notifications.
+ */
+export declare const endBibleClass: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
+    success: boolean;
+    id: string;
+    status: string;
+}>, unknown>;
+/**
+ * ✏️ UPDATE ONLINE MEETING / BIBLE CLASS (asia-south1)
+ * Updates both member-facing and admin dashboard collections atomically.
+ */
+export declare const updateBibleClass: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
+    success: boolean;
+    id: string;
+}>, unknown>;
+/**
+ * 🗑️ DELETE ONLINE MEETING / BIBLE CLASS (asia-south1)
+ */
+export declare const deleteBibleClass: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
+    success: boolean;
+    id: string;
+}>, unknown>;
 //# sourceMappingURL=meetings.d.ts.map

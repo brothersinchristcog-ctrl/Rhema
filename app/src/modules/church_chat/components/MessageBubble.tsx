@@ -50,6 +50,9 @@ interface MessageBubbleProps {
   onOpenGallery: (media: ChatMediaAttachment[], index: number) => void;
   onOpenVideo: (attachment: ChatMediaAttachment) => void;
   onOpenDocument: (attachment: ChatMediaAttachment) => void;
+  selectionMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: (msg: ChatMessage) => void;
 }
 
 export default function MessageBubble({
@@ -71,13 +74,19 @@ export default function MessageBubble({
   onOpenGallery,
   onOpenVideo,
   onOpenDocument,
+  selectionMode = false,
+  isSelected = false,
+  onToggleSelect,
 }: MessageBubbleProps) {
   const translateX = useRef(new Animated.Value(0)).current;
   const triggeredReply = useRef(false);
+  const selectionModeRef = useRef(selectionMode);
+  selectionModeRef.current = selectionMode;
 
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, g) =>
+        !selectionModeRef.current &&
         message.type !== 'system' &&
         !message.deletedForEveryone &&
         Math.abs(g.dx) > 14 &&
@@ -159,42 +168,39 @@ export default function MessageBubble({
     ? 'rgba(255, 255, 255, 0.72)'
     : palette.textSecondary;
 
-  return (
-    <View style={styles.block}>
-      {showTimestampHeader && !isMine ? (
-        <Text
-          style={[
-            styles.greenTimestamp,
-            { color: palette.timestampGreen, fontFamily, fontSize: scaleFont(11.5) },
-          ]}
-        >
-          {formatTime12h(message.createdAt)}
-        </Text>
+  const rowHighlightBg =
+    selectionMode && isSelected
+      ? palette.isDark
+        ? 'rgba(56, 189, 248, 0.14)'
+        : 'rgba(37, 99, 235, 0.08)'
+      : 'transparent';
+
+  const rowInner = (
+    <Animated.View
+      {...panResponder.panHandlers}
+      pointerEvents={selectionMode ? 'none' : 'auto'}
+      style={[
+        styles.row,
+        isMine ? styles.rowMine : styles.rowTheirs,
+        selectionMode && { flex: 1 },
+        { transform: [{ translateX }] },
+      ]}
+    >
+      {/* Incoming left avatar column (shown beside the last message of a burst, matching mockup) */}
+      {!isMine ? (
+        <View style={styles.avatarCol}>
+          {showAvatar ? (
+            <AvatarWithStatus
+              uri={message.senderAvatar}
+              name={message.senderName}
+              size={28}
+              dotBorderColor={palette.bg}
+            />
+          ) : null}
+        </View>
       ) : null}
 
-      <Animated.View
-        {...panResponder.panHandlers}
-        style={[
-          styles.row,
-          isMine ? styles.rowMine : styles.rowTheirs,
-          { transform: [{ translateX }] },
-        ]}
-      >
-        {/* Incoming left avatar column (shown beside the last message of a burst, matching mockup) */}
-        {!isMine ? (
-          <View style={styles.avatarCol}>
-            {showAvatar ? (
-              <AvatarWithStatus
-                uri={message.senderAvatar}
-                name={message.senderName}
-                size={28}
-                dotBorderColor={palette.bg}
-              />
-            ) : null}
-          </View>
-        ) : null}
-
-        <View style={[styles.bubbleCol, isMine ? styles.alignEnd : styles.alignStart]}>
+      <View style={[styles.bubbleCol, isMine ? styles.alignEnd : styles.alignStart]}>
           {/* Multi-photo fanned card sits directly on canvas like the mockup */}
           {isMultiPhoto && !message.deletedForEveryone && message.media ? (
             <TouchableOpacity
@@ -385,26 +391,26 @@ export default function MessageBubble({
                       {message.text}
                     </Text>
                   ) : null}
-
-                  {/* Meta Row: timestamp + delivery/read ticks */}
-                  <View style={styles.metaRow}>
-                    <Text style={[styles.metaTime, { color: secondaryOnBubble }]}>
-                      {formatTime12h(message.createdAt)}
-                    </Text>
-                    {isMine ? (
-                      <View style={{ marginLeft: 4 }}>
-                        {isRead ? (
-                          <CheckCheck size={13} color={palette.tickRead} strokeWidth={2.5} />
-                        ) : isDelivered ? (
-                          <CheckCheck size={13} color={palette.tickMuted} strokeWidth={2.2} />
-                        ) : (
-                          <Check size={13} color={palette.tickMuted} strokeWidth={2.2} />
-                        )}
-                      </View>
-                    ) : null}
-                  </View>
                 </>
               )}
+
+              {/* Meta Row: timestamp + delivery/read ticks */}
+              <View style={styles.metaRow}>
+                <Text style={[styles.metaTime, { color: secondaryOnBubble }]}>
+                  {formatTime12h(message.createdAt)}
+                </Text>
+                {isMine && !message.deletedForEveryone ? (
+                  <View style={{ marginLeft: 4 }}>
+                    {isRead ? (
+                      <CheckCheck size={13} color={palette.tickRead} strokeWidth={2.5} />
+                    ) : isDelivered ? (
+                      <CheckCheck size={13} color={palette.tickMuted} strokeWidth={2.2} />
+                    ) : (
+                      <Check size={13} color={palette.tickMuted} strokeWidth={2.2} />
+                    )}
+                  </View>
+                ) : null}
+              </View>
             </TouchableOpacity>
           )}
 
@@ -443,6 +449,44 @@ export default function MessageBubble({
           ) : null}
         </View>
       </Animated.View>
+  );
+
+  return (
+    <View style={[styles.block, { backgroundColor: rowHighlightBg }]}>
+      {showTimestampHeader && !isMine ? (
+        <Text
+          style={[
+            styles.greenTimestamp,
+            { color: palette.timestampGreen, fontFamily, fontSize: scaleFont(11.5) },
+          ]}
+        >
+          {formatTime12h(message.createdAt)}
+        </Text>
+      ) : null}
+
+      {selectionMode ? (
+        <TouchableOpacity
+          style={styles.selectRow}
+          onPress={() => onToggleSelect?.(message)}
+          onLongPress={() => onToggleSelect?.(message)}
+          activeOpacity={0.75}
+        >
+          <View
+            style={[
+              styles.selectCircle,
+              {
+                borderColor: isSelected ? palette.accent : palette.textSecondary,
+                backgroundColor: isSelected ? palette.accent : 'transparent',
+              },
+            ]}
+          >
+            {isSelected ? <Check size={13} color="#FFFFFF" strokeWidth={3} /> : null}
+          </View>
+          {rowInner}
+        </TouchableOpacity>
+      ) : (
+        rowInner
+      )}
     </View>
   );
 }
@@ -451,6 +495,19 @@ const styles = StyleSheet.create({
   block: {
     marginVertical: 2,
     paddingHorizontal: 12,
+  },
+  selectRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  selectCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
   },
   greenTimestamp: {
     fontWeight: '600',

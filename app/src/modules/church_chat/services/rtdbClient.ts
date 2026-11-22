@@ -1,4 +1,5 @@
 import nativeAuth from '@react-native-firebase/auth';
+import { getApps, initializeApp, type FirebaseApp } from 'firebase/app';
 import type { Database } from 'firebase/database';
 import { webApp } from '../../../services/firebaseWebConfig';
 
@@ -6,15 +7,28 @@ export const RHEMA_RTDB_URL =
   process.env.EXPO_PUBLIC_FIREBASE_DATABASE_URL ||
   'https://rhema-global-ministries-default-rtdb.firebaseio.com';
 
-let _rtdbInstance: Database | null = null;
+const RHEMA_CHAT_APP_NAME = 'rhema_church_chat';
+const GLOBAL_RTDB_CACHE_KEY = '__rhemaChurchChatRtdbInstance';
+
+function getChurchChatWebApp(): FirebaseApp {
+  const existing = getApps().find((a) => a.name === RHEMA_CHAT_APP_NAME);
+  if (existing) return existing;
+  return initializeApp({ ...webApp.options }, RHEMA_CHAT_APP_NAME);
+}
 
 /**
  * Returns a Firebase Realtime Database instance authenticated via the native
- * `@react-native-firebase/auth` user session.
+ * `@react-native-firebase/auth` user session. Uses a dedicated named Firebase
+ * App instance and caches it on `globalThis` so it never collides with other
+ * RTDB callers (e.g. Matrimony) or re-initializes across Metro Fast Refresh.
  */
 export function getChatRtdb(): Database {
-  if (_rtdbInstance) return _rtdbInstance;
+  const globalCache = globalThis as Record<string, any>;
+  if (globalCache[GLOBAL_RTDB_CACHE_KEY]) {
+    return globalCache[GLOBAL_RTDB_CACHE_KEY] as Database;
+  }
 
+  const chatApp = getChurchChatWebApp();
   const rtdbSdk = require('firebase/database') as typeof import('firebase/database') & {
     _initStandalone?: (opts: any) => Database;
   };
@@ -57,19 +71,21 @@ export function getChatRtdb(): Database {
     },
   };
 
+  let instance: Database;
   if (typeof rtdbSdk._initStandalone === 'function') {
-    _rtdbInstance = rtdbSdk._initStandalone({
-      app: webApp,
+    instance = rtdbSdk._initStandalone({
+      app: chatApp,
       url: RHEMA_RTDB_URL,
       version: '12.18.0',
       customAuthImpl,
       nodeAdmin: false,
     });
   } else {
-    _rtdbInstance = rtdbSdk.getDatabase(webApp, RHEMA_RTDB_URL);
+    instance = rtdbSdk.getDatabase(chatApp, RHEMA_RTDB_URL);
   }
 
-  return _rtdbInstance;
+  globalCache[GLOBAL_RTDB_CACHE_KEY] = instance;
+  return instance;
 }
 
 /**

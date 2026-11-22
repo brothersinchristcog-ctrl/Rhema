@@ -1,6 +1,6 @@
 import React from 'react';
 import { Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Copy, CornerUpRight, Reply, Trash2 } from 'lucide-react-native';
+import { CheckSquare, Copy, CornerUpRight, Reply, Trash2 } from 'lucide-react-native';
 import { ChatThemePalette, QUICK_REACTION_EMOJIS } from '../constants/chatTheme';
 import { ChatMessage } from '../types/chat';
 
@@ -13,6 +13,7 @@ interface ReactionBarPopupProps {
   onReply: () => void;
   onForward: () => void;
   onCopy: () => void;
+  onSelectMultiple?: () => void;
   onDeleteForMe: () => void;
   onDeleteForEveryone: () => void;
   palette: ChatThemePalette;
@@ -28,6 +29,7 @@ export default function ReactionBarPopup({
   onReply,
   onForward,
   onCopy,
+  onSelectMultiple,
   onDeleteForMe,
   onDeleteForEveryone,
   palette,
@@ -114,6 +116,21 @@ export default function ReactionBarPopup({
                   </TouchableOpacity>
                 ) : null}
               </>
+            ) : null}
+
+            {onSelectMultiple ? (
+              <TouchableOpacity
+                style={styles.menuRow}
+                onPress={() => {
+                  onClose();
+                  onSelectMultiple();
+                }}
+              >
+                <CheckSquare size={18} color={palette.text} />
+                <Text style={[styles.menuLabel, { color: palette.text, fontFamily }]}>
+                  Select Messages
+                </Text>
+              </TouchableOpacity>
             ) : null}
 
             <TouchableOpacity

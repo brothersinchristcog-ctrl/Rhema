@@ -1875,6 +1875,10 @@ export {
 export {
   generateZoomMeetingLink,
   createBibleClass,
+  updateBibleClass,
+  deleteBibleClass,
+  startBibleClass,
+  endBibleClass,
 } from './meetings.js';
 
 export { guestInviteLanding } from './guestInvite.js';

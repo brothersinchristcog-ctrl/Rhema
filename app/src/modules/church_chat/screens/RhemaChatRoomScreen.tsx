@@ -26,6 +26,7 @@ import { Audio, ResizeMode, Video } from 'expo-av';
 import {
   ArrowLeft,
   BellOff,
+  CheckSquare,
   Flag,
   Info,
   MoreVertical,
@@ -60,6 +61,7 @@ import MessageBubble, { formatTime12h } from '../components/MessageBubble';
 import ChatComposerPill from '../components/ChatComposerPill';
 import AttachmentSheet from '../components/AttachmentSheet';
 import ReactionBarPopup from '../components/ReactionBarPopup';
+import TypingIndicatorBubble from '../components/TypingIndicatorBubble';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -117,6 +119,8 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
 
   const [inChatSearchOpen, setInChatSearchOpen] = useState(false);
   const [inChatSearch, setInChatSearch] = useState('');
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   // Recording state
   const recordingRef = useRef<Audio.Recording | null>(null);
@@ -137,6 +141,9 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
 
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTypingSentAtRef = useRef<number>(0);
+  const isTypingActiveRef = useRef<boolean>(false);
+  const syncedStaleInboxRef = useRef<boolean>(false);
 
   const roomType = roomDetails?.meta?.type || initialRoomType;
   const isGroup = roomType === 'group';
@@ -190,6 +197,11 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
       unsubTyping();
       unsubBlocks();
       if (unsubPeerPresence) unsubPeerPresence();
+      if (typingTimerRef.current) {
+        clearTimeout(typingTimerRef.current);
+        typingTimerRef.current = null;
+      }
+      isTypingActiveRef.current = false;
       rhemaChatService.setTyping(churchId, roomId, myUid, myName, false);
       rhemaChatService.setActiveRoom(churchId, myUid, null);
       if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
@@ -198,6 +210,7 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
 
   useEffect(() => {
     if (!myUid || !roomId) return;
+    syncedStaleInboxRef.current = false;
     const unsubMsgs = rhemaChatService.subscribeRoomMessages(
       churchId,
       roomId,
@@ -205,6 +218,10 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
       msgLimit,
       (list) => {
         setMessages(list);
+        if (!syncedStaleInboxRef.current && list.length < msgLimit) {
+          syncedStaleInboxRef.current = true;
+          rhemaChatService.syncStaleInboxPreview(churchId, roomId, myUid, list).catch(() => {});
+        }
         const unreadIncoming = list
           .filter((m) => m.senderUid !== myUid && m.type !== 'system' && !m.readBy?.[myUid])
           .map((m) => m.id);
@@ -229,23 +246,46 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
     return () => showSub.remove();
   }, []);
 
+  useEffect(() => {
+    if (!inChatSearch && typingUsers.length > 0) {
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
+    }
+  }, [typingUsers.length, inChatSearch]);
+
   const displayedMessages = useMemo(() => {
     const q = inChatSearch.trim().toLowerCase();
     if (!q) return messages;
     return messages.filter((m) => m.text.toLowerCase().includes(q));
   }, [messages, inChatSearch]);
 
+  const clearTypingState = () => {
+    if (typingTimerRef.current) {
+      clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = null;
+    }
+    if (isTypingActiveRef.current) {
+      isTypingActiveRef.current = false;
+      rhemaChatService.setTyping(churchId, roomId, myUid, myName, false);
+    }
+  };
+
   const handleTextChange = (val: string) => {
     setInputText(val);
     if (!myUid || !roomId) return;
     if (val.trim().length > 0) {
-      rhemaChatService.setTyping(churchId, roomId, myUid, myName, true);
+      const now = Date.now();
+      if (!isTypingActiveRef.current || now - lastTypingSentAtRef.current > 1200) {
+        isTypingActiveRef.current = true;
+        lastTypingSentAtRef.current = now;
+        rhemaChatService.setTyping(churchId, roomId, myUid, myName, true);
+      }
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
       typingTimerRef.current = setTimeout(() => {
+        isTypingActiveRef.current = false;
         rhemaChatService.setTyping(churchId, roomId, myUid, myName, false);
       }, 2500);
     } else {
-      rhemaChatService.setTyping(churchId, roomId, myUid, myName, false);
+      clearTypingState();
     }
   };
 
@@ -271,7 +311,7 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
     setInputText('');
     const currentReply = replyTo;
     setReplyTo(null);
-    rhemaChatService.setTyping(churchId, roomId, myUid, myName, false);
+    clearTypingState();
 
     try {
       await rhemaChatService.sendMessage({
@@ -464,6 +504,87 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
     return formatLastSeenSubtitle(presence);
   }, [typingUsers, isGroup, participantUids.length, presence]);
 
+  const selectableMessages = useMemo(
+    () => displayedMessages.filter((m) => m.type !== 'system'),
+    [displayedMessages]
+  );
+
+  const enterSelectionMode = (initialMsgId?: string) => {
+    setSelectionMode(true);
+    setSelectedIds(initialMsgId ? [initialMsgId] : []);
+  };
+
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedIds([]);
+  };
+
+  const toggleSelectMessage = (msg: ChatMessage) => {
+    if (msg.type === 'system') return;
+    setSelectedIds((prev) =>
+      prev.includes(msg.id) ? prev.filter((id) => id !== msg.id) : [...prev, msg.id]
+    );
+  };
+
+  const runBulkDelete = async (mode: 'me' | 'everyone', targets: ChatMessage[]) => {
+    const ids = targets.map((m) => m.id);
+    exitSelectionMode();
+    try {
+      if (mode === 'everyone') {
+        const latestRoomMsgId = messages[messages.length - 1]?.id;
+        await rhemaChatService.deleteMessagesForEveryone(
+          churchId,
+          roomId,
+          ids,
+          participantUids,
+          latestRoomMsgId
+        );
+      } else {
+        await rhemaChatService.deleteMessagesForMe(churchId, roomId, myUid, ids);
+      }
+    } catch (err: any) {
+      Alert.alert('Delete Failed', err?.message || 'Could not delete selected messages.');
+    }
+  };
+
+  const handleDeleteSelected = () => {
+    const targets = messages.filter((m) => selectedIds.includes(m.id));
+    if (targets.length === 0) return;
+    const count = targets.length;
+    const allCanDeleteForEveryone = targets.every(
+      (m) => !m.deletedForEveryone && (m.senderUid === myUid || (isGroup && amGroupAdmin))
+    );
+
+    if (allCanDeleteForEveryone) {
+      Alert.alert(
+        `Delete ${count} message${count === 1 ? '' : 's'}?`,
+        'Choose how to delete the selected messages.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete for Me', onPress: () => runBulkDelete('me', targets) },
+          {
+            text: 'Delete for Everyone',
+            style: 'destructive',
+            onPress: () => runBulkDelete('everyone', targets),
+          },
+        ]
+      );
+    } else {
+      Alert.alert(
+        `Delete ${count} message${count === 1 ? '' : 's'}?`,
+        'Selected messages will be removed from your view.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete for Me',
+            style: 'destructive',
+            onPress: () => runBulkDelete('me', targets),
+          },
+        ]
+      );
+    }
+  };
+
   const topPad = Math.max(insets.top + 6, Platform.OS === 'ios' ? 50 : 32);
 
   return (
@@ -487,109 +608,175 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
           },
         ]}
       >
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => navigation.goBack()}
-          activeOpacity={0.8}
-        >
-          <ArrowLeft size={20} color={palette.text} />
-        </TouchableOpacity>
+        {selectionMode ? (
+          <>
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={exitSelectionMode}
+              activeOpacity={0.8}
+            >
+              <X size={20} color={palette.text} />
+            </TouchableOpacity>
 
-        <TouchableOpacity style={styles.headerProfile} onPress={openInfoScreen} activeOpacity={0.8}>
-          <AvatarWithStatus
-            uri={roomAvatar}
-            name={roomTitle}
-            size={40}
-            online={!isGroup && presence?.online === true}
-            isGroup={isGroup}
-            dotColor={palette.onlineDot}
-            dotBorderColor={palette.bg}
-          />
-          <View style={styles.headerTextCol}>
             <Text
               style={[
                 styles.headerTitle,
-                { color: palette.text, fontFamily, fontSize: scaleFont(16) },
+                { flex: 1, marginLeft: 8, color: palette.text, fontFamily, fontSize: scaleFont(16.5) },
               ]}
               numberOfLines={1}
             >
-              {roomTitle}
+              {selectedIds.length} selected
             </Text>
-            <Text
-              style={[
-                styles.headerSub,
-                {
-                  color:
-                    typingUsers.length > 0 || presence?.online
-                      ? palette.timestampGreen
-                      : palette.textSecondary,
-                  fontFamily,
-                  fontSize: scaleFont(12),
-                },
-              ]}
-              numberOfLines={1}
-            >
-              {headerSubtitle}
-            </Text>
-          </View>
-        </TouchableOpacity>
 
-        {/* Right Header Actions:
-            1-to-1: Phone (tel:) + Search + More
-            Group:  Search + Participants + More */}
-        <View style={styles.headerRight}>
-          {!isGroup ? (
+            <View style={styles.headerRight}>
+              <TouchableOpacity
+                style={[
+                  styles.selectAllPill,
+                  { backgroundColor: palette.incomingBubbleBg, borderColor: palette.glassBorder },
+                ]}
+                onPress={() => {
+                  const allIds = selectableMessages.map((m) => m.id);
+                  if (allIds.length > 0 && selectedIds.length === allIds.length) {
+                    setSelectedIds([]);
+                  } else {
+                    setSelectedIds(allIds);
+                  }
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={{ color: palette.text, fontSize: 12, fontWeight: '700', fontFamily }}>
+                  {selectableMessages.length > 0 &&
+                  selectedIds.length === selectableMessages.length
+                    ? 'Deselect All'
+                    : 'Select All'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.circleAction,
+                  {
+                    backgroundColor:
+                      selectedIds.length > 0 ? `${palette.danger}22` : palette.incomingBubbleBg,
+                    borderColor: selectedIds.length > 0 ? palette.danger : palette.glassBorder,
+                    opacity: selectedIds.length > 0 ? 1 : 0.45,
+                  },
+                ]}
+                disabled={selectedIds.length === 0}
+                onPress={handleDeleteSelected}
+                activeOpacity={0.8}
+              >
+                <Trash2 size={16} color={selectedIds.length > 0 ? palette.danger : palette.text} />
+              </TouchableOpacity>
+            </View>
+          </>
+        ) : (
+          <>
             <TouchableOpacity
-              style={[
-                styles.circleAction,
-                { backgroundColor: palette.incomingBubbleBg, borderColor: palette.glassBorder },
-              ]}
-              onPress={handleDialPeer}
+              style={styles.backBtn}
+              onPress={() => navigation.goBack()}
               activeOpacity={0.8}
             >
-              <Phone size={16} color={palette.text} />
+              <ArrowLeft size={20} color={palette.text} />
             </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={[
-                styles.circleAction,
-                { backgroundColor: palette.incomingBubbleBg, borderColor: palette.glassBorder },
-              ]}
-              onPress={openInfoScreen}
-              activeOpacity={0.8}
-            >
-              <Users size={16} color={palette.text} />
+
+            <TouchableOpacity style={styles.headerProfile} onPress={openInfoScreen} activeOpacity={0.8}>
+              <AvatarWithStatus
+                uri={roomAvatar}
+                name={roomTitle}
+                size={40}
+                online={!isGroup && presence?.online === true}
+                isGroup={isGroup}
+                dotColor={palette.onlineDot}
+                dotBorderColor={palette.bg}
+              />
+              <View style={styles.headerTextCol}>
+                <Text
+                  style={[
+                    styles.headerTitle,
+                    { color: palette.text, fontFamily, fontSize: scaleFont(16) },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {roomTitle}
+                </Text>
+                <Text
+                  style={[
+                    styles.headerSub,
+                    {
+                      color:
+                        typingUsers.length > 0 || presence?.online
+                          ? palette.timestampGreen
+                          : palette.textSecondary,
+                      fontFamily,
+                      fontSize: scaleFont(12),
+                    },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {headerSubtitle}
+                </Text>
+              </View>
             </TouchableOpacity>
-          )}
 
-          <TouchableOpacity
-            style={[
-              styles.circleAction,
-              {
-                backgroundColor: inChatSearchOpen ? palette.accent : palette.incomingBubbleBg,
-                borderColor: palette.glassBorder,
-              },
-            ]}
-            onPress={() => {
-              setInChatSearchOpen((v) => !v);
-              if (inChatSearchOpen) setInChatSearch('');
-            }}
-            activeOpacity={0.8}
-          >
-            <Search size={16} color={inChatSearchOpen ? '#FFFFFF' : palette.text} />
-          </TouchableOpacity>
+            {/* Right Header Actions:
+                1-to-1: Phone (tel:) + Search + More
+                Group:  Search + Participants + More */}
+            <View style={styles.headerRight}>
+              {!isGroup ? (
+                <TouchableOpacity
+                  style={[
+                    styles.circleAction,
+                    { backgroundColor: palette.incomingBubbleBg, borderColor: palette.glassBorder },
+                  ]}
+                  onPress={handleDialPeer}
+                  activeOpacity={0.8}
+                >
+                  <Phone size={16} color={palette.text} />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[
+                    styles.circleAction,
+                    { backgroundColor: palette.incomingBubbleBg, borderColor: palette.glassBorder },
+                  ]}
+                  onPress={openInfoScreen}
+                  activeOpacity={0.8}
+                >
+                  <Users size={16} color={palette.text} />
+                </TouchableOpacity>
+              )}
 
-          <TouchableOpacity
-            style={[
-              styles.circleAction,
-              { backgroundColor: palette.incomingBubbleBg, borderColor: palette.glassBorder },
-            ]}
-            onPress={() => setHeaderMenuOpen(true)}
-            activeOpacity={0.8}
-          >
-            <MoreVertical size={16} color={palette.text} />
-          </TouchableOpacity>
-        </View>
+              <TouchableOpacity
+                style={[
+                  styles.circleAction,
+                  {
+                    backgroundColor: inChatSearchOpen ? palette.accent : palette.incomingBubbleBg,
+                    borderColor: palette.glassBorder,
+                  },
+                ]}
+                onPress={() => {
+                  setInChatSearchOpen((v) => !v);
+                  if (inChatSearchOpen) setInChatSearch('');
+                }}
+                activeOpacity={0.8}
+              >
+                <Search size={16} color={inChatSearchOpen ? '#FFFFFF' : palette.text} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.circleAction,
+                  { backgroundColor: palette.incomingBubbleBg, borderColor: palette.glassBorder },
+                ]}
+                onPress={() => setHeaderMenuOpen(true)}
+                activeOpacity={0.8}
+              >
+                <MoreVertical size={16} color={palette.text} />
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
       </BlurView>
 
       {inChatSearchOpen ? (
@@ -674,7 +861,16 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
                 palette={palette}
                 fontFamily={fontFamily}
                 scaleFont={scaleFont}
-                onLongPress={setSelectedMsg}
+                selectionMode={selectionMode}
+                isSelected={selectedIds.includes(item.id)}
+                onToggleSelect={toggleSelectMessage}
+                onLongPress={(msg) => {
+                  if (selectionMode) {
+                    toggleSelectMessage(msg);
+                  } else {
+                    setSelectedMsg(msg);
+                  }
+                }}
                 onSwipeReply={handleReplyFromMessage}
                 onPressReplyQuote={(targetId) => {
                   const idx = displayedMessages.findIndex((m) => m.id === targetId);
@@ -697,6 +893,16 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
               />
             );
           }}
+          ListFooterComponent={
+            <TypingIndicatorBubble
+              typingUsers={typingUsers}
+              isGroup={isGroup}
+              roomAvatar={roomAvatar}
+              palette={palette}
+              fontFamily={fontFamily}
+              scaleFont={scaleFont}
+            />
+          }
         />
 
         {iBlockedPeer ? (
@@ -715,27 +921,65 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
           </TouchableOpacity>
         ) : null}
 
-        <ChatComposerPill
-          text={inputText}
-          onChangeText={handleTextChange}
-          onSendText={handleSendText}
-          onPressCamera={handleTakePhoto}
-          onPressPlus={() => setAttachmentSheetOpen(true)}
-          onStartRecording={handleStartRecording}
-          onStopAndSendRecording={handleStopAndSendRecording}
-          onCancelRecording={handleCancelRecording}
-          isRecording={isRecording}
-          recordingSeconds={recordingSeconds}
-          uploading={uploading}
-          replyTo={replyTo}
-          onCancelReply={() => setReplyTo(null)}
-          disabled={onlyAdminsCanSend && !amGroupAdmin}
-          disabledMessage="Only Group Admins can send messages in this group"
-          bottomInset={insets.bottom}
-          palette={palette}
-          fontFamily={fontFamily}
-          scaleFont={scaleFont}
-        />
+        {selectionMode ? (
+          <View
+            style={[
+              styles.selectBottomBar,
+              {
+                paddingBottom: Math.max(insets.bottom + 10, 14),
+                backgroundColor: palette.glassStrong,
+                borderTopColor: palette.glassBorder,
+              },
+            ]}
+          >
+            <TouchableOpacity
+              style={[styles.selectCancelBtn, { borderColor: palette.glassBorder }]}
+              onPress={exitSelectionMode}
+              activeOpacity={0.8}
+            >
+              <Text style={{ color: palette.text, fontWeight: '700', fontFamily }}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.selectDeleteBtn,
+                {
+                  backgroundColor: palette.danger,
+                  opacity: selectedIds.length > 0 ? 1 : 0.45,
+                },
+              ]}
+              disabled={selectedIds.length === 0}
+              onPress={handleDeleteSelected}
+              activeOpacity={0.85}
+            >
+              <Trash2 size={16} color="#FFFFFF" />
+              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontFamily }}>
+                Delete ({selectedIds.length})
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <ChatComposerPill
+            text={inputText}
+            onChangeText={handleTextChange}
+            onSendText={handleSendText}
+            onPressCamera={handleTakePhoto}
+            onPressPlus={() => setAttachmentSheetOpen(true)}
+            onStartRecording={handleStartRecording}
+            onStopAndSendRecording={handleStopAndSendRecording}
+            onCancelRecording={handleCancelRecording}
+            isRecording={isRecording}
+            recordingSeconds={recordingSeconds}
+            uploading={uploading}
+            replyTo={replyTo}
+            onCancelReply={() => setReplyTo(null)}
+            disabled={onlyAdminsCanSend && !amGroupAdmin}
+            disabledMessage="Only Group Admins can send messages in this group"
+            bottomInset={insets.bottom}
+            palette={palette}
+            fontFamily={fontFamily}
+            scaleFont={scaleFont}
+          />
+        )}
       </KeyboardAvoidingView>
 
       {/* Attachment Sheet */}
@@ -782,6 +1026,11 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
         onCopy={async () => {
           if (selectedMsg?.text) {
             await Clipboard.setStringAsync(selectedMsg.text);
+          }
+        }}
+        onSelectMultiple={() => {
+          if (selectedMsg) {
+            enterSelectionMode(selectedMsg.id);
           }
         }}
         onDeleteForMe={() => {
@@ -840,6 +1089,19 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
               style={styles.menuRow}
               onPress={() => {
                 setHeaderMenuOpen(false);
+                enterSelectionMode();
+              }}
+            >
+              <CheckSquare size={18} color={palette.text} />
+              <Text style={[styles.menuTxt, { color: palette.text, fontFamily }]}>
+                Select Messages
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.menuRow}
+              onPress={() => {
+                setHeaderMenuOpen(false);
                 rhemaChatService.setInboxFlag(churchId, myUid, roomId, { isMuted: true });
                 Alert.alert('Muted', 'Notifications muted for this chat.');
               }}
@@ -873,6 +1135,42 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
               <Trash2 size={18} color={palette.text} />
               <Text style={[styles.menuTxt, { color: palette.text, fontFamily }]}>
                 Clear Chat
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.menuRow}
+              onPress={() => {
+                setHeaderMenuOpen(false);
+                Alert.alert(
+                  'Delete Chat',
+                  `Delete this conversation with ${roomTitle} from your Chats list?`,
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Delete Chat',
+                      style: 'destructive',
+                      onPress: async () => {
+                        try {
+                          await rhemaChatService.deleteChatForMe(
+                            churchId,
+                            roomId,
+                            myUid,
+                            messages.length < msgLimit ? messages.map((m) => m.id) : undefined
+                          );
+                          navigation.goBack();
+                        } catch (err: any) {
+                          Alert.alert('Delete Failed', err?.message || 'Could not delete chat.');
+                        }
+                      },
+                    },
+                  ]
+                );
+              }}
+            >
+              <Trash2 size={18} color={palette.danger} />
+              <Text style={[styles.menuTxt, { color: palette.danger, fontFamily }]}>
+                Delete Chat
               </Text>
             </TouchableOpacity>
 
@@ -1121,6 +1419,40 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  selectAllPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 17,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectBottomBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+  },
+  selectCancelBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectDeleteBtn: {
+    flex: 1.4,
+    height: 44,
+    borderRadius: 22,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   },
   inChatSearchBar: {
     flexDirection: 'row',

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  Alert,
   FlatList,
   Platform,
   StatusBar,
@@ -10,7 +11,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArchiveRestore, ArrowLeft, ShieldCheck } from 'lucide-react-native';
+import { ArchiveRestore, ArrowLeft, ShieldCheck, Trash2 } from 'lucide-react-native';
 import { useAuth } from '../../../context/AuthContext';
 import { useChurch } from '../../../context/ChurchContext';
 import { RHEMA_CHURCH_ID } from '../../../constants/ChurchConfig';
@@ -140,19 +141,41 @@ export default function ArchivedChatsScreen({ navigation, route }: any) {
                   {item.lastMessageText || 'Archived conversation'}
                 </Text>
               </View>
-              <TouchableOpacity
-                style={[styles.pillBtn, { borderColor: palette.glassBorder }]}
-                onPress={() =>
-                  rhemaChatService.setInboxFlag(churchId, myUid, item.roomId, {
-                    isArchived: false,
-                  })
-                }
-              >
-                <ArchiveRestore size={15} color={palette.accent} />
-                <Text style={{ color: palette.accent, fontWeight: '700', fontSize: 12 }}>
-                  Unarchive
-                </Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <TouchableOpacity
+                  style={[styles.pillBtn, { borderColor: palette.glassBorder }]}
+                  onPress={() =>
+                    rhemaChatService.setInboxFlag(churchId, myUid, item.roomId, {
+                      isArchived: false,
+                    })
+                  }
+                >
+                  <ArchiveRestore size={15} color={palette.accent} />
+                  <Text style={{ color: palette.accent, fontWeight: '700', fontSize: 12 }}>
+                    Unarchive
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.pillBtn, { borderColor: palette.glassBorder }]}
+                  onPress={() =>
+                    Alert.alert(
+                      'Delete Chat',
+                      `Delete conversation with ${item.title} from your list?`,
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Delete Chat',
+                          style: 'destructive',
+                          onPress: () =>
+                            rhemaChatService.deleteChatForMe(churchId, item.roomId, myUid),
+                        },
+                      ]
+                    )
+                  }
+                >
+                  <Trash2 size={15} color={palette.danger} />
+                </TouchableOpacity>
+              </View>
             </TouchableOpacity>
           )}
           ListEmptyComponent={

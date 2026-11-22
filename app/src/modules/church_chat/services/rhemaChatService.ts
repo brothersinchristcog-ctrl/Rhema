@@ -357,20 +357,85 @@ export const rhemaChatService = {
     if (!roomId) return () => {};
     const cid = churchId || RHEMA_CHURCH_ID;
     const db = getChatRtdb();
-    return onValue(ref(db, `rhema_chat/${cid}/rooms/${roomId}/typing`), (snap) => {
+    const seenMap = new Map<string, { marker: number; seenAt: number }>();
+    let expiryTimer: ReturnType<typeof setTimeout> | null = null;
+    let latestRaw: Record<string, any> = {};
+    let isInitialSnapshot = true;
+
+    const emitActive = () => {
+      if (expiryTimer) {
+        clearTimeout(expiryTimer);
+        expiryTimer = null;
+      }
+      const now = Date.now();
+      let minRemaining = Infinity;
+      const active: ChatTypingUser[] = [];
+
+      Object.keys(latestRaw).forEach((uid) => {
+        if (uid === myUid || latestRaw[uid]?.isTyping !== true) {
+          seenMap.delete(uid);
+          return;
+        }
+        const entry = seenMap.get(uid);
+        if (!entry) return;
+        const elapsed = now - entry.seenAt;
+        if (elapsed >= 8000) return;
+
+        minRemaining = Math.min(minRemaining, 8000 - elapsed);
+        active.push({
+          uid,
+          name: String(latestRaw[uid]?.name || 'Someone'),
+          isTyping: true,
+          updatedAt:
+            typeof latestRaw[uid]?.updatedAt === 'number'
+              ? latestRaw[uid].updatedAt
+              : entry.seenAt,
+        });
+      });
+
+      onChange(active);
+
+      if (minRemaining < Infinity) {
+        expiryTimer = setTimeout(emitActive, Math.max(150, minRemaining + 40));
+      }
+    };
+
+    const unsub = onValue(ref(db, `rhema_chat/${cid}/rooms/${roomId}/typing`), (snap) => {
       const val = snap.val() || {};
       const now = Date.now();
-      const active: ChatTypingUser[] = Object.keys(val)
-        .filter((uid) => uid !== myUid && val[uid]?.isTyping === true)
-        .filter((uid) => !val[uid]?.updatedAt || now - Number(val[uid].updatedAt) < 8000)
-        .map((uid) => ({
-          uid,
-          name: String(val[uid]?.name || 'Someone'),
-          isTyping: true,
-          updatedAt: Number(val[uid]?.updatedAt || now),
-        }));
-      onChange(active);
+      latestRaw = val;
+
+      Object.keys(val).forEach((uid) => {
+        if (uid === myUid || val[uid]?.isTyping !== true) {
+          seenMap.delete(uid);
+          return;
+        }
+        const remoteMarker = typeof val[uid]?.updatedAt === 'number' ? val[uid].updatedAt : 0;
+        const prev = seenMap.get(uid);
+        if (!prev) {
+          if (isInitialSnapshot && remoteMarker > 0 && now - remoteMarker > 60000) {
+            return;
+          }
+          seenMap.set(uid, { marker: remoteMarker, seenAt: now });
+        } else if (remoteMarker !== prev.marker) {
+          seenMap.set(uid, { marker: remoteMarker, seenAt: now });
+        }
+      });
+
+      for (const uid of Array.from(seenMap.keys())) {
+        if (!val[uid] || val[uid]?.isTyping !== true) {
+          seenMap.delete(uid);
+        }
+      }
+
+      isInitialSnapshot = false;
+      emitActive();
     });
+
+    return () => {
+      if (expiryTimer) clearTimeout(expiryTimer);
+      unsub();
+    };
   },
 
   setTyping(
@@ -386,7 +451,11 @@ export const rhemaChatService = {
     const tRef = ref(db, `rhema_chat/${cid}/rooms/${roomId}/typing/${myUid}`);
     if (isTyping) {
       onDisconnect(tRef).remove().catch(() => {});
-      set(tRef, { isTyping: true, name: myName, updatedAt: Date.now() }).catch(() => {});
+      set(tRef, {
+        isTyping: true,
+        name: myName || 'Member',
+        updatedAt: serverTimestamp(),
+      }).catch(() => {});
     } else {
       set(tRef, null).catch(() => {});
     }
@@ -535,12 +604,88 @@ export const rhemaChatService = {
     msgId: string,
     myUid: string
   ): Promise<void> {
+    await this.deleteMessagesForMe(churchId, roomId, myUid, [msgId]);
+  },
+
+  async deleteMessagesForMe(
+    churchId: string = RHEMA_CHURCH_ID,
+    roomId: string,
+    myUid: string,
+    msgIds: string[]
+  ): Promise<void> {
+    const cleanIds = Array.from(new Set(msgIds.filter(Boolean)));
+    if (!roomId || !myUid || cleanIds.length === 0) return;
     const cid = churchId || RHEMA_CHURCH_ID;
     const db = getChatRtdb();
-    await set(
-      ref(db, `rhema_chat/${cid}/rooms/${roomId}/messages/${msgId}/deletedFor/${myUid}`),
-      true
+
+    const updates: Record<string, any> = {};
+    addDeletedForUpdates(updates, cid, roomId, myUid, cleanIds);
+
+    try {
+      const inboxSnap = await get(ref(db, `rhema_chat/${cid}/inbox/${myUid}/${roomId}`));
+      const inboxVal = inboxSnap.val();
+      const currentLastId: string | undefined = inboxVal?.lastMessageId;
+
+      if (inboxVal && (!currentLastId || cleanIds.includes(currentLastId))) {
+        const msgsSnap = await get(
+          query(
+            ref(db, `rhema_chat/${cid}/rooms/${roomId}/messages`),
+            orderByChild('createdAt'),
+            limitToLast(120)
+          )
+        );
+        const deletedSet = new Set(cleanIds);
+        const raw = msgsSnap.val() || {};
+        const remaining = Object.keys(raw)
+          .filter((id) => !deletedSet.has(id) && !raw[id]?.deletedFor?.[myUid])
+          .map((id) => ({ id, ...(raw[id] || {}) }))
+          .sort(
+            (a, b) =>
+              (typeof a.createdAt === 'number' ? a.createdAt : 0) -
+              (typeof b.createdAt === 'number' ? b.createdAt : 0)
+          );
+
+        const latest = remaining[remaining.length - 1];
+        applyInboxPreviewFromRaw(updates, cid, myUid, roomId, latest);
+      }
+    } catch {
+      // Non-fatal: message deletedFor flags still commit cleanly.
+    }
+
+    await update(ref(db), updates);
+  },
+
+  async syncStaleInboxPreview(
+    churchId: string = RHEMA_CHURCH_ID,
+    roomId: string,
+    myUid: string,
+    visibleMessages: ChatMessage[]
+  ): Promise<void> {
+    if (!roomId || !myUid) return;
+    const cid = churchId || RHEMA_CHURCH_ID;
+    const db = getChatRtdb();
+
+    const inboxSnap = await get(ref(db, `rhema_chat/${cid}/inbox/${myUid}/${roomId}`));
+    if (!inboxSnap.exists()) return;
+    const inboxVal = inboxSnap.val() || {};
+    const lastId: string | undefined = inboxVal.lastMessageId;
+    if (!lastId || visibleMessages.some((m) => m.id === lastId)) return;
+
+    const deletedSnap = await get(
+      ref(db, `rhema_chat/${cid}/rooms/${roomId}/messages/${lastId}/deletedFor/${myUid}`)
     );
+    const msgSnap = deletedSnap.val() === true
+      ? null
+      : await get(ref(db, `rhema_chat/${cid}/rooms/${roomId}/messages/${lastId}`));
+
+    if (deletedSnap.val() !== true && msgSnap && msgSnap.exists()) {
+      return;
+    }
+
+    const latest = visibleMessages[visibleMessages.length - 1];
+    const updates: Record<string, any> = {};
+    applyInboxPreviewFromRaw(updates, cid, myUid, roomId, latest);
+    await update(ref(db), updates);
   },
 
   async deleteMessageForEveryone(
@@ -550,16 +695,37 @@ export const rhemaChatService = {
     participantUids: string[],
     isLatestInboxMessage: boolean
   ): Promise<void> {
+    await this.deleteMessagesForEveryone(
+      churchId,
+      roomId,
+      [msgId],
+      participantUids,
+      isLatestInboxMessage ? msgId : undefined
+    );
+  },
+
+  async deleteMessagesForEveryone(
+    churchId: string = RHEMA_CHURCH_ID,
+    roomId: string,
+    msgIds: string[],
+    participantUids: string[],
+    latestRoomMsgId?: string
+  ): Promise<void> {
+    const cleanIds = Array.from(new Set(msgIds.filter(Boolean)));
+    if (!roomId || cleanIds.length === 0) return;
     const cid = churchId || RHEMA_CHURCH_ID;
     const db = getChatRtdb();
-    const updates: Record<string, any> = {
-      [`rhema_chat/${cid}/rooms/${roomId}/messages/${msgId}/deletedForEveryone`]: true,
-      [`rhema_chat/${cid}/rooms/${roomId}/messages/${msgId}/text`]: '',
-      [`rhema_chat/${cid}/rooms/${roomId}/messages/${msgId}/media`]: null,
-      [`rhema_chat/${cid}/rooms/${roomId}/messages/${msgId}/replyTo`]: null,
-      [`rhema_chat/${cid}/rooms/${roomId}/messages/${msgId}/reactions`]: null,
-    };
-    if (isLatestInboxMessage) {
+    const updates: Record<string, any> = {};
+
+    cleanIds.forEach((msgId) => {
+      updates[`rhema_chat/${cid}/rooms/${roomId}/messages/${msgId}/deletedForEveryone`] = true;
+      updates[`rhema_chat/${cid}/rooms/${roomId}/messages/${msgId}/text`] = '';
+      updates[`rhema_chat/${cid}/rooms/${roomId}/messages/${msgId}/media`] = null;
+      updates[`rhema_chat/${cid}/rooms/${roomId}/messages/${msgId}/replyTo`] = null;
+      updates[`rhema_chat/${cid}/rooms/${roomId}/messages/${msgId}/reactions`] = null;
+    });
+
+    if (latestRoomMsgId && cleanIds.includes(latestRoomMsgId)) {
       participantUids.forEach((uid) => {
         updates[`rhema_chat/${cid}/inbox/${uid}/${roomId}/lastMessageText`] =
           '🚫 This message was deleted';
@@ -598,9 +764,107 @@ export const rhemaChatService = {
       [`rhema_chat/${cid}/inbox/${myUid}/${roomId}/lastMessageText`]: '',
       [`rhema_chat/${cid}/inbox/${myUid}/${roomId}/unreadCount`]: 0,
     };
-    messageIds.forEach((id) => {
-      updates[`rhema_chat/${cid}/rooms/${roomId}/messages/${id}/deletedFor/${myUid}`] = true;
-    });
+    addDeletedForUpdates(updates, cid, roomId, myUid, messageIds);
     await update(ref(db), updates);
   },
+
+  async deleteChatForMe(
+    churchId: string = RHEMA_CHURCH_ID,
+    roomId: string,
+    myUid: string,
+    knownMessageIds?: string[]
+  ): Promise<void> {
+    if (!roomId || !myUid) return;
+    const cid = churchId || RHEMA_CHURCH_ID;
+    const db = getChatRtdb();
+
+    await update(ref(db), {
+      [`rhema_chat/${cid}/inbox/${myUid}/${roomId}`]: null,
+    });
+
+    try {
+      let msgIds = knownMessageIds;
+      if (!msgIds) {
+        const snap = await get(
+          query(
+            ref(db, `rhema_chat/${cid}/rooms/${roomId}/messages`),
+            orderByChild('createdAt'),
+            limitToLast(400)
+          )
+        );
+        const raw = snap.val() || {};
+        msgIds = Object.keys(raw).filter((id) => !raw[id]?.deletedFor?.[myUid]);
+      }
+
+      const roomUpdates: Record<string, any> = {
+        [`rhema_chat/${cid}/rooms/${roomId}/typing/${myUid}`]: null,
+      };
+      addDeletedForUpdates(roomUpdates, cid, roomId, myUid, msgIds);
+      await update(ref(db), roomUpdates);
+    } catch {
+      // Room may not exist yet or user may no longer be a group participant.
+    }
+  },
 };
+
+function addDeletedForUpdates(
+  updates: Record<string, any>,
+  churchId: string,
+  roomId: string,
+  myUid: string,
+  messageIds: string[]
+) {
+  messageIds.forEach((id) => {
+    if (id) {
+      updates[`rhema_chat/${churchId}/rooms/${roomId}/messages/${id}/deletedFor/${myUid}`] = true;
+    }
+  });
+}
+
+function applyInboxPreviewFromRaw(
+  updates: Record<string, any>,
+  churchId: string,
+  myUid: string,
+  roomId: string,
+  latest?: {
+    id: string;
+    type?: ChatMessageType;
+    text?: string;
+    media?: any[];
+    senderUid?: string;
+    senderName?: string;
+    createdAt?: number;
+    deletedForEveryone?: boolean;
+  }
+) {
+  const basePath = `rhema_chat/${churchId}/inbox/${myUid}/${roomId}`;
+  if (!latest) {
+    updates[`${basePath}/lastMessageId`] = null;
+    updates[`${basePath}/lastMessageText`] = '';
+    updates[`${basePath}/lastMessageType`] = 'text';
+    updates[`${basePath}/lastMessageSenderUid`] = null;
+    updates[`${basePath}/lastMessageSenderName`] = null;
+    updates[`${basePath}/lastMessageDelivered`] = false;
+    updates[`${basePath}/lastMessageRead`] = false;
+    updates[`${basePath}/unreadCount`] = 0;
+    return;
+  }
+
+  const msgType: ChatMessageType = (latest.type || 'text') as ChatMessageType;
+  const previewText = latest.deletedForEveryone
+    ? '🚫 This message was deleted'
+    : buildMessagePreview(
+        msgType,
+        String(latest.text || ''),
+        Array.isArray(latest.media) ? latest.media.length : 0
+      );
+
+  updates[`${basePath}/lastMessageId`] = latest.id;
+  updates[`${basePath}/lastMessageText`] = previewText;
+  updates[`${basePath}/lastMessageType`] = msgType;
+  updates[`${basePath}/lastMessageSenderUid`] = latest.senderUid || null;
+  updates[`${basePath}/lastMessageSenderName`] = latest.senderName || null;
+  if (typeof latest.createdAt === 'number') {
+    updates[`${basePath}/lastMessageAt`] = latest.createdAt;
+  }
+}

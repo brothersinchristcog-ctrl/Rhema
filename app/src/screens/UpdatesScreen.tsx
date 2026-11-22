@@ -987,33 +987,50 @@ export default function UpdatesScreen({ navigation, route }: any) {
         qMeetings,
         (snapshot) => {
           if (snapshot) {
-            const list = snapshot.docs.map((doc) => {
-              const data = doc.data();
-              let dateStr = new Date().toISOString().split('T')[0];
-              if (data.startTime && typeof data.startTime.toDate === 'function') {
-                const dt = data.startTime.toDate();
-                dateStr =
-                  dt.toLocaleDateString() +
-                  ' • ' +
-                  dt.toLocaleTimeString('en-US', {
-                    hour: 'numeric',
-                    minute: '2-digit',
-                    hour12: true,
-                  });
-              }
+            const list = snapshot.docs
+              .map((doc) => ({ id: doc.id, data: doc.data() }))
+              .filter(
+                ({ data }) =>
+                  data.status === 'live' ||
+                  data.status === 'LIVE' ||
+                  data.liveNotified === true
+              )
+              .map(({ id, data }) => {
+                let dateStr = new Date().toISOString().split('T')[0];
+                if (data.startedAt && typeof data.startedAt.toDate === 'function') {
+                  const dt = data.startedAt.toDate();
+                  dateStr =
+                    dt.toLocaleDateString() +
+                    ' • ' +
+                    dt.toLocaleTimeString('en-US', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true,
+                    });
+                } else if (data.startTime && typeof data.startTime.toDate === 'function') {
+                  const dt = data.startTime.toDate();
+                  dateStr =
+                    dt.toLocaleDateString() +
+                    ' • ' +
+                    dt.toLocaleTimeString('en-US', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true,
+                    });
+                }
 
-              return {
-                id: doc.id,
-                title: t('updates.newOnlineMeeting'),
-                content: `${data.title || ''} ${t('updates.meetingScheduled')}`.trim(),
-                date: dateStr,
-                type: 'online_meeting',
-                icon: Video,
-                color: '#3B82F6',
-                url: data.meetingLink || '',
-                rawDate: data.createdAt?.toMillis?.() || 0,
-              };
-            });
+                return {
+                  id,
+                  title: '🔴 Live Meeting Now',
+                  content: `${data.title || t('updates.newOnlineMeeting')} is live. Tap to join now.`.trim(),
+                  date: dateStr,
+                  type: 'online_meeting',
+                  icon: Video,
+                  color: '#EF4444',
+                  url: data.meetingLink || '',
+                  rawDate: data.startedAt?.toMillis?.() || data.createdAt?.toMillis?.() || 0,
+                };
+              });
             setMeetingsList(list);
           }
         },
