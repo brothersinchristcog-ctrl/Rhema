@@ -430,9 +430,17 @@ class NotificationService {
           break;
         }
         case 'expense_approval':
+        case 'expense_approved':
+        case 'expense_rejected':
           nav.navigate('AdminRoot', {
             targetTab: 'Expense',
             innerTab: 'approvals',
+            approvalSubTab:
+              type === 'expense_approved'
+                ? 'approved'
+                : type === 'expense_rejected'
+                ? 'rejected'
+                : 'pending',
             expenseId: rawData.expenseId || id,
             timestamp: Date.now(),
           });

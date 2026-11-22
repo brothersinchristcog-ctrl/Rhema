@@ -1080,7 +1080,7 @@ function Navigation() {
               setViewMode('admin');
             }
             NotificationService.handleNotificationNavigation({ data }, navigationRef);
-          } else if (type === 'expense_approval' || type === 'invoice') {
+          } else if (type === 'expense_approval' || type === 'expense_approved' || type === 'expense_rejected' || type === 'invoice') {
             if (isSuperAdmin) {
               if (viewMode !== 'admin') {
                 setViewMode('admin');

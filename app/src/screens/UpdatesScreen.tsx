@@ -168,6 +168,8 @@ export default function UpdatesScreen({ navigation, route }: any) {
     if (type === 'registration_approved') return 'REGISTRATION APPROVED';
     if (type === 'registration_rejected') return 'REGISTRATION UPDATE';
     if (type === 'expense_approval') return 'EXPENSE APPROVAL';
+    if (type === 'expense_approved') return 'EXPENSE APPROVED';
+    if (type === 'expense_rejected') return 'EXPENSE REJECTED';
     if (type === 'invoice') return 'INVOICE';
     if (type === 'kids_check_in') return 'KIDS CHECK-IN';
     if (type === 'kids_check_out') return 'KIDS CHECK-OUT';
@@ -527,8 +529,8 @@ export default function UpdatesScreen({ navigation, route }: any) {
       return null;
     }
 
-    // SECURITY: Expense approvals & platform super-admin notices are strictly Super Admin only
-    if ((data.targetRole === 'super_admin' || data.type === 'expense_approval' || data.type === 'invoice' || data.type === 'new_church') && !isSuperAdmin) {
+    // SECURITY: Expense approvals, decisions & platform super-admin notices are strictly Super Admin only
+    if ((data.targetRole === 'super_admin' || data.type === 'expense_approval' || data.type === 'expense_approved' || data.type === 'expense_rejected' || data.type === 'invoice' || data.type === 'new_church') && !isSuperAdmin) {
       return null;
     }
 
@@ -666,6 +668,14 @@ export default function UpdatesScreen({ navigation, route }: any) {
       icon = AlertTriangle;
       color = '#EF4444';
       resolvedType = 'registration_rejected';
+    } else if (data.type === 'expense_approved') {
+      icon = CheckCircle2;
+      color = '#10B981';
+      resolvedType = 'expense_approved';
+    } else if (data.type === 'expense_rejected') {
+      icon = AlertTriangle;
+      color = '#EF4444';
+      resolvedType = 'expense_rejected';
     } else if (data.type === 'expense_approval' || data.type === 'invoice') {
       icon = Wallet;
       color = '#F43F5E';
@@ -1403,10 +1413,17 @@ export default function UpdatesScreen({ navigation, route }: any) {
                       requestId: update.requestId || update.referenceId || update.id,
                       timestamp: Date.now(),
                     });
-                  } else if ((update.type === 'expense_approval' || update.type === 'invoice') && isSuperAdmin) {
+                  } else if ((update.type === 'expense_approval' || update.type === 'expense_approved' || update.type === 'expense_rejected' || update.type === 'invoice') && isSuperAdmin) {
+                    const approvalSubTab =
+                      update.type === 'expense_approved'
+                        ? 'approved'
+                        : update.type === 'expense_rejected'
+                        ? 'rejected'
+                        : 'pending';
                     navigation.navigate('AdminRoot', {
                       targetTab: 'Expense',
-                      innerTab: update.type === 'expense_approval' ? 'approvals' : 'invoice',
+                      innerTab: update.type === 'invoice' ? 'invoice' : 'approvals',
+                      approvalSubTab,
                       expenseId: update.expenseId || update.relatedId || update.id,
                       timestamp: Date.now(),
                     });
@@ -1898,22 +1915,46 @@ export default function UpdatesScreen({ navigation, route }: any) {
                   </TouchableOpacity>
                 )}
 
-                {(selectedUpdate?.type === 'expense_approval' || selectedUpdate?.type === 'invoice') && isSuperAdmin && (
+                {(selectedUpdate?.type === 'expense_approval' || selectedUpdate?.type === 'expense_approved' || selectedUpdate?.type === 'expense_rejected' || selectedUpdate?.type === 'invoice') && isSuperAdmin && (
                   <TouchableOpacity
-                    style={[styles.joinLiveBtn, { backgroundColor: '#F43F5E', marginTop: 16 }]}
+                    style={[
+                      styles.joinLiveBtn,
+                      {
+                        backgroundColor:
+                          selectedUpdate?.type === 'expense_approved'
+                            ? '#10B981'
+                            : selectedUpdate?.type === 'expense_rejected'
+                            ? '#EF4444'
+                            : '#F43F5E',
+                        marginTop: 16,
+                      },
+                    ]}
                     onPress={() => {
                       const expId = selectedUpdate?.expenseId || selectedUpdate?.relatedId || selectedUpdate?.id;
-                      const innerTab = selectedUpdate?.type === 'expense_approval' ? 'approvals' : 'invoice';
+                      const innerTab = selectedUpdate?.type === 'invoice' ? 'invoice' : 'approvals';
+                      const approvalSubTab =
+                        selectedUpdate?.type === 'expense_approved'
+                          ? 'approved'
+                          : selectedUpdate?.type === 'expense_rejected'
+                          ? 'rejected'
+                          : 'pending';
                       setSelectedUpdate(null);
                       navigation.navigate('AdminRoot', {
                         targetTab: 'Expense',
                         innerTab,
+                        approvalSubTab,
                         expenseId: expId,
                         timestamp: Date.now(),
                       });
                     }}
                   >
-                    <Text style={styles.joinLiveBtnTxt}>💼 Review Expense Approval</Text>
+                    <Text style={styles.joinLiveBtnTxt}>
+                      {selectedUpdate?.type === 'expense_approved'
+                        ? '✅ View Approved Expense'
+                        : selectedUpdate?.type === 'expense_rejected'
+                        ? '❌ View Rejected Expense'
+                        : '💼 Review Expense Approval'}
+                    </Text>
                   </TouchableOpacity>
                 )}
 
