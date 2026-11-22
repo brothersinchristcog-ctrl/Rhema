@@ -11,6 +11,7 @@ import {
   stripGuestSuffix,
 } from '../utils/phoneUtils';
 import MemberIdService from './MemberIdService';
+import { isSuperAdminMember } from '../utils/roleUtils';
 
 // ─── Data Interfaces ─────────────────────────────────────────────────────────
 
@@ -2647,6 +2648,91 @@ class FirestoreService {
       return this.deduplicateMemberDocs(mapped);
     } catch (error) {
       console.error('Error fetching admin members:', error);
+      return [];
+    }
+  }
+
+  /** Fetches verified Super Admins only (from platform_admins and super-admin member records). */
+  async getSuperAdminMembers(): Promise<any[]> {
+    try {
+      const col = await this.getCollection('members');
+      const [platformSnap, membersSnap] = await Promise.all([
+        firestore().collection('platform_admins').get().catch(() => null),
+        col.get(),
+      ]);
+
+      const platformMap = new Map<string, any>();
+      const platformPhones = new Set<string>();
+      if (platformSnap && !platformSnap.empty) {
+        platformSnap.docs.forEach((doc: any) => {
+          const data = doc.data() || {};
+          const roleStr = String(data.role || '').toLowerCase();
+          if (data.superadmin === true || roleStr.includes('super')) {
+            platformMap.set(doc.id, { id: doc.id, ...data });
+            const p10 = normalizePhone10(data.phone);
+            if (p10) platformPhones.add(p10);
+          }
+        });
+      }
+
+      const mapped: any[] = [];
+      const matchedIds = new Set<string>();
+      membersSnap.docs.forEach((doc: any) => {
+        const data = doc.data() || {};
+        if (data.status === 'Left') return;
+        const p10 = normalizePhone10(data.phone);
+        const uidKey = String(data.uid || data.accountId || '').trim();
+        const isSuper =
+          isSuperAdminMember(data, false) ||
+          platformMap.has(doc.id) ||
+          (uidKey ? platformMap.has(uidKey) : false) ||
+          (p10 ? platformPhones.has(p10) : false);
+        if (!isSuper) return;
+
+        matchedIds.add(doc.id);
+        if (uidKey) matchedIds.add(uidKey);
+
+        const rawName =
+          (data.name && data.name.trim()) ||
+          (data.displayName && data.displayName.trim()) ||
+          (data.fullName && data.fullName.trim()) ||
+          (`${data.firstName || ''} ${data.lastName || ''}`.trim());
+        const fullName = rawName || (data.phone ? `Super Admin (${data.phone})` : 'Super Admin');
+        mapped.push({
+          ...data,
+          id: doc.id,
+          name: fullName,
+          displayName: fullName,
+          userType: data.userType || 'Super Admin',
+          email: data.email || '',
+          _hasRealName: Boolean(rawName),
+        });
+      });
+
+      platformMap.forEach((pData, pId) => {
+        const p10 = normalizePhone10(pData.phone);
+        const alreadyIncluded =
+          matchedIds.has(pId) ||
+          (p10 ? mapped.some((m) => normalizePhone10(m.phone) === p10) : false);
+        if (alreadyIncluded) return;
+        const rawName = (pData.name && String(pData.name).trim()) || '';
+        mapped.push({
+          ...pData,
+          id: pId,
+          uid: pId,
+          name: rawName || (pData.phone ? `Super Admin (${pData.phone})` : 'Super Admin'),
+          displayName: rawName || 'Super Admin',
+          userType: pData.role || 'Super Admin',
+          role: pData.role || 'Super Admin',
+          superadmin: true,
+          isSuperAdmin: true,
+          _hasRealName: Boolean(rawName),
+        });
+      });
+
+      return this.deduplicateMemberDocs(mapped);
+    } catch (error) {
+      console.error('Error fetching super admin members:', error);
       return [];
     }
   }

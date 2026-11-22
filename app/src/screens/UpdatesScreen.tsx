@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, StatusBar, Platform, ActivityIndicator, Modal, PanResponder, Animated, Dimensions, Linking, Alert, Image, BackHandler, Clipboard, ToastAndroid } from 'react-native';
-import { ChevronLeft, ArrowLeft, Bell, Calendar, Info, MessageCircle, AlertTriangle, X, Gift, Heart, Sparkles, Droplets, Trash2, Tv, BookOpen, Music, Mic , Video, Layers, UserCheck, Zap, HeartHandshake, Briefcase, CheckCircle2 } from 'lucide-react-native';
+import { ChevronLeft, ArrowLeft, Bell, Calendar, Info, MessageCircle, AlertTriangle, X, Gift, Heart, Sparkles, Droplets, Trash2, Tv, BookOpen, Music, Mic , Video, Layers, UserCheck, Zap, HeartHandshake, Briefcase, CheckCircle2, Wallet } from 'lucide-react-native';
 import { openZoomMeeting } from '../utils/ZoomLauncher';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,6 +15,7 @@ import firestore, {
   onSnapshot 
 } from '@react-native-firebase/firestore';
 import { useAuth } from '../context/AuthContext';
+import { isSuperAdminMember } from '../utils/roleUtils';
 import { formatDateDisplay } from '../utils/DateUtils';
 import { useChurch } from '../context/ChurchContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -166,6 +167,8 @@ export default function UpdatesScreen({ navigation, route }: any) {
     if (type === 'registration_request_admin') return 'REGISTRATION APPROVAL';
     if (type === 'registration_approved') return 'REGISTRATION APPROVED';
     if (type === 'registration_rejected') return 'REGISTRATION UPDATE';
+    if (type === 'expense_approval') return 'EXPENSE APPROVAL';
+    if (type === 'invoice') return 'INVOICE';
     if (type === 'kids_check_in') return 'KIDS CHECK-IN';
     if (type === 'kids_check_out') return 'KIDS CHECK-OUT';
     if (type === 'kids_absent') return 'KIDS ATTENDANCE';
@@ -255,10 +258,11 @@ export default function UpdatesScreen({ navigation, route }: any) {
   const [hasAutoOpened, setHasAutoOpened] = useState(false);
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const [clearedBeforeTimestamp, setClearedBeforeTimestamp] = useState<number>(0);
-  const { user, member } = useAuth();
+  const { user, member, isPlatformSuperAdmin } = useAuth();
   const { activeChurch } = useChurch();
   const adminRoleStr = `${member?.userType || ''} ${(member as any)?.role || ''}`.toUpperCase();
-  const isAdmin = adminRoleStr.includes('ADMIN') || adminRoleStr.includes('SUPER') || adminRoleStr.includes('PASTOR');
+  const isSuperAdmin = isSuperAdminMember(member, isPlatformSuperAdmin);
+  const isAdmin = isSuperAdmin || adminRoleStr.includes('ADMIN') || adminRoleStr.includes('PASTOR');
 
   const handleBack = () => {
     if (selectedUpdate) {
@@ -523,6 +527,11 @@ export default function UpdatesScreen({ navigation, route }: any) {
       return null;
     }
 
+    // SECURITY: Expense approvals & platform super-admin notices are strictly Super Admin only
+    if ((data.targetRole === 'super_admin' || data.type === 'expense_approval' || data.type === 'invoice' || data.type === 'new_church') && !isSuperAdmin) {
+      return null;
+    }
+
     // SECURITY: If broadcast/notification is targeted to a specific user, skip it if not for this user
     const targetIdVal = data.targetMemberId || data.targetUid || data.recipientId;
     const isPhoneTargeted = data.targetPhone && typeof data.targetPhone === 'string' && data.targetPhone.trim().length > 0;
@@ -657,6 +666,10 @@ export default function UpdatesScreen({ navigation, route }: any) {
       icon = AlertTriangle;
       color = '#EF4444';
       resolvedType = 'registration_rejected';
+    } else if (data.type === 'expense_approval' || data.type === 'invoice') {
+      icon = Wallet;
+      color = '#F43F5E';
+      resolvedType = data.type;
     } else if (data.type === 'admin_roster_alert' || data.title?.includes('Response Deadline Expired') || data.title?.includes('No Volunteers:') || data.title?.includes('All Volunteers Declined') || data.title?.includes('Unfilled Dut')) {
       icon = Layers;
       color = '#DC2626';
@@ -1390,6 +1403,13 @@ export default function UpdatesScreen({ navigation, route }: any) {
                       requestId: update.requestId || update.referenceId || update.id,
                       timestamp: Date.now(),
                     });
+                  } else if ((update.type === 'expense_approval' || update.type === 'invoice') && isSuperAdmin) {
+                    navigation.navigate('AdminRoot', {
+                      targetTab: 'Expense',
+                      innerTab: update.type === 'expense_approval' ? 'approvals' : 'invoice',
+                      expenseId: update.expenseId || update.relatedId || update.id,
+                      timestamp: Date.now(),
+                    });
                   } else if (
                     update.type === 'kids_check_in' ||
                     update.type === 'kids_check_out' ||
@@ -1875,6 +1895,25 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     }}
                   >
                     <Text style={styles.joinLiveBtnTxt}>🤝 Review Volunteer Application</Text>
+                  </TouchableOpacity>
+                )}
+
+                {(selectedUpdate?.type === 'expense_approval' || selectedUpdate?.type === 'invoice') && isSuperAdmin && (
+                  <TouchableOpacity
+                    style={[styles.joinLiveBtn, { backgroundColor: '#F43F5E', marginTop: 16 }]}
+                    onPress={() => {
+                      const expId = selectedUpdate?.expenseId || selectedUpdate?.relatedId || selectedUpdate?.id;
+                      const innerTab = selectedUpdate?.type === 'expense_approval' ? 'approvals' : 'invoice';
+                      setSelectedUpdate(null);
+                      navigation.navigate('AdminRoot', {
+                        targetTab: 'Expense',
+                        innerTab,
+                        expenseId: expId,
+                        timestamp: Date.now(),
+                      });
+                    }}
+                  >
+                    <Text style={styles.joinLiveBtnTxt}>💼 Review Expense Approval</Text>
                   </TouchableOpacity>
                 )}
 

@@ -19,7 +19,7 @@ import { QuizLanguageProvider } from '../context/QuizLanguageContext';
 import { ProfileDrawerProvider, useProfileDrawer } from '../context/ProfileDrawerContext';
 import ProfileDrawerOverlay from '../components/ProfileDrawerOverlay';
 import Theme from '../theme/Theme';
-import AdminNavigator from './AdminNavigator'; 
+import AdminNavigator from './AdminNavigator';
 import AdminBaptism from '../screens/admin/AdminBaptism';
 import NotificationService from '../services/NotificationService';
 import SecurityService from '../services/SecurityService';
@@ -31,6 +31,7 @@ import DailyQuizNotificationService from '../services/DailyQuizNotificationServi
 import FirestoreService from '../services/FirestoreService';
 import InviteLinkService from '../services/InviteLinkService';
 import { phonesMatch } from '../utils/phoneUtils';
+import { isSuperAdminMember } from '../utils/roleUtils';
 
 // Auth & Onboarding
 import AuthNavigator from './AuthNavigator';
@@ -142,240 +143,211 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
   </TouchableOpacity>
 );
 
-  const MatrimonySlantedCardBg = () => {
-    const [size, setSize] = useState({ w: 0, h: 0 });
-    const w = size.w;
-    const h = size.h;
-    const pathD = w > 0 && h > 0
-      ? `M 14 0 L ${w + 6} 0 L ${w + 6} ${h} L 22 ${h} Q 13 ${h} 11 ${h - 9} L 2 10 Q 0 0 10 0 Z`
-      : '';
+const MatrimonySlantedCardBg = () => {
+  const [size, setSize] = useState({ w: 0, h: 0 });
+  const w = size.w;
+  const h = size.h;
+  const pathD = w > 0 && h > 0
+    ? `M 14 0 L ${w + 6} 0 L ${w + 6} ${h} L 22 ${h} Q 13 ${h} 11 ${h - 9} L 2 10 Q 0 0 10 0 Z`
+    : '';
 
-    return (
-      <View
-        pointerEvents="none"
-        onLayout={(e) => {
-          const { width: lw, height: lh } = e.nativeEvent.layout;
-          if (Math.abs(lw - size.w) > 0.5 || Math.abs(lh - size.h) > 0.5) {
-            setSize({ w: lw, h: lh });
-          }
-        }}
-        style={StyleSheet.absoluteFill}
-      >
-        <LinearGradient
-          colors={['#EA580C', '#C2410C']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{ position: 'absolute', top: 0, bottom: 0, left: 16, right: -6 }}
-        />
-        {w > 0 && h > 0 ? (
-          <Svg
-            width={w + 6}
-            height={h}
-            viewBox={`0 0 ${w + 6} ${h}`}
-            style={{ position: 'absolute', top: 0, left: 0 }}
-          >
-            <SvgDefs>
-              <SvgLinearGradient id="matrimonyOrangeGrad" x1="0" y1="0" x2="1" y2="1">
-                <SvgStop offset="0%" stopColor="#EA580C" />
-                <SvgStop offset="100%" stopColor="#C2410C" />
-              </SvgLinearGradient>
-            </SvgDefs>
-            <SvgPath d={pathD} fill="url(#matrimonyOrangeGrad)" />
-          </Svg>
-        ) : null}
-      </View>
-    );
-  };
-
-  const MatrimonyCoupleHeartIcon = ({ size = 20, color = '#FFFFFF' }: { size?: number; color?: string }) => (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <SvgPath
-        d="M12 20.5C12 20.5 3.5 15.2 3.5 9.2C3.5 6.3 5.8 4 8.6 4C10.3 4 11.4 4.9 12 5.9C12.6 4.9 13.7 4 15.4 4C18.2 4 20.5 6.3 20.5 9.2C20.5 15.2 12 20.5 12 20.5Z"
-        stroke={color}
-        strokeWidth={1.7}
-        strokeLinecap="round"
-        strokeLinejoin="round"
+  return (
+    <View
+      pointerEvents="none"
+      onLayout={(e) => {
+        const { width: lw, height: lh } = e.nativeEvent.layout;
+        if (Math.abs(lw - size.w) > 0.5 || Math.abs(lh - size.h) > 0.5) {
+          setSize({ w: lw, h: lh });
+        }
+      }}
+      style={StyleSheet.absoluteFill}
+    >
+      <LinearGradient
+        colors={['#EA580C', '#C2410C']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={{ position: 'absolute', top: 0, bottom: 0, left: 16, right: -6 }}
       />
-      <SvgCircle cx="9.6" cy="10.2" r="1.45" stroke={color} strokeWidth={1.45} />
-      <SvgCircle cx="14.4" cy="10.2" r="1.45" stroke={color} strokeWidth={1.45} />
-      <SvgPath
-        d="M7.4 14.3C7.7 12.9 8.6 12.3 9.6 12.3C10.6 12.3 11.4 12.9 11.7 14.1"
-        stroke={color}
-        strokeWidth={1.45}
-        strokeLinecap="round"
-      />
-      <SvgPath
-        d="M12.3 14.1C12.6 12.9 13.4 12.3 14.4 12.3C15.4 12.3 16.3 12.9 16.6 14.3"
-        stroke={color}
-        strokeWidth={1.45}
-        strokeLinecap="round"
-      />
-    </Svg>
+      {w > 0 && h > 0 ? (
+        <Svg
+          width={w + 6}
+          height={h}
+          viewBox={`0 0 ${w + 6} ${h}`}
+          style={{ position: 'absolute', top: 0, left: 0 }}
+        >
+          <SvgDefs>
+            <SvgLinearGradient id="matrimonyOrangeGrad" x1="0" y1="0" x2="1" y2="1">
+              <SvgStop offset="0%" stopColor="#EA580C" />
+              <SvgStop offset="100%" stopColor="#C2410C" />
+            </SvgLinearGradient>
+          </SvgDefs>
+          <SvgPath d={pathD} fill="url(#matrimonyOrangeGrad)" />
+        </Svg>
+      ) : null}
+    </View>
   );
+};
 
-  const TABS = [
-    { key: 'Home',       navKey: 'nav.home',       defaultLabel: 'Home',            Icon: Home,           bg: '#1a2d5a', fg: '#1a2d5a' },
-    { key: 'Promise',    navKey: 'nav.promise',    defaultLabel: 'Promise',         Icon: Book,           bg: '#0F766E', fg: '#0F766E' },
-    { key: 'Bible',      navKey: 'nav.bible',      defaultLabel: 'Bible',           Icon: BookOpen,       bg: '#B45309', fg: '#B45309' },
-    { key: 'Prayer',     navKey: 'nav.prayer',     defaultLabel: 'Prayer',          Icon: Heart,          bg: '#0284C7', fg: '#0284C7' },
-    { key: 'Matrimony',  navKey: 'nav.matrimony',  defaultLabel: 'Rhema Matrimony', Icon: HeartHandshake, bg: '#EA580C', fg: '#EA580C' },
-  ] as const;
+const MatrimonyCoupleHeartIcon = ({ size = 20, color = '#FFFFFF' }: { size?: number; color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <SvgPath
+      d="M12 20.5C12 20.5 3.5 15.2 3.5 9.2C3.5 6.3 5.8 4 8.6 4C10.3 4 11.4 4.9 12 5.9C12.6 4.9 13.7 4 15.4 4C18.2 4 20.5 6.3 20.5 9.2C20.5 15.2 12 20.5 12 20.5Z"
+      stroke={color}
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <SvgCircle cx="9.6" cy="10.2" r="1.45" stroke={color} strokeWidth={1.45} />
+    <SvgCircle cx="14.4" cy="10.2" r="1.45" stroke={color} strokeWidth={1.45} />
+    <SvgPath
+      d="M7.4 14.3C7.7 12.9 8.6 12.3 9.6 12.3C10.6 12.3 11.4 12.9 11.7 14.1"
+      stroke={color}
+      strokeWidth={1.45}
+      strokeLinecap="round"
+    />
+    <SvgPath
+      d="M12.3 14.1C12.6 12.9 13.4 12.3 14.4 12.3C15.4 12.3 16.3 12.9 16.6 14.3"
+      stroke={color}
+      strokeWidth={1.45}
+      strokeLinecap="round"
+    />
+  </Svg>
+);
 
-  const getTabConfig = (routeName: string, t?: (k: string) => string) => {
-    if (routeName === 'Promise') {
-      return {
-        key: 'Promise',
-        label: t ? t('nav.promise') : 'Promise',
-        Icon: Book,
-        bg: '#0F766E',
-        fg: '#0F766E',
-      };
-    }
-    const tab = TABS.find(t => t.key === routeName) || TABS[0];
-    const rawLabel = t ? t(tab.navKey) : tab.defaultLabel;
-    const label = (!rawLabel || rawLabel === tab.navKey) ? tab.defaultLabel : rawLabel;
-    return { ...tab, label };
-  };
+const TABS = [
+  { key: 'Home', navKey: 'nav.home', defaultLabel: 'Home', Icon: Home, bg: '#1a2d5a', fg: '#1a2d5a' },
+  { key: 'Promise', navKey: 'nav.promise', defaultLabel: 'Promise', Icon: Book, bg: '#0F766E', fg: '#0F766E' },
+  { key: 'Bible', navKey: 'nav.bible', defaultLabel: 'Bible', Icon: BookOpen, bg: '#B45309', fg: '#B45309' },
+  { key: 'Prayer', navKey: 'nav.prayer', defaultLabel: 'Prayer', Icon: Heart, bg: '#0284C7', fg: '#0284C7' },
+  { key: 'Matrimony', navKey: 'nav.matrimony', defaultLabel: 'Rhema Matrimony', Icon: HeartHandshake, bg: '#EA580C', fg: '#EA580C' },
+] as const;
 
-  function CustomTabBar({ state, descriptors, navigation }: any) {
-    const { activeChurch } = useChurch();
-    const { language, t } = useLanguage();
-    const { colors, isDark, navBarStyle } = useTheme();
-    const insets = useSafeAreaInsets();
+const getTabConfig = (routeName: string, t?: (k: string) => string) => {
+  if (routeName === 'Promise') {
+    return {
+      key: 'Promise',
+      label: t ? t('nav.promise') : 'Promise',
+      Icon: Book,
+      bg: '#0F766E',
+      fg: '#0F766E',
+    };
+  }
+  const tab = TABS.find(t => t.key === routeName) || TABS[0];
+  const rawLabel = t ? t(tab.navKey) : tab.defaultLabel;
+  const label = (!rawLabel || rawLabel === tab.navKey) ? tab.defaultLabel : rawLabel;
+  return { ...tab, label };
+};
 
-    // Device-friendly, mobile-responsive bottom clearance:
-    // In 3-button mode, insets.bottom is ~44-56px (clearing the system buttons).
-    // In gesture mode, insets.bottom is small (0-16px), bringing the capsule down to the bottom of the screen.
-    const bottomSafe = insets?.bottom || 0;
-    const deviceBottomInset = bottomSafe > 0 ? bottomSafe : (Platform.OS === 'ios' ? 10 : 4);
-  
-    const currentRoute = state.routes[state.index];
-    const activeConfig = getTabConfig(currentRoute.name, t);
+function CustomTabBar({ state, descriptors, navigation }: any) {
+  const { activeChurch } = useChurch();
+  const { language, t } = useLanguage();
+  const { colors, isDark, navBarStyle } = useTheme();
+  const insets = useSafeAreaInsets();
 
-    const [publicPrayerCount, setPublicPrayerCount] = useState(0);
-    const [lastSeenPrayerCount, setLastSeenPrayerCount] = useState(0);
-    const pulseAnim = React.useRef(new Animated.Value(1)).current;
+  // Device-friendly, mobile-responsive bottom clearance:
+  // In 3-button mode, insets.bottom is ~44-56px (clearing the system buttons).
+  // In gesture mode, insets.bottom is small (0-16px), bringing the capsule down to the bottom of the screen.
+  const bottomSafe = insets?.bottom || 0;
+  const deviceBottomInset = bottomSafe > 0 ? bottomSafe : (Platform.OS === 'ios' ? 10 : 4);
 
-    useEffect(() => {
-      AsyncStorage.getItem('@LastSeenPrayerCount').then((val) => {
-        if (val) {
-          setLastSeenPrayerCount(parseInt(val, 10));
+  const currentRoute = state.routes[state.index];
+  const activeConfig = getTabConfig(currentRoute.name, t);
+
+  const [publicPrayerCount, setPublicPrayerCount] = useState(0);
+  const [lastSeenPrayerCount, setLastSeenPrayerCount] = useState(0);
+  const pulseAnim = React.useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    AsyncStorage.getItem('@LastSeenPrayerCount').then((val) => {
+      if (val) {
+        setLastSeenPrayerCount(parseInt(val, 10));
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!activeChurch?.id) return;
+    const unsubscribe = firestore()
+      .collection('Rhema Church')
+      .doc(activeChurch.id)
+      .collection('prayerRequests')
+      .where('isPublic', '==', true)
+      .where('isAnswered', '==', true)
+      .onSnapshot((snapshot) => {
+        if (snapshot) {
+          setPublicPrayerCount(snapshot.docs.length);
+        }
+      }, (error) => {
+        // Gracefully suppress permission denied / listener warning if user is not authorized or during auth transition
+        if (__DEV__) {
+          console.warn("Prayer listener:", error?.message || error);
         }
       });
-    }, []);
+    return () => unsubscribe();
+  }, [activeChurch?.id]);
 
-    useEffect(() => {
-      if (!activeChurch?.id) return;
-      const unsubscribe = firestore()
-        .collection('Rhema Church')
-        .doc(activeChurch.id)
-        .collection('prayerRequests')
-        .where('isPublic', '==', true)
-        .where('isAnswered', '==', true)
-        .onSnapshot((snapshot) => {
-          if (snapshot) {
-            setPublicPrayerCount(snapshot.docs.length);
-          }
-        }, (error) => {
-          // Gracefully suppress permission denied / listener warning if user is not authorized or during auth transition
-          if (__DEV__) {
-            console.warn("Prayer listener:", error?.message || error);
-          }
-        });
-      return () => unsubscribe();
-    }, [activeChurch?.id]);
+  const unseenPrayers = Math.max(0, publicPrayerCount - lastSeenPrayerCount);
+  const showPrayerBadge = unseenPrayers > 0;
 
-    const unseenPrayers = Math.max(0, publicPrayerCount - lastSeenPrayerCount);
-    const showPrayerBadge = unseenPrayers > 0;
+  useEffect(() => {
+    if (showPrayerBadge) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.5, duration: 1000, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true })
+        ])
+      ).start();
+    } else {
+      pulseAnim.stopAnimation();
+      pulseAnim.setValue(1);
+    }
+  }, [showPrayerBadge]);
 
-    useEffect(() => {
-      if (showPrayerBadge) {
-        Animated.loop(
-          Animated.sequence([
-            Animated.timing(pulseAnim, { toValue: 1.5, duration: 1000, useNativeDriver: true }),
-            Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true })
-          ])
-        ).start();
-      } else {
-        pulseAnim.stopAnimation();
-        pulseAnim.setValue(1);
-      }
-    }, [showPrayerBadge]);
+  // 1. MINIMAL CAPSULE STYLE (Edge-to-edge with active circle/pill containing both icon & text label)
+  if (navBarStyle === 'capsule') {
+    return (
+      <View style={[
+        styles.capsuleTabBarContainer,
+        {
+          backgroundColor: isDark ? '#09090B' : '#FFFFFF',
+          borderTopColor: isDark ? '#1F242D' : '#E2E8F0',
+          paddingBottom: deviceBottomInset,
+          height: 52 + deviceBottomInset,
+        }
+      ]}>
+        <View style={styles.capsuleTabsRow}>
+          {state.routes.map((route: any, index: number) => {
+            const { options } = descriptors[route.key];
+            const isFocused = state.index === index;
+            const config = getTabConfig(route.name, t);
+            const IconComponent = config.Icon;
 
-    // 1. MINIMAL CAPSULE STYLE (Edge-to-edge with active circle/pill containing both icon & text label)
-    if (navBarStyle === 'capsule') {
-      return (
-        <View style={[
-          styles.capsuleTabBarContainer,
-          {
-            backgroundColor: isDark ? '#09090B' : '#FFFFFF',
-            borderTopColor: isDark ? '#1F242D' : '#E2E8F0',
-            paddingBottom: deviceBottomInset,
-            height: 52 + deviceBottomInset,
-          }
-        ]}>
-          <View style={styles.capsuleTabsRow}>
-            {state.routes.map((route: any, index: number) => {
-              const { options } = descriptors[route.key];
-              const isFocused = state.index === index;
-              const config = getTabConfig(route.name, t);
-              const IconComponent = config.Icon;
-
-              const onPress = () => {
-                if (config.key === 'Prayer' && showPrayerBadge) {
-                  setLastSeenPrayerCount(publicPrayerCount);
-                  AsyncStorage.setItem('@LastSeenPrayerCount', publicPrayerCount.toString());
-                }
-
-                const event = navigation.emit({
-                  type: 'tabPress',
-                  target: route.key,
-                  canPreventDefault: true,
-                });
-
-                if (!event.defaultPrevented) {
-                  if (config.key === 'Prayer' && showPrayerBadge) {
-                    navigation.navigate(route.name, { tab: 'public_requests' });
-                  } else if (!isFocused) {
-                    navigation.navigate(route.name);
-                  }
-                }
-              };
-
-              const activeBg = isDark ? '#1F242D' : (colors.tabBarActiveBg || '#0F766E');
-              const activeFg = isDark ? '#FFFFFF' : (colors.tabBarActiveFg || '#FFFFFF');
-              const inactiveFg = isDark ? '#94A3B8' : (colors.tabBarInactiveFg || '#64748B');
-
-              if (config.key === 'Matrimony') {
-                return (
-                  <TouchableOpacity
-                    key={index}
-                    accessibilityRole="button"
-                    accessibilityState={isFocused ? { selected: true } : {}}
-                    accessibilityLabel={options.tabBarAccessibilityLabel}
-                    testID={options.tabBarTestID}
-                    onPress={onPress}
-                    style={styles.capsuleMatrimonySlot}
-                    activeOpacity={0.85}
-                  >
-                    <View style={styles.capsuleMatrimonyCard}>
-                      <MatrimonySlantedCardBg />
-                      <View style={styles.matrimonyCornerIconWrap}>
-                        <MatrimonyCoupleHeartIcon size={17} color="#FFFFFF" />
-                      </View>
-                      <Text
-                        style={styles.matrimonyCardLabel}
-                        numberOfLines={2}
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.75}
-                      >
-                        {'Rhema\nMatrimony'}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                );
+            const onPress = () => {
+              if (config.key === 'Prayer' && showPrayerBadge) {
+                setLastSeenPrayerCount(publicPrayerCount);
+                AsyncStorage.setItem('@LastSeenPrayerCount', publicPrayerCount.toString());
               }
 
+              const event = navigation.emit({
+                type: 'tabPress',
+                target: route.key,
+                canPreventDefault: true,
+              });
+
+              if (!event.defaultPrevented) {
+                if (config.key === 'Prayer' && showPrayerBadge) {
+                  navigation.navigate(route.name, { tab: 'public_requests' });
+                } else if (!isFocused) {
+                  navigation.navigate(route.name);
+                }
+              }
+            };
+
+            const activeBg = isDark ? '#1F242D' : (colors.tabBarActiveBg || '#0F766E');
+            const activeFg = isDark ? '#FFFFFF' : (colors.tabBarActiveFg || '#FFFFFF');
+            const inactiveFg = isDark ? '#94A3B8' : (colors.tabBarInactiveFg || '#64748B');
+
+            if (config.key === 'Matrimony') {
               return (
                 <TouchableOpacity
                   key={index}
@@ -384,103 +356,27 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
                   accessibilityLabel={options.tabBarAccessibilityLabel}
                   testID={options.tabBarTestID}
                   onPress={onPress}
-                  style={styles.capsuleTabItem}
-                  activeOpacity={0.7}
+                  style={styles.capsuleMatrimonySlot}
+                  activeOpacity={0.85}
                 >
-                  {isFocused ? (
-                    <View style={[styles.activeCapsulePill, { backgroundColor: activeBg }]}>
-                      <View style={{ position: 'relative' }}>
-                        <IconComponent 
-                          color={activeFg} 
-                          size={19} 
-                          strokeWidth={2.4} 
-                        />
-                        {config.key === 'Prayer' && showPrayerBadge && (
-                          <View style={[styles.capsuleRedDot, { borderColor: activeBg }]} />
-                        )}
-                      </View>
-                      <Text
-                        style={[styles.activeCapsuleLabel, { color: activeFg }]}
-                        numberOfLines={1}
-                        adjustsFontSizeToFit
-                      >
-                        {config.label}
-                      </Text>
+                  <View style={styles.capsuleMatrimonyCard}>
+                    <MatrimonySlantedCardBg />
+                    <View style={styles.matrimonyCornerIconWrap}>
+                      <MatrimonyCoupleHeartIcon size={17} color="#FFFFFF" />
                     </View>
-                  ) : (
-                    <View style={styles.inactiveCapsuleWrapper}>
-                      <View style={{ position: 'relative' }}>
-                        <IconComponent 
-                          color={inactiveFg} 
-                          size={20} 
-                          strokeWidth={2.0} 
-                        />
-                        {config.key === 'Prayer' && showPrayerBadge && (
-                          <View style={[styles.capsuleRedDot, { borderColor: isDark ? '#09090B' : '#FFFFFF' }]} />
-                        )}
-                      </View>
-                      <Text
-                        style={[styles.inactiveCapsuleLabel, { color: inactiveFg }]}
-                        numberOfLines={1}
-                        adjustsFontSizeToFit
-                      >
-                        {config.label}
-                      </Text>
-                    </View>
-                  )}
+                    <Text
+                      style={styles.matrimonyCardLabel}
+                      numberOfLines={2}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.75}
+                    >
+                      {'Rhema\nMatrimony'}
+                    </Text>
+                  </View>
                 </TouchableOpacity>
               );
-            })}
-          </View>
-        </View>
-      );
-    }
-
-    // 2. FLOATING PILL STYLE (Responsive floating capsule with labels)
-    const floatingPillBottom = Math.max(
-      (insets?.bottom || 0) + (Platform.OS === 'ios' ? 14 : 10),
-      Platform.OS === 'android' ? 16 : 24
-    );
-
-    return (
-      <View style={[
-        styles.tabBarContainer, 
-        { 
-          backgroundColor: colors.tabBarBg,
-          borderColor: colors.tabBarBorder,
-          borderWidth: 1,
-          bottom: floatingPillBottom,
-          shadowColor: isDark ? '#000' : 'rgba(15, 23, 42, 0.15)',
-        }
-      ]}>
-        {state.routes.map((route: any, index: number) => {
-          const { options } = descriptors[route.key];
-          const isFocused = state.index === index;
-          const config = getTabConfig(route.name, t);
-          const IconComponent = config.Icon;
-
-          const onPress = () => {
-            if (config.key === 'Prayer' && showPrayerBadge) {
-              setLastSeenPrayerCount(publicPrayerCount);
-              AsyncStorage.setItem('@LastSeenPrayerCount', publicPrayerCount.toString());
             }
 
-            const event = navigation.emit({
-              type: 'tabPress',
-              target: route.key,
-              canPreventDefault: true,
-            });
-
-            if (!event.defaultPrevented) {
-              if (config.key === 'Prayer' && showPrayerBadge) {
-                navigation.navigate(route.name, { tab: 'public_requests' });
-              } else if (!isFocused) {
-                navigation.navigate(route.name);
-              }
-            }
-          };
-
-          if (config.key === 'Matrimony') {
             return (
               <TouchableOpacity
                 key={index}
@@ -489,27 +385,103 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
                 accessibilityLabel={options.tabBarAccessibilityLabel}
                 testID={options.tabBarTestID}
                 onPress={onPress}
-                style={styles.pillMatrimonySlot}
-                activeOpacity={0.88}
+                style={styles.capsuleTabItem}
+                activeOpacity={0.7}
               >
-                <View style={styles.pillMatrimonyCard}>
-                  <MatrimonySlantedCardBg />
-                  <View style={styles.matrimonyCornerIconWrap}>
-                    <MatrimonyCoupleHeartIcon size={17} color="#FFFFFF" />
+                {isFocused ? (
+                  <View style={[styles.activeCapsulePill, { backgroundColor: activeBg }]}>
+                    <View style={{ position: 'relative' }}>
+                      <IconComponent
+                        color={activeFg}
+                        size={19}
+                        strokeWidth={2.4}
+                      />
+                      {config.key === 'Prayer' && showPrayerBadge && (
+                        <View style={[styles.capsuleRedDot, { borderColor: activeBg }]} />
+                      )}
+                    </View>
+                    <Text
+                      style={[styles.activeCapsuleLabel, { color: activeFg }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                    >
+                      {config.label}
+                    </Text>
                   </View>
-                  <Text
-                    style={styles.matrimonyCardLabel}
-                    numberOfLines={2}
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.75}
-                  >
-                    {'Rhema\nMatrimony'}
-                  </Text>
-                </View>
+                ) : (
+                  <View style={styles.inactiveCapsuleWrapper}>
+                    <View style={{ position: 'relative' }}>
+                      <IconComponent
+                        color={inactiveFg}
+                        size={20}
+                        strokeWidth={2.0}
+                      />
+                      {config.key === 'Prayer' && showPrayerBadge && (
+                        <View style={[styles.capsuleRedDot, { borderColor: isDark ? '#09090B' : '#FFFFFF' }]} />
+                      )}
+                    </View>
+                    <Text
+                      style={[styles.inactiveCapsuleLabel, { color: inactiveFg }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                    >
+                      {config.label}
+                    </Text>
+                  </View>
+                )}
               </TouchableOpacity>
             );
+          })}
+        </View>
+      </View>
+    );
+  }
+
+  // 2. FLOATING PILL STYLE (Responsive floating capsule with labels)
+  const floatingPillBottom = Math.max(
+    (insets?.bottom || 0) + (Platform.OS === 'ios' ? 14 : 10),
+    Platform.OS === 'android' ? 16 : 24
+  );
+
+  return (
+    <View style={[
+      styles.tabBarContainer,
+      {
+        backgroundColor: colors.tabBarBg,
+        borderColor: colors.tabBarBorder,
+        borderWidth: 1,
+        bottom: floatingPillBottom,
+        shadowColor: isDark ? '#000' : 'rgba(15, 23, 42, 0.15)',
+      }
+    ]}>
+      {state.routes.map((route: any, index: number) => {
+        const { options } = descriptors[route.key];
+        const isFocused = state.index === index;
+        const config = getTabConfig(route.name, t);
+        const IconComponent = config.Icon;
+
+        const onPress = () => {
+          if (config.key === 'Prayer' && showPrayerBadge) {
+            setLastSeenPrayerCount(publicPrayerCount);
+            AsyncStorage.setItem('@LastSeenPrayerCount', publicPrayerCount.toString());
           }
 
+          const event = navigation.emit({
+            type: 'tabPress',
+            target: route.key,
+            canPreventDefault: true,
+          });
+
+          if (!event.defaultPrevented) {
+            if (config.key === 'Prayer' && showPrayerBadge) {
+              navigation.navigate(route.name, { tab: 'public_requests' });
+            } else if (!isFocused) {
+              navigation.navigate(route.name);
+            }
+          }
+        };
+
+        if (config.key === 'Matrimony') {
           return (
             <TouchableOpacity
               key={index}
@@ -518,62 +490,92 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
               accessibilityLabel={options.tabBarAccessibilityLabel}
               testID={options.tabBarTestID}
               onPress={onPress}
-              style={styles.tabItem}
-              activeOpacity={0.9}
+              style={styles.pillMatrimonySlot}
+              activeOpacity={0.88}
             >
-              {isFocused ? (
-                <View style={[styles.activeCircle, { backgroundColor: colors.tabBarActiveBg }]}>
-                  <View>
-                    <IconComponent color={colors.tabBarActiveFg} size={20} strokeWidth={2.5} />
-                    {config.key === 'Prayer' && showPrayerBadge && (
-                      <View style={styles.badgeActive}>
-                        <Text style={styles.badgeText}>{unseenPrayers}</Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text 
-                    style={[styles.activeLabel, { color: colors.tabBarActiveFg }]}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                  >
-                    {config.label}
-                  </Text>
+              <View style={styles.pillMatrimonyCard}>
+                <MatrimonySlantedCardBg />
+                <View style={styles.matrimonyCornerIconWrap}>
+                  <MatrimonyCoupleHeartIcon size={17} color="#FFFFFF" />
                 </View>
-              ) : (
-                <View style={styles.inactiveWrapper}>
-                  <View>
-                    {config.key === 'Prayer' && showPrayerBadge && (
-                      <Animated.View style={[
-                        styles.pulseRing, 
-                        { transform: [{ scale: pulseAnim }], opacity: pulseAnim.interpolate({ inputRange: [1, 1.5], outputRange: [0.8, 0] }) }
-                      ]} />
-                    )}
-                    <IconComponent color={colors.tabBarInactiveFg} size={22} strokeWidth={2} />
-                    {config.key === 'Prayer' && showPrayerBadge && (
-                      <View style={styles.badgeInactive}>
-                        <Text style={styles.badgeText}>{unseenPrayers}</Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text 
-                    style={[styles.inactiveLabel, { color: colors.tabBarInactiveFg }]}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                  >
-                    {config.label}
-                  </Text>
-                </View>
-              )}
+                <Text
+                  style={styles.matrimonyCardLabel}
+                  numberOfLines={2}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.75}
+                >
+                  {'Rhema\nMatrimony'}
+                </Text>
+              </View>
             </TouchableOpacity>
           );
-        })}
-      </View>
-    );
-  }
+        }
+
+        return (
+          <TouchableOpacity
+            key={index}
+            accessibilityRole="button"
+            accessibilityState={isFocused ? { selected: true } : {}}
+            accessibilityLabel={options.tabBarAccessibilityLabel}
+            testID={options.tabBarTestID}
+            onPress={onPress}
+            style={styles.tabItem}
+            activeOpacity={0.9}
+          >
+            {isFocused ? (
+              <View style={[styles.activeCircle, { backgroundColor: colors.tabBarActiveBg }]}>
+                <View>
+                  <IconComponent color={colors.tabBarActiveFg} size={20} strokeWidth={2.5} />
+                  {config.key === 'Prayer' && showPrayerBadge && (
+                    <View style={styles.badgeActive}>
+                      <Text style={styles.badgeText}>{unseenPrayers}</Text>
+                    </View>
+                  )}
+                </View>
+                <Text
+                  style={[styles.activeLabel, { color: colors.tabBarActiveFg }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
+                  {config.label}
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.inactiveWrapper}>
+                <View>
+                  {config.key === 'Prayer' && showPrayerBadge && (
+                    <Animated.View style={[
+                      styles.pulseRing,
+                      { transform: [{ scale: pulseAnim }], opacity: pulseAnim.interpolate({ inputRange: [1, 1.5], outputRange: [0.8, 0] }) }
+                    ]} />
+                  )}
+                  <IconComponent color={colors.tabBarInactiveFg} size={22} strokeWidth={2} />
+                  {config.key === 'Prayer' && showPrayerBadge && (
+                    <View style={styles.badgeInactive}>
+                      <Text style={styles.badgeText}>{unseenPrayers}</Text>
+                    </View>
+                  )}
+                </View>
+                <Text
+                  style={[styles.inactiveLabel, { color: colors.tabBarInactiveFg }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
+                  {config.label}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
 
 const LockedFeatureScreen = ({ navigation }: any) => {
-  const { member, viewMode } = useAuth();
-  const isAdmin = String(member?.userType || '').toUpperCase().includes('ADMIN') || String(member?.userType || '').toUpperCase().includes('SUPER');
+  const { member, viewMode, isPlatformSuperAdmin } = useAuth();
+  const isSuperAdmin = isSuperAdminMember(member, isPlatformSuperAdmin);
+  const isAdmin = isSuperAdmin || String(member?.userType || '').toUpperCase().includes('ADMIN');
   const showAdminView = isAdmin && viewMode === 'admin';
   const [pulseAnim] = React.useState(new Animated.Value(1));
 
@@ -657,20 +659,20 @@ const LockedFeatureScreen = ({ navigation }: any) => {
             fontWeight: '500',
             paddingHorizontal: 4
           }}>
-            {isAdmin 
+            {isAdmin
               ? 'Your church\'s premium access has ended. Renew today to unlock Sermons, Daily Verses, Live Celebrations, and more!'
               : 'Your church\'s premium access has ended. Please reach out to your pastor or admin to restore these features.'}
           </Text>
 
           {isAdmin ? (
-            <TouchableOpacity 
+            <TouchableOpacity
               activeOpacity={0.8}
               style={{ width: '100%', marginBottom: 16 }}
               onPress={() => navigation.navigate('Subscription')}
             >
-              <LinearGradient 
-                colors={['#10b981', '#059669']} 
-                start={{x:0, y:0}} end={{x:1, y:1}}
+              <LinearGradient
+                colors={['#10b981', '#059669']}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
                 style={{
                   paddingVertical: 18,
                   borderRadius: 20,
@@ -700,7 +702,7 @@ const LockedFeatureScreen = ({ navigation }: any) => {
             </View>
           )}
 
-          <TouchableOpacity 
+          <TouchableOpacity
             activeOpacity={0.6}
             style={{ paddingVertical: 12, paddingHorizontal: 24 }}
             onPress={() => {
@@ -725,7 +727,7 @@ const LockedFeatureScreen = ({ navigation }: any) => {
 };
 
 function TabNavigatorContent() {
-  const { user, signOut, member, viewMode, setViewMode } = useAuth();
+  const { user, signOut, member, viewMode, setViewMode, isPlatformSuperAdmin } = useAuth();
   const { activeChurch } = useChurch();
   const { language, t } = useLanguage();
   const { colors } = useTheme();
@@ -736,7 +738,7 @@ function TabNavigatorContent() {
 
 
   const isGuest = user?.isAnonymous;
-  const isActualAdmin = String(member?.userType || '').toUpperCase().includes('ADMIN') || String(member?.userType || '').toUpperCase().includes('SUPER');
+  const isActualAdmin = isSuperAdminMember(member, isPlatformSuperAdmin) || String(member?.userType || '').toUpperCase().includes('ADMIN');
 
   const handleFeatureInteraction = (e: any) => {
     if (isGuest) {
@@ -767,54 +769,54 @@ function TabNavigatorContent() {
         tabBar={(props) => <CustomTabBar key={language} {...props} />}
         screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: colors.background } }}
       >
-      <Tab.Screen 
-        name="Home" 
-        component={HomeScreen} 
-      />
-      <Tab.Screen 
-        name="Promise" 
-        component={PromiseArchiveScreen} 
-        listeners={{ tabPress: handleFeatureInteraction }}
-      /> 
-      <Tab.Screen 
-        name="Bible" 
-        component={BibleScreen} 
-        listeners={{ tabPress: handleFeatureInteraction }}
-      />
-      <Tab.Screen 
-        name="Prayer" 
-        component={PrayerWallScreen} 
-        listeners={{ tabPress: handleFeatureInteraction }}
-      />
-      <Tab.Screen 
-        name="Matrimony" 
-        component={MatrimonyNavigator} 
-        listeners={{
-          tabPress: (e: any) => {
-            handleFeatureInteraction(e);
-            if (!e.defaultPrevented) {
-              e.preventDefault();
-              navigation.navigate('Matrimony');
-            }
-          },
-        }}
-      />
-    </Tab.Navigator>
+        <Tab.Screen
+          name="Home"
+          component={HomeScreen}
+        />
+        <Tab.Screen
+          name="Promise"
+          component={PromiseArchiveScreen}
+          listeners={{ tabPress: handleFeatureInteraction }}
+        />
+        <Tab.Screen
+          name="Bible"
+          component={BibleScreen}
+          listeners={{ tabPress: handleFeatureInteraction }}
+        />
+        <Tab.Screen
+          name="Prayer"
+          component={PrayerWallScreen}
+          listeners={{ tabPress: handleFeatureInteraction }}
+        />
+        <Tab.Screen
+          name="Matrimony"
+          component={MatrimonyNavigator}
+          listeners={{
+            tabPress: (e: any) => {
+              handleFeatureInteraction(e);
+              if (!e.defaultPrevented) {
+                e.preventDefault();
+                navigation.navigate('Matrimony');
+              }
+            },
+          }}
+        />
+      </Tab.Navigator>
 
-    {isActualAdmin && viewMode === 'member' && (
-      <DraggableAdminPill onPress={() => {
-        setViewMode('admin');
-        navigation.navigate('AdminRoot');
-      }} />
-    )}
+      {isActualAdmin && viewMode === 'member' && (
+        <DraggableAdminPill onPress={() => {
+          setViewMode('admin');
+          navigation.navigate('AdminRoot');
+        }} />
+      )}
 
-    {profileDrawer && (
-      <ProfileDrawerOverlay
-        visible={profileDrawer.isOpen}
-        onClose={profileDrawer.closeDrawer}
-        navigation={navigation}
-      />
-    )}
+      {profileDrawer && (
+        <ProfileDrawerOverlay
+          visible={profileDrawer.isOpen}
+          onClose={profileDrawer.closeDrawer}
+          navigation={navigation}
+        />
+      )}
     </>
   );
 }
@@ -828,12 +830,12 @@ function TabNavigator() {
 }
 
 function Navigation() {
-  const { 
-    user, 
-    member, 
-    loading, 
-    viewMode, 
-    setViewMode, 
+  const {
+    user,
+    member,
+    loading,
+    viewMode,
+    setViewMode,
     signOut,
     isPlatformSuperAdmin,
     isPendingApproval,
@@ -849,9 +851,10 @@ function Navigation() {
   const appState = React.useRef(AppState.currentState);
   const handlingInviteRef = React.useRef(false);
 
-  const isAdmin = String(member?.userType || '').toUpperCase().includes('ADMIN') || String(member?.userType || '').toUpperCase().includes('SUPER');
+  const isSuperAdmin = isSuperAdminMember(member, isPlatformSuperAdmin);
+  const isAdmin = isSuperAdmin || String(member?.userType || '').toUpperCase().includes('ADMIN');
   const showAdminView = isAdmin && viewMode === 'admin';
-  
+
   const [pendingNotification, setPendingNotification] = useState<any>(null);
   const [hasPendingStored, setHasPendingStored] = useState(false);
   const [storedPendingData, setStoredPendingData] = useState<any>(null);
@@ -878,7 +881,7 @@ function Navigation() {
           setHasPendingStored(false);
           setStoredPendingData(null);
         }
-      } catch (e) {}
+      } catch (e) { }
     };
     if (user && !user.isAnonymous) {
       checkPendingStorage();
@@ -896,7 +899,7 @@ function Navigation() {
       if (user && !user.isAnonymous) {
         const isEnabled = await SecurityService.isBiometricEnabled();
         const isAvailable = await SecurityService.isBiometricAvailable();
-        
+
         if (isEnabled && isAvailable) {
           setIsLocked(true);
           const success = await SecurityService.authenticate(activeChurch?.name);
@@ -912,14 +915,14 @@ function Navigation() {
     // Listen for background -> foreground to re-lock
     const subscription = AppState.addEventListener('change', nextAppState => {
       if (
-        appState.current.match(/inactive|background/) && 
-        nextAppState === 'active' && 
+        appState.current.match(/inactive|background/) &&
+        nextAppState === 'active' &&
         user && !user.isAnonymous
       ) {
         const checkBiometrics = async () => {
           const isEnabled = await SecurityService.isBiometricEnabled();
           const isAvailable = await SecurityService.isBiometricAvailable();
-          
+
           if (isEnabled && isAvailable) {
             setIsLocked(true);
             const success = await SecurityService.authenticate(activeChurch?.name);
@@ -954,8 +957,8 @@ function Navigation() {
             const normalizedPeriod = rawPeriod
               ? rawPeriod.charAt(0).toUpperCase() + rawPeriod.slice(1).toLowerCase()
               : undefined;
-            navigationRef.navigate('VerseOfTheDay', { 
-              verseId: data.verseId, 
+            navigationRef.navigate('VerseOfTheDay', {
+              verseId: data.verseId,
               period: normalizedPeriod,
               lang: data.lang,
             });
@@ -1077,6 +1080,13 @@ function Navigation() {
               setViewMode('admin');
             }
             NotificationService.handleNotificationNavigation({ data }, navigationRef);
+          } else if (type === 'expense_approval' || type === 'invoice') {
+            if (isSuperAdmin) {
+              if (viewMode !== 'admin') {
+                setViewMode('admin');
+              }
+              NotificationService.handleNotificationNavigation({ data }, navigationRef);
+            }
           } else {
             NotificationService.handleNotificationNavigation({ data }, navigationRef);
           }
@@ -1110,9 +1120,9 @@ function Navigation() {
 
     const subscription = Notifications.addNotificationResponseReceivedListener(response => {
       const responseKey = buildExpoResponseKey(response);
-      AsyncStorage.setItem(LAST_HANDLED_EXPO_NOTIF_KEY, responseKey).catch(() => {});
+      AsyncStorage.setItem(LAST_HANDLED_EXPO_NOTIF_KEY, responseKey).catch(() => { });
       // Clear cached native response immediately so JS reloads/refreshes never replay this tap
-      (Notifications as any).clearLastNotificationResponseAsync?.().catch(() => {});
+      (Notifications as any).clearLastNotificationResponseAsync?.().catch(() => { });
 
       const data = response.notification?.request?.content?.data;
       handleExpoNotificationPayload(data);
@@ -1127,13 +1137,13 @@ function Navigation() {
         const data = (response.notification?.request?.content?.data || {}) as any;
 
         // Always clear native cached response immediately so subsequent refreshes stay clean
-        (Notifications as any).clearLastNotificationResponseAsync?.().catch(() => {});
+        (Notifications as any).clearLastNotificationResponseAsync?.().catch(() => { });
 
         const lastHandled = await AsyncStorage.getItem(LAST_HANDLED_EXPO_NOTIF_KEY).catch(() => null);
         if (lastHandled && lastHandled === responseKey) {
           return; // Already handled in an earlier session/reload
         }
-        await AsyncStorage.setItem(LAST_HANDLED_EXPO_NOTIF_KEY, responseKey).catch(() => {});
+        await AsyncStorage.setItem(LAST_HANDLED_EXPO_NOTIF_KEY, responseKey).catch(() => { });
 
         // Guard against stale YouTube Live notifications cached from hours earlier
         if (data?.type === 'youtube_live') {
@@ -1146,14 +1156,14 @@ function Navigation() {
 
         handleExpoNotificationPayload(data);
       })
-      .catch(() => {});
+      .catch(() => { });
 
     // 1. When app is in background and user clicks notification
     const unsubscribeOnOpen = NotificationService.messaging().onNotificationOpenedApp(remoteMessage => {
       if (!remoteMessage) return;
       const fcmKey = buildFcmMessageKey(remoteMessage);
       if (fcmKey) {
-        AsyncStorage.setItem(LAST_HANDLED_FCM_NOTIF_KEY, fcmKey).catch(() => {});
+        AsyncStorage.setItem(LAST_HANDLED_FCM_NOTIF_KEY, fcmKey).catch(() => { });
       }
       const { navigationRef } = require('../../App');
       if (
@@ -1162,11 +1172,11 @@ function Navigation() {
         navigationRef.getRootState()?.routeNames?.includes('Tabs')
       ) {
         const type = remoteMessage?.data?.type;
-        const isAdminNotification = 
-          type === 'invoice' || 
-          type === 'baptism_request_admin' || 
-          type === 'baptism_request' || 
-          type === 'baptism' || 
+        const isAdminNotification =
+          type === 'invoice' ||
+          type === 'baptism_request_admin' ||
+          type === 'baptism_request' ||
+          type === 'baptism' ||
           type === 'prayer_request_admin' ||
           type === 'prayer_request' ||
           type === 'prayer' ||
@@ -1193,7 +1203,7 @@ function Navigation() {
           if (lastHandledFcm && lastHandledFcm === fcmKey) {
             return; // Already handled — prevent replay on reload/refresh
           }
-          await AsyncStorage.setItem(LAST_HANDLED_FCM_NOTIF_KEY, fcmKey).catch(() => {});
+          await AsyncStorage.setItem(LAST_HANDLED_FCM_NOTIF_KEY, fcmKey).catch(() => { });
         }
 
         // Guard against stale YouTube Live initial notification older than 1 hour
@@ -1211,11 +1221,11 @@ function Navigation() {
           navigationRef.getRootState()?.routeNames?.includes('Tabs')
         ) {
           const type = remoteMessage?.data?.type;
-          const isAdminNotification = 
-            type === 'invoice' || 
-            type === 'baptism_request_admin' || 
-            type === 'baptism_request' || 
-            type === 'baptism' || 
+          const isAdminNotification =
+            type === 'invoice' ||
+            type === 'baptism_request_admin' ||
+            type === 'baptism_request' ||
+            type === 'baptism' ||
             type === 'prayer_request_admin' ||
             type === 'prayer_request' ||
             type === 'prayer' ||
@@ -1310,7 +1320,7 @@ function Navigation() {
                 text: 'Keep Current Account',
                 style: 'cancel',
                 onPress: () => {
-                  InviteLinkService.clearPendingInvite().catch(() => {});
+                  InviteLinkService.clearPendingInvite().catch(() => { });
                 },
               },
               {
@@ -1368,7 +1378,7 @@ function Navigation() {
           processInviteUrl(initialUrl);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
 
     const urlSub = Linking.addEventListener('url', ({ url }) => {
       processInviteUrl(url);
@@ -1390,12 +1400,12 @@ function Navigation() {
           navigationRef.getRootState()?.routeNames?.includes('Tabs')
         ) {
           const type = pendingNotification?.data?.type;
-          
-          const isAdminNotification = 
-            type === 'invoice' || 
-            type === 'baptism_request_admin' || 
-            type === 'baptism_request' || 
-            type === 'baptism' || 
+
+          const isAdminNotification =
+            type === 'invoice' ||
+            type === 'baptism_request_admin' ||
+            type === 'baptism_request' ||
+            type === 'baptism' ||
             type === 'prayer_request_admin' ||
             type === 'prayer_request' ||
             type === 'prayer' ||
@@ -1420,7 +1430,7 @@ function Navigation() {
           setPendingNotification(null);
         }
       };
-      
+
       tryNavigate();
     }
   }, [user, loading, showSplash, pendingNotification, viewMode]);
@@ -1437,7 +1447,7 @@ function Navigation() {
           await NotificationService.getFcmToken();
           await NotificationService.setupCategoriesAndChannels();
         }
-        
+
         // Initialize Daily Verses Background Sync & Local Notifications
         VerseNotificationService.initialize();
 
@@ -1492,13 +1502,14 @@ function Navigation() {
                   const nBody = d.body || d.content || '';
                   NotificationService.displaySystemPushNotification(nTitle, nBody, {
                     ...d,
-                    id: change.doc.id,
-                  }).catch(() => {});
+                    docId: change.doc.id,
+                    id: d.meetingId || d.id || change.doc.id,
+                  }).catch(() => { });
                 });
               },
-              () => {}
+              () => { }
             );
-        } catch (_) {}
+        } catch (_) { }
       };
       initNotifications();
 
@@ -1538,7 +1549,7 @@ function Navigation() {
           </View>
           <Text style={lockStyles.title}>App Locked</Text>
           <Text style={lockStyles.subtitle}>Please verify your identity to continue</Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={lockStyles.button}
             onPress={async () => {
               const success = await SecurityService.performSecurityCheck(activeChurch?.name);
@@ -1561,8 +1572,8 @@ function Navigation() {
 
   // ── Approval Pending Check: If user is awaiting admin approval, block access to all auth & member screens ──
   const isApprovedMember = Boolean(
-    user?.isAnonymous || 
-    isPlatformSuperAdmin || 
+    user?.isAnonymous ||
+    isPlatformSuperAdmin ||
     (member && (member.status === 'Active' || member.firstName || member.name))
   );
 
@@ -1572,18 +1583,18 @@ function Navigation() {
   // Keep AuthNavigator mounted while SignUp OTP + Firestore registration submission is in progress
   const shouldBlockOnApproval = Boolean(
     !isCompletingSignUp &&
-    user && 
-    !user.isAnonymous && 
-    !isApprovedMember && 
+    user &&
+    !user.isAnonymous &&
+    !isApprovedMember &&
     (isPendingApproval || isRejected || !member)
   );
 
   if (shouldBlockOnApproval) {
     return (
       <Stack.Navigator id="approval-pending-navigator" screenOptions={{ headerShown: false, animation: 'none' }}>
-        <Stack.Screen 
-          name="ApprovalPending" 
-          component={ApprovalPendingScreen} 
+        <Stack.Screen
+          name="ApprovalPending"
+          component={ApprovalPendingScreen}
           initialParams={{
             phoneNumber: user?.phoneNumber || registrationRequest?.phone || storedPendingData?.phone,
             churchId: activeChurch?.id || registrationRequest?.churchId || storedPendingData?.church,
@@ -1600,13 +1611,13 @@ function Navigation() {
 
   const hasActiveSession = Boolean(user && !isCompletingSignUp);
 
-  const initialRouteName = !hasActiveSession 
-    ? "Auth" 
-    : !onboardingComplete 
-    ? "Onboarding" 
-    : (showAdminView && isAdmin) 
-    ? "AdminRoot" 
-    : "Tabs";
+  const initialRouteName = !hasActiveSession
+    ? "Auth"
+    : !onboardingComplete
+      ? "Onboarding"
+      : (showAdminView && isAdmin)
+        ? "AdminRoot"
+        : "Tabs";
 
   return (
     <Stack.Navigator
@@ -1877,7 +1888,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     width: 46,
     height: 46,
-    borderRadius: 23, 
+    borderRadius: 23,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1999,9 +2010,9 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 function DraggableAdminPill({ onPress }: { onPress: () => void }) {
   const { t } = useLanguage();
-  const pan = React.useRef(new Animated.ValueXY({ 
-    x: SCREEN_WIDTH - 150, 
-    y: SCREEN_HEIGHT - (Platform.OS === 'ios' ? 240 : 230) 
+  const pan = React.useRef(new Animated.ValueXY({
+    x: SCREEN_WIDTH - 150,
+    y: SCREEN_HEIGHT - (Platform.OS === 'ios' ? 240 : 230)
   })).current;
 
   const panResponder = React.useRef(
@@ -2037,7 +2048,7 @@ function DraggableAdminPill({ onPress }: { onPress: () => void }) {
         onPress={onPress}
         activeOpacity={0.8}
         style={{
-          backgroundColor: '#1a2d5a', 
+          backgroundColor: '#1a2d5a',
           flexDirection: 'row',
           alignItems: 'center',
           paddingHorizontal: 16,

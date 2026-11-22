@@ -73,6 +73,24 @@ export const fmt = (n: any) => "\u20B9" + Number(n || 0).toLocaleString("en-IN",
 export const todayISO = () => new Date().toISOString().slice(0, 10);
 export const uid = () => Math.random().toString(36).slice(2, 10);
 
+const INVOICE_NUMBER_REGEX = /^INV[-_](?:COG|RGM)(\d+)$/i;
+
+/** Parses the numeric sequence from legacy (INV-COG/INV-RGM) or current (Inv_RGM) invoice numbers. */
+export const parseInvoiceSequence = (invNo?: string | null): number | null => {
+  if (!invNo) return null;
+  const match = String(invNo).trim().match(INVOICE_NUMBER_REGEX);
+  if (!match?.[1]) return null;
+  const parsed = parseInt(match[1], 10);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
+/** Formats stored invoice numbers to the current Inv_RGM display format without mutating Firestore records. */
+export const formatInvoiceNoDisplay = (invNo?: string | null): string => {
+  const raw = String(invNo || '').trim();
+  if (!raw) return '';
+  return raw.replace(INVOICE_NUMBER_REGEX, 'Inv_RGM$1');
+};
+
 export const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 export function isoAdd(dateStr: string, days: number) {

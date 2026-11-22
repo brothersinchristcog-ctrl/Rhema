@@ -5,9 +5,12 @@ import { FileText, Check, X, User, Trash2 } from 'lucide-react-native';
 import { db } from '../../../services/firebaseConfig';
 import { useAuth } from '../../../context/AuthContext';
 import { useAdminTheme } from '../../../utils/adminThemeHelper';
+import { phonesMatch } from '../../../utils/phoneUtils';
+import { isSuperAdminMember } from '../../../utils/roleUtils';
 
 export default function AdminExpenseApprovals({ expenses, onGenerateInvoice, onDelete }: any) {
-  const { member } = useAuth();
+  const { member, user, isPlatformSuperAdmin } = useAuth();
+  const isSuperAdmin = isSuperAdminMember(member, isPlatformSuperAdmin);
   const {
     isDark,
     screenBg,
@@ -37,10 +40,14 @@ export default function AdminExpenseApprovals({ expenses, onGenerateInvoice, onD
   const currentList = activeTab === 'pending' ? pending : activeTab === 'approved' ? approved : rejected;
 
   const handleApprove = async (expense: any) => {
+    if (!isSuperAdmin) {
+      Alert.alert("Access Denied", "Only Super Admins can approve expenses.");
+      return;
+    }
     try {
       await db.collection('ledger_expenses').doc(expense.id).update({
         status: 'Approved',
-        approvedBy: member?.name || 'Admin',
+        approvedBy: member?.name || user?.displayName || 'Super Admin',
         approvedAt: new Date().toISOString(),
         approvalRemarks: ''
       });
@@ -52,6 +59,10 @@ export default function AdminExpenseApprovals({ expenses, onGenerateInvoice, onD
   };
 
   const handleReject = async (expense: any) => {
+    if (!isSuperAdmin) {
+      Alert.alert("Access Denied", "Only Super Admins can reject expenses.");
+      return;
+    }
     if (!remarks.trim()) {
       Alert.alert("Validation", "Please enter rejection remarks.");
       return;
@@ -59,7 +70,7 @@ export default function AdminExpenseApprovals({ expenses, onGenerateInvoice, onD
     try {
       await db.collection('ledger_expenses').doc(expense.id).update({
         status: 'Rejected',
-        approvedBy: member?.name || 'Admin',
+        approvedBy: member?.name || user?.displayName || 'Super Admin',
         approvedAt: new Date().toISOString(),
         approvalRemarks: remarks
       });
@@ -242,7 +253,7 @@ export default function AdminExpenseApprovals({ expenses, onGenerateInvoice, onD
                     </View>
                   ) : (
                     <View style={{ flexDirection: 'column', gap: 10 }}>
-                      {(!e.approverId || e.approverId === member?.id) ? (
+                      {(isSuperAdmin && (!e.approverId || e.approverId === member?.id || (user?.uid && e.approverId === user.uid) || (e.approverPhone && phonesMatch(e.approverPhone, member?.phone || user?.phoneNumber)))) ? (
                         <View style={{ flexDirection: 'row', gap: 10 }}>
                           <TouchableOpacity
                             style={[
@@ -271,7 +282,7 @@ export default function AdminExpenseApprovals({ expenses, onGenerateInvoice, onD
                       ) : (
                         <View style={{ justifyContent: 'center' }}>
                           <Text style={{ fontSize: 13, color: secondaryText, fontStyle: 'italic' }}>
-                            Waiting on {e.approverName || 'another admin'}
+                            {isSuperAdmin ? `Waiting on ${e.approverName || 'another super admin'}` : 'Super Admin approval required'}
                           </Text>
                         </View>
                       )}

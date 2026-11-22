@@ -147,7 +147,6 @@ class NotificationService {
       if (!this.notificationHandlerConfigured) {
         Notifications.setNotificationHandler({
           handleNotification: async () => ({
-            shouldShowAlert: true,
             shouldPlaySound: true,
             shouldSetBadge: false,
             shouldShowBanner: true,
@@ -286,30 +285,39 @@ class NotificationService {
     data?: Record<string, any>
   ): Promise<boolean> {
     try {
-      await this.setupCategoriesAndChannels();
       const cleanTitle = (title || 'Rhema Church Update').trim();
       const cleanBody = (body || '').trim();
       if (!cleanTitle && !cleanBody) return false;
 
       const rawId = String(
-        data?.postId ||
+        data?.meetingId ||
+          data?.postId ||
           data?.opportunityId ||
           data?.applicationId ||
           data?.requestId ||
           data?.eventId ||
+          data?.sermonId ||
+          data?.quizId ||
           data?.referenceId ||
           data?.id ||
           ''
       )
-        .replace(/^vol_post_/, '')
+        .replace(/^(?:meeting_sched_|meeting_live_|vol_post_|sermon_)/, '')
         .trim();
       const dedupKey = `${data?.type || 'general'}|${rawId}|${cleanTitle}`;
+      const contentDedupKey = `${data?.type || 'general'}|content|${cleanTitle}|${cleanBody}`;
       const now = Date.now();
       const prevAt = this.recentSystemNotifs.get(dedupKey) || 0;
-      if (now - prevAt < 20000) {
+      const prevContentAt = this.recentSystemNotifs.get(contentDedupKey) || 0;
+      if (now - prevAt < 20000 || now - prevContentAt < 20000) {
         return false;
       }
+      // Claim deduplication window synchronously before any await so concurrent
+      // FCM and Firestore listeners cannot both pass the gate on the same tick.
       this.recentSystemNotifs.set(dedupKey, now);
+      this.recentSystemNotifs.set(contentDedupKey, now);
+
+      await this.setupCategoriesAndChannels();
 
       const identifier = rawId
         ? `rhema_push_${data?.type || 'notif'}_${rawId}`
@@ -421,8 +429,21 @@ class NotificationService {
           }
           break;
         }
+        case 'expense_approval':
+          nav.navigate('AdminRoot', {
+            targetTab: 'Expense',
+            innerTab: 'approvals',
+            expenseId: rawData.expenseId || id,
+            timestamp: Date.now(),
+          });
+          break;
         case 'invoice':
-          nav.navigate('AdminRoot', { targetTab: 'Expense', highlightInvoiceId: id });
+          nav.navigate('AdminRoot', {
+            targetTab: 'Expense',
+            innerTab: 'invoice',
+            highlightInvoiceId: id,
+            timestamp: Date.now(),
+          });
           break;
         case 'promise':
           nav.navigate('Updates');

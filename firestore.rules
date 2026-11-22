@@ -17,9 +17,13 @@ service cloud.firestore {
     function isSuperAdmin() {
       return request.auth != null && (
         (exists(path('/databases/' + database + '/documents/platform_admins/' + request.auth.uid)) &&
-         get(path('/databases/' + database + '/documents/platform_admins/' + request.auth.uid)).data.superadmin == true) ||
+         (get(path('/databases/' + database + '/documents/platform_admins/' + request.auth.uid)).data.superadmin == true ||
+          get(path('/databases/' + database + '/documents/platform_admins/' + request.auth.uid)).data.get('role', '') in ['Super Admin', 'super_admin', 'superadmin', 'SuperAdmin'])) ||
         (exists(path('/databases/' + database + '/documents/Rhema Church/rhema/members/' + request.auth.uid)) &&
-         get(path('/databases/' + database + '/documents/Rhema Church/rhema/members/' + request.auth.uid)).data.get('userType', '') in ['Super Admin', 'super_admin', 'superadmin'])
+         (get(path('/databases/' + database + '/documents/Rhema Church/rhema/members/' + request.auth.uid)).data.get('userType', '') in ['Super Admin', 'super_admin', 'superadmin', 'SuperAdmin'] ||
+          get(path('/databases/' + database + '/documents/Rhema Church/rhema/members/' + request.auth.uid)).data.get('role', '') in ['Super Admin', 'super_admin', 'superadmin', 'SuperAdmin'] ||
+          get(path('/databases/' + database + '/documents/Rhema Church/rhema/members/' + request.auth.uid)).data.get('isSuperAdmin', false) == true ||
+          get(path('/databases/' + database + '/documents/Rhema Church/rhema/members/' + request.auth.uid)).data.get('superadmin', false) == true))
       );
     }
 
@@ -218,9 +222,9 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
     }
 
-    // 17b. Ledger Expenses
+    // 17b. Ledger Expenses - Strictly Super Admin Only
     match /ledger_expenses/{docId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isSuperAdmin();
     }
 
     // 18. Church Donations (Online member donations)
@@ -528,8 +532,9 @@ service cloud.firestore {
         allow read, write: if isAuthenticated();
       }
 
+      // Strictly Super Admin Only
       match /ledger_expenses/{docId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isSuperAdmin();
       }
 
       match /church_donations/{docId} {

@@ -379,4 +379,12 @@ export declare const onKidsAttendanceAbsentCreated: import("firebase-functions")
     churchId: string;
     attendanceId: string;
 }>>;
+/**
+ * 💼 EXPENSE APPROVAL NOTIFICATION TRIGGER (SUPER ADMIN ONLY)
+ * Dispatches FCM push + deterministic in-app notification strictly to verified Super Admins
+ * whenever a ledger expense transitions to 'Pending Approval' or gets re-submitted.
+ */
+export declare const onLedgerExpenseApproval: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").DocumentSnapshot> | undefined, {
+    expenseId: string;
+}>>;
 //# sourceMappingURL=notifications.d.ts.map

@@ -1857,6 +1857,7 @@ export {
   onKidsSessionCreated,
   onKidsSessionUpdated,
   onKidsAttendanceAbsentCreated,
+  onLedgerExpenseApproval,
 } from './notifications.js';
 
 export {

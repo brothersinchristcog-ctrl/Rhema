@@ -1,5 +1,5 @@
 import './globalConfig.js';
-import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/firestore';
+import { onDocumentCreated, onDocumentUpdated, onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { onRequest } from 'firebase-functions/v2/https';
 import { getApps, initializeApp } from 'firebase-admin/app';
@@ -5681,6 +5681,219 @@ export const onKidsAttendanceAbsentCreated = onDocumentCreated({ document: 'Rhem
     }
     catch (err) {
         console.error(`[KidsMinistry] Error sending absent push for ${attendanceId}:`, err);
+    }
+});
+function normalizeLast10(raw) {
+    const digits = String(raw || '').replace(/\D/g, '');
+    return digits.length >= 10 ? digits.slice(-10) : '';
+}
+function isSuperAdminDocData(data) {
+    if (!data)
+        return false;
+    const roleText = `${data.userType || ''} ${data.role || ''}`.toUpperCase();
+    return (data.superadmin === true ||
+        data.isSuperAdmin === true ||
+        roleText.includes('SUPER'));
+}
+/**
+ * 💼 EXPENSE APPROVAL NOTIFICATION TRIGGER (SUPER ADMIN ONLY)
+ * Dispatches FCM push + deterministic in-app notification strictly to verified Super Admins
+ * whenever a ledger expense transitions to 'Pending Approval' or gets re-submitted.
+ */
+export const onLedgerExpenseApproval = onDocumentWritten({ document: 'ledger_expenses/{expenseId}', region: 'asia-south1' }, async (event) => {
+    const snapAfter = event.data?.after;
+    if (!snapAfter || !snapAfter.exists)
+        return;
+    const after = snapAfter.data() || {};
+    const before = event.data?.before?.exists ? (event.data.before.data() || {}) : null;
+    if (after.status !== 'Pending Approval')
+        return;
+    const requestKey = String(after.approvalRequestId || after.submittedAt || event.id);
+    const statusChangedToPending = !before || before.status !== 'Pending Approval';
+    const requestChanged = Boolean(after.approvalRequestId && before?.approvalRequestId !== after.approvalRequestId);
+    if (!statusChangedToPending && !requestChanged)
+        return;
+    if (after.approvalPushSentForRequestId === requestKey) {
+        console.log(`🛑 [ExpenseApproval] Skipping duplicate push for ${event.params.expenseId} (${requestKey})`);
+        return;
+    }
+    const db = getFirestore();
+    const messaging = getMessaging();
+    const expenseId = event.params.expenseId;
+    const churchId = String(after.churchId || 'rhema').trim() || 'rhema';
+    try {
+        await snapAfter.ref.update({
+            approvalPushSentForRequestId: requestKey,
+            approvalPushSentAt: FieldValue.serverTimestamp(),
+        });
+    }
+    catch (_) { }
+    const submittedBy = String(after.submittedBy || 'Super Admin').trim();
+    const invoiceNumber = String(after.invoiceNumber || '').trim();
+    const approverId = String(after.approverId || '').trim();
+    const approverName = String(after.approverName || '').trim();
+    const approverPhone10 = normalizeLast10(after.approverPhone);
+    const invLabel = invoiceNumber ? ` (${invoiceNumber})` : '';
+    const title = 'New Expense Approval';
+    const body = approverName
+        ? `${submittedBy} sent an expense${invLabel} to ${approverName} for approval.`
+        : `${submittedBy} submitted an expense${invLabel} for Super Admin approval.`;
+    const superAdminTokens = new Set();
+    const targetTokens = new Set();
+    const verifiedSuperUids = new Set();
+    const verifiedSuperPhones = new Set();
+    const collectTokens = (targetSet, docData) => {
+        if (!docData)
+            return;
+        if (typeof docData.fcmToken === 'string' && docData.fcmToken.trim().length > 10) {
+            targetSet.add(docData.fcmToken.trim());
+        }
+        if (Array.isArray(docData.fcmTokens)) {
+            docData.fcmTokens.forEach((t) => {
+                if (typeof t === 'string' && t.trim().length > 10)
+                    targetSet.add(t.trim());
+            });
+        }
+    };
+    try {
+        const [platformSnap, membersSnap] = await Promise.all([
+            db.collection('platform_admins').get(),
+            db.collection('Rhema Church').doc(churchId).collection('members').get(),
+        ]);
+        const memberById = new Map();
+        membersSnap.forEach((doc) => {
+            const m = doc.data() || {};
+            memberById.set(doc.id, m);
+            if (isSuperAdminDocData(m)) {
+                verifiedSuperUids.add(doc.id);
+                const p10 = normalizeLast10(m.phone);
+                if (p10)
+                    verifiedSuperPhones.add(p10);
+                collectTokens(superAdminTokens, m);
+                const matchesTarget = (approverId && (doc.id === approverId || m.uid === approverId)) ||
+                    (approverPhone10 && p10 === approverPhone10);
+                if (matchesTarget)
+                    collectTokens(targetTokens, m);
+            }
+        });
+        platformSnap.forEach((doc) => {
+            const p = doc.data() || {};
+            const roleStr = String(p.role || '').toLowerCase();
+            if (p.superadmin === true || roleStr.includes('super')) {
+                verifiedSuperUids.add(doc.id);
+                const p10 = normalizeLast10(p.phone);
+                if (p10)
+                    verifiedSuperPhones.add(p10);
+                collectTokens(superAdminTokens, p);
+                const m = memberById.get(doc.id);
+                collectTokens(superAdminTokens, m);
+                const matchesTarget = (approverId && doc.id === approverId) ||
+                    (approverPhone10 && p10 === approverPhone10);
+                if (matchesTarget) {
+                    collectTokens(targetTokens, p);
+                    collectTokens(targetTokens, m);
+                }
+            }
+        });
+        if (approverId && targetTokens.size === 0 && (verifiedSuperUids.has(approverId) || (approverPhone10 && verifiedSuperPhones.has(approverPhone10)))) {
+            const uSnap = await db.collection('users').doc(approverId).get().catch(() => null);
+            if (uSnap && uSnap.exists) {
+                collectTokens(targetTokens, uSnap.data());
+            }
+        }
+    }
+    catch (lookupErr) {
+        console.error('❌ [ExpenseApproval] Error fetching Super Admin recipients:', lookupErr);
+    }
+    const tokensToSend = approverId || approverPhone10
+        ? Array.from(targetTokens)
+        : Array.from(superAdminTokens);
+    const notificationData = {
+        type: 'expense_approval',
+        targetRole: 'super_admin',
+        screen: 'AdminRoot',
+        targetTab: 'Expense',
+        innerTab: 'approvals',
+        expenseId,
+        invoiceNumber,
+        churchId,
+        click_action: 'FLUTTER_NOTIFICATION_CLICK',
+    };
+    if (tokensToSend.length > 0) {
+        try {
+            const sendRes = await messaging.sendEachForMulticast({
+                notification: { title, body },
+                data: notificationData,
+                tokens: tokensToSend,
+                android: {
+                    priority: 'high',
+                    notification: {
+                        sound: 'default',
+                        channelId: 'church_alerts',
+                    },
+                },
+                apns: {
+                    payload: {
+                        aps: {
+                            sound: 'default',
+                            badge: 1,
+                        },
+                    },
+                },
+            });
+            console.log(`✅ [ExpenseApproval] Sent push to ${sendRes.successCount} Super Admin device(s) (${sendRes.failureCount} failed).`);
+        }
+        catch (pushErr) {
+            console.error('❌ [ExpenseApproval] Error dispatching multicast push:', pushErr);
+        }
+    }
+    else if (!approverId && !approverPhone10) {
+        try {
+            await messaging.send({
+                topic: 'platform_super_admins',
+                notification: { title, body },
+                data: notificationData,
+                android: {
+                    priority: 'high',
+                    notification: {
+                        sound: 'default',
+                        channelId: 'church_alerts',
+                    },
+                },
+            });
+            console.log('✅ [ExpenseApproval] Sent topic fallback push to platform_super_admins.');
+        }
+        catch (topicErr) {
+            console.error('❌ [ExpenseApproval] Error sending topic fallback:', topicErr);
+        }
+    }
+    try {
+        const safeReqKey = requestKey.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const notifId = `expense_approval_${expenseId}_${safeReqKey}`;
+        await db
+            .collection('Rhema Church')
+            .doc(churchId)
+            .collection('notifications')
+            .doc(notifId)
+            .set({
+            type: 'expense_approval',
+            targetRole: 'super_admin',
+            ...(approverId ? { targetUid: approverId, targetMemberId: approverId } : {}),
+            ...(after.approverPhone ? { targetPhone: String(after.approverPhone) } : {}),
+            title,
+            body,
+            expenseId,
+            invoiceNumber,
+            churchId,
+            submittedBy,
+            approverName,
+            approvalRequestId: requestKey,
+            read: false,
+            createdAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+    }
+    catch (dbErr) {
+        console.error('❌ [ExpenseApproval] Error writing in-app notification doc:', dbErr);
     }
 });
 //# sourceMappingURL=notifications.js.map

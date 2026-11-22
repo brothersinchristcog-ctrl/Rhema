@@ -444,6 +444,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               if (isSuperRole) {
                 setIsPlatformSuperAdmin(true);
                 AsyncStorage.setItem('@cached_is_super_admin', JSON.stringify(true)).catch(() => {});
+                require('../services/NotificationService').default.subscribeToSuperAdminTopic().catch(() => {});
               }
             }
 

@@ -1,13 +1,14 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   StyleSheet, View, Text, ScrollView, TouchableOpacity, 
-  Modal, Platform, TextInput, KeyboardAvoidingView, Image, Alert
+  Modal, Platform, TextInput, KeyboardAvoidingView, Alert
 } from 'react-native';
 import { 
   FileText, Check, ChevronRight, CalendarDays, Receipt, ChevronLeft, Share2, Download, Trash2
 } from 'lucide-react-native';
 import {
-  fmt, todayISO, getCategoryIconComponent, formatDateToDDMMYYYY, formatDateTime
+  fmt, todayISO, getCategoryIconComponent, formatDateToDDMMYYYY, formatDateTime,
+  formatInvoiceNoDisplay
 } from './AdminExpenseUtils';
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
@@ -16,6 +17,8 @@ import * as Print from 'expo-print';
 import { File, Paths } from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../../context/AuthContext';
+import { useChurch } from '../../../context/ChurchContext';
+import { RHEMA_CHURCH_NAME } from '../../../constants/ChurchConfig';
 import { useAdminTheme } from '../../../utils/adminThemeHelper';
 
 export default function AdminExpenseInvoices({
@@ -26,6 +29,11 @@ export default function AdminExpenseInvoices({
   onDeleteInvoice
 }: any) {
   const { member } = useAuth();
+  const { activeChurch } = useChurch();
+  const churchDisplayName = (activeChurch?.name || RHEMA_CHURCH_NAME).trim();
+  const churchDisplayUpper = churchDisplayName.toUpperCase();
+  const churchFileSlug = churchDisplayName.replace(/[^a-zA-Z0-9]+/g, '') || 'Rhema';
+  const churchLowerSlug = churchFileSlug.toLowerCase();
   const {
     isDark,
     screenBg,
@@ -50,24 +58,16 @@ export default function AdminExpenseInvoices({
     setShowAdminSelector(true);
     if (admins.length === 0) {
       setFetchingAdmins(true);
-      try {
-        let loaded: any[] = [];
-        try {
-          const SalesforceService = require('../../../services/SalesforceService').default;
-          if (SalesforceService && typeof SalesforceService.getApprovers === 'function') {
-            loaded = await SalesforceService.getApprovers();
-          }
-        } catch (e) {}
-        if (!loaded || loaded.length === 0) {
-          const FirestoreService = require('../../../services/FirestoreService').default;
-          if (FirestoreService && typeof FirestoreService.getAdminMembers === 'function') {
-            loaded = await FirestoreService.getAdminMembers();
-          }
-        }
+    }
+    try {
+      const FirestoreService = require('../../../services/FirestoreService').default;
+      if (FirestoreService && typeof FirestoreService.getSuperAdminMembers === 'function') {
+        const loaded = await FirestoreService.getSuperAdminMembers();
         setAdmins(loaded || []);
-      } catch (err) {
-        console.log('Failed to fetch admins', err);
       }
+    } catch (err) {
+      console.log('Failed to fetch super admins', err);
+    } finally {
       setFetchingAdmins(false);
     }
   };
@@ -110,18 +110,18 @@ export default function AdminExpenseInvoices({
   const pdfInvoice = async () => {
     try {
       if (invoiceRef.current) {
-        let pdfName = "Invoice-ChurchOfGod";
+        let pdfName = `Invoice-${churchFileSlug}`;
         if (combinedPreview) {
           if (combinedPreview.entries.length === 1) {
             const e = combinedPreview.entries[0];
             if (e.eventName) {
-              pdfName = `${e.eventName}_invoice-churchofgod`;
+              pdfName = `${e.eventName}_invoice-${churchLowerSlug}`;
             } else {
               const baseName = e.vendor ? e.vendor : (e.items[0]?.category || "Expense");
-              pdfName = `${baseName}_invoice-churchofgod`;
+              pdfName = `${baseName}_invoice-${churchLowerSlug}`;
             }
           } else {
-            pdfName = `${combinedPreview.label.replace(/[^a-zA-Z0-9]/g, '')}_invoice-churchofgod`;
+            pdfName = `${combinedPreview.label.replace(/[^a-zA-Z0-9]/g, '')}_invoice-${churchLowerSlug}`;
           }
         }
         
@@ -281,7 +281,7 @@ export default function AdminExpenseInvoices({
                   <View style={styles.invoiceCardRight}>
                     <View style={styles.invoiceCardRightTop}>
                       <View style={[styles.invoiceCardBadge, { backgroundColor: '#10B981' }]}>
-                        <Text style={styles.invoiceCardBadgeText}>{invNo}</Text>
+                        <Text style={styles.invoiceCardBadgeText}>{formatInvoiceNoDisplay(invNo)}</Text>
                       </View>
                       <TouchableOpacity
                         style={[styles.invoiceCardDeleteIcon, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2' }]}
@@ -343,7 +343,7 @@ export default function AdminExpenseInvoices({
               <ScrollView style={styles.sheetBody} showsVerticalScrollIndicator={false}>
                 {combinedPreview && (() => {
                   const isSingle = combinedPreview.entries.length === 1;
-                  const invNo = combinedPreview.invNo || `INV-COG0001`;
+                  const invNo = formatInvoiceNoDisplay(combinedPreview.invNo) || 'Inv_RGM0001';
                   const invDate = isSingle ? formatDateToDDMMYYYY(combinedPreview.entries[0].date || todayISO()) : new Date().toLocaleDateString('en-GB').replace(/\//g, '-');
                   
                   const eventNames = [...new Set(combinedPreview.entries.map((e: any) => e.eventName).filter(Boolean))];
@@ -380,9 +380,9 @@ export default function AdminExpenseInvoices({
                       {/* Printable Invoice Document */}
                       <View style={styles.invoiceDoc} ref={invoiceRef} collapsable={false}>
                         <View style={styles.watermarkContainer} pointerEvents="none">
-                          <Image source={require('../../../../assets/logo.png')} style={styles.watermarkImage} resizeMode="contain" />
+                          <Text style={styles.watermarkText}>{churchDisplayUpper}</Text>
                         </View>
-                        <Text style={styles.invoiceDocTitle}>CHURCH OF GOD</Text>
+                        <Text style={styles.invoiceDocTitle}>{churchDisplayUpper}</Text>
                         <Text style={styles.invoiceDocSub}>Official Invoice</Text>
                         
                         <View style={styles.detailGrid}>
@@ -469,7 +469,7 @@ export default function AdminExpenseInvoices({
                           </View>
                         </View>
 
-                        <Text style={styles.invoiceFooter}>CHURCH OF GOD</Text>
+                        <Text style={styles.invoiceFooter}>{churchDisplayUpper}</Text>
                       </View>
 
                       {/* Download / Share / PDF Actions */}
@@ -511,7 +511,7 @@ export default function AdminExpenseInvoices({
           <View style={[styles.sheetContent, { backgroundColor: cardSurface, maxHeight: '60%' }]}>
             <View style={[styles.sheetHandle, { backgroundColor: isDark ? '#3F3F46' : '#CBD5E1' }]} />
             <View style={[styles.sheetHead, { borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.1)' : borderColor }]}>
-              <Text style={[styles.sheetTitle, { color: primaryText }]}>Select Approver</Text>
+              <Text style={[styles.sheetTitle, { color: primaryText }]}>Select Super Admin Approver</Text>
               <TouchableOpacity
                 style={[styles.iconBtnRound, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#F1F5F9' }]}
                 onPress={() => setShowAdminSelector(false)}
@@ -521,9 +521,9 @@ export default function AdminExpenseInvoices({
             </View>
             <ScrollView style={styles.sheetBody}>
               {fetchingAdmins ? (
-                <Text style={{ textAlign: 'center', padding: 20, color: secondaryText }}>Loading admins...</Text>
+                <Text style={{ textAlign: 'center', padding: 20, color: secondaryText }}>Loading super admins...</Text>
               ) : admins.length === 0 ? (
-                <Text style={{ textAlign: 'center', padding: 20, color: secondaryText }}>No admins found.</Text>
+                <Text style={{ textAlign: 'center', padding: 20, color: secondaryText }}>No super admins found.</Text>
               ) : (
                 admins.map(admin => (
                   <TouchableOpacity
@@ -551,7 +551,7 @@ export default function AdminExpenseInvoices({
                   >
                     <View>
                       <Text style={{ fontSize: 15, fontWeight: '700', color: primaryText }}>{admin.name}</Text>
-                      <Text style={{ fontSize: 12, color: secondaryText, marginTop: 2 }}>{admin.userType || 'Admin'}</Text>
+                      <Text style={{ fontSize: 12, color: secondaryText, marginTop: 2 }}>{admin.userType || admin.role || 'Super Admin'}</Text>
                     </View>
                     <ChevronRight size={18} color="#10B981" />
                   </TouchableOpacity>
@@ -742,10 +742,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 0,
   },
-  watermarkImage: {
-    width: 260,
-    height: 260,
-    opacity: 0.12,
+  watermarkText: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: 'rgba(15, 23, 42, 0.06)',
+    letterSpacing: 3,
+    textAlign: 'center',
+    transform: [{ rotate: '-30deg' }],
+    width: '130%',
   },
   invoiceDocTitle: {
     fontSize: 20,

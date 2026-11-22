@@ -13,6 +13,8 @@ import { X, Download } from 'lucide-react-native';
 import ViewShot from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import { useTheme, FONT_STYLE_OPTIONS } from '../context/ThemeContext';
+import { useChurch } from '../context/ChurchContext';
+import { RHEMA_CHURCH_NAME } from '../constants/ChurchConfig';
 
 export interface DonationRecord {
   id: string;
@@ -33,8 +35,12 @@ interface ReceiptModalProps {
 export default function ReceiptModal({ visible, onClose, donation }: ReceiptModalProps) {
   const viewShotRef = useRef<ViewShot>(null);
   const { isDark, colors, fontStyle, scaleFont } = useTheme();
+  const { activeChurch } = useChurch();
 
   if (!donation) return null;
+
+  const churchName = activeChurch?.name || RHEMA_CHURCH_NAME;
+  const churchEmail = activeChurch?.contactEmail || 'rhemaglobalministries@gmail.com';
 
   const activeFontOption = FONT_STYLE_OPTIONS.find(o => o.id === fontStyle) || FONT_STYLE_OPTIONS[0];
   const appFontFamily = activeFontOption.family;
@@ -56,7 +62,7 @@ export default function ReceiptModal({ visible, onClose, donation }: ReceiptModa
   const dd = String(dateObj.getDate()).padStart(2, '0');
   const yyyymmdd = `${yyyy}${mm}${dd}`;
 
-  const receiptNo = `COG-${donation.category.substring(0, 3).toUpperCase()}-${yyyymmdd}`;
+  const receiptNo = `RGM-${donation.category.substring(0, 3).toUpperCase()}-${yyyymmdd}`;
 
   const handleDownload = async () => {
     try {
@@ -95,8 +101,8 @@ export default function ReceiptModal({ visible, onClose, donation }: ReceiptModa
               {/* Header */}
               <View style={styles.receiptHeader}>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.churchName, fStyle]} numberOfLines={1} adjustsFontSizeToFit>Church of God</Text>
-                  <Text style={[styles.churchEmail, fStyle]} numberOfLines={1} adjustsFontSizeToFit>rhemachurch@gmail.com</Text>
+                  <Text style={[styles.churchName, fStyle]} numberOfLines={1} adjustsFontSizeToFit>{churchName}</Text>
+                  <Text style={[styles.churchEmail, fStyle]} numberOfLines={1} adjustsFontSizeToFit>{churchEmail}</Text>
                 </View>
                 <View style={styles.receiptBadgeWrapper}>
                    <View style={styles.receiptBadge}>
@@ -139,8 +145,8 @@ export default function ReceiptModal({ visible, onClose, donation }: ReceiptModa
               <View style={styles.thankYouBox}>
                  <Text style={[styles.thankYouText, fStyle]}>
                    {donation.category === 'Building' 
-                     ? 'Thank you for your generous donation to the Church of God.' 
-                     : 'Thank you for your faithful giving to the Church of God.'}
+                     ? `Thank you for your generous donation to ${churchName}.` 
+                     : `Thank you for your faithful giving to ${churchName}.`}
                  </Text>
                  <Text style={[styles.thankYouText, fStyle]}>Your support helps us continue our mission and serve the community. ♥</Text>
               </View>
