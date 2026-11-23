@@ -3764,40 +3764,86 @@ class FirestoreService {
     }
   }
 
-  async getMemberDonations(phone: string): Promise<any[]> {
+  async getMemberDonations(phone?: string | null, uid?: string | null): Promise<any[]> {
     try {
       const col = await this.getCollection('donations');
-      
-      // Execute two separate queries to avoid Firestore composite/OR index requirements
-      const [snapshotPhone, snapshotDonorPhone] = await Promise.all([
-        col.where('phone', '==', phone).get(),
-        col.where('donorPhone', '==', phone).get()
-      ]);
-      
-      // Merge results and deduplicate by ID
-      const donationMap = new Map();
-      
-      snapshotPhone.docs.forEach(doc => {
-        donationMap.set(doc.id, { id: doc.id, ...doc.data() });
+
+      const phoneVariantsSet = new Set<string>();
+      const rawPhone = (phone || '').trim();
+      if (rawPhone) {
+        phoneVariantsSet.add(rawPhone);
+        const digits = rawPhone.replace(/\D/g, '');
+        if (digits) {
+          phoneVariantsSet.add(digits);
+          if (digits.length >= 10) {
+            const last10 = digits.slice(-10);
+            phoneVariantsSet.add(last10);
+            phoneVariantsSet.add(`+91${last10}`);
+            phoneVariantsSet.add(`91${last10}`);
+            phoneVariantsSet.add(`0${last10}`);
+          }
+        }
+      }
+      const phoneVariants = Array.from(phoneVariantsSet).slice(0, 10);
+
+      const queries: Promise<any>[] = [];
+
+      if (uid) {
+        queries.push(col.where('userId', '==', uid).get());
+        queries.push(firestore().collection('church_donations').where('userId', '==', uid).get());
+      }
+
+      if (phoneVariants.length > 0) {
+        queries.push(col.where('phone', 'in', phoneVariants).get());
+        queries.push(col.where('donorPhone', 'in', phoneVariants).get());
+        queries.push(firestore().collection('church_donations').where('phone', 'in', phoneVariants).get());
+        queries.push(firestore().collection('ledger_donations').where('phone', 'in', phoneVariants).get());
+        queries.push(firestore().collection('ledger_donations').where('donorPhone', 'in', phoneVariants).get());
+      }
+
+      if (queries.length === 0) {
+        return [];
+      }
+
+      const settled = await Promise.allSettled(queries);
+      const donationMap = new Map<string, any>();
+
+      const getScore = (item: any) => {
+        const st = (item?.status || '').toLowerCase();
+        if (['completed', 'success', 'paid', 'approved', 'confirmed'].includes(st)) return 3;
+        if (item?.verified) return 2;
+        return 1;
+      };
+
+      settled.forEach((result) => {
+        if (result.status !== 'fulfilled' || !result.value?.docs) return;
+        result.value.docs.forEach((doc: any) => {
+          const data = doc.data();
+          const candidate = { id: doc.id, ...data };
+          const existing = donationMap.get(doc.id);
+          if (!existing || getScore(candidate) >= getScore(existing)) {
+            donationMap.set(doc.id, { ...existing, ...candidate });
+          }
+        });
       });
-      
-      snapshotDonorPhone.docs.forEach(doc => {
-        donationMap.set(doc.id, { id: doc.id, ...doc.data() });
-      });
-      
-      let results = Array.from(donationMap.values());
-      
-      // Sort locally by createdAt desc
-      results.sort((a: any, b: any) => {
-        const dateA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
-        const dateB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
-        return dateB - dateA;
-      });
-      
+
+      const results = Array.from(donationMap.values());
+
+      const getEpoch = (d: any): number => {
+        if (d.createdAt?.toDate) return d.createdAt.toDate().getTime();
+        if (d.timestamp?.toDate) return d.timestamp.toDate().getTime();
+        if (d.date) {
+          const parsed = new Date(d.date).getTime();
+          if (!isNaN(parsed)) return parsed;
+        }
+        return 0;
+      };
+
+      results.sort((a: any, b: any) => getEpoch(b) - getEpoch(a));
       return results;
     } catch (error: any) {
       console.error('Error fetching member donations:', error);
-      throw error; // Rethrow so the UI can show the actual error if it's something else
+      throw error;
     }
   }
 

@@ -71,4 +71,35 @@ export declare const verifyRazorpaySubscriptionV3: import("firebase-functions/v2
  * Razorpay Webhook endpoint for asynchronous capture / failure reconciliation.
  */
 export declare const razorpayWebhookV1: import("firebase-functions/v2/https").HttpsFunction;
+/**
+ * Member Recurring Giving: Create Razorpay Plan (cached) + Razorpay Subscription with explicit member consent.
+ */
+export declare const createRazorpayRecurringDonation: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
+    success: boolean;
+    subscriptionId: string;
+    planId: string;
+    keyId: string;
+    amount: number;
+    currency: string;
+    frequency: "monthly" | "weekly" | "yearly";
+}>, unknown>;
+/**
+ * Member Recurring Giving: Verify Razorpay Subscription Checkout authorization signature
+ * (`razorpay_payment_id | razorpay_subscription_id`) and record Cycle #1 receipt.
+ */
+export declare const verifyRazorpaySubscriptionDonation: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
+    success: boolean;
+    verified: boolean;
+    subscriptionId: string;
+    paymentId: string;
+    donationId: string;
+    nextChargeDate: string;
+}>, unknown>;
+/**
+ * Member / Admin Recurring Control: Pause, Resume, or Cancel an authorized Razorpay Subscription mandate.
+ */
+export declare const manageRazorpayRecurringDonation: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
+    success: boolean;
+    status: string | undefined;
+}>, unknown>;
 //# sourceMappingURL=razorpay.d.ts.map

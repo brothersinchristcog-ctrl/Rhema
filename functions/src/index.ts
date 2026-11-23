@@ -1942,9 +1942,17 @@ export {
 export {
   createRazorpayOrder,
   verifyRazorpayPayment,
+  createRazorpayRecurringDonation,
+  verifyRazorpaySubscriptionDonation,
+  manageRazorpayRecurringDonation,
   createRazorpayOrderV4,
   verifyRazorpaySubscriptionV3,
   createRazorpayDonationOrderV6,
   verifyRazorpayDonationV6,
   razorpayWebhookV1,
 } from './razorpay.js';
+
+export {
+  sendPledgeRemindersScheduled,
+  triggerPledgeRemindersManual,
+} from './pledgeReminders.js';

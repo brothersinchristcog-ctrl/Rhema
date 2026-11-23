@@ -2,9 +2,97 @@ import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import Razorpay from 'razorpay';
 import * as crypto from 'node:crypto';
+import { sendTargetedMemberDonationPush } from './pledgeReminders.js';
 
 const DEFAULT_CHURCH_ID = 'rhema';
 const MAX_DONATION_INR = 10_000_000;
+const VALID_RECURRING_FREQUENCIES = ['weekly', 'monthly', 'yearly'] as const;
+type RecurringFrequency = (typeof VALID_RECURRING_FREQUENCIES)[number];
+
+function deriveGivingGroup(category: string, pledgeId?: string): 'Tithe' | 'Offering' | 'Pledge' {
+  if (pledgeId) return 'Pledge';
+  const lower = category.toLowerCase();
+  if (lower.includes('tithe')) return 'Tithe';
+  return 'Offering';
+}
+
+function addFrequencyDateYmd(startDateYmd: string, frequency: string): string {
+  const safeBase = /^\d{4}-\d{2}-\d{2}/.test(startDateYmd)
+    ? startDateYmd.slice(0, 10)
+    : new Date().toISOString().slice(0, 10);
+  const dt = new Date(`${safeBase}T00:00:00Z`);
+  if (Number.isNaN(dt.getTime())) {
+    return new Date().toISOString().slice(0, 10);
+  }
+  const f = frequency.toLowerCase();
+  if (f === 'weekly') {
+    dt.setUTCDate(dt.getUTCDate() + 7);
+  } else if (f === 'yearly') {
+    dt.setUTCFullYear(dt.getUTCFullYear() + 1);
+  } else {
+    dt.setUTCMonth(dt.getUTCMonth() + 1);
+  }
+  return dt.toISOString().slice(0, 10);
+}
+
+async function applyVerifiedDonationToPledgeTx(
+  db: FirebaseFirestore.Firestore,
+  churchId: string,
+  pledgeId: string,
+  donationId: string,
+  paidAmountInr: number,
+  paymentId: string
+): Promise<void> {
+  if (!pledgeId || paidAmountInr <= 0) return;
+
+  const pledgeRef = db.collection('Rhema Church').doc(churchId).collection('pledges').doc(pledgeId);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(pledgeRef);
+    if (!snap.exists) return;
+
+    const p = snap.data() || {};
+    const existingIds: string[] = Array.isArray(p.linkedDonationIds) ? p.linkedDonationIds : [];
+    if (existingIds.includes(donationId)) {
+      return; // Already accounted for cleanly
+    }
+
+    const totalPledged = Number(p.pledgeAmount) || 0;
+    const prevReceived = Number(p.receivedAmount) || 0;
+    const newReceived = Math.round((prevReceived + paidAmountInr) * 100) / 100;
+    const newPending = Math.max(0, Math.round((totalPledged - newReceived) * 100) / 100);
+    const freq = String(p.frequency || 'monthly').toLowerCase();
+    const todayYmd = new Date().toISOString().slice(0, 10);
+
+    const newStatus =
+      newPending <= 0
+        ? 'fulfilled'
+        : newReceived > 0
+        ? 'partially_paid'
+        : p.status || 'active';
+
+    const nextDueDate =
+      newStatus === 'fulfilled'
+        ? p.nextDueDate || todayYmd
+        : freq === 'event_wise'
+        ? p.nextDueDate || p.eventDate || todayYmd
+        : addFrequencyDateYmd(p.nextDueDate || p.startDate || todayYmd, freq);
+
+    tx.set(
+      pledgeRef,
+      {
+        receivedAmount: newReceived,
+        pendingAmount: newPending,
+        status: newStatus,
+        nextDueDate,
+        linkedDonationIds: FieldValue.arrayUnion(donationId),
+        lastPaymentId: paymentId,
+        lastPaidAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+  });
+}
 
 interface RazorpayCredentials {
   keyId: string;
@@ -151,6 +239,14 @@ async function mirrorCompletedChurchDonation(
   paymentId: string,
   orderId: string
 ): Promise<void> {
+  const category = String(donationData.category || 'Offering').trim() || 'Offering';
+  const pledgeId = String(donationData.pledgeId || '').trim();
+  const givingGroup = donationData.givingGroup || deriveGivingGroup(category, pledgeId);
+  const recurringType = donationData.recurringType === 'recurring' ? 'recurring' : 'one_time';
+  const paymentGateway = String(donationData.paymentGateway || 'Razorpay');
+  const appId = String(donationData.appId || churchId || DEFAULT_CHURCH_ID);
+  const sourceChannel = String(donationData.sourceChannel || 'member_app');
+
   const completedPayload = {
     donorName: donationData.userName || donationData.donorName || 'Anonymous',
     donorPhone: donationData.phone || donationData.donorPhone || '',
@@ -158,7 +254,18 @@ async function mirrorCompletedChurchDonation(
     userId: donationData.userId || '',
     userName: donationData.userName || donationData.donorName || 'Anonymous',
     email: donationData.email || '',
-    category: donationData.category || 'Offering',
+    category,
+    givingGroup,
+    recurringType,
+    frequency: donationData.frequency || null,
+    subscriptionId: donationData.subscriptionId || null,
+    pledgeId: pledgeId || null,
+    eventId: donationData.eventId || null,
+    eventTitle: donationData.eventTitle || null,
+    paymentGateway,
+    appId,
+    appName: donationData.appName || 'Rhema Global Ministries',
+    sourceChannel,
     amount: Number(donationData.amount) || 0,
     date: donationData.date || new Date().toISOString(),
     paymentMethod: 'Razorpay',
@@ -173,6 +280,17 @@ async function mirrorCompletedChurchDonation(
   await Promise.all([
     db.collection('church_donations').doc(docId).set(
       {
+        givingGroup,
+        recurringType,
+        frequency: donationData.frequency || null,
+        subscriptionId: donationData.subscriptionId || null,
+        pledgeId: pledgeId || null,
+        eventId: donationData.eventId || null,
+        eventTitle: donationData.eventTitle || null,
+        paymentGateway,
+        appId,
+        appName: donationData.appName || 'Rhema Global Ministries',
+        sourceChannel,
         status: 'completed',
         paymentId,
         orderId,
@@ -197,6 +315,17 @@ async function mirrorCompletedChurchDonation(
         { merge: true }
       ),
   ]);
+
+  if (pledgeId) {
+    await applyVerifiedDonationToPledgeTx(
+      db,
+      churchId,
+      pledgeId,
+      docId,
+      Number(donationData.amount) || 0,
+      paymentId
+    );
+  }
 }
 
 /**
@@ -217,6 +346,9 @@ export const createRazorpayOrder = onCall(
     const churchId = String(data.churchId || DEFAULT_CHURCH_ID).trim() || DEFAULT_CHURCH_ID;
     const donationId = String(data.donationId || data.receipt || '').trim();
     const category = String(data.category || 'Offering').trim().slice(0, 80);
+    const pledgeId = String(data.pledgeId || '').trim();
+    const eventId = String(data.eventId || '').trim();
+    const givingGroup = deriveGivingGroup(category, pledgeId);
     const receipt = sanitizeReceipt(data.receipt || donationId, 'don');
 
     const db = getFirestore();
@@ -243,6 +375,10 @@ export const createRazorpayOrder = onCall(
           churchId,
           donationId,
           category,
+          givingGroup,
+          pledgeId,
+          eventId,
+          recurringType: 'one_time',
           uid,
         },
       });
@@ -253,6 +389,13 @@ export const createRazorpayOrder = onCall(
             orderId: order.id,
             currency: order.currency,
             churchId,
+            givingGroup,
+            recurringType: 'one_time',
+            paymentGateway: 'Razorpay',
+            appId: churchId,
+            sourceChannel: 'member_app',
+            pledgeId: pledgeId || null,
+            eventId: eventId || null,
             paymentMethod: 'Razorpay',
             status: 'order_created',
             updatedAt: FieldValue.serverTimestamp(),
@@ -675,12 +818,474 @@ export const razorpayWebhookV1 = onRequest(
             { merge: true }
           );
         }
+      } else if (event === 'subscription.charged' || event === 'invoice.paid') {
+        const subscriptionEntity = req.body?.payload?.subscription?.entity;
+        const invoiceEntity = req.body?.payload?.invoice?.entity;
+        const subscriptionId = String(
+          subscriptionEntity?.id ||
+            invoiceEntity?.subscription_id ||
+            paymentEntity?.notes?.subscriptionId ||
+            ''
+        ).trim();
+
+        if (subscriptionId) {
+          const mandateRef = db
+            .collection('Rhema Church')
+            .doc(churchId)
+            .collection('recurring_mandates')
+            .doc(subscriptionId);
+          const mandateSnap = await mandateRef.get();
+          const mandate = mandateSnap.exists ? mandateSnap.data() || {} : null;
+
+          if (mandate) {
+            const chargePaymentId = paymentId || String(invoiceEntity?.payment_id || `inv_${invoiceEntity?.id || Date.now()}`);
+            const cycleDocId = `sub_${subscriptionId}_${chargePaymentId}`;
+            const cycleAmountInr =
+              Number(paymentEntity?.amount ? paymentEntity.amount / 100 : invoiceEntity?.amount_paid ? invoiceEntity.amount_paid / 100 : mandate.amount) ||
+              Number(mandate.amount) ||
+              0;
+
+            const existingCycleSnap = await db.collection('church_donations').doc(cycleDocId).get();
+            if (!existingCycleSnap.exists || existingCycleSnap.data()?.status !== 'completed') {
+              await mirrorCompletedChurchDonation(
+                db,
+                mandate.churchId || churchId,
+                cycleDocId,
+                {
+                  userId: mandate.memberUid,
+                  userName: mandate.memberName || 'Member',
+                  phone: mandate.memberPhone || '',
+                  email: mandate.memberEmail || '',
+                  category: mandate.category || 'Tithe',
+                  givingGroup: mandate.givingGroup || deriveGivingGroup(mandate.category || 'Tithe', mandate.pledgeId),
+                  recurringType: 'recurring',
+                  frequency: mandate.frequency || 'monthly',
+                  subscriptionId,
+                  pledgeId: mandate.pledgeId || '',
+                  paymentGateway: 'Razorpay',
+                  appId: mandate.appId || churchId,
+                  appName: mandate.appName || 'Rhema Global Ministries',
+                  sourceChannel: 'member_app',
+                  amount: cycleAmountInr,
+                  date: new Date().toISOString(),
+                },
+                chargePaymentId,
+                String(paymentEntity?.order_id || invoiceEntity?.order_id || subscriptionId)
+              );
+
+              await sendTargetedMemberDonationPush({
+                churchId: mandate.churchId || churchId,
+                memberUid: mandate.memberUid,
+                memberPhone: mandate.memberPhone,
+                memberName: mandate.memberName,
+                type: 'recurring_donation_receipt',
+                title: `✅ Recurring Gift Received · ₹${cycleAmountInr.toLocaleString('en-IN')}`,
+                body: `Thank you! Your ${mandate.frequency || 'monthly'} ${mandate.category || 'Giving'} donation of ₹${cycleAmountInr.toLocaleString('en-IN')} was processed. Tap to view receipt.`,
+                subscriptionId,
+                donationId: cycleDocId,
+                pledgeId: mandate.pledgeId || '',
+                screen: 'GivingHistory',
+              });
+            }
+
+            const nextChargeDate = addFrequencyDateYmd(new Date().toISOString().slice(0, 10), mandate.frequency || 'monthly');
+            await mandateRef.set(
+              {
+                status: subscriptionEntity?.status || 'active',
+                totalPaidCount: Number(subscriptionEntity?.paid_count || (Number(mandate.totalPaidCount || 0) + 1)),
+                nextChargeDate,
+                lastChargedAt: FieldValue.serverTimestamp(),
+                updatedAt: FieldValue.serverTimestamp(),
+              },
+              { merge: true }
+            );
+          }
+        }
+      } else if (
+        event === 'subscription.activated' ||
+        event === 'subscription.paused' ||
+        event === 'subscription.resumed' ||
+        event === 'subscription.cancelled' ||
+        event === 'subscription.completed' ||
+        event === 'subscription.halted'
+      ) {
+        const subscriptionEntity = req.body?.payload?.subscription?.entity;
+        const subscriptionId = String(subscriptionEntity?.id || '').trim();
+        if (subscriptionId) {
+          const mandateRef = db
+            .collection('Rhema Church')
+            .doc(churchId)
+            .collection('recurring_mandates')
+            .doc(subscriptionId);
+          const mandateSnap = await mandateRef.get();
+          const newStatus = event.replace('subscription.', '');
+          await mandateRef.set(
+            {
+              status: newStatus,
+              updatedAt: FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
+
+          if (event === 'subscription.halted' && mandateSnap.exists) {
+            const mandate = mandateSnap.data() || {};
+            await sendTargetedMemberDonationPush({
+              churchId: mandate.churchId || churchId,
+              memberUid: mandate.memberUid,
+              memberPhone: mandate.memberPhone,
+              memberName: mandate.memberName,
+              type: 'recurring_donation_failed',
+              title: '⚠️ Recurring Donation Action Needed',
+              body: `Your recurring ${mandate.category || 'Giving'} payment of ₹${Number(mandate.amount || 0).toLocaleString('en-IN')} was paused by the bank. Tap to pay or update.`,
+              subscriptionId,
+              pledgeId: mandate.pledgeId || '',
+              screen: 'Give',
+            });
+          }
+        }
       }
 
       res.status(200).send('OK');
     } catch (error: any) {
       console.error('razorpayWebhookV1 error:', error?.message || error);
       res.status(500).send('Webhook processing failed');
+    }
+  }
+);
+
+/**
+ * Member Recurring Giving: Create Razorpay Plan (cached) + Razorpay Subscription with explicit member consent.
+ */
+export const createRazorpayRecurringDonation = onCall(
+  { region: 'asia-south1', cors: true, invoker: 'public' },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'Please sign in to set up recurring donations.');
+    }
+
+    const data = request.data || {};
+    const amountInr = parseAmountInr(data.amount);
+    const rawFrequency = String(data.frequency || 'monthly').trim().toLowerCase();
+    if (!VALID_RECURRING_FREQUENCIES.includes(rawFrequency as RecurringFrequency)) {
+      throw new HttpsError('invalid-argument', 'Recurring frequency must be weekly, monthly, or yearly.');
+    }
+    const frequency = rawFrequency as RecurringFrequency;
+
+    if (data.consentConfirmed !== true) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Explicit recurring payment consent confirmation is required.'
+      );
+    }
+
+    const churchId = String(data.churchId || DEFAULT_CHURCH_ID).trim() || DEFAULT_CHURCH_ID;
+    const category = String(data.category || 'Tithe').trim().slice(0, 80);
+    const pledgeId = String(data.pledgeId || '').trim();
+    const givingGroup = deriveGivingGroup(category, pledgeId);
+    const consentText = String(
+      data.consentText ||
+        `I authorize recurring ${frequency} donations of ₹${amountInr} via Razorpay until paused or cancelled.`
+    ).slice(0, 500);
+
+    const totalCountRaw = Number(data.totalCount);
+    const defaultCycles = frequency === 'yearly' ? 15 : frequency === 'weekly' ? 156 : 120;
+    const totalCount =
+      Number.isFinite(totalCountRaw) && totalCountRaw >= 1 && totalCountRaw <= 500
+        ? Math.floor(totalCountRaw)
+        : defaultCycles;
+
+    const creds = getGivingRazorpayCredentials();
+    const razorpay = createRazorpayClient(creds);
+    const db = getFirestore();
+
+    const planKey = `plan_${frequency}_${Math.round(amountInr * 100)}_${category.toLowerCase().replace(/[^a-z0-9]/g, '_')}`.slice(0, 80);
+    const planDocRef = db.collection('Rhema Church').doc(churchId).collection('razorpay_plans').doc(planKey);
+
+    try {
+      let planId = '';
+      const cachedPlan = await planDocRef.get();
+      if (cachedPlan.exists && cachedPlan.data()?.planId) {
+        planId = String(cachedPlan.data()?.planId);
+      } else {
+        const plan = await razorpay.plans.create({
+          period: frequency,
+          interval: 1,
+          item: {
+            name: `${category} (${frequency})`,
+            amount: Math.round(amountInr * 100),
+            currency: 'INR',
+            description: `Recurring ${frequency} ${category} for ${churchId}`,
+          },
+          notes: {
+            churchId,
+            category,
+            frequency,
+          },
+        });
+        planId = plan.id;
+        await planDocRef.set({
+          planId,
+          amountInr,
+          frequency,
+          category,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      }
+
+      const subscription = await razorpay.subscriptions.create({
+        plan_id: planId,
+        total_count: totalCount,
+        customer_notify: 1,
+        notes: {
+          type: 'recurring_donation',
+          uid,
+          churchId,
+          category,
+          givingGroup,
+          frequency,
+          pledgeId,
+        },
+      });
+
+      const donorName = String(data.donorName || 'Anonymous').trim();
+      const donorPhone = String(data.donorPhone || '').trim();
+      const donorEmail = String(data.donorEmail || '').trim();
+      const nextChargeDate = addFrequencyDateYmd(new Date().toISOString().slice(0, 10), frequency);
+
+      await db
+        .collection('Rhema Church')
+        .doc(churchId)
+        .collection('recurring_mandates')
+        .doc(subscription.id)
+        .set({
+          subscriptionId: subscription.id,
+          planId,
+          churchId,
+          appId: churchId,
+          appName: String(data.appName || 'Rhema Global Ministries'),
+          memberUid: uid,
+          memberName: donorName,
+          memberPhone: donorPhone,
+          memberEmail: donorEmail,
+          category,
+          givingGroup,
+          pledgeId: pledgeId || null,
+          amount: amountInr,
+          currency: 'INR',
+          frequency,
+          totalCount,
+          totalPaidCount: 0,
+          nextChargeDate,
+          consentConfirmed: true,
+          consentText,
+          consentAcceptedAt: FieldValue.serverTimestamp(),
+          status: 'created',
+          paymentGateway: 'Razorpay',
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+
+      return {
+        success: true,
+        subscriptionId: subscription.id,
+        planId,
+        keyId: creds.keyId,
+        amount: Math.round(amountInr * 100),
+        currency: 'INR',
+        frequency,
+      };
+    } catch (error: any) {
+      console.error('createRazorpayRecurringDonation error:', error?.error || error?.message || error);
+      const desc = error?.error?.description || error?.message || 'Unable to set up recurring donation.';
+      const isFeatureDisabled =
+        typeof desc === 'string' &&
+        (desc.toLowerCase().includes('subscription') || desc.toLowerCase().includes('not enabled'));
+      throw new HttpsError(
+        isFeatureDisabled ? 'failed-precondition' : 'internal',
+        isFeatureDisabled
+          ? `Razorpay Subscriptions may not be enabled on this merchant account yet (${desc}). You can still submit a recurring Pledge reminder.`
+          : desc
+      );
+    }
+  }
+);
+
+/**
+ * Member Recurring Giving: Verify Razorpay Subscription Checkout authorization signature
+ * (`razorpay_payment_id | razorpay_subscription_id`) and record Cycle #1 receipt.
+ */
+export const verifyRazorpaySubscriptionDonation = onCall(
+  { region: 'asia-south1', cors: true, invoker: 'public' },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'Authentication is required.');
+    }
+
+    const data = request.data || {};
+    const razorpayPaymentId = String(data.razorpay_payment_id || '').trim();
+    const razorpaySubscriptionId = String(data.razorpay_subscription_id || '').trim();
+    const razorpaySignature = String(data.razorpay_signature || '').trim();
+    const churchId = String(data.churchId || DEFAULT_CHURCH_ID).trim() || DEFAULT_CHURCH_ID;
+
+    if (!razorpayPaymentId || !razorpaySubscriptionId || !razorpaySignature) {
+      throw new HttpsError('invalid-argument', 'Missing recurring payment verification parameters.');
+    }
+
+    const db = getFirestore();
+    const mandateRef = db
+      .collection('Rhema Church')
+      .doc(churchId)
+      .collection('recurring_mandates')
+      .doc(razorpaySubscriptionId);
+    const mandateSnap = await mandateRef.get();
+
+    if (mandateSnap.exists && mandateSnap.data()?.memberUid && mandateSnap.data()?.memberUid !== uid) {
+      throw new HttpsError('permission-denied', 'Unauthorized mandate verification.');
+    }
+
+    const { keySecret } = getGivingRazorpayCredentials();
+    // Razorpay Subscriptions verify signature on payment_id|subscription_id
+    const isValid = verifyHmacSha256Signature(
+      `${razorpayPaymentId}|${razorpaySubscriptionId}`,
+      razorpaySignature,
+      keySecret
+    );
+
+    if (!isValid) {
+      if (mandateSnap.exists && mandateSnap.data()?.status !== 'active') {
+        await mandateRef.set({ status: 'failed', updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      }
+      throw new HttpsError('invalid-argument', 'Recurring payment signature verification failed.');
+    }
+
+    const mandate = mandateSnap.exists ? mandateSnap.data() || {} : {};
+    const frequency = String(mandate.frequency || data.frequency || 'monthly');
+    const nextChargeDate = addFrequencyDateYmd(new Date().toISOString().slice(0, 10), frequency);
+    const cycleDocId = `sub_${razorpaySubscriptionId}_${razorpayPaymentId}`;
+    const amountInr = Number(mandate.amount || data.amount || 0);
+
+    await mandateRef.set(
+      {
+        status: 'active',
+        initialPaymentId: razorpayPaymentId,
+        totalPaidCount: Math.max(1, Number(mandate.totalPaidCount || 0) + 1),
+        nextChargeDate,
+        lastChargedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    if (amountInr > 0) {
+      await mirrorCompletedChurchDonation(
+        db,
+        churchId,
+        cycleDocId,
+        {
+          userId: uid,
+          userName: mandate.memberName || String(data.donorName || 'Anonymous'),
+          phone: mandate.memberPhone || String(data.donorPhone || ''),
+          email: mandate.memberEmail || String(data.donorEmail || ''),
+          category: mandate.category || String(data.category || 'Tithe'),
+          givingGroup: mandate.givingGroup || deriveGivingGroup(String(data.category || 'Tithe'), mandate.pledgeId),
+          recurringType: 'recurring',
+          frequency,
+          subscriptionId: razorpaySubscriptionId,
+          pledgeId: mandate.pledgeId || String(data.pledgeId || ''),
+          paymentGateway: 'Razorpay',
+          appId: churchId,
+          appName: mandate.appName || 'Rhema Global Ministries',
+          sourceChannel: 'member_app',
+          amount: amountInr,
+          date: new Date().toISOString(),
+        },
+        razorpayPaymentId,
+        razorpaySubscriptionId
+      );
+    }
+
+    return {
+      success: true,
+      verified: true,
+      subscriptionId: razorpaySubscriptionId,
+      paymentId: razorpayPaymentId,
+      donationId: cycleDocId,
+      nextChargeDate,
+    };
+  }
+);
+
+/**
+ * Member / Admin Recurring Control: Pause, Resume, or Cancel an authorized Razorpay Subscription mandate.
+ */
+export const manageRazorpayRecurringDonation = onCall(
+  { region: 'asia-south1', cors: true, invoker: 'public' },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'Authentication required.');
+    }
+
+    const data = request.data || {};
+    const subscriptionId = String(data.subscriptionId || '').trim();
+    const action = String(data.action || '').trim().toLowerCase();
+    const churchId = String(data.churchId || DEFAULT_CHURCH_ID).trim() || DEFAULT_CHURCH_ID;
+
+    if (!subscriptionId || !['cancel', 'pause', 'resume'].includes(action)) {
+      throw new HttpsError('invalid-argument', 'Valid subscriptionId and action (cancel/pause/resume) are required.');
+    }
+
+    const db = getFirestore();
+    const mandateRef = db
+      .collection('Rhema Church')
+      .doc(churchId)
+      .collection('recurring_mandates')
+      .doc(subscriptionId);
+    const mandateSnap = await mandateRef.get();
+
+    if (!mandateSnap.exists) {
+      throw new HttpsError('not-found', 'Recurring mandate not found.');
+    }
+
+    const mandate = mandateSnap.data() || {};
+    if (mandate.memberUid !== uid) {
+      const callerSnap = await db.collection('Rhema Church').doc(churchId).collection('members').doc(uid).get();
+      const userType = String(callerSnap.data()?.userType || '').toLowerCase();
+      if (!['admin', 'super_admin', 'super admin'].includes(userType)) {
+        throw new HttpsError('permission-denied', 'You are not authorized to modify this recurring mandate.');
+      }
+    }
+
+    const razorpay = createRazorpayClient(getGivingRazorpayCredentials());
+    try {
+      if (action === 'cancel') {
+        await razorpay.subscriptions.cancel(subscriptionId, false);
+      } else if (action === 'pause') {
+        await razorpay.subscriptions.pause(subscriptionId, { pause_at: 'now' });
+      } else {
+        await razorpay.subscriptions.resume(subscriptionId, { resume_at: 'now' });
+      }
+
+      const statusMap: Record<string, string> = {
+        cancel: 'cancelled',
+        pause: 'paused',
+        resume: 'active',
+      };
+
+      await mandateRef.set(
+        {
+          status: statusMap[action],
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      return { success: true, status: statusMap[action] };
+    } catch (error: any) {
+      console.error('manageRazorpayRecurringDonation error:', error?.error || error?.message || error);
+      throw new HttpsError('internal', error?.error?.description || error?.message || 'Failed to update mandate.');
     }
   }
 );

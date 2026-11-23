@@ -748,6 +748,21 @@ class NotificationService {
           });
           break;
         }
+        case 'pledge_reminder':
+        case 'recurring_donation_failed': {
+          nav.navigate('Give', {
+            pledgeId: rawData.pledgeId || undefined,
+            subscriptionId: rawData.subscriptionId || undefined,
+          });
+          break;
+        }
+        case 'recurring_donation_receipt':
+        case 'recurring_pre_debit_reminder': {
+          nav.navigate('GivingHistory', {
+            initialTab: type === 'recurring_pre_debit_reminder' ? 'mandates' : 'donations',
+          });
+          break;
+        }
         default:
           if (id) {
             nav.navigate('Updates', { highlightId: id, highlightType: type });

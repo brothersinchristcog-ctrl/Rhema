@@ -553,6 +553,42 @@ service cloud.firestore {
         allow read, write: if isAuthenticated();
       }
 
+      // Member Pledges (Non-donation commitments; server verifies payment fulfillment)
+      match /pledges/{pledgeId} {
+        allow read: if isAuthenticated() && (
+          resource.data.memberUid == request.auth.uid || isChurchAdmin()
+        );
+        allow create: if isAuthenticated() &&
+          request.resource.data.memberUid == request.auth.uid &&
+          request.resource.data.receivedAmount == 0 &&
+          request.resource.data.consentConfirmed == true;
+        allow update: if isChurchAdmin() || (
+          isAuthenticated() &&
+          resource.data.memberUid == request.auth.uid &&
+          request.resource.data.receivedAmount == resource.data.receivedAmount &&
+          request.resource.data.pledgeAmount == resource.data.pledgeAmount
+        );
+        allow delete: if isChurchAdmin() || (
+          isAuthenticated() &&
+          resource.data.memberUid == request.auth.uid &&
+          resource.data.receivedAmount == 0
+        );
+      }
+
+      // Razorpay Recurring Subscription Mandates (Written only by Cloud Functions)
+      match /recurring_mandates/{subscriptionId} {
+        allow read: if isAuthenticated() && (
+          resource.data.memberUid == request.auth.uid || isChurchAdmin()
+        );
+        allow write: if false;
+      }
+
+      // Razorpay cached plans
+      match /razorpay_plans/{planKey} {
+        allow read: if isChurchAdmin();
+        allow write: if false;
+      }
+
       // Care Cells Management Module
       match /careCells/{cellId} {
         allow read: if isAuthenticated() && (

@@ -23,6 +23,8 @@ export interface DonationRecord {
   date: string;
   userName: string;
   paymentId?: string;
+  orderId?: string;
+  paymentMethod?: string;
   status?: string;
 }
 
@@ -62,7 +64,10 @@ export default function ReceiptModal({ visible, onClose, donation }: ReceiptModa
   const dd = String(dateObj.getDate()).padStart(2, '0');
   const yyyymmdd = `${yyyy}${mm}${dd}`;
 
-  const receiptNo = `RGM-${donation.category.substring(0, 3).toUpperCase()}-${yyyymmdd}`;
+  const cleanCatCode = (donation.category || 'GIV').replace(/[^a-zA-Z]/g, '').substring(0, 3).toUpperCase() || 'GIV';
+  const shortRef = donation.id ? `-${donation.id.slice(-4).toUpperCase()}` : '';
+  const receiptNo = `RGM-${cleanCatCode}-${yyyymmdd}${shortRef}`;
+  const isPaid = ['completed', 'success', 'paid', 'approved', 'confirmed'].includes((donation.status || '').toLowerCase());
 
   const handleDownload = async () => {
     try {
@@ -95,18 +100,19 @@ export default function ReceiptModal({ visible, onClose, donation }: ReceiptModa
 
         <View style={[styles.content, { backgroundColor: screenBg }]}>
           
-          <ViewShot ref={viewShotRef} options={{ format: 'jpg', quality: 0.9 }} style={styles.receiptContainerWrapper}>
+          <ViewShot ref={viewShotRef} options={{ format: 'jpg', quality: 0.95 }} style={styles.receiptContainerWrapper}>
+            <View style={{ height: 5, backgroundColor: '#d4af37', width: '100%' }} />
             <View style={styles.receiptCard}>
               
               {/* Header */}
               <View style={styles.receiptHeader}>
-                <View style={{ flex: 1 }}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
                   <Text style={[styles.churchName, fStyle]} numberOfLines={1} adjustsFontSizeToFit>{churchName}</Text>
                   <Text style={[styles.churchEmail, fStyle]} numberOfLines={1} adjustsFontSizeToFit>{churchEmail}</Text>
                 </View>
                 <View style={styles.receiptBadgeWrapper}>
-                   <View style={styles.receiptBadge}>
-                     <Text style={[styles.receiptBadgeText, fStyle]}>RECEIPT</Text>
+                   <View style={[styles.receiptBadge, isPaid && { backgroundColor: '#065f46' }]}>
+                     <Text style={[styles.receiptBadgeText, fStyle]}>{isPaid ? 'VERIFIED RECEIPT' : 'RECEIPT'}</Text>
                    </View>
                    <Text style={[styles.receiptMetaText, fStyle]}>Receipt No: <Text style={[styles.boldText, fStyle]}>{receiptNo}</Text></Text>
                    <Text style={[styles.receiptMetaText, fStyle]}>Date: <Text style={[styles.boldText, fStyle]}>{dateStr}</Text></Text>
@@ -116,7 +122,7 @@ export default function ReceiptModal({ visible, onClose, donation }: ReceiptModa
               {/* Acknowledgment */}
               <View style={styles.ackBox}>
                 <Text style={[styles.ackText, fStyle]} numberOfLines={2} adjustsFontSizeToFit>
-                  We gratefully acknowledge the receipt of <Text style={[styles.ackAmount, fStyle]}>₹{donation.amount.toLocaleString('en-IN')}</Text> from <Text style={[styles.ackName, fStyle]}>{donation.userName || 'Anonymous'}</Text>{'\n'}as a generous contribution towards <Text style={[styles.ackCategory, fStyle]}>{donation.category}</Text>.
+                  We gratefully acknowledge the receipt of <Text style={[styles.ackAmount, fStyle]}>₹{Number(donation.amount || 0).toLocaleString('en-IN')}</Text> from <Text style={[styles.ackName, fStyle]}>{donation.userName || 'Anonymous'}</Text>{'\n'}as a generous contribution towards <Text style={[styles.ackCategory, fStyle]}>{donation.category}</Text>.
                 </Text>
               </View>
 
@@ -129,9 +135,16 @@ export default function ReceiptModal({ visible, onClose, donation }: ReceiptModa
                 </View>
                 <View style={styles.tableRow}>
                   <Text style={[styles.tableCellText, fStyle, { flex: 2, fontWeight: '700' }]} numberOfLines={1}>{donation.category}</Text>
-                  <Text style={[styles.tableCellText, fStyle, { flex: 2, color: '#64748b' }]} numberOfLines={1}>Online</Text>
-                  <Text style={[styles.tableCellText, fStyle, { flex: 1.5, textAlign: 'right', fontWeight: '700' }]} numberOfLines={1}>₹{donation.amount.toLocaleString('en-IN')}</Text>
+                  <Text style={[styles.tableCellText, fStyle, { flex: 2, color: '#64748b' }]} numberOfLines={1}>{donation.paymentMethod || 'Razorpay · Online'}</Text>
+                  <Text style={[styles.tableCellText, fStyle, { flex: 1.5, textAlign: 'right', fontWeight: '700' }]} numberOfLines={1}>₹{Number(donation.amount || 0).toLocaleString('en-IN')}</Text>
                 </View>
+                {!!donation.paymentId && (
+                  <View style={[styles.tableRow, { borderBottomWidth: 0, paddingTop: 10, paddingBottom: 4 }]}>
+                    <Text style={[styles.receiptMetaText, fStyle, { color: '#475569' }]} numberOfLines={1}>
+                      Transaction ID: <Text style={[styles.boldText, fStyle]}>{donation.paymentId}</Text>
+                    </Text>
+                  </View>
+                )}
               </View>
 
               {/* Signature */}
