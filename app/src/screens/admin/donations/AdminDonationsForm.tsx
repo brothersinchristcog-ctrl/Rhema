@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Modal, FlatList, ActivityIndicator, Image, Alert, StatusBar, Platform } from 'react-native';
-import { ArrowLeft, Check, ChevronDown, Camera, Image as ImageIcon, FileText as FilePdfIcon, X, Download, Share2 } from 'lucide-react-native';
+import { ArrowLeft, Check, ChevronDown, Camera, Image as ImageIcon, FileText as FilePdfIcon, X, Download, Share2, Search, Users, Phone } from 'lucide-react-native';
 import { COLORS, formatCurrency, formatDate, DEFAULT_CATEGORIES, PAYMENT_METHODS, getDonationReceiptHTML, generateDonationReceipt, formatReceiptNo } from './AdminDonationsUtils';
 import { WebView } from 'react-native-webview';
 import { db, storage, FieldValue } from '../../../services/firebaseConfig';
@@ -20,6 +20,13 @@ export default function AdminDonationsForm({ editData, onNavigate }: any) {
   const [date, setDate] = useState(new Date().toISOString());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [selectedMemberUid, setSelectedMemberUid] = useState('');
+  const [membersList, setMembersList] = useState<any[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [showMemberPicker, setShowMemberPicker] = useState(false);
+  const [memberQuery, setMemberQuery] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [type, setType] = useState(DEFAULT_CATEGORIES[0]);
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState(PAYMENT_METHODS[0]);
@@ -98,9 +105,29 @@ export default function AdminDonationsForm({ editData, onNavigate }: any) {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    setLoadingMembers(true);
+    FirestoreService.getAllMembers()
+      .then((list) => {
+        if (active && Array.isArray(list)) {
+          setMembersList(list);
+        }
+      })
+      .catch((e) => console.warn('⚠️ Failed to load church members:', e))
+      .finally(() => {
+        if (active) setLoadingMembers(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (editData) {
       setDate(editData.date || new Date().toISOString());
-      setName(editData.name || '');
+      setName(editData.name || editData.donorName || '');
+      setPhone(editData.phone || editData.donorPhone || '');
+      setSelectedMemberUid(editData.userId || '');
       setType(editData.type || DEFAULT_CATEGORIES[0]);
       setAmount(editData.amount?.toString() || '');
       setMethod(editData.method || PAYMENT_METHODS[0]);
@@ -189,6 +216,38 @@ export default function AdminDonationsForm({ editData, onNavigate }: any) {
     }
   };
 
+  const handleSelectMember = (m: any) => {
+    const resolvedName = String(m.name || m.displayName || '').trim();
+    const resolvedPhone = String(m.phone || m.mobile || m.phoneNumber || '').trim();
+    setName(resolvedName);
+    setPhone(resolvedPhone);
+    setSelectedMemberUid(String(m.id || m.uid || ''));
+    setShowSuggestions(false);
+    setShowMemberPicker(false);
+    setMemberQuery('');
+  };
+
+  const inlineSuggestions =
+    showSuggestions && name.trim().length > 0
+      ? membersList
+          .filter((m) => {
+            const q = name.trim().toLowerCase();
+            const mName = String(m.name || m.displayName || '').toLowerCase();
+            const mPhone = String(m.phone || m.mobile || m.phoneNumber || '').toLowerCase();
+            return mName.includes(q) || mPhone.includes(q);
+          })
+          .slice(0, 5)
+      : [];
+
+  const modalFilteredMembers = membersList.filter((m) => {
+    const q = memberQuery.trim().toLowerCase();
+    if (!q) return true;
+    const mName = String(m.name || m.displayName || '').toLowerCase();
+    const mPhone = String(m.phone || m.mobile || m.phoneNumber || '').toLowerCase();
+    const mEmail = String(m.email || '').toLowerCase();
+    return mName.includes(q) || mPhone.includes(q) || mEmail.includes(q);
+  });
+
   const handleSave = async () => {
     if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
       Alert.alert('Validation Error', 'Please enter a valid donation amount.');
@@ -210,10 +269,16 @@ export default function AdminDonationsForm({ editData, onNavigate }: any) {
 
       const data: any = {
         name: name.trim() || 'Anonymous',
+        donorName: name.trim() || 'Anonymous',
+        phone: phone.trim(),
+        donorPhone: phone.trim(),
+        userId: selectedMemberUid || null,
         type,
         amount: Number(amount),
         date,
         method,
+        paymentGateway: 'Offline',
+        sourceChannel: 'admin_portal',
         ref: method === 'Cash' ? '—' : ref.trim() || '—',
         purpose: purpose.trim(),
         notes: notes.trim(),
@@ -415,9 +480,27 @@ export default function AdminDonationsForm({ editData, onNavigate }: any) {
             />
           </View>
           
-          {/* Member Name */}
+          {/* Member Name (with live search + member directory picker) */}
           <View style={styles.fieldRow}>
-            <Text style={[styles.label, { color: isDark ? '#E4E4E7' : '#334155' }]}>Member Name</Text>
+            <View style={styles.labelWithActionRow}>
+              <Text style={[styles.label, { color: isDark ? '#E4E4E7' : '#334155', marginBottom: 0 }]}>Member Name</Text>
+              <TouchableOpacity
+                style={[
+                  styles.searchMemberBtn,
+                  {
+                    backgroundColor: isDark ? '#27272A' : '#EEF2FF',
+                    borderColor: isDark ? 'rgba(255,255,255,0.16)' : '#C7D2FE',
+                  },
+                ]}
+                onPress={() => setShowMemberPicker(true)}
+                activeOpacity={0.8}
+              >
+                <Users size={13} color={isDark ? '#FCD34D' : '#1E40AF'} />
+                <Text style={[styles.searchMemberBtnTxt, { color: isDark ? '#FCD34D' : '#1E40AF' }]}>
+                  Search Members
+                </Text>
+              </TouchableOpacity>
+            </View>
             <TextInput 
               style={[
                 styles.input,
@@ -428,11 +511,85 @@ export default function AdminDonationsForm({ editData, onNavigate }: any) {
                   color: isDark ? '#FFFFFF' : '#0F172A',
                 },
               ]} 
-              placeholder="Enter donor's name" 
+              placeholder="Search member or enter donor's name" 
               placeholderTextColor={isDark ? '#71717A' : '#94A3B8'} 
               value={name} 
-              onChangeText={setName} 
+              onFocus={() => setShowSuggestions(true)}
+              onChangeText={(text) => {
+                setName(text);
+                setShowSuggestions(true);
+                if (selectedMemberUid) setSelectedMemberUid('');
+              }} 
             />
+
+            {inlineSuggestions.length > 0 && (
+              <View
+                style={[
+                  styles.suggestionsBox,
+                  {
+                    backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                    borderColor: isDark ? 'rgba(255,255,255,0.16)' : '#CBD5E1',
+                  },
+                ]}
+              >
+                {inlineSuggestions.map((m, idx) => {
+                  const mPhone = String(m.phone || m.mobile || m.phoneNumber || '').trim();
+                  return (
+                    <TouchableOpacity
+                      key={m.id || idx}
+                      style={[
+                        styles.suggestionItem,
+                        idx < inlineSuggestions.length - 1 && {
+                          borderBottomWidth: 1,
+                          borderBottomColor: isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9',
+                        },
+                      ]}
+                      onPress={() => handleSelectMember(m)}
+                      activeOpacity={0.75}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: isDark ? '#FFFFFF' : '#0F172A', fontSize: 13.5, fontWeight: '700' }}>
+                          {m.name}
+                        </Text>
+                        {!!mPhone && (
+                          <Text style={{ color: isDark ? '#94A3B8' : '#64748B', fontSize: 12, marginTop: 1 }}>
+                            {mPhone}
+                          </Text>
+                        )}
+                      </View>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#FCD34D' : '#0F766E' }}>
+                        Select
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+
+          {/* Phone Number (Auto-filled from selected member, editable) */}
+          <View style={styles.fieldRow}>
+            <Text style={[styles.label, { color: isDark ? '#E4E4E7' : '#334155' }]}>Phone Number</Text>
+            <View
+              style={[
+                styles.amountInputWrap,
+                {
+                  backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1',
+                  borderWidth: 1.5,
+                },
+              ]}
+            >
+              <Phone size={16} color={isDark ? '#94A3B8' : '#64748B'} style={{ marginRight: 8 }} />
+              <TextInput
+                style={[styles.phoneInput, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
+                placeholder="Auto-filled on member select or type phone"
+                placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+                keyboardType="phone-pad"
+                value={phone}
+                onChangeText={setPhone}
+              />
+            </View>
           </View>
           
           {/* Donation Type */}
@@ -741,6 +898,101 @@ export default function AdminDonationsForm({ editData, onNavigate }: any) {
       <DropdownModal visible={showTypeDropdown} setVisible={setShowTypeDropdown} data={categories} selected={type} onSelect={setType} title="Select Donation Type" />
       <DropdownModal visible={showMethodDropdown} setVisible={setShowMethodDropdown} data={PAYMENT_METHODS} selected={method} onSelect={setMethod} title="Select Payment Method" />
 
+      {/* Searchable Member Directory Picker Modal */}
+      <Modal visible={showMemberPicker} transparent animationType="slide" onRequestClose={() => setShowMemberPicker(false)}>
+        <View style={styles.modalOverlay}>
+          <View
+            style={[
+              styles.memberModalSheet,
+              {
+                backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                borderTopColor: isDark ? 'rgba(255,255,255,0.15)' : '#CBD5E1',
+                borderTopWidth: 1.5,
+              },
+            ]}
+          >
+            <View style={styles.memberModalHeader}>
+              <Text style={[styles.dropdownTitle, { color: isDark ? '#FFFFFF' : '#0F172A', marginBottom: 0 }]}>
+                Select Church Member
+              </Text>
+              <TouchableOpacity onPress={() => setShowMemberPicker(false)} style={{ padding: 4 }}>
+                <X size={22} color={isDark ? '#94A3B8' : '#64748B'} />
+              </TouchableOpacity>
+            </View>
+
+            <View
+              style={[
+                styles.memberSearchBar,
+                {
+                  backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                  borderColor: isDark ? 'rgba(255,255,255,0.15)' : '#CBD5E1',
+                },
+              ]}
+            >
+              <Search size={16} color={isDark ? '#94A3B8' : '#64748B'} />
+              <TextInput
+                style={[styles.memberSearchInput, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
+                placeholder="Search by name or phone number..."
+                placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+                value={memberQuery}
+                onChangeText={setMemberQuery}
+                autoFocus
+              />
+              {!!memberQuery && (
+                <TouchableOpacity onPress={() => setMemberQuery('')}>
+                  <X size={16} color={isDark ? '#94A3B8' : '#64748B'} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {loadingMembers ? (
+              <ActivityIndicator size="small" color={isDark ? '#FCD34D' : '#0F766E'} style={{ marginVertical: 24 }} />
+            ) : modalFilteredMembers.length === 0 ? (
+              <Text style={{ textAlign: 'center', color: isDark ? '#94A3B8' : '#64748B', marginVertical: 24 }}>
+                No matching members found.
+              </Text>
+            ) : (
+              <FlatList
+                data={modalFilteredMembers}
+                keyExtractor={(item, idx) => item.id || String(idx)}
+                keyboardShouldPersistTaps="handled"
+                renderItem={({ item }) => {
+                  const mPhone = String(item.phone || item.mobile || item.phoneNumber || '').trim();
+                  const isSel = selectedMemberUid && selectedMemberUid === item.id;
+                  return (
+                    <TouchableOpacity
+                      style={[
+                        styles.dropdownItem,
+                        {
+                          borderBottomColor: isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9',
+                          alignItems: 'center',
+                        },
+                      ]}
+                      onPress={() => handleSelectMember(item)}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text
+                          style={[
+                            styles.dropdownItemText,
+                            { color: isDark ? '#FFFFFF' : '#0F172A', fontWeight: '700' },
+                          ]}
+                        >
+                          {item.name}
+                        </Text>
+                        <Text style={{ color: isDark ? '#94A3B8' : '#64748B', fontSize: 12, marginTop: 2 }}>
+                          {mPhone || 'No phone number'}
+                        </Text>
+                      </View>
+                      {isSel && <Check size={18} color="#10B981" />}
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
+
       {/* Summary Overlay */}
       <Modal visible={showSummary} transparent animationType="slide">
         <View style={styles.modalOverlay}>
@@ -766,6 +1018,10 @@ export default function AdminDonationsForm({ editData, onNavigate }: any) {
             <View style={[styles.summaryRow, { borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#E2E8F0' }]}>
               <Text style={[styles.summaryLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>Donor</Text>
               <Text style={[styles.summaryValue, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>{name || 'Anonymous'}</Text>
+            </View>
+            <View style={[styles.summaryRow, { borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#E2E8F0' }]}>
+              <Text style={[styles.summaryLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>Phone Number</Text>
+              <Text style={[styles.summaryValue, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>{phone || '—'}</Text>
             </View>
             <View style={[styles.summaryRow, { borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#E2E8F0' }]}>
               <Text style={[styles.summaryLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>Donation Type</Text>
@@ -1098,4 +1354,58 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   toastText: { color: '#fff', fontSize: 13.5, fontWeight: '600' },
+  labelWithActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  searchMemberBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  searchMemberBtnTxt: { fontSize: 11.5, fontWeight: '800' },
+  suggestionsBox: {
+    marginTop: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  phoneInput: { flex: 1, paddingVertical: 12, fontSize: 14, fontWeight: '600' },
+  memberModalSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 30,
+    maxHeight: '78%',
+  },
+  memberModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  memberSearchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 44,
+    gap: 8,
+    marginBottom: 12,
+  },
+  memberSearchInput: { flex: 1, fontSize: 14 },
 });
