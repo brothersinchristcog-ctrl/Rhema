@@ -16,6 +16,10 @@ export declare const ensureMatrimonyChatRoom: import("firebase-functions/v2/http
         profileCode: any;
         signedProfilePhoto: string | null;
         age: number | null;
+        heightCm: number | null;
+        occupation: string;
+        gender: string;
+        isVerified: boolean;
         city: any;
         contactPhone: any;
     };
@@ -51,6 +55,10 @@ export declare const getMatrimonyChatContacts: import("firebase-functions/v2/htt
         profileCode: string;
         signedProfilePhoto: string | null;
         age: number | null;
+        heightCm: number | null;
+        occupation: string;
+        gender: string;
+        isVerified: boolean;
         city: string;
         contactPhone: string | null;
         matchTierEligible: boolean;

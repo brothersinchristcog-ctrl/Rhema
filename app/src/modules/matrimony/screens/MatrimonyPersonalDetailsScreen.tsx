@@ -18,6 +18,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { useTheme, FONT_STYLE_OPTIONS } from '../../../context/ThemeContext';
 import MatrimonyProgressBar from '../components/MatrimonyProgressBar';
 import { MatrimonyPendingRegistrationDraft, StartRegistrationResponse } from '../types/matrimony';
+import { getProfileSubjectFromContext } from '../utils/profileSubject';
 
 const ORANGE = '#EA580C';
 const ORANGE_BORDER = '#FDBA74';
@@ -58,16 +59,24 @@ export default function MatrimonyPersonalDetailsScreen({ navigation, route }: an
   const fontFamily = FONT_STYLE_OPTIONS.find((f) => f.id === fontStyle)?.family;
 
   const initialData: StartRegistrationResponse | undefined = route?.params?.initialData;
+  const isFamilyProfile = route?.params?.draftData?.welcome?.managedBy === 'guardian';
+  const subjectCopy = getProfileSubjectFromContext(route?.params?.draftData, initialData);
 
-  const initialMaritalRaw = initialData?.profile?.maritalStatus || (member as any)?.maritalStatus || 'Never Married';
+  const initialMaritalRaw = isFamilyProfile
+    ? initialData?.profile?.maritalStatus || 'Never Married'
+    : initialData?.profile?.maritalStatus || (member as any)?.maritalStatus || 'Never Married';
   const normalizedMarital =
     initialMaritalRaw.toLowerCase() === 'single' ? 'Never Married' : initialMaritalRaw;
 
   const [gender, setGender] = useState<string>(
-    initialData?.profile?.gender || (member as any)?.gender || ''
+    isFamilyProfile
+      ? initialData?.profile?.gender || ''
+      : initialData?.profile?.gender || (member as any)?.gender || ''
   );
   const [dob, setDob] = useState<string>(
-    initialData?.contactInfo?.dob || member?.dob || ''
+    isFamilyProfile
+      ? initialData?.contactInfo?.dob || ''
+      : initialData?.contactInfo?.dob || member?.dob || ''
   );
   const [isDatePickerVisible, setDatePickerVisible] = useState(false);
 
@@ -100,15 +109,15 @@ export default function MatrimonyPersonalDetailsScreen({ navigation, route }: an
 
   const handleNext = () => {
     if (!gender) {
-      Alert.alert('Required', 'Please select your gender.');
+      Alert.alert('Required', subjectCopy.genderRequiredMsg);
       return;
     }
     if (!dob || age === null || age < 18) {
-      Alert.alert('Age Requirement', 'Please select a valid date of birth (18+ years).');
+      Alert.alert('Age Requirement', subjectCopy.dobAgeRequiredMsg);
       return;
     }
     if (!heightCm) {
-      Alert.alert('Required', 'Please select your height.');
+      Alert.alert('Required', subjectCopy.heightRequiredMsg);
       return;
     }
 
@@ -204,7 +213,7 @@ export default function MatrimonyPersonalDetailsScreen({ navigation, route }: an
         {/* Gender */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text, fontFamily, fontSize: scaleFont(15) }]}>
-            Gender
+            {subjectCopy.genderQuestion}
           </Text>
           <View style={styles.pillRow}>
             {GENDER_OPTIONS.map((g) => renderGlassPill(g, gender === g, () => setGender(g)))}
@@ -214,7 +223,7 @@ export default function MatrimonyPersonalDetailsScreen({ navigation, route }: an
         {/* Date of Birth & Age Banner */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text, fontFamily, fontSize: scaleFont(15) }]}>
-            Date of birth
+            {subjectCopy.dobQuestion}
           </Text>
           <TouchableOpacity
             style={[
@@ -254,7 +263,7 @@ export default function MatrimonyPersonalDetailsScreen({ navigation, route }: an
               style={[styles.ageBanner, { borderColor: isDark ? 'rgba(234,88,12,0.35)' : '#FED7AA' }]}
             >
               <Text style={[styles.ageText, { color: colors.text, fontFamily, fontSize: scaleFont(15) }]}>
-                You are <Text style={{ fontWeight: '800' }}>{age} years</Text> old
+                {subjectCopy.agePrefix} <Text style={{ fontWeight: '800' }}>{age} years</Text> old
               </Text>
             </LinearGradient>
           )}
@@ -263,7 +272,7 @@ export default function MatrimonyPersonalDetailsScreen({ navigation, route }: an
         {/* Height */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text, fontFamily, fontSize: scaleFont(15) }]}>
-            Height
+            {subjectCopy.heightQuestion}
           </Text>
           <TouchableOpacity
             style={[
@@ -286,7 +295,7 @@ export default function MatrimonyPersonalDetailsScreen({ navigation, route }: an
                 },
               ]}
             >
-              {selectedHeightLabel || 'Select your height'}
+              {selectedHeightLabel || subjectCopy.heightPlaceholder}
             </Text>
             <ChevronDown size={20} color={ORANGE} />
           </TouchableOpacity>
@@ -295,7 +304,7 @@ export default function MatrimonyPersonalDetailsScreen({ navigation, route }: an
         {/* Physical Status */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text, fontFamily, fontSize: scaleFont(15) }]}>
-            Your physical status
+            {subjectCopy.physicalStatusQuestion}
           </Text>
           <View style={styles.pillRow}>
             {PHYSICAL_STATUS_OPTIONS.map((opt) =>
@@ -307,7 +316,7 @@ export default function MatrimonyPersonalDetailsScreen({ navigation, route }: an
         {/* Marital Status */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text, fontFamily, fontSize: scaleFont(15) }]}>
-            Marital status
+            {subjectCopy.maritalStatusQuestion}
           </Text>
           <View style={styles.pillRow}>
             {MARITAL_STATUS_OPTIONS.map((opt) =>

@@ -942,7 +942,8 @@ service cloud.firestore {
       }
 
       match /blocks/{docId} {
-        allow read, write: if false;
+        allow read: if isMatrimonyOwner(uid);
+        allow write: if false;
       }
     }
 

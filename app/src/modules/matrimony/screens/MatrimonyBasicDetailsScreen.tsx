@@ -15,6 +15,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { useTheme, FONT_STYLE_OPTIONS } from '../../../context/ThemeContext';
 import MatrimonyProgressBar from '../components/MatrimonyProgressBar';
 import { MatrimonyPendingRegistrationDraft, StartRegistrationResponse } from '../types/matrimony';
+import { getProfileSubjectFromContext } from '../utils/profileSubject';
 
 const ORANGE = '#EA580C';
 
@@ -25,12 +26,16 @@ export default function MatrimonyBasicDetailsScreen({ navigation, route }: any) 
   const fontFamily = FONT_STYLE_OPTIONS.find((f) => f.id === fontStyle)?.family;
 
   const initialData: StartRegistrationResponse | undefined = route?.params?.initialData;
+  const isFamilyProfile = route?.params?.draftData?.welcome?.managedBy === 'guardian';
+  const subjectCopy = getProfileSubjectFromContext(route?.params?.draftData, initialData);
 
   const [fullName, setFullName] = useState(
-    initialData?.contactInfo?.fullName ||
-      initialData?.profile?.displayName ||
-      member?.name ||
-      ''
+    isFamilyProfile
+      ? initialData?.contactInfo?.fullName || ''
+      : initialData?.contactInfo?.fullName ||
+          initialData?.profile?.displayName ||
+          member?.name ||
+          ''
   );
   const [email, setEmail] = useState(
     initialData?.contactInfo?.email || member?.email || user?.email || ''
@@ -45,7 +50,7 @@ export default function MatrimonyBasicDetailsScreen({ navigation, route }: any) 
     const trimmedPhone = phone.trim();
 
     if (!trimmedName) {
-      Alert.alert('Name Required', 'Please enter your full name.');
+      Alert.alert('Name Required', subjectCopy.nameRequiredMsg);
       return;
     }
 
@@ -110,30 +115,34 @@ export default function MatrimonyBasicDetailsScreen({ navigation, route }: any) 
       >
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Text style={[styles.cardTitle, { color: colors.text, fontFamily, fontSize: scaleFont(18) }]}>
-            Your Basic Details
+            {subjectCopy.basicCardTitle}
           </Text>
           <Text style={[styles.cardSub, { color: colors.textSecondary, fontFamily }]}>
-            Pre-filled from your Rhema Global Ministries profile. Phone and email remain private by default.
+            {subjectCopy.basicSubtitle}
           </Text>
 
-          <Text style={[styles.label, { color: colors.text, fontFamily }]}>Full Name *</Text>
+          <Text style={[styles.label, { color: colors.text, fontFamily }]}>
+            {subjectCopy.isFamily ? `${subjectCopy.shortOwnerCap} Full Name *` : 'Full Name *'}
+          </Text>
           <View style={inputWrapStyle}>
             <User size={18} color={ORANGE} />
             <TextInput
               style={[styles.input, { color: colors.text, fontFamily, fontSize: scaleFont(15) }]}
-              placeholder="Enter your full name"
+              placeholder={subjectCopy.fullNamePlaceholder}
               placeholderTextColor={colors.textSecondary}
               value={fullName}
               onChangeText={setFullName}
             />
           </View>
 
-          <Text style={[styles.label, { color: colors.text, fontFamily }]}>Email Address</Text>
+          <Text style={[styles.label, { color: colors.text, fontFamily }]}>
+            {subjectCopy.isFamily ? `${subjectCopy.shortOwnerCap} Email Address` : 'Email Address'}
+          </Text>
           <View style={inputWrapStyle}>
             <Mail size={18} color={ORANGE} />
             <TextInput
               style={[styles.input, { color: colors.text, fontFamily, fontSize: scaleFont(15) }]}
-              placeholder="Enter your email address"
+              placeholder={subjectCopy.emailPlaceholder}
               placeholderTextColor={colors.textSecondary}
               keyboardType="email-address"
               autoCapitalize="none"
@@ -142,12 +151,14 @@ export default function MatrimonyBasicDetailsScreen({ navigation, route }: any) 
             />
           </View>
 
-          <Text style={[styles.label, { color: colors.text, fontFamily }]}>Phone Number</Text>
+          <Text style={[styles.label, { color: colors.text, fontFamily }]}>
+            {subjectCopy.isFamily ? `${subjectCopy.shortOwnerCap} Phone Number` : 'Phone Number'}
+          </Text>
           <View style={inputWrapStyle}>
             <Phone size={18} color={ORANGE} />
             <TextInput
               style={[styles.input, { color: colors.text, fontFamily, fontSize: scaleFont(15) }]}
-              placeholder="Enter your phone number"
+              placeholder={subjectCopy.phonePlaceholder}
               placeholderTextColor={colors.textSecondary}
               keyboardType="phone-pad"
               value={phone}

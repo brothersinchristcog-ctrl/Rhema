@@ -50,7 +50,6 @@ export declare const getMatrimonyPendingProfiles: import("firebase-functions/v2/
     profiles: {
         signedPhoto: string | null;
         signedProfilePhoto: string | null;
-        verification: FirebaseFirestore.DocumentData | null | undefined;
         openReportCount: number;
         totalReportCount: number;
         latestReport: FormattedReportItem | null;
@@ -116,12 +115,16 @@ export declare const getMatrimonyAdminProfileDetail: import("firebase-functions/
     verification: null;
     rejectionReason: null;
     reports: FormattedReportItem[];
+    deletionReason?: never;
+    deletedAtMs?: never;
 } | {
     success: boolean;
     eligible: boolean;
     registrationId: string;
     isLegacyBan: boolean;
     inactiveReason: any;
+    deletionReason: any;
+    deletedAtMs: any;
     contactInfo: {
         fullName: any;
         email: any;

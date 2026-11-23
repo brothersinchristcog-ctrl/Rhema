@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { matrimonyApi, resolveMatrimonyEntryRoute } from '../services/matrimonyApi';
+import { matrimonyPerf } from '../services/matrimonyPerf';
 import { StartRegistrationResponse } from '../types/matrimony';
 
 const SPLASH_IMAGE = require('../../../../assets/matrimony_splash.jpg');
@@ -31,6 +32,7 @@ export default function MatrimonySplashScreen({ navigation }: any) {
 
   useEffect(() => {
     let active = true;
+    const startupTrace = matrimonyPerf.startTrace('matrimony_entry_startup');
 
     const minDelay = new Promise<void>((resolve) => setTimeout(resolve, MIN_SPLASH_MS));
     const cacheHydration = matrimonyApi.hydrateCacheFromStorage().catch(() => undefined);
@@ -53,7 +55,19 @@ export default function MatrimonySplashScreen({ navigation }: any) {
         matrimonyApi.prefetchMatrimonyWorkspace().catch(() => undefined);
         const cachedRoute = resolveMatrimonyEntryRoute(cached);
         if (cachedRoute.screen === 'MatrimonyHome') {
-          navigation.replace(cachedRoute.screen, cachedRoute.params);
+          startupTrace.stop(true, { source: 'cache', screen: cachedRoute.screen });
+          navigation.replace('MatrimonyMainTabs');
+          registrationReq.then((liveRes) => {
+            if (!liveRes) return;
+            const liveRoute = resolveMatrimonyEntryRoute(liveRes);
+            if (liveRoute.screen !== 'MatrimonyHome') {
+              matrimonyApi.clearAllCaches();
+              navigation.reset({
+                index: 0,
+                routes: [{ name: liveRoute.screen, params: liveRoute.params }],
+              });
+            }
+          });
           return;
         }
       }
@@ -63,8 +77,12 @@ export default function MatrimonySplashScreen({ navigation }: any) {
       if (!res) {
         if (cached) {
           const fallbackRoute = resolveMatrimonyEntryRoute(cached);
-          navigation.replace(fallbackRoute.screen, fallbackRoute.params);
+          const targetScreen =
+            fallbackRoute.screen === 'MatrimonyHome' ? 'MatrimonyMainTabs' : fallbackRoute.screen;
+          startupTrace.stop(true, { source: 'cache_fallback', screen: fallbackRoute.screen });
+          navigation.replace(targetScreen, fallbackRoute.params);
         } else {
+          startupTrace.stop(false, { source: 'welcome_fallback' });
           navigation.replace('MatrimonyWelcome');
         }
         return;
@@ -73,7 +91,10 @@ export default function MatrimonySplashScreen({ navigation }: any) {
       if (nextRoute.screen === 'MatrimonyHome') {
         matrimonyApi.prefetchMatrimonyWorkspace().catch(() => undefined);
       }
-      navigation.replace(nextRoute.screen, nextRoute.params);
+      const targetScreen =
+        nextRoute.screen === 'MatrimonyHome' ? 'MatrimonyMainTabs' : nextRoute.screen;
+      startupTrace.stop(true, { source: 'network', screen: nextRoute.screen });
+      navigation.replace(targetScreen, nextRoute.params);
     });
 
     return () => {

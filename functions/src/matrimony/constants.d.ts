@@ -12,6 +12,8 @@ export declare const SUBCOLLECTIONS: {
     readonly VIEWED_BY: "viewed_by";
     readonly BLOCKS: "blocks";
     readonly UNLOCKED_CONTACTS: "unlocked_contacts";
+    readonly PHOTO_REQUESTS: "photo_requests";
+    readonly PHOTO_REQUESTS_SENT: "photo_requests_sent";
 };
 export declare const SUBDOC_IDS: {
     readonly PRIVATE_INFO: "info";

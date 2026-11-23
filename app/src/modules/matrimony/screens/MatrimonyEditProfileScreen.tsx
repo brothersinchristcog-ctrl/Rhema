@@ -3,21 +3,30 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  BackHandler,
   FlatList,
   Image,
   Keyboard,
-  KeyboardAvoidingView,
-  Modal,
   Platform,
+  Pressable,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Reanimated, {
+  FadeIn,
+  FadeOut,
+  SlideInDown,
+  SlideOutDown,
+  useAnimatedKeyboard,
+  useAnimatedStyle,
+} from 'react-native-reanimated';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -235,37 +244,49 @@ export default function MatrimonyEditProfileScreen({ navigation, route }: any) {
   const [expandPrefEdu, setExpandPrefEdu] = useState(false);
   const [inPartnerSection, setInPartnerSection] = useState(focusSection === 'partnerPreference');
   const [isScrolledHeader, setIsScrolledHeader] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const lastProfileLoadRef = useRef<number>(0);
+  const mountedRef = useRef<boolean>(true);
+
+  const animatedKeyboard = useAnimatedKeyboard();
+  const { height: windowHeight } = useWindowDimensions();
+  const closedModalPad = Math.max(insets.bottom + 14, 22);
+  const topSafeGap = Math.max(insets.top + 16, 44);
+  const modalKeyboardLiftStyle = useAnimatedStyle(() => {
+    const kbH = animatedKeyboard.height.value;
+    const lift = kbH > 0 ? Math.max(0, kbH - (closedModalPad - 12)) : 0;
+    const availableMaxHeight = Math.max(260, windowHeight - kbH - topSafeGap);
+    return {
+      maxHeight: availableMaxHeight,
+      transform: [{ translateY: -lift }],
+    };
+  }, [closedModalPad, windowHeight, topSafeGap]);
 
   useEffect(() => {
-    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const subShow = Keyboard.addListener(showEvt, (e) => {
-      setKeyboardHeight(e.endCoordinates?.height || 0);
-    });
-    const subHide = Keyboard.addListener(hideEvt, () => {
-      setKeyboardHeight(0);
-    });
+    mountedRef.current = true;
     return () => {
-      subShow.remove();
-      subHide.remove();
+      mountedRef.current = false;
     };
   }, []);
 
   const loadProfile = useCallback(async (force = true) => {
+    lastProfileLoadRef.current = Date.now();
     try {
       await matrimonyApi.hydrateCacheFromStorage().catch(() => undefined);
       const cached = matrimonyApi.getCachedRegistration();
-      if (cached) {
+      if (cached && mountedRef.current) {
         setData((prev) => prev || cached);
         setLoading(false);
       }
       const res = await matrimonyApi.startRegistration({ force });
-      setData(res);
+      if (mountedRef.current) {
+        setData(res);
+      }
     } catch (err) {
       console.warn('MatrimonyEditProfile load error:', err);
     } finally {
-      setLoading(false);
+      if (mountedRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -274,6 +295,8 @@ export default function MatrimonyEditProfileScreen({ navigation, route }: any) {
     const unsub = navigation.addListener('focus', () => {
       const cached = matrimonyApi.getCachedRegistration();
       if (cached) setData(cached);
+      if (matrimonyApi.hasPendingDraftSync(4500)) return;
+      if (Date.now() - lastProfileLoadRef.current < 1500) return;
       loadProfile(true);
     });
     return unsub;
@@ -454,16 +477,27 @@ export default function MatrimonyEditProfileScreen({ navigation, route }: any) {
     setActiveModal(type);
   };
 
-  const closeModal = () => {
-    if (saving) return;
+  const closeModal = useCallback(() => {
     Keyboard.dismiss();
-    setKeyboardHeight(0);
     setActivePicker(null);
     setPickerSearch('');
     setActiveModal(null);
-  };
+  }, []);
 
-  const handleSaveModal = async () => {
+  useEffect(() => {
+    if (!activeModal) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (activePicker) {
+        setActivePicker(null);
+      } else {
+        closeModal();
+      }
+      return true;
+    });
+    return () => sub.remove();
+  }, [activeModal, activePicker, closeModal]);
+
+  const handleSaveModal = () => {
     if (!activeModal) return;
 
     if (activeModal === 'religious') {
@@ -491,91 +525,117 @@ export default function MatrimonyEditProfileScreen({ navigation, route }: any) {
       }
     }
 
-    setSaving(true);
-    try {
-      let applyLocalUpdate: ((prev: StartRegistrationResponse) => StartRegistrationResponse) | null = null;
-      const baseContact = (prev: StartRegistrationResponse) => ({
-        fullName: prev.profile?.displayName || '',
-        email: '',
-        phone: '',
-        ...(prev.contactInfo || {}),
-      });
-      const basePrefs = (prev: StartRegistrationResponse) => ({
-        age: { min: 20, max: 35, importance: 'preferred' as const },
-        height: { minCm: 150, maxCm: 190, importance: 'flexible' as const },
-        maritalStatuses: [] as string[],
-        education: { acceptable: [] as string[], importance: 'flexible' as const },
-        occupationCategories: [] as string[],
-        locations: { preferredCities: [] as string[], preferredStates: [] as string[], openToRelocation: true },
-        ...(prev.preferences || {}),
-      });
+    const baseContact = (prev: StartRegistrationResponse) => ({
+      fullName: prev.profile?.displayName || '',
+      email: '',
+      phone: '',
+      ...(prev.contactInfo || {}),
+    });
+    const basePrefs = (prev: StartRegistrationResponse) => ({
+      age: { min: 20, max: 35, importance: 'preferred' as const },
+      height: { minCm: 150, maxCm: 190, importance: 'flexible' as const },
+      maritalStatuses: [] as string[],
+      education: { acceptable: [] as string[], importance: 'flexible' as const },
+      occupationCategories: [] as string[],
+      locations: { preferredCities: [] as string[], preferredStates: [] as string[], openToRelocation: true },
+      ...(prev.preferences || {}),
+    });
 
-      if (activeModal === 'mobile') {
-        const phone = form.phone?.trim() || '';
-        await matrimonyApi.saveDraft('basic', { phone });
-        applyLocalUpdate = (prev) => ({
-          ...prev,
-          contactInfo: { ...baseContact(prev), phone },
-        });
-      } else if (activeModal === 'email') {
-        const email = form.email?.trim() || '';
-        await matrimonyApi.saveDraft('basic', { email });
-        applyLocalUpdate = (prev) => ({
-          ...prev,
-          contactInfo: { ...baseContact(prev), email },
-        });
-      } else if (activeModal === 'about') {
-        const aboutMe = form.aboutMe?.trim() || '';
-        await matrimonyApi.saveDraft('additional', { aboutMe });
-        applyLocalUpdate = (prev) => ({
-          ...prev,
-          profile: prev.profile ? { ...prev.profile, aboutMe } : prev.profile,
-        });
-      } else if (activeModal === 'basic') {
-        const fullName = form.fullName?.trim() || '';
-        await matrimonyApi.saveDraft('basic', { fullName });
-        const heightNum = Number(form.heightCm);
-        const validHeight =
-          Number.isFinite(heightNum) && heightNum >= 100 && heightNum <= 250 ? Math.round(heightNum) : undefined;
-        await matrimonyApi.saveDraft('personal', {
-          gender: form.gender || undefined,
-          dob: form.dob || undefined,
-          heightCm: validHeight,
-          maritalStatus: form.maritalStatus || undefined,
-          numberOfChildren: form.numberOfChildren || undefined,
-          motherTongue: form.motherTongue?.trim() ?? undefined,
-          physicalStatus: form.physicalStatus || undefined,
-        });
-        const recomputedAge = computeAge(form.dob || '');
-        applyLocalUpdate = (prev) => ({
-          ...prev,
-          contactInfo: {
-            ...baseContact(prev),
-            fullName,
-            ...(form.dob ? { dob: form.dob } : {}),
-          },
-          profile: prev.profile
-            ? {
-                ...prev.profile,
-                displayName: fullName,
-                ...(form.gender ? { gender: form.gender } : {}),
-                ...(recomputedAge !== null ? { age: recomputedAge } : {}),
-                ...(validHeight !== undefined ? { heightCm: validHeight } : {}),
-                ...(form.maritalStatus ? { maritalStatus: form.maritalStatus } : {}),
-                ...(form.numberOfChildren ? { numberOfChildren: form.numberOfChildren } : {}),
-                ...(form.motherTongue !== undefined ? { motherTongue: form.motherTongue.trim() } : {}),
-                ...(form.physicalStatus ? { physicalStatus: form.physicalStatus } : {}),
-              }
-            : prev.profile,
-        });
-      } else if (activeModal === 'professional') {
-        const qualification = form.qualification?.trim() || '';
-        const employmentType = form.employmentType?.trim() || '';
-        const profession = form.profession?.trim() || '';
-        const organization = form.organization?.trim() || '';
-        const incomeCurrency = form.incomeCurrency || 'INR - India';
-        const incomeRange = form.incomeRange?.trim() || '';
-        await matrimonyApi.saveDraft('professional', {
+    let applyLocalUpdate: ((prev: StartRegistrationResponse) => StartRegistrationResponse) | null = null;
+    let commitRemote: (() => Promise<any>) | null = null;
+
+    if (activeModal === 'mobile') {
+      const phone = form.phone?.trim() || '';
+      applyLocalUpdate = (prev) => ({
+        ...prev,
+        contactInfo: { ...baseContact(prev), phone },
+      });
+      commitRemote = () => matrimonyApi.saveDraft('basic', { phone });
+    } else if (activeModal === 'email') {
+      const email = form.email?.trim() || '';
+      applyLocalUpdate = (prev) => ({
+        ...prev,
+        contactInfo: { ...baseContact(prev), email },
+      });
+      commitRemote = () => matrimonyApi.saveDraft('basic', { email });
+    } else if (activeModal === 'about') {
+      const aboutMe = form.aboutMe?.trim() || '';
+      applyLocalUpdate = (prev) => ({
+        ...prev,
+        profile: prev.profile ? { ...prev.profile, aboutMe } : prev.profile,
+      });
+      commitRemote = () => matrimonyApi.saveDraft('additional', { aboutMe });
+    } else if (activeModal === 'basic') {
+      const fullName = form.fullName?.trim() || '';
+      const heightNum = Number(form.heightCm);
+      const validHeight =
+        Number.isFinite(heightNum) && heightNum >= 100 && heightNum <= 250 ? Math.round(heightNum) : undefined;
+      const recomputedAge = computeAge(form.dob || '');
+      const personalPayload = {
+        gender: form.gender || undefined,
+        dob: form.dob || undefined,
+        heightCm: validHeight,
+        maritalStatus: form.maritalStatus || undefined,
+        numberOfChildren: form.numberOfChildren || undefined,
+        motherTongue: form.motherTongue?.trim() ?? undefined,
+        physicalStatus: form.physicalStatus || undefined,
+      };
+      applyLocalUpdate = (prev) => ({
+        ...prev,
+        contactInfo: {
+          ...baseContact(prev),
+          fullName,
+          ...(form.dob ? { dob: form.dob } : {}),
+        },
+        profile: prev.profile
+          ? {
+              ...prev.profile,
+              displayName: fullName,
+              ...(form.gender ? { gender: form.gender } : {}),
+              ...(recomputedAge !== null ? { age: recomputedAge } : {}),
+              ...(validHeight !== undefined ? { heightCm: validHeight } : {}),
+              ...(form.maritalStatus ? { maritalStatus: form.maritalStatus } : {}),
+              ...(form.numberOfChildren ? { numberOfChildren: form.numberOfChildren } : {}),
+              ...(form.motherTongue !== undefined ? { motherTongue: form.motherTongue.trim() } : {}),
+              ...(form.physicalStatus ? { physicalStatus: form.physicalStatus } : {}),
+            }
+          : prev.profile,
+      });
+      commitRemote = () =>
+        Promise.all([
+          matrimonyApi.saveDraft('basic', { fullName }),
+          matrimonyApi.saveDraft('personal', personalPayload),
+        ]);
+    } else if (activeModal === 'professional') {
+      const qualification = form.qualification?.trim() || '';
+      const employmentType = form.employmentType?.trim() || '';
+      const profession = form.profession?.trim() || '';
+      const organization = form.organization?.trim() || '';
+      const incomeCurrency = form.incomeCurrency || 'INR - India';
+      const incomeRange = form.incomeRange?.trim() || '';
+      applyLocalUpdate = (prev) => ({
+        ...prev,
+        profile: prev.profile
+          ? {
+              ...prev.profile,
+              education: { ...(prev.profile.education || {}), ...(qualification ? { qualification } : {}) },
+              career: {
+                ...(prev.profile.career || {}),
+                employmentType,
+                profession,
+                organization,
+              },
+            }
+          : prev.profile,
+        incomeDetails: {
+          ...(prev.incomeDetails || {}),
+          currency: incomeCurrency,
+          annualIncomeRange: incomeRange,
+          visibility: 'private',
+        },
+      });
+      commitRemote = () =>
+        matrimonyApi.saveDraft('professional', {
           qualification,
           employmentType,
           profession,
@@ -583,65 +643,63 @@ export default function MatrimonyEditProfileScreen({ navigation, route }: any) {
           incomeCurrency,
           incomeRange,
         });
-        applyLocalUpdate = (prev) => ({
-          ...prev,
-          profile: prev.profile
-            ? {
-                ...prev.profile,
-                education: { ...(prev.profile.education || {}), ...(qualification ? { qualification } : {}) },
-                career: {
-                  ...(prev.profile.career || {}),
-                  employmentType,
-                  profession,
-                  organization,
-                },
-              }
-            : prev.profile,
-          incomeDetails: {
-            ...(prev.incomeDetails || {}),
-            currency: incomeCurrency,
-            annualIncomeRange: incomeRange,
-            visibility: 'private',
-          },
-        });
-      } else if (activeModal === 'location') {
-        const country = form.country?.trim() || '';
-        const state = form.state?.trim() || '';
-        const village = form.city?.trim() || '';
-        const pincode = form.pincode?.trim() || '';
-        const citizenship = form.citizenship?.trim() || '';
-        await matrimonyApi.saveDraft('location', {
+    } else if (activeModal === 'location') {
+      const country = form.country?.trim() || '';
+      const state = form.state?.trim() || '';
+      const village = form.city?.trim() || '';
+      const pincode = form.pincode?.trim() || '';
+      const citizenship = form.citizenship?.trim() || '';
+      applyLocalUpdate = (prev) => ({
+        ...prev,
+        profile: prev.profile
+          ? {
+              ...prev.profile,
+              location: {
+                ...(prev.profile.location || {}),
+                country: country || prev.profile.location?.country || '',
+                state: state || prev.profile.location?.state || '',
+                village,
+                city: village,
+                pincode,
+                citizenship,
+              },
+            }
+          : prev.profile,
+      });
+      commitRemote = () =>
+        matrimonyApi.saveDraft('location', {
           country,
           state,
           village,
           pincode,
           citizenship,
         });
-        applyLocalUpdate = (prev) => ({
-          ...prev,
-          profile: prev.profile
-            ? {
-                ...prev.profile,
-                location: {
-                  ...(prev.profile.location || {}),
-                  country: country || prev.profile.location?.country || '',
-                  state: state || prev.profile.location?.state || '',
-                  village,
-                  city: village,
-                  pincode,
-                  citizenship,
-                },
-              }
-            : prev.profile,
-        });
-      } else if (activeModal === 'religious') {
-        const religion = form.religion?.trim() || '';
-        const denomination = form.denomination?.trim() || '';
-        const division = form.division?.trim() || '';
-        const religiousValues = form.religiousValues?.trim() || '';
-        const baptizedVal =
-          form.baptized === 'Yes' ? true : form.baptized === 'No' ? false : undefined;
-        await matrimonyApi.saveDraft('religious', {
+    } else if (activeModal === 'religious') {
+      const religion = form.religion?.trim() || '';
+      const denomination = form.denomination?.trim() || '';
+      const division = form.division?.trim() || '';
+      const religiousValues = form.religiousValues?.trim() || '';
+      const baptizedVal =
+        form.baptized === 'Yes' ? true : form.baptized === 'No' ? false : undefined;
+      applyLocalUpdate = (prev) => ({
+        ...prev,
+        profile: prev.profile
+          ? {
+              ...prev.profile,
+              faithSummary: {
+                ...(prev.profile.faithSummary || {}),
+                ...(religion ? { religion } : {}),
+                ...(denomination ? { denomination } : {}),
+                division,
+                openToAnyDivision,
+                religiousValues,
+                ...(baptizedVal !== undefined ? { baptized: baptizedVal } : {}),
+              },
+            }
+          : prev.profile,
+      });
+      commitRemote = () =>
+        matrimonyApi.saveDraft('religious', {
           religion,
           denomination,
           division,
@@ -649,58 +707,67 @@ export default function MatrimonyEditProfileScreen({ navigation, route }: any) {
           religiousValues,
           baptized: baptizedVal,
         });
-        applyLocalUpdate = (prev) => ({
-          ...prev,
-          profile: prev.profile
-            ? {
-                ...prev.profile,
-                faithSummary: {
-                  ...(prev.profile.faithSummary || {}),
-                  ...(religion ? { religion } : {}),
-                  ...(denomination ? { denomination } : {}),
-                  division,
-                  openToAnyDivision,
-                  religiousValues,
-                  ...(baptizedVal !== undefined ? { baptized: baptizedVal } : {}),
-                },
-              }
-            : prev.profile,
-        });
-      } else if (activeModal === 'habits') {
-        const eatingHabits = form.eatingHabits || 'Not Specified';
-        const smokingHabits = form.smokingHabits || 'Not Specified';
-        const drinkingHabits = form.drinkingHabits || 'Not Specified';
-        await matrimonyApi.saveDraft('additional', {
+    } else if (activeModal === 'habits') {
+      const eatingHabits = form.eatingHabits || 'Not Specified';
+      const smokingHabits = form.smokingHabits || 'Not Specified';
+      const drinkingHabits = form.drinkingHabits || 'Not Specified';
+      applyLocalUpdate = (prev) => ({
+        ...prev,
+        profile: prev.profile
+          ? {
+              ...prev.profile,
+              habits: {
+                ...(prev.profile.habits || {}),
+                eatingHabits,
+                smokingHabits,
+                drinkingHabits,
+              },
+            }
+          : prev.profile,
+      });
+      commitRemote = () =>
+        matrimonyApi.saveDraft('additional', {
           eatingHabits,
           smokingHabits,
           drinkingHabits,
         });
-        applyLocalUpdate = (prev) => ({
-          ...prev,
-          profile: prev.profile
-            ? {
-                ...prev.profile,
-                habits: {
-                  ...(prev.profile.habits || {}),
-                  eatingHabits,
-                  smokingHabits,
-                  drinkingHabits,
-                },
-              }
-            : prev.profile,
-        });
-      } else if (activeModal === 'family') {
-        const familyType = form.familyType?.trim() || '';
-        const familyValues = form.familyValues?.trim() || '';
-        const familyStatus = form.familyStatus?.trim() || '';
-        const fatherOccupation = form.fatherOccupation?.trim() || '';
-        const motherOccupation = form.motherOccupation?.trim() || '';
-        const familyOrigin = form.familyOrigin?.trim() || '';
-        const brothers = form.brothers?.trim() || 'None';
-        const sisters = form.sisters?.trim() || 'None';
-        const brothersMarried = form.brothersMarried?.trim() || 'None';
-        const sistersMarried = form.sistersMarried?.trim() || 'None';
-        await matrimonyApi.saveDraft('additional', {
+    } else if (activeModal === 'family') {
+      const familyType = form.familyType?.trim() || '';
+      const familyValues = form.familyValues?.trim() || '';
+      const familyStatus = form.familyStatus?.trim() || '';
+      const fatherOccupation = form.fatherOccupation?.trim() || '';
+      const motherOccupation = form.motherOccupation?.trim() || '';
+      const familyOrigin = form.familyOrigin?.trim() || '';
+      const brothers = form.brothers?.trim() || 'None';
+      const sisters = form.sisters?.trim() || 'None';
+      const brothersMarried = form.brothersMarried?.trim() || 'None';
+      const sistersMarried = form.sistersMarried?.trim() || 'None';
+      applyLocalUpdate = (prev) => ({
+        ...prev,
+        profile: prev.profile
+          ? {
+              ...prev.profile,
+              familySummary: {
+                ...(prev.profile.familySummary || {}),
+                familyType,
+                familyValues,
+                familyStatus,
+              },
+            }
+          : prev.profile,
+        familyDetails: {
+          ...(prev.familyDetails || {}),
+          fatherOccupation,
+          motherOccupation,
+          familyOrigin,
+          brothers,
+          sisters,
+          brothersMarried,
+          sistersMarried,
+        },
+      });
+      commitRemote = () =>
+        matrimonyApi.saveDraft('additional', {
           familyType,
           familyValues,
           familyStatus,
@@ -712,93 +779,96 @@ export default function MatrimonyEditProfileScreen({ navigation, route }: any) {
           brothersMarried,
           sistersMarried,
         });
-        applyLocalUpdate = (prev) => ({
+    } else if (activeModal === 'aboutFamily') {
+      const familyIntro = form.familyIntro?.trim() || '';
+      applyLocalUpdate = (prev) => ({
+        ...prev,
+        familyDetails: {
+          ...(prev.familyDetails || {}),
+          familyIntro,
+        },
+      });
+      commitRemote = () => matrimonyApi.saveDraft('additional', { familyIntro });
+    } else if (activeModal === 'prefCompulsory') {
+      const ageImportance = (form.ageImportance || 'preferred') as 'essential' | 'preferred' | 'flexible';
+      const heightImportance = (form.heightImportance || 'flexible') as 'essential' | 'preferred' | 'flexible';
+      const educationImportance = (form.educationImportance || 'flexible') as 'essential' | 'preferred' | 'flexible';
+      applyLocalUpdate = (prev) => {
+        const prefs = basePrefs(prev);
+        return {
           ...prev,
-          profile: prev.profile
-            ? {
-                ...prev.profile,
-                familySummary: {
-                  ...(prev.profile.familySummary || {}),
-                  familyType,
-                  familyValues,
-                  familyStatus,
-                },
-              }
-            : prev.profile,
-          familyDetails: {
-            ...(prev.familyDetails || {}),
-            fatherOccupation,
-            motherOccupation,
-            familyOrigin,
-            brothers,
-            sisters,
-            brothersMarried,
-            sistersMarried,
+          preferences: {
+            ...prefs,
+            age: {
+              min: prefs.age?.min ?? 20,
+              max: prefs.age?.max ?? 35,
+              importance: ageImportance,
+            },
+            height: {
+              minCm: prefs.height?.minCm ?? 150,
+              maxCm: prefs.height?.maxCm ?? 190,
+              importance: heightImportance,
+            },
+            education: {
+              acceptable: prefs.education?.acceptable || [],
+              importance: educationImportance,
+            },
           },
-        });
-      } else if (activeModal === 'aboutFamily') {
-        const familyIntro = form.familyIntro?.trim() || '';
-        await matrimonyApi.saveDraft('additional', { familyIntro });
-        applyLocalUpdate = (prev) => ({
-          ...prev,
-          familyDetails: {
-            ...(prev.familyDetails || {}),
-            familyIntro,
-          },
-        });
-      } else if (activeModal === 'prefCompulsory') {
-        const ageImportance = (form.ageImportance || 'preferred') as 'essential' | 'preferred' | 'flexible';
-        const heightImportance = (form.heightImportance || 'flexible') as 'essential' | 'preferred' | 'flexible';
-        const educationImportance = (form.educationImportance || 'flexible') as 'essential' | 'preferred' | 'flexible';
-        await matrimonyApi.saveDraft('preferences', {
+        };
+      };
+      commitRemote = () =>
+        matrimonyApi.saveDraft('preferences', {
           ageImportance,
           heightImportance,
           educationImportance,
         });
-        applyLocalUpdate = (prev) => {
-          const prefs = basePrefs(prev);
-          return {
-            ...prev,
-            preferences: {
-              ...prefs,
-              age: {
-                min: prefs.age?.min ?? 20,
-                max: prefs.age?.max ?? 35,
-                importance: ageImportance,
-              },
-              height: {
-                minCm: prefs.height?.minCm ?? 150,
-                maxCm: prefs.height?.maxCm ?? 190,
-                importance: heightImportance,
-              },
-              education: {
-                acceptable: prefs.education?.acceptable || [],
-                importance: educationImportance,
-              },
-            },
-          };
-        };
-      } else if (activeModal === 'prefAbout') {
-        const partnerExpectations = form.partnerExpectations?.trim() || '';
-        await matrimonyApi.saveDraft('preferences', { partnerExpectations });
-        applyLocalUpdate = (prev) => ({
+    } else if (activeModal === 'prefAbout') {
+      const partnerExpectations = form.partnerExpectations?.trim() || '';
+      applyLocalUpdate = (prev) => ({
+        ...prev,
+        preferences: {
+          ...basePrefs(prev),
+          partnerExpectations,
+        },
+      });
+      commitRemote = () => matrimonyApi.saveDraft('preferences', { partnerExpectations });
+    } else if (activeModal === 'prefBasic') {
+      const minA = Number(form.minAge) || 20;
+      const maxA = Math.max(minA, Number(form.maxAge) || 35);
+      const minH = Number(form.minHeightCm) || 150;
+      const maxH = Math.max(minH, Number(form.maxHeightCm) || 190);
+      const cleanMarital = normalizePrefMaritalStatuses(prefMaritalStatuses);
+      const onlyNeverMarried = isOnlyNeverMarried(cleanMarital);
+      const haveChildren = onlyNeverMarried ? 'No' : form.haveChildren || "Doesn't matter";
+      const physicalStatus = form.physicalStatus || 'Normal';
+      const motherTongue = form.motherTongue || 'Any';
+      applyLocalUpdate = (prev) => {
+        const prefs = basePrefs(prev);
+        return {
           ...prev,
           preferences: {
-            ...basePrefs(prev),
-            partnerExpectations,
+            ...prefs,
+            age: {
+              ...(prefs.age || {}),
+              min: minA,
+              max: maxA,
+              importance: prefs.age?.importance || 'preferred',
+            },
+            height: {
+              ...(prefs.height || {}),
+              minCm: minH,
+              maxCm: maxH,
+              importance: prefs.height?.importance || 'flexible',
+            },
+            haveChildren,
+            maritalStatuses: cleanMarital,
+            physicalStatus,
+            motherTongue,
           },
-        });
-      } else if (activeModal === 'prefBasic') {
-        const minA = Number(form.minAge) || 20;
-        const maxA = Math.max(minA, Number(form.maxAge) || 35);
-        const minH = Number(form.minHeightCm) || 150;
-        const maxH = Math.max(minH, Number(form.maxHeightCm) || 190);
-        const cleanMarital = normalizePrefMaritalStatuses(prefMaritalStatuses);
-        const onlyNeverMarried = isOnlyNeverMarried(cleanMarital);
-        const haveChildren = onlyNeverMarried ? 'No' : form.haveChildren || "Doesn't matter";
-        const physicalStatus = form.physicalStatus || 'Normal';
-        const motherTongue = form.motherTongue || 'Any';
-        await matrimonyApi.saveDraft('preferences', {
+        };
+      };
+      commitRemote = () =>
+        matrimonyApi.saveDraft('preferences', {
           minAge: minA,
           maxAge: maxA,
           minHeightCm: minH,
@@ -808,133 +878,122 @@ export default function MatrimonyEditProfileScreen({ navigation, route }: any) {
           physicalStatus,
           motherTongue,
         });
-        applyLocalUpdate = (prev) => {
-          const prefs = basePrefs(prev);
-          return {
-            ...prev,
-            preferences: {
-              ...prefs,
-              age: {
-                ...(prefs.age || {}),
-                min: minA,
-                max: maxA,
-                importance: prefs.age?.importance || 'preferred',
-              },
-              height: {
-                ...(prefs.height || {}),
-                minCm: minH,
-                maxCm: maxH,
-                importance: prefs.height?.importance || 'flexible',
-              },
-              haveChildren,
-              maritalStatuses: cleanMarital,
-              physicalStatus,
-              motherTongue,
-            },
-          };
-        };
-      } else if (activeModal === 'prefReligious') {
-        const denomination = form.denomination || 'Any';
-        const division = form.division || 'Any';
-        await matrimonyApi.saveDraft('preferences', {
+    } else if (activeModal === 'prefReligious') {
+      const denomination = form.denomination || 'Any';
+      const division = form.division || 'Any';
+      applyLocalUpdate = (prev) => ({
+        ...prev,
+        preferences: {
+          ...basePrefs(prev),
+          denomination,
+          division,
+        },
+      });
+      commitRemote = () =>
+        matrimonyApi.saveDraft('preferences', {
           denomination,
           division,
         });
-        applyLocalUpdate = (prev) => ({
+    } else if (activeModal === 'prefProfessional') {
+      const employedIn = form.employedIn || 'Any';
+      const occupation = form.occupation || 'Any';
+      const annualIncome = form.annualIncome || 'Any';
+      applyLocalUpdate = (prev) => {
+        const prefs = basePrefs(prev);
+        return {
           ...prev,
           preferences: {
-            ...basePrefs(prev),
-            denomination,
-            division,
+            ...prefs,
+            education: {
+              acceptable: prefAcceptableEducation,
+              importance: prefs.education?.importance || 'flexible',
+            },
+            employedIn,
+            occupation,
+            annualIncome,
           },
-        });
-      } else if (activeModal === 'prefProfessional') {
-        const employedIn = form.employedIn || 'Any';
-        const occupation = form.occupation || 'Any';
-        const annualIncome = form.annualIncome || 'Any';
-        await matrimonyApi.saveDraft('preferences', {
+        };
+      };
+      commitRemote = () =>
+        matrimonyApi.saveDraft('preferences', {
           acceptableEducation: prefAcceptableEducation,
           employedIn,
           occupation,
           annualIncome,
         });
-        applyLocalUpdate = (prev) => {
-          const prefs = basePrefs(prev);
-          return {
-            ...prev,
-            preferences: {
-              ...prefs,
-              education: {
-                acceptable: prefAcceptableEducation,
-                importance: prefs.education?.importance || 'flexible',
-              },
-              employedIn,
-              occupation,
-              annualIncome,
-            },
-          };
-        };
-      } else if (activeModal === 'prefLocation') {
-        const countries =
-          form.preferredCountry && form.preferredCountry !== 'Any' ? [form.preferredCountry] : [];
-        const states =
-          form.preferredState && form.preferredState !== 'Any' ? [form.preferredState] : [];
-        const cities = (form.preferredCity || '')
-          .split(',')
-          .map((c) => c.trim())
-          .filter(Boolean);
-        await matrimonyApi.saveDraft('preferences', {
+    } else if (activeModal === 'prefLocation') {
+      const countries =
+        form.preferredCountry && form.preferredCountry !== 'Any' ? [form.preferredCountry] : [];
+      const states =
+        form.preferredState && form.preferredState !== 'Any' ? [form.preferredState] : [];
+      const cities = (form.preferredCity || '')
+        .split(',')
+        .map((c) => c.trim())
+        .filter(Boolean);
+      applyLocalUpdate = (prev) => ({
+        ...prev,
+        preferences: {
+          ...basePrefs(prev),
+          locations: {
+            preferredCountries: countries,
+            preferredStates: states,
+            preferredCities: cities,
+            openToRelocation: prefOpenToRelocation,
+          },
+        },
+      });
+      commitRemote = () =>
+        matrimonyApi.saveDraft('preferences', {
           preferredCountries: countries,
           preferredStates: states,
           preferredCities: cities,
           openToRelocation: prefOpenToRelocation,
         });
-        applyLocalUpdate = (prev) => ({
-          ...prev,
-          preferences: {
-            ...basePrefs(prev),
-            locations: {
-              preferredCountries: countries,
-              preferredStates: states,
-              preferredCities: cities,
-              openToRelocation: prefOpenToRelocation,
-            },
-          },
-        });
-      } else if (activeModal === 'prefHabits') {
-        const eatingHabits = form.eatingHabits || "Doesn't matter";
-        const drinkingHabits = form.drinkingHabits || "Doesn't matter";
-        const smokingHabits = form.smokingHabits || "Doesn't matter";
-        await matrimonyApi.saveDraft('preferences', {
+    } else if (activeModal === 'prefHabits') {
+      const eatingHabits = form.eatingHabits || "Doesn't matter";
+      const drinkingHabits = form.drinkingHabits || "Doesn't matter";
+      const smokingHabits = form.smokingHabits || "Doesn't matter";
+      applyLocalUpdate = (prev) => ({
+        ...prev,
+        preferences: {
+          ...basePrefs(prev),
+          eatingHabits,
+          drinkingHabits,
+          smokingHabits,
+        },
+      });
+      commitRemote = () =>
+        matrimonyApi.saveDraft('preferences', {
           eatingHabits,
           drinkingHabits,
           smokingHabits,
         });
-        applyLocalUpdate = (prev) => ({
-          ...prev,
-          preferences: {
-            ...basePrefs(prev),
-            eatingHabits,
-            drinkingHabits,
-            smokingHabits,
-          },
+    }
+
+    const prevData = data;
+    // Instant optimistic UI + cache update, smooth immediate modal dismiss
+    if (applyLocalUpdate) {
+      const updater = applyLocalUpdate;
+      setData((prev) => (prev ? updater(prev) : prev));
+      matrimonyApi.patchCachedRegistration(updater);
+    }
+    closeModal();
+
+    if (commitRemote) {
+      setSaving(true);
+      commitRemote()
+        .catch((err: any) => {
+          if (prevData) {
+            if (mountedRef.current) setData(prevData);
+            matrimonyApi.patchCachedRegistration(() => prevData);
+          }
+          Alert.alert('Save Failed', err?.message || 'Unable to save changes.');
+        })
+        .finally(() => {
+          if (mountedRef.current) {
+            setSaving(false);
+          }
         });
-      }
-
-      if (applyLocalUpdate) {
-        const updater = applyLocalUpdate;
-        setData((prev) => (prev ? updater(prev) : prev));
-        matrimonyApi.patchCachedRegistration(updater);
-      }
-
-      setActivePicker(null);
-      setPickerSearch('');
-      setActiveModal(null);
-      await loadProfile(true);
-    } catch (err: any) {
-      Alert.alert('Save Failed', err?.message || 'Unable to save changes.');
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -2112,37 +2171,30 @@ export default function MatrimonyEditProfileScreen({ navigation, route }: any) {
         </Animated.ScrollView>
       )}
 
-      {/* Section-Specific Initial-Setup-Style Popup */}
-      <Modal
-        visible={Boolean(activeModal)}
-        animationType="fade"
-        transparent
-        statusBarTranslucent
-        onRequestClose={() => (activePicker ? setActivePicker(null) : closeModal())}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={[
-            styles.modalBackdrop,
-            Platform.OS === 'android' && keyboardHeight > 0 && { paddingBottom: keyboardHeight },
-          ]}
+      {/* Section-Specific Initial-Setup-Style Popup (smooth native keyboard-synced sheet) */}
+      {Boolean(activeModal) && (
+        <Reanimated.View
+          entering={FadeIn.duration(180)}
+          exiting={FadeOut.duration(150)}
+          style={styles.modalBackdropOverlay}
         >
-          <TouchableOpacity
-            style={{ flex: 1 }}
-            activeOpacity={1}
+          <Pressable
+            style={styles.modalDismissArea}
             onPress={closeModal}
           />
 
-          <View
-            style={[
-              styles.modalCard,
-              {
-                backgroundColor: colors.bg,
-                paddingBottom:
-                  keyboardHeight > 0 ? 14 : Math.max(insets.bottom + 14, 22),
-              },
-            ]}
-          >
+          <Reanimated.View style={modalKeyboardLiftStyle}>
+            <Reanimated.View
+              entering={SlideInDown.duration(220)}
+              exiting={SlideOutDown.duration(170)}
+              style={[
+                styles.modalCard,
+                {
+                  backgroundColor: colors.bg,
+                  paddingBottom: closedModalPad,
+                },
+              ]}
+            >
             {pickerConfig ? (
               /* Searchable Setup Dropdown Picker inside the same popup */
               <>
@@ -2268,7 +2320,7 @@ export default function MatrimonyEditProfileScreen({ navigation, route }: any) {
                   <Text style={[styles.modalTitle, { color: colors.text, fontFamily }]}>
                     {activeModal ? modalTitleMap[activeModal] : ''}
                   </Text>
-                  <TouchableOpacity onPress={closeModal} disabled={saving}>
+                  <TouchableOpacity onPress={closeModal}>
                     <X size={21} color={colors.textSecondary} />
                   </TouchableOpacity>
                 </View>
@@ -2848,22 +2900,18 @@ export default function MatrimonyEditProfileScreen({ navigation, route }: any) {
                 </ScrollView>
 
                 <TouchableOpacity
-                  style={[styles.saveBtn, saving && { opacity: 0.7 }]}
+                  style={styles.saveBtn}
                   onPress={handleSaveModal}
-                  disabled={saving}
                   activeOpacity={0.9}
                 >
-                  {saving ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <Text style={[styles.saveBtnText, { fontFamily }]}>Save</Text>
-                  )}
+                  <Text style={[styles.saveBtnText, { fontFamily }]}>Save</Text>
                 </TouchableOpacity>
               </>
             )}
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+            </Reanimated.View>
+          </Reanimated.View>
+        </Reanimated.View>
+      )}
 
       <DateTimePickerModal
         isVisible={isDatePickerVisible}
@@ -3077,6 +3125,15 @@ const styles = StyleSheet.create({
   trustSub: {
     fontSize: 13.5,
   },
+  modalBackdropOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    justifyContent: 'flex-end',
+    zIndex: 100,
+  },
+  modalDismissArea: {
+    flex: 1,
+  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.45)',
@@ -3087,7 +3144,8 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     paddingHorizontal: 20,
     paddingTop: 16,
-    maxHeight: '88%',
+    maxHeight: '100%',
+    overflow: 'hidden',
     gap: 12,
   },
   modalHeader: {
@@ -3107,6 +3165,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   modalScroll: {
+    flexShrink: 1,
     maxHeight: 460,
   },
   modalScrollContent: {
@@ -3207,6 +3266,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   pickerList: {
+    flexShrink: 1,
     maxHeight: 420,
   },
   groupHeaderText: {

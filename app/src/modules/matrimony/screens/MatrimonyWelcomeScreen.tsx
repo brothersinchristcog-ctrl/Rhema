@@ -67,7 +67,9 @@ export default function MatrimonyWelcomeScreen({ navigation, route }: any) {
 
       const nextRoute = resolveMatrimonyEntryRoute(res);
       if (nextRoute.screen !== 'MatrimonyWelcome') {
-        navigation.replace(nextRoute.screen, nextRoute.params);
+        const targetScreen =
+          nextRoute.screen === 'MatrimonyHome' ? 'MatrimonyMainTabs' : nextRoute.screen;
+        navigation.replace(targetScreen, nextRoute.params);
       } else {
         const prefilledMt = res.profile?.motherTongue || member?.motherTongue || '';
         if (prefilledMt) {
@@ -124,7 +126,12 @@ export default function MatrimonyWelcomeScreen({ navigation, route }: any) {
     const existingDraft: MatrimonyPendingRegistrationDraft = route?.params?.draftData || {};
     const draftData: MatrimonyPendingRegistrationDraft = {
       ...existingDraft,
-      welcome: { motherTongue: trimmedMt, baptized: Boolean(baptized) },
+      welcome: {
+        motherTongue: trimmedMt,
+        baptized: Boolean(baptized),
+        managedBy: 'self',
+        createdFor: 'Myself',
+      },
     };
 
     const patchedData: StartRegistrationResponse = {

@@ -1,4 +1,4 @@
-export type DraftSection = 'basic' | 'personal' | 'religious' | 'location' | 'professional' | 'additional' | 'interests' | 'consent' | 'details' | 'preferences' | 'photos' | 'complete';
+export type DraftSection = 'basic' | 'personal' | 'religious' | 'location' | 'professional' | 'additional' | 'interests' | 'consent' | 'details' | 'preferences' | 'photos' | 'privacy' | 'notifications' | 'complete';
 export declare function assertNonEmptyString(val: unknown, field: string, maxLen?: number): string;
 export declare function optionalString(val: unknown, maxLen?: number): string | undefined;
 export declare function optionalEditableString(val: unknown, maxLen?: number): string | undefined;

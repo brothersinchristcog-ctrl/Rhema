@@ -9,6 +9,8 @@ import {
   Image,
   StatusBar,
 } from 'react-native';
+import auth from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ChevronLeft,
@@ -47,6 +49,10 @@ export default function MatrimonyStatusScreen({ navigation }: any) {
     setLoading(true);
     try {
       const res = await matrimonyApi.getStatus({ force });
+      if (res?.profileStatus === 'not_started' || res?.profileStatus === 'deleted') {
+        navigation.replace('MatrimonyWelcome');
+        return;
+      }
       setStatusData(res);
     } catch (err: any) {
       if (isMatrimonyInactiveError(err)) {
@@ -64,14 +70,64 @@ export default function MatrimonyStatusScreen({ navigation }: any) {
 
   useEffect(() => {
     loadStatus(true);
-    const unsub = navigation.addListener('focus', () => loadStatus(true));
-    return unsub;
+    const unsubFocus = navigation.addListener('focus', () => loadStatus(true));
+    const uid = auth().currentUser?.uid;
+    const unsubDoc = uid
+      ? firestore()
+          .collection('matrimony_profiles')
+          .doc(uid)
+          .onSnapshot(
+            (snap) => {
+              if (!snap.exists) {
+                navigation.replace('MatrimonyWelcome');
+                return;
+              }
+              const docData = snap.data() || {};
+              const liveStatus = String(docData.profileStatus || '');
+              if (liveStatus === 'deleted' || liveStatus === 'not_started') {
+                navigation.replace('MatrimonyWelcome');
+                return;
+              }
+              if (liveStatus === 'approved') {
+                navigation.replace('MatrimonyMainTabs');
+                return;
+              }
+              setStatusData((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      profileStatus: (liveStatus || prev.profileStatus) as any,
+                      visibility: docData.visibility || prev.visibility,
+                      inactiveReason: docData.inactiveReason ?? prev.inactiveReason,
+                      rejectionReason: docData.rejectionReason ?? prev.rejectionReason,
+                      profile: prev.profile
+                        ? {
+                            ...prev.profile,
+                            profileStatus: (liveStatus || prev.profile.profileStatus) as any,
+                            visibility: docData.visibility || prev.profile.visibility,
+                            inactiveReason: docData.inactiveReason ?? prev.profile.inactiveReason,
+                          }
+                        : prev.profile,
+                    }
+                  : prev
+              );
+            },
+            () => {}
+          )
+      : undefined;
+
+    return () => {
+      unsubFocus();
+      unsubDoc?.();
+    };
   }, [loadStatus, navigation]);
 
   const status = statusData?.profileStatus || 'pending';
   const isInactive = status === 'inactive' || status === 'suspended';
+  const isDeleted = status === 'deleted';
   const inactiveReason =
     statusData?.inactiveReason || statusData?.profile?.inactiveReason || null;
+  const deletionReason = statusData?.profile?.deletionReason || null;
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]} edges={['top', 'bottom']}>
@@ -105,7 +161,7 @@ export default function MatrimonyStatusScreen({ navigation }: any) {
               <CheckCircle2 size={44} color="#15803D" />
             ) : isInactive ? (
               <PauseCircle size={44} color="#D97706" />
-            ) : status === 'rejected' ? (
+            ) : isDeleted || status === 'rejected' ? (
               <XCircle size={44} color="#B91C1C" />
             ) : (
               <Clock size={44} color={ORANGE} />
@@ -116,6 +172,8 @@ export default function MatrimonyStatusScreen({ navigation }: any) {
                 ? 'Profile Verified & Active'
                 : isInactive
                 ? 'Profile Currently Inactive'
+                : isDeleted
+                ? 'Profile Deleted'
                 : status === 'rejected'
                 ? 'Profile Not Approved'
                 : 'Pending Admin Verification'}
@@ -126,6 +184,10 @@ export default function MatrimonyStatusScreen({ navigation }: any) {
                 ? 'Your Rhema Matrimony profile has been verified by Church Admin and is now active.'
                 : isInactive
                 ? 'Your Rhema Matrimony profile is currently inactive and hidden from matches. Once Church Administration activates your profile, you can continue using Rhema Matrimony.'
+                : isDeleted
+                ? deletionReason
+                  ? `You deleted your Rhema Matrimony profile.\nReason: ${deletionReason}`
+                  : 'You have deleted your Rhema Matrimony profile.'
                 : status === 'rejected'
                 ? statusData?.rejectionReason || 'Please contact church administration for details.'
                 : 'All your profile details, photo, and interests have been submitted and sent to Church Admin for verification.'}
@@ -187,10 +249,22 @@ export default function MatrimonyStatusScreen({ navigation }: any) {
           {status === 'approved' ? (
             <TouchableOpacity
               style={styles.primaryBtn}
-              onPress={() => navigation.replace('MatrimonyHome')}
+              onPress={() => navigation.replace('MatrimonyMainTabs')}
             >
               <Text style={[styles.primaryBtnText, { fontFamily, fontSize: scaleFont(15) }]}>
                 Open Rhema Matrimony
+              </Text>
+            </TouchableOpacity>
+          ) : isDeleted ? (
+            <TouchableOpacity
+              style={[
+                styles.secondaryBtn,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+              onPress={handleBackToApp}
+            >
+              <Text style={[styles.secondaryBtnText, { color: colors.text, fontFamily, fontSize: scaleFont(15) }]}>
+                Back to Rhema App
               </Text>
             </TouchableOpacity>
           ) : isInactive ? (

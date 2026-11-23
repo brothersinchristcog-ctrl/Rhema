@@ -17,6 +17,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { useTheme, FONT_STYLE_OPTIONS } from '../../../context/ThemeContext';
 import MatrimonyProgressBar from '../components/MatrimonyProgressBar';
 import { MatrimonyPendingRegistrationDraft, StartRegistrationResponse } from '../types/matrimony';
+import { getProfileSubjectFromContext } from '../utils/profileSubject';
 
 const ORANGE = '#EA580C';
 
@@ -110,17 +111,14 @@ export default function MatrimonyLocationDetailsScreen({ navigation, route }: an
   const fontFamily = FONT_STYLE_OPTIONS.find((f) => f.id === fontStyle)?.family;
 
   const initialData: StartRegistrationResponse | undefined = route?.params?.initialData;
+  const subjectCopy = getProfileSubjectFromContext(route?.params?.draftData, initialData);
   const loc = (initialData?.profile?.location as any) || {};
 
   const hasSavedLocation = Boolean(loc.pincode || loc.village);
   const [country, setCountry] = useState<string>(hasSavedLocation ? loc.country || '' : '');
   const [residentState, setResidentState] = useState<string>(hasSavedLocation ? loc.state || '' : '');
-  const [village, setVillage] = useState<string>(
-    loc.village || loc.city || member?.village || member?.city || member?.mailingCity || ''
-  );
-  const [pincode, setPincode] = useState<string>(
-    loc.pincode || (initialData?.contactInfo as any)?.zip || (member as any)?.zip || ''
-  );
+  const [village, setVillage] = useState<string>(hasSavedLocation ? loc.village || '' : '');
+  const [pincode, setPincode] = useState<string>(hasSavedLocation ? loc.pincode || '' : '');
 
   const [activeSidebar, setActiveSidebar] = useState<SidebarType>(null);
   const [sidebarSearch, setSidebarSearch] = useState('');
@@ -128,7 +126,7 @@ export default function MatrimonyLocationDetailsScreen({ navigation, route }: an
   const sidebarConfig = (() => {
     if (activeSidebar === 'country') {
       return {
-        title: 'Select country',
+        title: subjectCopy.isFamily ? `Select ${subjectCopy.possessive} country` : 'Select country',
         searchPlaceholder: 'Search country',
         options: COUNTRY_OPTIONS,
         selected: country,
@@ -140,7 +138,7 @@ export default function MatrimonyLocationDetailsScreen({ navigation, route }: an
     }
     if (activeSidebar === 'state') {
       return {
-        title: 'Select resident state',
+        title: subjectCopy.stateQuestion,
         searchPlaceholder: 'Search state',
         options: country === 'India' ? INDIA_STATES : GLOBAL_STATES,
         selected: residentState,
@@ -164,11 +162,11 @@ export default function MatrimonyLocationDetailsScreen({ navigation, route }: an
 
   const handleNext = () => {
     if (!country) {
-      Alert.alert('Required', 'Please select your country.');
+      Alert.alert('Required', subjectCopy.countryRequiredMsg);
       return;
     }
     if (!residentState) {
-      Alert.alert('Required', 'Please select your resident state.');
+      Alert.alert('Required', subjectCopy.stateRequiredMsg);
       return;
     }
 
@@ -213,7 +211,7 @@ export default function MatrimonyLocationDetailsScreen({ navigation, route }: an
         {/* Country */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text, fontFamily, fontSize: scaleFont(15) }]}>
-            Country
+            {subjectCopy.countryQuestion}
           </Text>
           <TouchableOpacity
             style={[styles.dropdownBtn, { backgroundColor: colors.surface, borderColor }]}
@@ -240,7 +238,7 @@ export default function MatrimonyLocationDetailsScreen({ navigation, route }: an
         {Boolean(country) && (
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.text, fontFamily, fontSize: scaleFont(15) }]}>
-              Select your resident state
+              {subjectCopy.stateQuestion}
             </Text>
             <TouchableOpacity
               style={[styles.dropdownBtn, { backgroundColor: colors.surface, borderColor }]}
@@ -257,7 +255,7 @@ export default function MatrimonyLocationDetailsScreen({ navigation, route }: an
                   },
                 ]}
               >
-                {residentState || 'Select resident state'}
+                {residentState || subjectCopy.statePlaceholder}
               </Text>
               <ChevronDown size={19} color={ORANGE} />
             </TouchableOpacity>
@@ -268,7 +266,7 @@ export default function MatrimonyLocationDetailsScreen({ navigation, route }: an
         {Boolean(country) && Boolean(residentState) && (
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.text, fontFamily, fontSize: scaleFont(15) }]}>
-              Village / City
+              {subjectCopy.villageQuestion}
             </Text>
             <TextInput
               style={[
@@ -281,7 +279,7 @@ export default function MatrimonyLocationDetailsScreen({ navigation, route }: an
                   fontSize: scaleFont(14),
                 },
               ]}
-              placeholder="Enter village or city"
+              placeholder={subjectCopy.villagePlaceholder}
               placeholderTextColor={colors.textSecondary}
               value={village}
               onChangeText={setVillage}
@@ -293,7 +291,7 @@ export default function MatrimonyLocationDetailsScreen({ navigation, route }: an
         {Boolean(country) && Boolean(residentState) && Boolean(village.trim()) && (
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.text, fontFamily, fontSize: scaleFont(15) }]}>
-              Pin Code
+              {subjectCopy.pincodeQuestion}
             </Text>
             <TextInput
               style={[

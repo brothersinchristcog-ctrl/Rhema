@@ -1,6 +1,6 @@
 import { HttpsError } from 'firebase-functions/v2/https';
 
-export type DraftSection = 'basic' | 'personal' | 'religious' | 'location' | 'professional' | 'additional' | 'interests' | 'consent' | 'details' | 'preferences' | 'photos' | 'complete';
+export type DraftSection = 'basic' | 'personal' | 'religious' | 'location' | 'professional' | 'additional' | 'interests' | 'consent' | 'details' | 'preferences' | 'photos' | 'privacy' | 'notifications' | 'complete';
 
 export function assertNonEmptyString(val: unknown, field: string, maxLen = 200): string {
   if (typeof val !== 'string' || !val.trim()) {
@@ -64,6 +64,8 @@ export function validateDraftSection(section: unknown): DraftSection {
     section === 'details' ||
     section === 'preferences' ||
     section === 'photos' ||
+    section === 'privacy' ||
+    section === 'notifications' ||
     section === 'complete'
   ) {
     return section;

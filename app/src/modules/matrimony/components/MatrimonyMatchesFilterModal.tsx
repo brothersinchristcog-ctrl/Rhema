@@ -89,6 +89,23 @@ interface Props {
   onPressUpgrade?: () => void;
 }
 
+export interface MatrimonyFilterCriteriaContentProps {
+  active: boolean;
+  initialFilters: MatrimonyMatchesFilter;
+  partnerPreferencesFilter?: MatrimonyMatchesFilter;
+  initialMatchCount: number;
+  tab?: MatrimonyMatchTab;
+  matchBasis?: 'partner_preferences' | 'all_filters';
+  sortBy?: Props['sortBy'];
+  mode?: 'filter' | 'search';
+  primaryButtonLabel?: string;
+  onClose?: () => void;
+  onApply: (nextFilters: MatrimonyMatchesFilter) => void;
+  onReset?: (revertedFilters: MatrimonyMatchesFilter) => void;
+  canUseAdvancedFilters?: boolean;
+  onPressUpgrade?: () => void;
+}
+
 const ADVANCED_FILTER_FIELDS = new Set<PickerFieldKey>([
   'occupation',
   'annualIncome',
@@ -336,20 +353,22 @@ export function countActiveMatrimonyFilters(f: MatrimonyMatchesFilter): number {
   return c;
 }
 
-export default function MatrimonyMatchesFilterModal({
-  visible,
+export function MatrimonyFilterCriteriaContent({
+  active,
   initialFilters,
   partnerPreferencesFilter,
   initialMatchCount,
-  tab,
-  matchBasis = 'all_filters',
-  sortBy,
+  tab = 'all',
+  sortBy = 'best_match',
+  mode = 'filter',
+  primaryButtonLabel,
   onClose,
   onApply,
   onReset,
   canUseAdvancedFilters = true,
   onPressUpgrade,
-}: Props) {
+}: MatrimonyFilterCriteriaContentProps) {
+  const isSearchMode = mode === 'search';
   const insets = useSafeAreaInsets();
   const { colors, isDark, fontStyle } = useTheme();
   const fontFamily = FONT_STYLE_OPTIONS.find((f) => f.id === fontStyle)?.family;
@@ -370,12 +389,12 @@ export default function MatrimonyMatchesFilterModal({
   const [tempEduList, setTempEduList] = useState<string[]>(initialFilters.education ?? []);
   const [tempCity, setTempCity] = useState<string>(initialFilters.city ?? '');
 
-  const wasVisibleRef = useRef(false);
+  const wasActiveRef = useRef(false);
   const hasUserEditedRef = useRef(false);
 
   const baselineFilters = useMemo<MatrimonyMatchesFilter>(
-    () => partnerPreferencesFilter || {},
-    [partnerPreferencesFilter]
+    () => (isSearchMode ? {} : partnerPreferencesFilter || {}),
+    [isSearchMode, partnerPreferencesFilter]
   );
 
   const isFieldModified = useMemo(() => {
@@ -498,16 +517,18 @@ export default function MatrimonyMatchesFilterModal({
   }, [isFieldModified]);
 
   useEffect(() => {
-    if (visible && !wasVisibleRef.current) {
+    if (active && !wasActiveRef.current) {
       hasUserEditedRef.current = false;
-      const seed = buildDraftFromBaseline(
-        partnerPreferencesFilter || {},
-        initialFilters || {}
-      );
+      const seed = isSearchMode
+        ? { ...(initialFilters || {}) }
+        : buildDraftFromBaseline(
+            partnerPreferencesFilter || {},
+            initialFilters || {}
+          );
       setDraft(seed);
       setPreviewCount(initialMatchCount);
       setEduExpanded(false);
-    } else if (visible && !hasUserEditedRef.current) {
+    } else if (active && !hasUserEditedRef.current && !isSearchMode) {
       const latest = buildDraftFromBaseline(
         partnerPreferencesFilter || {},
         initialFilters || {}
@@ -516,8 +537,8 @@ export default function MatrimonyMatchesFilterModal({
         JSON.stringify(latest) !== JSON.stringify(prev) ? latest : prev
       );
     }
-    wasVisibleRef.current = visible;
-  }, [visible, initialFilters, initialMatchCount, partnerPreferencesFilter]);
+    wasActiveRef.current = active;
+  }, [active, isSearchMode, initialFilters, initialMatchCount, partnerPreferencesFilter]);
 
   const updateDraft = (
     updater:
@@ -528,18 +549,17 @@ export default function MatrimonyMatchesFilterModal({
     setDraft(updater);
   };
 
-  // Live preview count whenever draft filters change inside modal
+  // Live preview count whenever draft filters change inside modal or search screen
   useEffect(() => {
-    if (!visible) return;
+    if (!active) return;
     let cancelled = false;
     const timer = setTimeout(async () => {
       setPreviewLoading(true);
       try {
         const overrides = extractModifiedOverrides(draft, baselineFilters);
         const hasOverrides = Object.keys(overrides).length > 0;
-        const previewBasis: 'partner_preferences' | 'all_filters' = hasOverrides
-          ? 'all_filters'
-          : 'partner_preferences';
+        const previewBasis: 'partner_preferences' | 'all_filters' =
+          isSearchMode || hasOverrides ? 'all_filters' : 'partner_preferences';
         const res = await matrimonyApi.getMatches({
           tab,
           matchBasis: previewBasis,
@@ -562,7 +582,7 @@ export default function MatrimonyMatchesFilterModal({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [visible, draft, tab, baselineFilters, sortBy]);
+  }, [active, isSearchMode, draft, tab, baselineFilters, sortBy]);
 
   const cardSurface = isDark ? colors.surface : '#FFFFFF';
   const sectionBg = isDark ? '#1E293B' : '#F1F4F7';
@@ -741,7 +761,7 @@ export default function MatrimonyMatchesFilterModal({
           {
             text: 'View Plans',
             onPress: () => {
-              onClose();
+              onClose?.();
               onPressUpgrade();
             },
           },
@@ -842,20 +862,47 @@ export default function MatrimonyMatchesFilterModal({
   const eduJoined = selectedEdu.join(', ');
   const eduNeedsTruncate = selectedEdu.length > 0 && eduJoined.length > 26 && !eduExpanded;
 
-  return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={[styles.container, { backgroundColor: cardSurface }]} edges={['top']}>
-        {/* Top Bar */}
-        <View style={[styles.topBar, { backgroundColor: cardSurface, borderBottomColor: dividerColor }]}>
-          <TouchableOpacity onPress={onClose} style={styles.backBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <ArrowLeft size={22} color={colors.text} />
-          </TouchableOpacity>
-          <Text style={[styles.topTitle, { color: colors.text, fontFamily }]}>Filter</Text>
-          <View style={{ width: 32 }} />
-        </View>
+  const hasPartnerPrefsPreset =
+    isSearchMode &&
+    Boolean(partnerPreferencesFilter && Object.keys(partnerPreferencesFilter).length > 0);
+  const footerActionLabel = primaryButtonLabel || (isSearchMode ? 'Search Profiles' : 'Show Matches');
 
-        <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
-          {/* Basic Details */}
+  return (
+    <View style={[styles.container, { backgroundColor: cardSurface }]}>
+      <ScrollView
+        style={{ flex: 1 }}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 24 }}
+      >
+        {hasPartnerPrefsPreset && (
+          <View
+            style={[
+              styles.searchPresetBar,
+              { backgroundColor: cardSurface, borderBottomColor: dividerColor },
+            ]}
+          >
+            <View style={{ flex: 1, paddingRight: 10 }}>
+              <Text style={[styles.rowLabel, { color: colors.text, fontWeight: '700', fontFamily }]}>
+                Partner Preferences Shortcut
+              </Text>
+              <Text style={[styles.rowSub, { color: colors.textSecondary, fontFamily }]}>
+                Pre-fill criteria using your saved partner preferences
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.presetPillBtn, { borderColor: CORAL_RED }]}
+              activeOpacity={0.8}
+              onPress={() => {
+                hasUserEditedRef.current = true;
+                setDraft({ ...(partnerPreferencesFilter || {}) });
+              }}
+            >
+              <Text style={[styles.presetPillText, { fontFamily }]}>Fill Prefs</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Basic Details */}
           {renderSectionBanner('Basic Details')}
           {renderFilterRow('Age', ageDisplay, 'age')}
           {renderFilterRow('Height', heightDisplay, 'height')}
@@ -1088,7 +1135,11 @@ export default function MatrimonyMatchesFilterModal({
             ) : null}
             <Text style={[styles.footerCountText, { color: colors.text, fontFamily }]}>
               <Text style={{ fontWeight: '800' }}>{previewCount.toLocaleString()}</Text>{' '}
-              {previewCount === 1 ? 'match' : 'matches'} based on your filters
+              {isSearchMode
+                ? previewCount === 1
+                  ? 'profile matches your criteria'
+                  : 'profiles match your criteria'
+                : `${previewCount === 1 ? 'match' : 'matches'} based on your filters`}
             </Text>
           </View>
           {hasModifiedFromPrefs ? (
@@ -1103,7 +1154,7 @@ export default function MatrimonyMatchesFilterModal({
                 ]}
                 activeOpacity={0.8}
                 onPress={() => {
-                  const reverted = { ...(partnerPreferencesFilter || {}) };
+                  const reverted = isSearchMode ? {} : { ...(partnerPreferencesFilter || {}) };
                   hasUserEditedRef.current = true;
                   setDraft(reverted);
                   onReset?.({});
@@ -1115,7 +1166,7 @@ export default function MatrimonyMatchesFilterModal({
                     { color: isDark ? colors.text : '#475569', fontFamily },
                   ]}
                 >
-                  Reset
+                  {isSearchMode ? 'Clear All' : 'Reset'}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -1123,7 +1174,7 @@ export default function MatrimonyMatchesFilterModal({
                 activeOpacity={0.85}
                 onPress={() => onApply(extractModifiedOverrides(draft, baselineFilters))}
               >
-                <Text style={[styles.showMatchesText, { fontFamily }]}>Show Matches</Text>
+                <Text style={[styles.showMatchesText, { fontFamily }]}>{footerActionLabel}</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -1132,7 +1183,7 @@ export default function MatrimonyMatchesFilterModal({
               activeOpacity={0.85}
               onPress={() => onApply(extractModifiedOverrides(draft, baselineFilters))}
             >
-              <Text style={[styles.showMatchesText, { fontFamily }]}>Show Matches</Text>
+              <Text style={[styles.showMatchesText, { fontFamily }]}>{footerActionLabel}</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -1504,9 +1555,35 @@ export default function MatrimonyMatchesFilterModal({
                     </>
                   );
                 })()}
+              </View>
             </View>
-          </View>
-        </Modal>
+          </Modal>
+    </View>
+  );
+}
+
+export default function MatrimonyMatchesFilterModal(props: Props) {
+  const { visible, onClose } = props;
+  const { colors, isDark, fontStyle } = useTheme();
+  const fontFamily = FONT_STYLE_OPTIONS.find((f) => f.id === fontStyle)?.family;
+  const cardSurface = isDark ? colors.surface : '#FFFFFF';
+  const dividerColor = isDark ? colors.border : '#E5E7EB';
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView style={[styles.container, { backgroundColor: cardSurface }]} edges={['top']}>
+        <View style={[styles.topBar, { backgroundColor: cardSurface, borderBottomColor: dividerColor }]}>
+          <TouchableOpacity
+            onPress={onClose}
+            style={styles.backBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <ArrowLeft size={22} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={[styles.topTitle, { color: colors.text, fontFamily }]}>Filter</Text>
+          <View style={{ width: 32 }} />
+        </View>
+        <MatrimonyFilterCriteriaContent active={visible} {...props} />
       </SafeAreaView>
     </Modal>
   );
@@ -1528,6 +1605,25 @@ const styles = StyleSheet.create({
     fontSize: 19,
     fontWeight: '800',
     marginLeft: 10,
+  },
+  presetPillText: {
+    color: CORAL_RED,
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  searchPresetBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  presetPillBtn: {
+    borderWidth: 1.2,
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
   resetText: {
     color: CORAL_RED,

@@ -10,10 +10,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Check } from 'lucide-react-native';
 import { useTheme, FONT_STYLE_OPTIONS } from '../../../context/ThemeContext';
+import { getProfileSubjectFromContext } from '../utils/profileSubject';
 
 export default function MatrimonyProfileSuccessScreen({ navigation, route }: any) {
   const { colors, isDark, fontStyle, scaleFont } = useTheme();
   const fontFamily = FONT_STYLE_OPTIONS.find((f) => f.id === fontStyle)?.family;
+  const subjectCopy = getProfileSubjectFromContext(
+    route?.params?.draftData,
+    route?.params?.initialData
+  );
 
   const scaleAnim = useRef(new Animated.Value(0.4)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -77,7 +82,7 @@ export default function MatrimonyProfileSuccessScreen({ navigation, route }: any
             { color: colors.textSecondary, fontFamily, fontSize: scaleFont(14) },
           ]}
         >
-          Your Rhema Matrimony profile is saved. Next, let's add your profile photo.
+          {subjectCopy.successSubtitle}
         </Text>
       </Animated.View>
     </SafeAreaView>

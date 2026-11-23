@@ -158,6 +158,55 @@ export function getMatrimonyRoomId(uidA: string, uidB: string): string {
   return [uidA, uidB].sort().join('_');
 }
 
+async function decryptChatMessagesSnapshot(
+  ctx: { scope: 'matrimony'; rtdb: ReturnType<typeof getMatrimonyRtdb>; roomId: string },
+  val: Record<string, any> | null | undefined,
+  myUid: string
+): Promise<{ list: MatrimonyChatMessage[]; hasLockedMessages: boolean }> {
+  const obj = val || {};
+  let hasLockedMessages = false;
+
+  const list: MatrimonyChatMessage[] = (
+    await Promise.all(
+      Object.keys(obj)
+        .filter((key) => !obj[key]?.deletedFor?.[myUid])
+        .map(async (key) => {
+          const m = obj[key] || {};
+          const decText = m.deletedForEveryone
+            ? { text: '', encrypted: false }
+            : await roomKeyManager.decryptString(ctx, myUid, String(m.text || ''));
+          if (decText.lockedReason) hasLockedMessages = true;
+
+          let replyTo = m.replyTo || null;
+          if (
+            replyTo &&
+            typeof replyTo.text === 'string' &&
+            e2eeService.isEncryptedPayload(replyTo.text)
+          ) {
+            const decReply = await roomKeyManager.decryptString(ctx, myUid, replyTo.text);
+            replyTo = { ...replyTo, text: decReply.text };
+          }
+
+          return {
+            id: String(m.id || key),
+            senderUid: String(m.senderUid || ''),
+            text: decText.text,
+            type: (m.type === 'image' ? 'image' : 'text') as 'text' | 'image',
+            imageUrl: m.imageUrl || null,
+            replyTo,
+            createdAt: typeof m.createdAt === 'number' ? m.createdAt : Date.now(),
+            deliveredBy: m.deliveredBy || {},
+            readBy: m.readBy || {},
+            deletedForEveryone: Boolean(m.deletedForEveryone),
+            deletedFor: m.deletedFor || {},
+          };
+        })
+    )
+  ).sort((a, b) => a.createdAt - b.createdAt);
+
+  return { list, hasLockedMessages };
+}
+
 export const matrimonyChatService = {
   startPresenceTracking(uid: string, activeChatId: string | null = null): () => void {
     if (!uid) return () => {};
@@ -267,6 +316,9 @@ export const matrimonyChatService = {
             peerPhoto: r.peerPhoto || null,
             peerCode: String(r.peerCode || ''),
             peerAge: typeof r.peerAge === 'number' ? r.peerAge : null,
+            peerHeightCm: typeof r.peerHeightCm === 'number' ? r.peerHeightCm : null,
+            peerOccupation: r.peerOccupation || null,
+            peerGender: r.peerGender || null,
             peerCity: r.peerCity || null,
             contactPhone: r.contactPhone || null,
             lastMessageText: dec.text,
@@ -312,7 +364,8 @@ export const matrimonyChatService = {
   subscribeRoomMessages(
     roomId: string,
     myUid: string,
-    onChange: (messages: MatrimonyChatMessage[]) => void
+    onChange: (messages: MatrimonyChatMessage[]) => void,
+    pageLimit = 50
   ): () => void {
     if (!roomId || !myUid) return () => {};
     const db = getMatrimonyRtdb();
@@ -320,9 +373,8 @@ export const matrimonyChatService = {
     const msgsQuery = query(
       ref(db, `matrimony_chats/${roomId}/messages`),
       orderByChild('createdAt'),
-      limitToLast(200)
+      limitToLast(pageLimit)
     );
-
     let disposed = false;
     let seq = 0;
     let latestRaw: Record<string, any> | null = null;
@@ -330,46 +382,11 @@ export const matrimonyChatService = {
 
     const processSnapshot = async (val: Record<string, any> | null) => {
       const currentSeq = ++seq;
-      const obj = val || {};
-      let foundLocked = false;
-
-      const list: MatrimonyChatMessage[] = (
-        await Promise.all(
-          Object.keys(obj)
-            .filter((key) => !obj[key]?.deletedFor?.[myUid])
-            .map(async (key) => {
-              const m = obj[key] || {};
-              const decText = m.deletedForEveryone
-                ? { text: '', encrypted: false }
-                : await roomKeyManager.decryptString(ctx, myUid, String(m.text || ''));
-              if (decText.lockedReason) foundLocked = true;
-
-              let replyTo = m.replyTo || null;
-              if (
-                replyTo &&
-                typeof replyTo.text === 'string' &&
-                e2eeService.isEncryptedPayload(replyTo.text)
-              ) {
-                const decReply = await roomKeyManager.decryptString(ctx, myUid, replyTo.text);
-                replyTo = { ...replyTo, text: decReply.text };
-              }
-
-              return {
-                id: String(m.id || key),
-                senderUid: String(m.senderUid || ''),
-                text: decText.text,
-                type: (m.type === 'image' ? 'image' : 'text') as 'text' | 'image',
-                imageUrl: m.imageUrl || null,
-                replyTo,
-                createdAt: typeof m.createdAt === 'number' ? m.createdAt : Date.now(),
-                deliveredBy: m.deliveredBy || {},
-                readBy: m.readBy || {},
-                deletedForEveryone: Boolean(m.deletedForEveryone),
-                deletedFor: m.deletedFor || {},
-              };
-            })
-        )
-      ).sort((a, b) => a.createdAt - b.createdAt);
+      const { list, hasLockedMessages: foundLocked } = await decryptChatMessagesSnapshot(
+        ctx,
+        val,
+        myUid
+      );
 
       if (disposed || currentSeq !== seq) return;
       hasLockedMessages = foundLocked;
@@ -411,6 +428,35 @@ export const matrimonyChatService = {
       unsubReqs();
       unsubState();
     };
+  },
+
+  async fetchOlderRoomMessages(
+    roomId: string,
+    myUid: string,
+    beforeCreatedAt: number,
+    pageLimit = 40
+  ): Promise<{ messages: MatrimonyChatMessage[]; hasMore: boolean }> {
+    if (!roomId || !myUid || !beforeCreatedAt) {
+      return { messages: [], hasMore: false };
+    }
+    const db = getMatrimonyRtdb();
+    const ctx = { scope: 'matrimony' as const, rtdb: db, roomId };
+    const msgsQuery = query(
+      ref(db, `matrimony_chats/${roomId}/messages`),
+      orderByChild('createdAt'),
+      endAt(beforeCreatedAt - 1),
+      limitToLast(pageLimit + 1)
+    );
+    const snap = await get(msgsQuery);
+    const raw = snap.val() || {};
+    const rawCount = Object.keys(raw).length;
+    const { list: allSorted } = await decryptChatMessagesSnapshot(ctx, raw, myUid);
+    const hasMore = rawCount > pageLimit;
+    const messages =
+      hasMore && allSorted.length > pageLimit
+        ? allSorted.slice(allSorted.length - pageLimit)
+        : allSorted;
+    return { messages, hasMore };
   },
 
   subscribeTyping(
