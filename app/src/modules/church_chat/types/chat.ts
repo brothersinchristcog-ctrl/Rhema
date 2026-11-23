@@ -72,6 +72,7 @@ export interface ChatMessage {
   senderAvatar?: string | null;
   type: ChatMessageType;
   text: string;
+  encrypted?: boolean;
   media?: ChatMediaAttachment[];
   replyTo?: ChatMessageReply | null;
   forwarded?: boolean;
@@ -128,6 +129,7 @@ export interface ChatInboxItem {
   isArchived: boolean;
   isFavorite: boolean;
   participantCount?: number;
+  encrypted?: boolean;
 }
 
 export interface ChatTypingUser {

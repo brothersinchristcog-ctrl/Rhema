@@ -1,3 +1,4 @@
+import 'react-native-get-random-values';
 import './src/utils/FontSizeManager';
 import { registerRootComponent } from 'expo';
 import messaging from '@react-native-firebase/messaging';

@@ -20,20 +20,27 @@ function isAdminRoleString(roleRaw: unknown): boolean {
   return s.includes('ADMIN') || s.includes('PASTOR') || s.includes('SUPER');
 }
 
-function formatMessagePreview(type: string, text: string, mediaLen: number): string {
+function formatMessagePreview(
+  type: string,
+  text: string,
+  mediaLen: number,
+  encrypted = false
+): string {
   const clean = text.trim();
+  const isCipher = encrypted || clean.startsWith('e2ee:v1:');
   switch (type) {
     case 'image':
-      return clean ? `📷 ${clean}` : '📷 Photo';
+      return !isCipher && clean ? `📷 ${clean}` : '📷 Photo';
     case 'image_group':
-      return clean ? `📷 ${clean}` : `📷 ${mediaLen || 2} Photos`;
+      return !isCipher && clean ? `📷 ${clean}` : `📷 ${mediaLen || 2} Photos`;
     case 'video':
-      return clean ? `🎥 ${clean}` : '🎥 Video';
+      return !isCipher && clean ? `🎥 ${clean}` : '🎥 Video';
     case 'audio':
       return '🎤 Voice message';
     case 'document':
-      return clean ? `📄 ${clean}` : '📄 Document';
+      return !isCipher && clean ? `📄 ${clean}` : '📄 Document';
     default:
+      if (isCipher) return '🔒 New encrypted message';
       return clean || 'New message';
   }
 }
@@ -241,7 +248,7 @@ export const onRhemaChatMessageCreated = onValueCreated(
     const roomType = meta.type === 'group' ? 'group' : 'direct';
     const roomTitle = String(meta.name || senderName);
     const roomAvatar = typeof meta.avatarUrl === 'string' ? meta.avatarUrl : '';
-    const preview = formatMessagePreview(type, text, media.length);
+    const preview = formatMessagePreview(type, text, media.length, Boolean(msg.encrypted));
     const notifTitle = roomType === 'group' ? `${roomTitle}` : senderName;
     const notifBody = roomType === 'group' ? `${senderName}: ${preview}` : preview;
 

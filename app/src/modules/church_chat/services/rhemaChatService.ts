@@ -11,6 +11,8 @@ import {
   serverTimestamp,
 } from 'firebase/database';
 import { RHEMA_CHURCH_ID } from '../../../constants/ChurchConfig';
+import { e2eeService } from '../../../services/e2eeService';
+import { roomKeyManager } from '../../../services/roomKeyManager';
 import {
   ChatInboxItem,
   ChatMediaAttachment,
@@ -149,20 +151,61 @@ export const rhemaChatService = {
     if (!uid) return () => {};
     const cid = churchId || RHEMA_CHURCH_ID;
     const db = getChatRtdb();
-    return onValue(ref(db, `rhema_chat/${cid}/inbox/${uid}`), (snap) => {
-      const raw = snap.val() || {};
-      const items: ChatInboxItem[] = Object.keys(raw)
-        .map((roomId) => {
-          const r = raw[roomId] || {};
+    let disposed = false;
+    let seq = 0;
+    let latestRaw: Record<string, any> | null = null;
+
+    const processSnapshot = async (rawObj: Record<string, any> | null) => {
+      const currentSeq = ++seq;
+      const raw = rawObj || {};
+      const rawEntries = Object.keys(raw)
+        .map((roomId) => ({ roomId, r: raw[roomId] || {} }))
+        .filter(({ roomId, r }) => Boolean(r.roomId || roomId));
+
+      // Mark incoming messages delivered as soon as recipient client receives inbox snapshot
+      const now = Date.now();
+      const deliveryUpdates: Record<string, any> = {};
+      rawEntries.forEach(({ roomId: rKey, r }) => {
+        const resolvedId = String(r.roomId || rKey);
+        if (
+          r.lastMessageSenderUid &&
+          r.lastMessageSenderUid !== uid &&
+          r.lastMessageId &&
+          !r.lastMessageDelivered
+        ) {
+          deliveryUpdates[
+            `rhema_chat/${cid}/rooms/${resolvedId}/messages/${r.lastMessageId}/deliveredTo/${uid}`
+          ] = now;
+          deliveryUpdates[`rhema_chat/${cid}/inbox/${uid}/${resolvedId}/lastMessageDelivered`] = true;
+          if (r.roomType === 'direct' && r.peerUid) {
+            deliveryUpdates[
+              `rhema_chat/${cid}/inbox/${r.peerUid}/${resolvedId}/lastMessageDelivered`
+            ] = true;
+          }
+        }
+      });
+      if (Object.keys(deliveryUpdates).length > 0) {
+        update(ref(db), deliveryUpdates).catch(() => {});
+      }
+
+      const items: ChatInboxItem[] = await Promise.all(
+        rawEntries.map(async ({ roomId: rKey, r }) => {
+          const resolvedRoomId = String(r.roomId || rKey);
+          const rawLast = String(r.lastMessageText || '');
+          const dec = await roomKeyManager.decryptString(
+            { scope: 'church', rtdb: db, churchId: cid, roomId: resolvedRoomId },
+            uid,
+            rawLast
+          );
           return {
-            roomId: String(r.roomId || roomId),
+            roomId: resolvedRoomId,
             roomType: (r.roomType === 'group' ? 'group' : 'direct') as 'direct' | 'group',
             category: (r.category || (r.roomType === 'group' ? 'group' : 'direct')) as any,
             peerUid: r.peerUid || undefined,
             title: String(r.title || 'Rhema Member'),
             avatarUrl: r.avatarUrl || null,
             lastMessageId: r.lastMessageId || undefined,
-            lastMessageText: String(r.lastMessageText || ''),
+            lastMessageText: dec.text,
             lastMessageType: (r.lastMessageType || 'text') as ChatMessageType,
             lastMessageSenderUid: r.lastMessageSenderUid || undefined,
             lastMessageSenderName: r.lastMessageSenderName || undefined,
@@ -174,42 +217,41 @@ export const rhemaChatService = {
             mutedUntil: typeof r.mutedUntil === 'number' ? r.mutedUntil : null,
             isArchived: Boolean(r.isArchived),
             isFavorite: Boolean(r.isFavorite),
-            participantCount: typeof r.participantCount === 'number' ? r.participantCount : undefined,
+            participantCount:
+              typeof r.participantCount === 'number' ? r.participantCount : undefined,
+            encrypted: dec.encrypted || e2eeService.isEncryptedPayload(rawLast),
           };
         })
-        .filter((it) => Boolean(it.roomId));
+      );
 
-      // Mark incoming messages delivered as soon as recipient client receives inbox snapshot
-      const now = Date.now();
-      const deliveryUpdates: Record<string, any> = {};
-      items.forEach((it) => {
-        if (
-          it.lastMessageSenderUid &&
-          it.lastMessageSenderUid !== uid &&
-          it.lastMessageId &&
-          !it.lastMessageDelivered
-        ) {
-          deliveryUpdates[
-            `rhema_chat/${cid}/rooms/${it.roomId}/messages/${it.lastMessageId}/deliveredTo/${uid}`
-          ] = now;
-          deliveryUpdates[`rhema_chat/${cid}/inbox/${uid}/${it.roomId}/lastMessageDelivered`] = true;
-          if (it.roomType === 'direct' && it.peerUid) {
-            deliveryUpdates[
-              `rhema_chat/${cid}/inbox/${it.peerUid}/${it.roomId}/lastMessageDelivered`
-            ] = true;
-          }
-        }
-      });
-      if (Object.keys(deliveryUpdates).length > 0) {
-        update(ref(db), deliveryUpdates).catch(() => {});
-      }
-
+      if (disposed || currentSeq !== seq) return;
       items.sort((a, b) => (b.lastMessageAt || 0) - (a.lastMessageAt || 0));
       const totalUnread = items
         .filter((it) => !it.isArchived)
         .reduce((acc, it) => acc + it.unreadCount, 0);
       onChange(items, totalUnread);
+    };
+
+    const unsubRtdb = onValue(ref(db, `rhema_chat/${cid}/inbox/${uid}`), (snap) => {
+      latestRaw = snap.val() || {};
+      processSnapshot(latestRaw);
     });
+
+    let prevStatus = e2eeService.getState().status;
+    const unsubState = e2eeService.subscribeState((snap) => {
+      if (snap.status !== prevStatus) {
+        prevStatus = snap.status;
+        if (snap.status === 'ready' && latestRaw !== null) {
+          processSnapshot(latestRaw);
+        }
+      }
+    });
+
+    return () => {
+      disposed = true;
+      unsubRtdb();
+      unsubState();
+    };
   },
 
   async ensureDirectRoom(
@@ -312,40 +354,108 @@ export const rhemaChatService = {
     if (!roomId || !myUid) return () => {};
     const cid = churchId || RHEMA_CHURCH_ID;
     const db = getChatRtdb();
+    const ctx = { scope: 'church' as const, rtdb: db, churchId: cid, roomId };
     const msgsQuery = query(
       ref(db, `rhema_chat/${cid}/rooms/${roomId}/messages`),
       orderByChild('createdAt'),
       limitToLast(limitCount)
     );
-    return onValue(msgsQuery, (snap) => {
-      const val = snap.val() || {};
-      const list: ChatMessage[] = Object.keys(val)
-        .map((key) => {
-          const m = val[key] || {};
-          return {
-            id: String(m.id || key),
-            senderUid: String(m.senderUid || ''),
-            senderName: String(m.senderName || 'Member'),
-            senderAvatar: m.senderAvatar || null,
-            type: (m.type || 'text') as ChatMessageType,
-            text: String(m.text || ''),
-            media: Array.isArray(m.media) ? m.media : undefined,
-            replyTo: m.replyTo || null,
-            forwarded: Boolean(m.forwarded),
-            reactions: m.reactions || {},
-            deliveredTo: m.deliveredTo || {},
-            readBy: m.readBy || {},
-            deletedFor: m.deletedFor || {},
-            deletedForEveryone: Boolean(m.deletedForEveryone),
-            systemEvent: m.systemEvent || null,
-            createdAt: typeof m.createdAt === 'number' ? m.createdAt : Date.now(),
-          };
-        })
-        .filter((m) => !m.deletedFor?.[myUid])
-        .sort((a, b) => a.createdAt - b.createdAt);
 
+    let disposed = false;
+    let seq = 0;
+    let latestRaw: Record<string, any> | null = null;
+    let hasLockedMessages = false;
+
+    const processSnapshot = async (val: Record<string, any> | null) => {
+      const currentSeq = ++seq;
+      const obj = val || {};
+      let foundLocked = false;
+
+      const list: ChatMessage[] = (
+        await Promise.all(
+          Object.keys(obj)
+            .filter((key) => !obj[key]?.deletedFor?.[myUid])
+            .map(async (key) => {
+              const m = obj[key] || {};
+              const rawText = String(m.text || '');
+              const decText = m.deletedForEveryone
+                ? { text: '', encrypted: false }
+                : await roomKeyManager.decryptString(ctx, myUid, rawText);
+              if (decText.lockedReason) foundLocked = true;
+
+              let replyTo = m.replyTo || null;
+              if (
+                replyTo &&
+                typeof replyTo.snippet === 'string' &&
+                e2eeService.isEncryptedPayload(replyTo.snippet)
+              ) {
+                const decReply = await roomKeyManager.decryptString(ctx, myUid, replyTo.snippet);
+                replyTo = { ...replyTo, snippet: decReply.text };
+              }
+
+              return {
+                id: String(m.id || key),
+                senderUid: String(m.senderUid || ''),
+                senderName: String(m.senderName || 'Member'),
+                senderAvatar: m.senderAvatar || null,
+                type: (m.type || 'text') as ChatMessageType,
+                text: decText.text,
+                encrypted: decText.encrypted || Boolean(m.encrypted),
+                media: Array.isArray(m.media) ? m.media : undefined,
+                replyTo,
+                forwarded: Boolean(m.forwarded),
+                reactions: m.reactions || {},
+                deliveredTo: m.deliveredTo || {},
+                readBy: m.readBy || {},
+                deletedFor: m.deletedFor || {},
+                deletedForEveryone: Boolean(m.deletedForEveryone),
+                systemEvent: m.systemEvent || null,
+                createdAt: typeof m.createdAt === 'number' ? m.createdAt : Date.now(),
+              };
+            })
+        )
+      ).sort((a, b) => a.createdAt - b.createdAt);
+
+      if (disposed || currentSeq !== seq) return;
+      hasLockedMessages = foundLocked;
       onChange(list);
+    };
+
+    const unsubMsgs = onValue(msgsQuery, (snap) => {
+      latestRaw = snap.val() || {};
+      processSnapshot(latestRaw);
     });
+
+    const unsubKeys = onValue(ref(db, `rhema_chat/${cid}/rooms/${roomId}/e2ee/keys`), () => {
+      if (hasLockedMessages && latestRaw !== null) {
+        processSnapshot(latestRaw);
+      }
+    });
+
+    const unsubReqs = onValue(ref(db, `rhema_chat/${cid}/rooms/${roomId}/e2ee/requests`), (snap) => {
+      if (snap.exists() && e2eeService.getState().status === 'ready') {
+        roomKeyManager.fulfillPendingRtdbRoomKeys(ctx, myUid, []).catch(() => {});
+      }
+    });
+
+    let prevStatus = e2eeService.getState().status;
+    const unsubState = e2eeService.subscribeState((snap) => {
+      if (snap.status !== prevStatus) {
+        prevStatus = snap.status;
+        if (snap.status === 'ready' && latestRaw !== null) {
+          processSnapshot(latestRaw);
+          roomKeyManager.fulfillPendingRtdbRoomKeys(ctx, myUid, []).catch(() => {});
+        }
+      }
+    });
+
+    return () => {
+      disposed = true;
+      unsubMsgs();
+      unsubKeys();
+      unsubReqs();
+      unsubState();
+    };
   },
 
   subscribeTyping(
@@ -519,6 +629,36 @@ export const rhemaChatService = {
     const participants = Array.from(new Set([params.senderUid, ...params.participantUids].filter(Boolean)));
     const deliveredImmediately = params.roomType === 'direct' && Boolean(params.peerOnline);
 
+    const ctx = { scope: 'church' as const, rtdb: db, churchId: cid, roomId: params.roomId };
+    if (params.roomType === 'direct') {
+      const partUpdates: Record<string, any> = {};
+      participants.forEach((u) => {
+        partUpdates[`rhema_chat/${cid}/rooms/${params.roomId}/participants/${u}`] = true;
+      });
+      await update(ref(db), partUpdates).catch(() => {});
+    }
+
+    const roomKey = await roomKeyManager.getOrCreateRoomSendKey(ctx, params.senderUid, participants);
+    const storedText = cleanText
+      ? (await roomKeyManager.encryptString(ctx, params.senderUid, participants, cleanText, roomKey))
+          .cipherText
+      : '';
+    const storedPreview = (
+      await roomKeyManager.encryptString(ctx, params.senderUid, participants, preview, roomKey)
+    ).cipherText;
+
+    let finalReplyTo = params.replyTo || null;
+    if (finalReplyTo && finalReplyTo.snippet) {
+      const encSnippet = await roomKeyManager.encryptString(
+        ctx,
+        params.senderUid,
+        participants,
+        finalReplyTo.snippet,
+        roomKey
+      );
+      finalReplyTo = { ...finalReplyTo, snippet: encSnippet.cipherText };
+    }
+
     const peerUid =
       params.roomType === 'direct'
         ? participants.find((u) => u !== params.senderUid)
@@ -532,9 +672,11 @@ export const rhemaChatService = {
         senderName: params.senderName,
         senderAvatar: params.senderAvatar || null,
         type,
-        text: cleanText,
+        text: storedText,
+        encrypted: true,
+        keyId: roomKey.keyId,
         media: params.media && params.media.length > 0 ? params.media : null,
-        replyTo: params.replyTo || null,
+        replyTo: finalReplyTo,
         forwarded: Boolean(params.forwarded),
         createdAt: serverTimestamp(),
         ...(deliveredImmediately && peerUid
@@ -567,7 +709,7 @@ export const rhemaChatService = {
       }
 
       updates[`${basePath}/lastMessageId`] = msgId;
-      updates[`${basePath}/lastMessageText`] = preview;
+      updates[`${basePath}/lastMessageText`] = storedPreview;
       updates[`${basePath}/lastMessageType`] = type;
       updates[`${basePath}/lastMessageSenderUid`] = params.senderUid;
       updates[`${basePath}/lastMessageSenderName`] = params.senderName;
@@ -646,7 +788,7 @@ export const rhemaChatService = {
           );
 
         const latest = remaining[remaining.length - 1];
-        applyInboxPreviewFromRaw(updates, cid, myUid, roomId, latest);
+        await applyInboxPreviewFromLatest(updates, cid, myUid, roomId, db, latest);
       }
     } catch {
       // Non-fatal: message deletedFor flags still commit cleanly.
@@ -684,7 +826,14 @@ export const rhemaChatService = {
 
     const latest = visibleMessages[visibleMessages.length - 1];
     const updates: Record<string, any> = {};
-    applyInboxPreviewFromRaw(updates, cid, myUid, roomId, latest);
+    await applyInboxPreviewFromLatest(
+      updates,
+      cid,
+      myUid,
+      roomId,
+      db,
+      latest ? { ...latest, isPlaintextAlready: true } : undefined
+    );
     await update(ref(db), updates);
   },
 
@@ -821,11 +970,12 @@ function addDeletedForUpdates(
   });
 }
 
-function applyInboxPreviewFromRaw(
+async function applyInboxPreviewFromLatest(
   updates: Record<string, any>,
   churchId: string,
   myUid: string,
   roomId: string,
+  db: ReturnType<typeof getChatRtdb>,
   latest?: {
     id: string;
     type?: ChatMessageType;
@@ -835,6 +985,7 @@ function applyInboxPreviewFromRaw(
     senderName?: string;
     createdAt?: number;
     deletedForEveryone?: boolean;
+    isPlaintextAlready?: boolean;
   }
 ) {
   const basePath = `rhema_chat/${churchId}/inbox/${myUid}/${roomId}`;
@@ -851,16 +1002,44 @@ function applyInboxPreviewFromRaw(
   }
 
   const msgType: ChatMessageType = (latest.type || 'text') as ChatMessageType;
-  const previewText = latest.deletedForEveryone
-    ? '🚫 This message was deleted'
-    : buildMessagePreview(
+  let storedPreviewText = '🚫 This message was deleted';
+
+  if (!latest.deletedForEveryone) {
+    const rawText = String(latest.text || '');
+    const ctx = { scope: 'church' as const, rtdb: db, churchId, roomId };
+    let plainText = rawText;
+
+    if (!latest.isPlaintextAlready && e2eeService.isEncryptedPayload(rawText)) {
+      const dec = await roomKeyManager.decryptString(ctx, myUid, rawText);
+      if (dec.lockedReason) {
+        plainText = '';
+        storedPreviewText = rawText;
+      } else {
+        plainText = dec.text;
+      }
+    }
+
+    if (storedPreviewText !== rawText) {
+      const previewPlain = buildMessagePreview(
         msgType,
-        String(latest.text || ''),
+        plainText,
         Array.isArray(latest.media) ? latest.media.length : 0
       );
+      if (e2eeService.getState().status === 'ready') {
+        try {
+          const enc = await roomKeyManager.encryptString(ctx, myUid, [myUid], previewPlain);
+          storedPreviewText = enc.cipherText;
+        } catch {
+          storedPreviewText = previewPlain;
+        }
+      } else {
+        storedPreviewText = previewPlain;
+      }
+    }
+  }
 
   updates[`${basePath}/lastMessageId`] = latest.id;
-  updates[`${basePath}/lastMessageText`] = previewText;
+  updates[`${basePath}/lastMessageText`] = storedPreviewText;
   updates[`${basePath}/lastMessageType`] = msgType;
   updates[`${basePath}/lastMessageSenderUid`] = latest.senderUid || null;
   updates[`${basePath}/lastMessageSenderName`] = latest.senderName || null;

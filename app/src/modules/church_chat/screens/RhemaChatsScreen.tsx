@@ -21,6 +21,7 @@ import {
   Archive,
   ArrowLeft,
   BellOff,
+  Lock,
   MessageCircle,
   MoreVertical,
   Search,
@@ -34,6 +35,8 @@ import {
 import { useAuth } from '../../../context/AuthContext';
 import { useChurch } from '../../../context/ChurchContext';
 import { RHEMA_CHURCH_ID } from '../../../constants/ChurchConfig';
+import { e2eeService, E2EEStateSnapshot } from '../../../services/e2eeService';
+import ChatEncryptionModal, { ChatEncryptionModalMode } from '../../../components/ChatEncryptionModal';
 import { useChatTheme } from '../constants/useChatTheme';
 import { isRhemaAdminRole, rhemaDirectoryService } from '../services/rhemaDirectoryService';
 import { rhemaChatService } from '../services/rhemaChatService';
@@ -79,6 +82,26 @@ export default function RhemaChatsScreen({ navigation }: any) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [plusChooserOpen, setPlusChooserOpen] = useState(false);
   const [selectedRow, setSelectedRow] = useState<ChatInboxItem | null>(null);
+  const [e2eeState, setE2eeState] = useState<E2EEStateSnapshot>(() => e2eeService.getState());
+  const [e2eeModalMode, setE2eeModalMode] = useState<ChatEncryptionModalMode | null>(null);
+  const autoPromptedE2eeRef = React.useRef(false);
+
+  useEffect(() => {
+    const syncE2eePrompt = (snap: E2EEStateSnapshot) => {
+      setE2eeState(snap);
+      if (!myUid || autoPromptedE2eeRef.current) return;
+      if (snap.status === 'needs_pin_unlock') {
+        autoPromptedE2eeRef.current = true;
+        setE2eeModalMode('unlock_backup');
+      } else if (snap.status === 'ready' && snap.needsBackupPrompt) {
+        autoPromptedE2eeRef.current = true;
+        setE2eeModalMode('setup_backup');
+      }
+    };
+    syncE2eePrompt(e2eeService.getState());
+    const unsub = e2eeService.subscribeState(syncE2eePrompt);
+    return () => unsub();
+  }, [myUid]);
 
   const loadDirectory = useCallback(async () => {
     try {
@@ -361,6 +384,39 @@ export default function RhemaChatsScreen({ navigation }: any) {
             ) : null}
           </View>
         </View>
+      ) : null}
+
+      {e2eeState.status === 'needs_pin_unlock' ? (
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => setE2eeModalMode('unlock_backup')}
+          style={{
+            marginHorizontal: 16,
+            marginBottom: 8,
+            paddingHorizontal: 14,
+            paddingVertical: 10,
+            borderRadius: 14,
+            backgroundColor: `${palette.accent}1E`,
+            borderWidth: 1,
+            borderColor: `${palette.accent}55`,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <Lock size={15} color={palette.accent} />
+          <Text
+            style={{
+              flex: 1,
+              color: palette.text,
+              fontFamily,
+              fontSize: scaleFont(12.5),
+              fontWeight: '700',
+            }}
+          >
+            Encrypted chats locked on this device — Tap to enter Backup PIN
+          </Text>
+        </TouchableOpacity>
       ) : null}
 
       {/* Main Content */}
@@ -665,6 +721,21 @@ export default function RhemaChatsScreen({ navigation }: any) {
                 Blocked Members
               </Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setMenuOpen(false);
+                setE2eeModalMode(
+                  e2eeState.status === 'needs_pin_unlock' ? 'unlock_backup' : 'manage'
+                );
+              }}
+            >
+              <Lock size={18} color={palette.accent} />
+              <Text style={[styles.menuItemText, { color: palette.text, fontFamily }]}>
+                Chat Encryption & PIN
+              </Text>
+            </TouchableOpacity>
           </View>
         </Pressable>
       </Modal>
@@ -835,8 +906,18 @@ export default function RhemaChatsScreen({ navigation }: any) {
               </TouchableOpacity>
             </View>
           ) : null}
+
         </Pressable>
       </Modal>
+
+      <ChatEncryptionModal
+        visible={Boolean(e2eeModalMode)}
+        uid={myUid}
+        mode={e2eeModalMode || 'manage'}
+        isDark={palette.isDark}
+        accentColor={palette.accent}
+        onClose={() => setE2eeModalMode(null)}
+      />
     </LinearGradient>
   );
 }

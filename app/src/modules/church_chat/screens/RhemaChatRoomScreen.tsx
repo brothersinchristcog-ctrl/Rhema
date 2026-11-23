@@ -29,6 +29,7 @@ import {
   CheckSquare,
   Flag,
   Info,
+  Lock,
   MoreVertical,
   Phone,
   Search,
@@ -40,6 +41,8 @@ import {
 import { useAuth } from '../../../context/AuthContext';
 import { useChurch } from '../../../context/ChurchContext';
 import { RHEMA_CHURCH_ID } from '../../../constants/ChurchConfig';
+import { e2eeService, E2EEStateSnapshot } from '../../../services/e2eeService';
+import ChatEncryptionModal, { ChatEncryptionModalMode } from '../../../components/ChatEncryptionModal';
 import InAppDocumentViewerModal, {
   InAppDocumentViewerDoc,
 } from '../../../components/InAppDocumentViewerModal';
@@ -138,6 +141,14 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [reportReason, setReportReason] = useState('Inappropriate content');
   const [reportDetails, setReportDetails] = useState('');
+  const [e2eeState, setE2eeState] = useState<E2EEStateSnapshot>(() => e2eeService.getState());
+  const [e2eeModalMode, setE2eeModalMode] = useState<ChatEncryptionModalMode | null>(null);
+
+  useEffect(() => {
+    setE2eeState(e2eeService.getState());
+    const unsub = e2eeService.subscribeState(setE2eeState);
+    return () => unsub();
+  }, []);
 
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -332,6 +343,12 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
       });
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
     } catch (err: any) {
+      if (err?.message === 'PIN_UNLOCK_REQUIRED') {
+        setInputText(clean);
+        setReplyTo(currentReply);
+        setE2eeModalMode('unlock_backup');
+        return;
+      }
       Alert.alert('Send Failed', err?.message || 'Could not send message.');
     }
   };
@@ -369,6 +386,10 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
       setReplyTo(null);
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (err: any) {
+      if (err?.message === 'PIN_UNLOCK_REQUIRED') {
+        setE2eeModalMode('unlock_backup');
+        return;
+      }
       Alert.alert('Upload Failed', err?.message || 'Unable to upload attachment.');
     } finally {
       setUploading(false);
@@ -823,16 +844,53 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
             }
           }}
           ListHeaderComponent={
-            messages.length >= msgLimit ? (
+            <View>
               <TouchableOpacity
-                style={[styles.loadMoreBtn, { borderColor: palette.glassBorder }]}
-                onPress={() => setMsgLimit((n) => n + 80)}
+                activeOpacity={0.8}
+                onPress={() =>
+                  setE2eeModalMode(
+                    e2eeState.status === 'needs_pin_unlock' ? 'unlock_backup' : 'manage'
+                  )
+                }
+                style={{
+                  alignSelf: 'center',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  backgroundColor: palette.glassBg,
+                  borderColor: palette.glassBorder,
+                  borderWidth: 1,
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                  borderRadius: 12,
+                  marginBottom: 10,
+                }}
               >
-                <Text style={[styles.loadMoreTxt, { color: palette.accent }]}>
-                  Load earlier messages
+                <Lock size={12} color={palette.accent} />
+                <Text
+                  style={{
+                    color: palette.textSecondary,
+                    fontSize: scaleFont(11.5),
+                    fontFamily,
+                    textAlign: 'center',
+                  }}
+                >
+                  {e2eeState.status === 'needs_pin_unlock'
+                    ? 'Encrypted · Tap to unlock with Backup PIN'
+                    : 'Messages are end-to-end encrypted'}
                 </Text>
               </TouchableOpacity>
-            ) : null
+              {messages.length >= msgLimit ? (
+                <TouchableOpacity
+                  style={[styles.loadMoreBtn, { borderColor: palette.glassBorder }]}
+                  onPress={() => setMsgLimit((n) => n + 80)}
+                >
+                  <Text style={[styles.loadMoreTxt, { color: palette.accent }]}>
+                    Load earlier messages
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
           }
           renderItem={({ item, index }) => {
             const prev = index > 0 ? displayedMessages[index - 1] : null;
@@ -1095,6 +1153,21 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
               <CheckSquare size={18} color={palette.text} />
               <Text style={[styles.menuTxt, { color: palette.text, fontFamily }]}>
                 Select Messages
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.menuRow}
+              onPress={() => {
+                setHeaderMenuOpen(false);
+                setE2eeModalMode(
+                  e2eeState.status === 'needs_pin_unlock' ? 'unlock_backup' : 'manage'
+                );
+              }}
+            >
+              <Lock size={18} color={palette.accent} />
+              <Text style={[styles.menuTxt, { color: palette.text, fontFamily }]}>
+                Chat Encryption & PIN
               </Text>
             </TouchableOpacity>
 
@@ -1372,6 +1445,15 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <ChatEncryptionModal
+        visible={Boolean(e2eeModalMode)}
+        uid={myUid}
+        mode={e2eeModalMode || 'manage'}
+        isDark={palette.isDark}
+        accentColor={palette.accent}
+        onClose={() => setE2eeModalMode(null)}
+      />
     </LinearGradient>
   );
 }

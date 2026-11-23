@@ -6,6 +6,8 @@ import firestore from '@react-native-firebase/firestore';
 
 import FirestoreService, { AppMember } from '../services/FirestoreService';
 import { RHEMA_CHURCH_ID } from '../constants/ChurchConfig';
+import { e2eeService } from '../services/e2eeService';
+import { roomKeyManager } from '../services/roomKeyManager';
 
 interface AuthContextType {
   user: FirebaseAuthTypes.User | null;
@@ -558,6 +560,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
+  useEffect(() => {
+    if (user?.uid && !user.isAnonymous) {
+      e2eeService.initializeForUser(user.uid).catch((err) => {
+        console.warn('⚠️ [Auth] E2EE init warning:', err);
+      });
+    } else {
+      roomKeyManager.clearCache();
+      e2eeService.clearSessionMemory();
+    }
+  }, [user?.uid, user?.isAnonymous]);
+
   const signInAnonymously = async () => {
     try {
       const cred = await auth().signInAnonymously();
@@ -583,6 +596,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (auth().currentUser) {
         await auth().signOut().catch(() => {});
       }
+      roomKeyManager.clearCache();
+      e2eeService.clearSessionMemory();
       await AsyncStorage.multiRemove([
         '@cached_member', 
         '@cached_user', 

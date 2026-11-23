@@ -17,7 +17,7 @@
     "matrimony_chats": {
       "$roomId": {
         ".read": "auth != null && data.child('participants').child(auth.uid).val() === true",
-        ".write": "auth != null && data.child('participants').child(auth.uid).val() === true",
+        ".write": "auth != null && (data.child('participants').child(auth.uid).val() === true || (!data.exists() && $roomId.contains(auth.uid)))",
         "messages": {
           ".indexOn": ["createdAt"]
         }
@@ -73,6 +73,9 @@
                   ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && (data.parent().child('senderUid').val() === auth.uid || root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('admins').child(auth.uid).val() === true)"
                 }
               }
+            },
+            "e2ee": {
+              ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && (root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('participants').child(auth.uid).val() === true || (!data.parent().exists() && $roomId.beginsWith('dm_') && $roomId.contains(auth.uid)))"
             }
           }
         }

@@ -77,7 +77,14 @@ export default function ForwardMessageScreen({ navigation, route }: any) {
       );
       navigation.goBack();
     } catch (err: any) {
-      Alert.alert('Forward Failed', err?.message || 'Unable to forward message.');
+      if (err?.message === 'PIN_UNLOCK_REQUIRED') {
+        Alert.alert(
+          'Encrypted Chats Locked',
+          'Please unlock your Chat Backup PIN from the Chats screen before forwarding messages.'
+        );
+      } else {
+        Alert.alert('Forward Failed', err?.message || 'Unable to forward message.');
+      }
     } finally {
       setSending(false);
     }
@@ -110,7 +117,14 @@ export default function ForwardMessageScreen({ navigation, route }: any) {
       });
       navigation.goBack();
     } catch (err: any) {
-      Alert.alert('Forward Failed', err?.message || 'Unable to forward message.');
+      if (err?.message === 'PIN_UNLOCK_REQUIRED') {
+        Alert.alert(
+          'Encrypted Chats Locked',
+          'Please unlock your Chat Backup PIN from the Chats screen before forwarding messages.'
+        );
+      } else {
+        Alert.alert('Forward Failed', err?.message || 'Unable to forward message.');
+      }
     } finally {
       setSending(false);
     }

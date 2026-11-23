@@ -1,7 +1,10 @@
 import functions from '@react-native-firebase/functions';
 import firestore from '@react-native-firebase/firestore';
+import auth from '@react-native-firebase/auth';
 import { push, ref, serverTimestamp } from 'firebase/database';
 import { RHEMA_CHURCH_ID, RHEMA_ROOT_COLLECTION } from '../../../constants/ChurchConfig';
+import { e2eeService } from '../../../services/e2eeService';
+import { roomKeyManager } from '../../../services/roomKeyManager';
 import { ChatCategory, ChatSystemEvent } from '../types/chat';
 import { getChatRtdb, updateRtdb as update } from './rtdbClient';
 
@@ -22,6 +25,20 @@ async function emitSystemMessage(params: {
   systemEvent: ChatSystemEvent;
 }) {
   const db = getChatRtdb();
+  let storedText = params.text;
+  try {
+    if (e2eeService.getState().status === 'ready') {
+      const enc = await roomKeyManager.encryptString(
+        { scope: 'church', rtdb: db, churchId: params.churchId, roomId: params.roomId },
+        params.systemEvent.actorUid,
+        params.participantUids,
+        params.text
+      );
+      storedText = enc.cipherText;
+    }
+  } catch {
+    // Non-fatal fallback for system notices
+  }
   const msgRef = push(ref(db, `rhema_chat/${params.churchId}/rooms/${params.roomId}/messages`));
   const msgId = msgRef.key || `${Date.now()}`;
   const updates: Record<string, any> = {
@@ -30,7 +47,8 @@ async function emitSystemMessage(params: {
       senderUid: params.systemEvent.actorUid,
       senderName: params.systemEvent.actorName,
       type: 'system',
-      text: params.text,
+      text: storedText,
+      encrypted: e2eeService.isEncryptedPayload(storedText),
       systemEvent: params.systemEvent,
       createdAt: serverTimestamp(),
     },
@@ -45,7 +63,7 @@ async function emitSystemMessage(params: {
     updates[`${base}/avatarUrl`] = params.roomAvatar || null;
     updates[`${base}/participantCount`] = params.participantUids.length;
     updates[`${base}/lastMessageId`] = msgId;
-    updates[`${base}/lastMessageText`] = params.text;
+    updates[`${base}/lastMessageText`] = storedText;
     updates[`${base}/lastMessageType`] = 'system';
     updates[`${base}/lastMessageSenderUid`] = params.systemEvent.actorUid;
     updates[`${base}/lastMessageSenderName`] = params.systemEvent.actorName;
@@ -84,7 +102,18 @@ export const rhemaGroupService = {
     if (!data?.roomId) {
       throw new Error('Failed to create group.');
     }
-    return { roomId: String(data.roomId) };
+    const roomId = String(data.roomId);
+    const actorUid = auth().currentUser?.uid || '';
+    if (actorUid) {
+      await roomKeyManager
+        .getOrCreateRoomSendKey(
+          { scope: 'church', rtdb: getChatRtdb(), churchId: cid, roomId },
+          actorUid,
+          [actorUid, ...params.memberUids]
+        )
+        .catch(() => {});
+    }
+    return { roomId };
   },
 
   async updateGroupInfo(params: {
@@ -305,6 +334,14 @@ export const rhemaGroupService = {
       [`rhema_chat/${cid}/inbox/${params.targetUid}/${params.roomId}`]: null,
     });
 
+    await roomKeyManager
+      .rotateRtdbRoomKey(
+        { scope: 'church', rtdb: db, churchId: cid, roomId: params.roomId },
+        params.actorUid,
+        remainingParticipants
+      )
+      .catch(() => {});
+
     await firestore()
       .collection(RHEMA_ROOT_COLLECTION)
       .doc(cid)
@@ -430,6 +467,14 @@ export const rhemaGroupService = {
     }
 
     if (remainingParticipants.length > 0) {
+      await roomKeyManager
+        .rotateRtdbRoomKey(
+          { scope: 'church', rtdb: db, churchId: cid, roomId: params.roomId },
+          params.myUid,
+          remainingParticipants
+        )
+        .catch(() => {});
+
       await emitSystemMessage({
         churchId: cid,
         roomId: params.roomId,
