@@ -12,6 +12,7 @@ export const SUBCOLLECTIONS = {
   VIEWS: 'views',
   VIEWED_BY: 'viewed_by',
   BLOCKS: 'blocks',
+  UNLOCKED_CONTACTS: 'unlocked_contacts',
 } as const;
 
 export const SUBDOC_IDS = {
@@ -24,6 +25,11 @@ export const COLLECTIONS = {
   PROFILES: 'matrimony_profiles',
   ADMIN_PROFILES: 'matrimony_admin_profiles',
   BANS: 'matrimony_bans',
+  PLANS: 'matrimony_plans',
+  SUBSCRIPTIONS: 'matrimony_subscriptions',
+  ENTITLEMENTS: 'matrimony_entitlements',
+  USAGE: 'matrimony_usage',
+  PAYMENT_HISTORY: 'matrimony_payment_history',
   // Legacy root collections (fallback reads only during migration)
   PRIVATE: 'matrimony_private',
   PREFERENCES: 'matrimony_preferences',

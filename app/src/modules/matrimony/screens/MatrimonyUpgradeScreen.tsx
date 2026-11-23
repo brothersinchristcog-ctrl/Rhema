@@ -23,7 +23,7 @@ import {
 import { useAuth } from '../../../context/AuthContext';
 import { FONT_STYLE_OPTIONS, useTheme } from '../../../context/ThemeContext';
 import { matrimonyApi } from '../services/matrimonyApi';
-import { MatrimonyMembershipInfo } from '../types/matrimony';
+import { MatrimonyMembershipInfo, MemberEntitlements } from '../types/matrimony';
 
 let RazorpayCheckout: any = null;
 try {
@@ -53,10 +53,11 @@ const TIER_PLANS: TierPlanSpec[] = [
     durationLabel: '3 Months',
     badgeText: 'ESSENTIAL',
     features: [
-      'Unlock up to 20 verified Mobile Numbers',
-      'View Date of Birth on unlocked profiles',
       'Send unlimited Interests to matching members',
-      'Verified Silver Member profile badge',
+      'Send unlimited personalised messages on mutual matches',
+      'View up to 10 verified Contact Numbers & DOBs',
+      'Call & WhatsApp unlocked contacts',
+      'Shortlist up to 25 profiles',
     ],
   },
   {
@@ -67,10 +68,11 @@ const TIER_PLANS: TierPlanSpec[] = [
     durationLabel: '6 Months',
     badgeText: 'MOST POPULAR',
     features: [
-      'Unlock up to 50 verified Mobile Numbers & DOBs',
-      'Direct Call & priority chat with mutual matches',
-      'Featured profile visibility boost in Matches',
-      'Full Who Viewed You & Shortlisted insights',
+      'Send unlimited Interests & personalised messages',
+      'View up to 40 verified Contact Numbers & DOBs',
+      'Shortlist up to 50 profiles & Advanced Filters',
+      'Higher profile visibility & compatibility insights',
+      'Call & WhatsApp unlocked contacts',
     ],
   },
   {
@@ -81,10 +83,10 @@ const TIER_PLANS: TierPlanSpec[] = [
     durationLabel: '12 Months',
     badgeText: 'ROYAL ELITE',
     features: [
-      'Unlimited verified Mobile Numbers & Dates of Birth',
-      'Direct Call, WhatsApp & instant chat access',
-      'Top #1 Spotlight placement across All & New Matches',
-      'Royal Platinum Crown badge & priority support',
+      'Unlimited Interests, personalised messages & Contact Numbers',
+      'Shortlist up to 70 profiles & Advanced Filters',
+      'Highest visibility priority & Royal Platinum highlighting',
+      'Call, WhatsApp & Priority customer support',
     ],
   },
 ];
@@ -110,19 +112,46 @@ export default function MatrimonyUpgradeScreen({ navigation }: any) {
 
   const [selectedPlan, setSelectedPlan] = useState<PlanId>('gold');
   const [paying, setPaying] = useState(false);
+  const [plans, setPlans] = useState<TierPlanSpec[]>(TIER_PLANS);
+  const [entitlements, setEntitlements] = useState<MemberEntitlements | null>(null);
   const [membership, setMembership] = useState<MatrimonyMembershipInfo | null>(() => {
     const cached = matrimonyApi.getCachedRegistration()?.profile?.membership;
     return cached || null;
   });
 
   const refreshMembership = useCallback(async () => {
-    try {
-      const reg = await matrimonyApi.startRegistration({ force: true });
-      if (reg?.profile?.membership) {
-        setMembership(reg.profile.membership);
+    const [regRes, plansRes, entRes] = await Promise.allSettled([
+      matrimonyApi.startRegistration({ force: true }),
+      matrimonyApi.getPlans(),
+      matrimonyApi.getMemberEntitlements(),
+    ]);
+    if (regRes.status === 'fulfilled' && regRes.value?.profile?.membership) {
+      setMembership(regRes.value.profile.membership);
+    }
+    if (plansRes.status === 'fulfilled' && plansRes.value?.plans?.length) {
+      const dynamicPlans: TierPlanSpec[] = plansRes.value.plans
+        .filter((p) => p.isActive !== false)
+        .map((p) => {
+          const fallback = TIER_PLANS.find((f) => f.id === p.tier);
+          return {
+            id: p.tier,
+            name: p.planName || fallback?.name || p.tier,
+            tagline: p.tagline || fallback?.tagline || '',
+            priceInr: p.priceInr,
+            durationLabel: `${p.durationMonths} ${p.durationMonths === 1 ? 'Month' : 'Months'}`,
+            badgeText: p.badgeText || fallback?.badgeText || '',
+            features:
+              Array.isArray(p.benefits) && p.benefits.length > 0
+                ? p.benefits
+                : fallback?.features || [],
+          };
+        });
+      if (dynamicPlans.length > 0) {
+        setPlans(dynamicPlans);
       }
-    } catch {
-      // Keep cached value if offline
+    }
+    if (entRes.status === 'fulfilled' && entRes.value?.entitlements) {
+      setEntitlements(entRes.value.entitlements);
     }
   }, []);
 
@@ -131,14 +160,16 @@ export default function MatrimonyUpgradeScreen({ navigation }: any) {
   }, [refreshMembership]);
 
   const activeTier =
-    membership?.status === 'active' &&
-    membership.tier &&
-    membership.tier !== 'free' &&
-    (!membership.validUntilMs || membership.validUntilMs > Date.now())
+    entitlements?.subscriptionStatus === 'active'
+      ? entitlements.tier
+      : membership?.status === 'active' &&
+        membership.tier &&
+        membership.tier !== 'free' &&
+        (!membership.validUntilMs || membership.validUntilMs > Date.now())
       ? membership.tier
       : 'free';
 
-  const currentSpec = TIER_PLANS.find((p) => p.id === selectedPlan) || TIER_PLANS[1];
+  const currentSpec = plans.find((p) => p.id === selectedPlan) || plans[0] || TIER_PLANS[1];
 
   const handlePayNow = async () => {
     if (paying) return;
@@ -199,6 +230,14 @@ export default function MatrimonyUpgradeScreen({ navigation }: any) {
 
       if (verifyRes?.membership) {
         setMembership(verifyRes.membership);
+      }
+      if (verifyRes?.entitlements) {
+        setEntitlements(verifyRes.entitlements);
+      } else {
+        matrimonyApi
+          .getMemberEntitlements()
+          .then((r) => r?.entitlements && setEntitlements(r.entitlements))
+          .catch(() => undefined);
       }
 
       Alert.alert(
@@ -495,8 +534,41 @@ export default function MatrimonyUpgradeScreen({ navigation }: any) {
           </Text>
         </View>
 
+        {entitlements ? (
+          <View
+            style={[
+              styles.trustCard,
+              {
+                backgroundColor: colors.surface,
+                borderColor: isDark ? 'rgba(255,255,255,0.1)' : '#E2E8F0',
+                paddingVertical: 10,
+              },
+            ]}
+          >
+            <Shield size={17} color="#D97706" />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.trustTitle, { color: colors.text, fontFamily, fontSize: 12.5 }]}>
+                {`Current Plan: ${entitlements.planName} · Interests Left: ${
+                  entitlements.interestsRemaining < 0
+                    ? 'Unlimited'
+                    : `${entitlements.interestsRemaining}/${entitlements.monthlyInterestLimit}`
+                }`}
+              </Text>
+              <Text style={[styles.trustSub, { color: colors.textSecondary, fontFamily, fontSize: 11.5 }]}>
+                {`Contacts: ${
+                  entitlements.contactNumberLimit === 0
+                    ? 'Locked'
+                    : entitlements.contactNumberLimit < 0
+                    ? 'Unlimited'
+                    : `${entitlements.contactNumbersRemaining}/${entitlements.contactNumberLimit} left`
+                } · Shortlists: up to ${entitlements.shortlistLimit}`}
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
         <View style={styles.cardsStack}>
-          {TIER_PLANS.map((plan, idx) => renderTierCard(plan, idx))}
+          {plans.map((plan, idx) => renderTierCard(plan, idx))}
         </View>
 
         {/* Trust Assurance Footer */}

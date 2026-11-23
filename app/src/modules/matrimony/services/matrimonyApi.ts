@@ -5,6 +5,7 @@ import storage from '@react-native-firebase/storage';
 import { Image } from 'react-native';
 import {
   AdminMatrimonyCounts,
+  AdminMatrimonyPlansAndSubsResponse,
   AdminMatrimonyProfileDetail,
   AdminMatrimonyProfileSummary,
   GetMatrimonyInterestsHubResponse,
@@ -14,7 +15,9 @@ import {
   MatrimonyMatchTab,
   MatrimonyMatchesFilter,
   MatrimonyMembershipInfo,
+  MatrimonyPlanSpec,
   MatrimonyStatusResponse,
+  MemberEntitlements,
   StartRegistrationResponse,
 } from '../types/matrimony';
 
@@ -32,6 +35,7 @@ interface CacheEntry<T> {
 interface GetMatchesParams {
   tab?: MatrimonyMatchTab;
   matchBasis?: 'partner_preferences' | 'all_filters';
+  matchTier?: 'regular' | 'prime';
   sortBy?:
     | 'best_match'
     | 'last_active'
@@ -43,6 +47,8 @@ interface GetMatchesParams {
     | 'age_desc'
     | 'most_shared_interests';
   filters?: MatrimonyMatchesFilter;
+  offset?: number;
+  limit?: number;
 }
 
 interface FetchCacheOptions {
@@ -169,6 +175,7 @@ function stableMatchesKey(params: GetMatchesParams = {}): string {
   return JSON.stringify({
     tab: params.tab || 'all',
     matchBasis: params.matchBasis || 'partner_preferences',
+    matchTier: params.matchTier || 'regular',
     sortBy: params.sortBy || 'best_match',
     filters: normalizedFilters,
   });
@@ -495,8 +502,7 @@ export const matrimonyApi = {
   getCachedMatches(params?: GetMatchesParams): GetMatrimonyMatchesResponse | null {
     const s = getStore();
     if (params) {
-      const exact = s.matchesByKey.get(stableMatchesKey(params))?.data;
-      if (exact) return exact;
+      return s.matchesByKey.get(stableMatchesKey(params))?.data || null;
     }
     if (s.lastMatchesKey) {
       return s.matchesByKey.get(s.lastMatchesKey)?.data || null;
@@ -556,7 +562,7 @@ export const matrimonyApi = {
     await Promise.allSettled([
       matrimonyApi.getStatus({ maxAgeMs: DEFAULT_CACHE_TTL_MS }),
       matrimonyApi.getMatches(
-        { tab: savedTab, matchBasis: savedMode, sortBy: savedSort, filters: savedFilters },
+        { tab: savedTab, matchBasis: savedMode, sortBy: savedSort, filters: savedFilters, offset: 0, limit: 10 },
         { maxAgeMs: DEFAULT_CACHE_TTL_MS }
       ),
       matrimonyApi.getInterestsHub({ maxAgeMs: DEFAULT_CACHE_TTL_MS }),
@@ -973,25 +979,60 @@ export const matrimonyApi = {
   ): Promise<GetMatrimonyMatchesResponse> {
     const s = getStore();
     const cacheKey = stableMatchesKey(params);
-    const maxAge = options.maxAgeMs ?? DEFAULT_CACHE_TTL_MS;
-    const cached = s.matchesByKey.get(cacheKey);
-    if (!options.force && isEntryFresh(cached, maxAge) && cached) {
-      s.lastMatchesKey = cacheKey;
-      return cached.data;
+    const offset = Math.max(0, Math.round(params.offset ?? 0));
+    const isCountPreviewOnly = params.limit === 1 && offset === 0;
+    const isAppendPage = offset > 0;
+
+    if (!isAppendPage && !isCountPreviewOnly) {
+      const maxAge = options.maxAgeMs ?? DEFAULT_CACHE_TTL_MS;
+      const cached = s.matchesByKey.get(cacheKey);
+      if (!options.force && isEntryFresh(cached, maxAge) && cached) {
+        s.lastMatchesKey = cacheKey;
+        return cached.data;
+      }
     }
-    const inflightKey = `getMatches:${cacheKey}`;
+
+    const inflightKey = isCountPreviewOnly
+      ? `getMatchesPreview:${cacheKey}`
+      : isAppendPage
+      ? `getMatches:${cacheKey}:off=${offset}:lim=${params.limit ?? 'all'}`
+      : `getMatches:${cacheKey}`;
     const existing = s.inflight.get(inflightKey);
     if (existing) return existing;
 
     const req = (async () => {
       const res = await callMatrimonyFunction<GetMatrimonyMatchesResponse>('getMatrimonyMatches', params);
-      s.matchesByKey.set(cacheKey, { data: res, fetchedAt: Date.now() });
-      s.lastMatchesKey = cacheKey;
-      prefetchImageUrls([
-        res.viewerPhoto,
-        ...(res.matches || []).slice(0, 12).map((m) => m.signedProfilePhoto),
-      ]);
-      persistSnapshotToDisk();
+      if (!isCountPreviewOnly) {
+        if (isAppendPage) {
+          const prevEntry = s.matchesByKey.get(cacheKey)?.data;
+          if (prevEntry) {
+            const seen = new Set((prevEntry.matches || []).map((m) => m.uid));
+            const merged = [...(prevEntry.matches || [])];
+            for (const m of res.matches || []) {
+              if (m?.uid && !seen.has(m.uid)) {
+                seen.add(m.uid);
+                merged.push(m);
+              }
+            }
+            s.matchesByKey.set(cacheKey, {
+              data: {
+                ...prevEntry,
+                ...res,
+                matches: merged,
+              },
+              fetchedAt: Date.now(),
+            });
+          }
+        } else {
+          s.matchesByKey.set(cacheKey, { data: res, fetchedAt: Date.now() });
+          s.lastMatchesKey = cacheKey;
+        }
+        prefetchImageUrls([
+          res.viewerPhoto,
+          ...(res.matches || []).slice(0, 12).map((m) => m.signedProfilePhoto),
+        ]);
+        persistSnapshotToDisk();
+      }
       return res;
     })().finally(() => {
       s.inflight.delete(inflightKey);
@@ -1061,6 +1102,20 @@ export const matrimonyApi = {
       interestStatus: string;
       isMutual: boolean;
     }>('sendMatrimonyInterest', { targetUid });
+    const s = getStore();
+    const sentAt = Date.now();
+    s.matchesByKey.forEach((entry) => {
+      if (entry.data?.matches) {
+        entry.data = {
+          ...entry.data,
+          matches: entry.data.matches.map((m) =>
+            m.uid === targetUid
+              ? { ...m, interestStatus: res.interestStatus as any, interestSentAtMs: sentAt }
+              : m
+          ),
+        };
+      }
+    });
     invalidateCache({ matches: true, interestsHub: true, chatContacts: res.isMutual });
     return res;
   },
@@ -1100,6 +1155,21 @@ export const matrimonyApi = {
       'respondMatrimonyInterest',
       { targetUid, action }
     );
+    if (action === 'withdraw') {
+      const s = getStore();
+      s.matchesByKey.forEach((entry) => {
+        if (entry.data?.matches) {
+          entry.data = {
+            ...entry.data,
+            matches: entry.data.matches.map((m) =>
+              m.uid === targetUid
+                ? { ...m, interestStatus: null, interestSentAtMs: undefined }
+                : m
+            ),
+          };
+        }
+      });
+    }
     invalidateCache({ matches: true, interestsHub: true, chatContacts: action === 'accept' });
     return res;
   },
@@ -1107,13 +1177,15 @@ export const matrimonyApi = {
   async ensureChatRoom(targetUid: string): Promise<{
     success: boolean;
     roomId: string;
+    canMessage?: boolean;
+    viewerTier?: string;
     peer: MatrimonyChatPeer;
     self: { uid: string; displayName: string; signedProfilePhoto: string | null };
   }> {
     return callMatrimonyFunction('ensureMatrimonyChatRoom', { targetUid });
   },
 
-  async getChatContacts(options: FetchCacheOptions = {}): Promise<ChatContactsResponse> {
+  async getChatContacts(options: FetchCacheOptions = {}): Promise<ChatContactsResponse & { canMessage?: boolean; viewerTier?: string }> {
     const s = getStore();
     const maxAge = options.maxAgeMs ?? DEFAULT_CACHE_TTL_MS;
     if (!options.force && isEntryFresh(s.chatContacts, maxAge) && s.chatContacts) {
@@ -1124,7 +1196,7 @@ export const matrimonyApi = {
     if (existing) return existing;
 
     const req = (async () => {
-      const res = await callMatrimonyFunction<ChatContactsResponse>('getMatrimonyChatContacts', {});
+      const res = await callMatrimonyFunction<ChatContactsResponse & { canMessage?: boolean; viewerTier?: string }>('getMatrimonyChatContacts', {});
       s.chatContacts = { data: res, fetchedAt: Date.now() };
       prefetchImageUrls([
         res.self?.signedProfilePhoto,
@@ -1146,12 +1218,48 @@ export const matrimonyApi = {
     );
   },
 
+  async sendChatMessage(params: {
+    targetUid: string;
+    text?: string;
+    imageUrl?: string | null;
+  }): Promise<{ success: boolean; roomId: string; messageId: string }> {
+    return callMatrimonyFunction('sendMatrimonyMessage', params);
+  },
+
   async uploadChatImage(localUri: string, mimeType = 'image/jpeg'): Promise<string> {
     const { signedUrl } = await uploadDirectToStorage(localUri, mimeType, false);
     return signedUrl;
   },
 
-  async createUpgradeOrder(plan: 'silver' | 'gold' | 'platinum'): Promise<{
+  async getPlans(): Promise<{ success: boolean; plans: MatrimonyPlanSpec[] }> {
+    return callMatrimonyFunction('getMatrimonyPlans', {});
+  },
+
+  async getMemberEntitlements(): Promise<{ success: boolean; entitlements: MemberEntitlements }> {
+    return callMatrimonyFunction('getMemberEntitlements', {});
+  },
+
+  async unlockContact(targetUid: string): Promise<{
+    success: boolean;
+    alreadyUnlocked: boolean;
+    contactPhone: string | null;
+    dob: string | null;
+    contactNumbersViewedCount: number;
+    contactNumbersRemaining: number;
+  }> {
+    const res = await callMatrimonyFunction<{
+      success: boolean;
+      alreadyUnlocked: boolean;
+      contactPhone: string | null;
+      dob: string | null;
+      contactNumbersViewedCount: number;
+      contactNumbersRemaining: number;
+    }>('unlockMatrimonyContact', { targetUid });
+    invalidateCache({ matches: true, chatContacts: true });
+    return res;
+  },
+
+  async createUpgradeOrder(plan: 'silver' | 'gold' | 'platinum' | string): Promise<{
     success: boolean;
     orderId: string;
     amount: number;
@@ -1159,20 +1267,27 @@ export const matrimonyApi = {
     currency: string;
     keyId: string;
     plan: 'silver' | 'gold' | 'platinum';
+    planId?: string;
     planName: string;
+    durationMonths?: number;
   }> {
     return callMatrimonyFunction('createMatrimonyUpgradeOrder', { plan });
   },
 
   async verifyUpgradePayment(payload: {
-    plan: 'silver' | 'gold' | 'platinum';
+    plan: 'silver' | 'gold' | 'platinum' | string;
     razorpay_payment_id: string;
     razorpay_order_id: string;
     razorpay_signature: string;
-  }): Promise<{ success: boolean; membership: MatrimonyMembershipInfo }> {
+  }): Promise<{
+    success: boolean;
+    membership: MatrimonyMembershipInfo;
+    entitlements?: MemberEntitlements;
+  }> {
     const res = await callMatrimonyFunction<{
       success: boolean;
       membership: MatrimonyMembershipInfo;
+      entitlements?: MemberEntitlements;
     }>('verifyMatrimonyUpgradePayment', payload);
 
     if (res?.success && res.membership) {
@@ -1202,6 +1317,75 @@ export const matrimonyApi = {
       }
       invalidateCache({ registration: true, status: true, matches: true });
     }
+    return res;
+  },
+
+  async seedTestUsers(): Promise<{
+    success: boolean;
+    createdCount: number;
+    maleCount: number;
+    femaleCount: number;
+  }> {
+    const res = await callMatrimonyFunction<{
+      success: boolean;
+      createdCount: number;
+      maleCount: number;
+      femaleCount: number;
+    }>('seedMatrimonyTestUsers', {}, 120_000);
+    invalidateCache({ matches: true });
+    return res;
+  },
+
+  async deleteTestUsers(): Promise<{
+    success: boolean;
+    deletedCount: number;
+  }> {
+    const res = await callMatrimonyFunction<{
+      success: boolean;
+      deletedCount: number;
+    }>('deleteMatrimonyTestUsers', {}, 180_000);
+    invalidateCache({ matches: true });
+    return res;
+  },
+
+  async adminGetPlansAndSubs(): Promise<AdminMatrimonyPlansAndSubsResponse> {
+    return callMatrimonyFunction<AdminMatrimonyPlansAndSubsResponse>(
+      'adminGetMatrimonyPlansAndSubs',
+      {}
+    );
+  },
+
+  async adminUpsertPlan(
+    payload: Partial<MatrimonyPlanSpec> & { planId: string }
+  ): Promise<{ success: boolean; plan: MatrimonyPlanSpec }> {
+    return callMatrimonyFunction<{ success: boolean; plan: MatrimonyPlanSpec }>(
+      'adminUpsertMatrimonyPlan',
+      payload
+    );
+  },
+
+  async adminGrantComplimentarySubscription(payload: {
+    targetUid: string;
+    planId?: string;
+    tier?: 'silver' | 'gold' | 'platinum';
+    durationMonths?: number;
+    note?: string;
+    action?: 'grant' | 'revoke';
+  }): Promise<{
+    success: boolean;
+    tier?: string;
+    status?: string;
+    subscriptionId?: string;
+    validUntilMs?: number;
+  }> {
+    const res = await callMatrimonyFunction<{
+      success: boolean;
+      tier?: string;
+      status?: string;
+      subscriptionId?: string;
+      validUntilMs?: number;
+    }>('adminGrantComplimentarySubscription', payload);
+    invalidateCache({ registration: true, status: true, matches: true });
     return res;
   },
 };

@@ -85,7 +85,7 @@ function isAdminRoleRecord(record: Record<string, any> | undefined): boolean {
   );
 }
 
-async function requireMatrimonyAdmin(request: {
+export async function requireMatrimonyAdmin(request: {
   auth?: { uid?: string; token?: Record<string, any> };
 }): Promise<string> {
   const uid = request.auth?.uid;

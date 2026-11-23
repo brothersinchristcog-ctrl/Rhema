@@ -33,11 +33,13 @@ import {
   Info,
   Lock,
   Mail,
+  MessageCircle,
   MoreVertical,
   Phone,
   ShieldCheck,
   SkipForward,
   Sparkles,
+  Undo2,
   User,
   X,
 } from 'lucide-react-native';
@@ -46,7 +48,7 @@ import MatchPhotoCarousel from '../components/MatchPhotoCarousel';
 import MatrimonyReportModal from '../components/MatrimonyReportModal';
 import VerifiedRibbonBadge from '../components/VerifiedRibbonBadge';
 import { matrimonyApi } from '../services/matrimonyApi';
-import { MatrimonyMatchCandidate } from '../types/matrimony';
+import { MatrimonyMatchCandidate, MemberEntitlements } from '../types/matrimony';
 
 const CORAL_RED = '#E04B5A';
 const DARK_GREEN = '#0B4F3E';
@@ -119,6 +121,8 @@ export default function MatrimonyMatchDetailScreen({ navigation, route }: any) {
   );
   const [scrollY, setScrollY] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [unlockingContact, setUnlockingContact] = useState(false);
+  const [entitlements, setEntitlements] = useState<MemberEntitlements | null>(null);
   const [lightboxPhotos, setLightboxPhotos] = useState<string[]>([]);
   const [lightboxIdx, setLightboxIdx] = useState(0);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
@@ -133,11 +137,21 @@ export default function MatrimonyMatchDetailScreen({ navigation, route }: any) {
   const transitionSeqRef = useRef(0);
   const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skeletonPulse = useRef(new Animated.Value(0.45)).current;
+  const pendingSendMapRef = useRef<Map<string, Promise<any>>>(new Map());
+  const interestToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [interestToast, setInterestToast] = useState<{
+    kind: 'sent' | 'cancelled';
+    uid: string;
+    name: string;
+  } | null>(null);
 
   useEffect(() => {
     return () => {
       if (transitionTimerRef.current) {
         clearTimeout(transitionTimerRef.current);
+      }
+      if (interestToastTimerRef.current) {
+        clearTimeout(interestToastTimerRef.current);
       }
       activeTransitionRef.current?.stop();
     };
@@ -251,6 +265,13 @@ export default function MatrimonyMatchDetailScreen({ navigation, route }: any) {
 
   useEffect(() => {
     const unsub = navigation.addListener('focus', () => {
+      matrimonyApi
+        .getMemberEntitlements()
+        .then((res) => {
+          if (res?.entitlements) setEntitlements(res.entitlements);
+        })
+        .catch(() => undefined);
+
       const mem =
         matrimonyApi.getCachedRegistration()?.profile?.membership ||
         matrimonyApi.getCachedStatus()?.profile?.membership;
@@ -407,36 +428,184 @@ export default function MatrimonyMatchDetailScreen({ navigation, route }: any) {
     }
   };
 
+  const showInterestToast = (
+    next: { kind: 'sent' | 'cancelled'; uid: string; name: string },
+    durationMs: number
+  ) => {
+    if (interestToastTimerRef.current) clearTimeout(interestToastTimerRef.current);
+    setInterestToast(next);
+    interestToastTimerRef.current = setTimeout(() => {
+      setInterestToast((prev) => (prev?.uid === next.uid && prev?.kind === next.kind ? null : prev));
+    }, durationMs);
+  };
+
+  const handleUndoSendInterest = async (targetUid: string, targetName: string) => {
+    setMatchList((prev) =>
+      prev.map((m) =>
+        m.uid === targetUid ? { ...m, interestStatus: null, interestSentAtMs: undefined } : m
+      )
+    );
+    showInterestToast({ kind: 'cancelled', uid: targetUid, name: targetName }, 3000);
+    try {
+      const pendingReq = pendingSendMapRef.current.get(targetUid);
+      if (pendingReq) {
+        await pendingReq.catch(() => undefined);
+      }
+      await matrimonyApi.respondInterest(targetUid, 'withdraw');
+    } catch (err: any) {
+      console.warn('Detail handleUndoSendInterest warning:', err);
+    }
+  };
+
   const handleSendInterest = async () => {
     if (candidate.interestStatus) return;
     const targetUid = candidate.uid;
-    setBusy(true);
+    const targetName = candidate.displayName;
+    const optimisticSentAt = Date.now();
+    // Instant optimistic transition to Call Now + Send Message & Undo toast
+    setMatchList((prev) =>
+      prev.map((m) =>
+        m.uid === targetUid
+          ? { ...m, interestStatus: 'pending', interestSentAtMs: optimisticSentAt }
+          : m
+      )
+    );
+    showInterestToast({ kind: 'sent', uid: targetUid, name: targetName }, 5500);
+
+    const sendPromise = matrimonyApi.sendInterest(targetUid);
+    pendingSendMapRef.current.set(targetUid, sendPromise);
+
     try {
-      const res = await matrimonyApi.sendInterest(targetUid);
-      const sentAt = Date.now();
+      const res = await sendPromise;
       setMatchList((prev) =>
         prev.map((m) =>
-          m.uid === targetUid
-            ? { ...m, interestStatus: res.interestStatus, interestSentAtMs: sentAt }
+          m.uid === targetUid && m.interestSentAtMs === optimisticSentAt
+            ? { ...m, interestStatus: res.interestStatus, interestSentAtMs: optimisticSentAt }
             : m
         )
       );
       if (res.isMutual) {
+        setInterestToast((prev) => (prev?.uid === targetUid ? null : prev));
         Alert.alert(
           'Mutual Match!',
-          `${candidate.displayName} also expressed interest in your profile.`
+          `${targetName} also expressed interest in your profile.`
         );
-      } else {
-        Alert.alert('Interest Sent', `Your interest has been sent to ${candidate.displayName}.`);
+      }
+      if (typeof (res as any).interestsSentThisMonth === 'number') {
+        setEntitlements((prev) =>
+          prev
+            ? {
+                ...prev,
+                interestsSentThisMonth: (res as any).interestsSentThisMonth,
+                interestsRemaining:
+                  typeof (res as any).interestsRemaining === 'number'
+                    ? (res as any).interestsRemaining
+                    : prev.interestsRemaining,
+              }
+            : prev
+        );
       }
     } catch (err: any) {
-      Alert.alert('Error', err?.message || 'Unable to send interest.');
+      setMatchList((prev) =>
+        prev.map((m) =>
+          m.uid === targetUid && m.interestSentAtMs === optimisticSentAt
+            ? { ...m, interestStatus: null, interestSentAtMs: undefined }
+            : m
+        )
+      );
+      setInterestToast((prev) => (prev?.uid === targetUid ? null : prev));
+      if (
+        err?.details?.reasonCode === 'MONTHLY_INTEREST_LIMIT_REACHED' ||
+        String(err?.message || '').toLowerCase().includes('month')
+      ) {
+        Alert.alert(
+          'Monthly Interest Limit Reached',
+          err?.message ||
+            'Free members can send up to 20 interests per month. Upgrade to Silver, Gold, or Platinum for unlimited interests.',
+          [
+            { text: 'Not Now', style: 'cancel' },
+            { text: 'Upgrade Plan', onPress: () => navigation.navigate('MatrimonyUpgrade') },
+          ]
+        );
+      } else {
+        Alert.alert('Error', err?.message || 'Unable to send interest.');
+      }
     } finally {
-      setBusy(false);
+      if (pendingSendMapRef.current.get(targetUid) === sendPromise) {
+        pendingSendMapRef.current.delete(targetUid);
+      }
+    }
+  };
+
+  const handleUnlockContact = async () => {
+    if (unlockingContact) return;
+    if (!entitlements || entitlements.tier === 'free' || entitlements.contactNumberLimit === 0) {
+      navigation.navigate('MatrimonyUpgrade');
+      return;
+    }
+    setUnlockingContact(true);
+    try {
+      const res = await matrimonyApi.unlockContact(candidate.uid);
+      setMatchList((prev) =>
+        prev.map((m) =>
+          m.uid === candidate.uid
+            ? {
+                ...m,
+                contactPhone: res.contactPhone ?? m.contactPhone,
+                dob: res.dob ?? m.dob,
+                isContactUnlocked: true,
+              }
+            : m
+        )
+      );
+      setEntitlements((prev) =>
+        prev
+          ? {
+              ...prev,
+              contactNumbersViewedCount: res.contactNumbersViewedCount,
+              contactNumbersRemaining: res.contactNumbersRemaining,
+              unlockedContactUids: prev.unlockedContactUids.includes(candidate.uid)
+                ? prev.unlockedContactUids
+                : [...prev.unlockedContactUids, candidate.uid],
+            }
+          : prev
+      );
+      if (!res.contactPhone && !res.dob) {
+        Alert.alert('Unlocked', 'Contact details unlocked for this profile.');
+      }
+    } catch (err: any) {
+      if (
+        err?.details?.reasonCode === 'CONTACT_UNLOCK_LIMIT_REACHED' ||
+        err?.details?.reasonCode === 'UPGRADE_REQUIRED'
+      ) {
+        Alert.alert(
+          'Contact Limit Reached',
+          err?.message || 'Upgrade your membership to unlock more contact numbers.',
+          [
+            { text: 'Not Now', style: 'cancel' },
+            { text: 'Upgrade', onPress: () => navigation.navigate('MatrimonyUpgrade') },
+          ]
+        );
+      } else {
+        Alert.alert('Unlock Failed', err?.message || 'Unable to unlock contact right now.');
+      }
+    } finally {
+      setUnlockingContact(false);
     }
   };
 
   const handleCallCandidate = () => {
+    if (!entitlements || entitlements.tier === 'free' || !entitlements.callAccess) {
+      Alert.alert(
+        'Upgrade to Call',
+        'Calling members directly is unlocked for Silver, Gold, and Platinum members.',
+        [
+          { text: 'Not Now', style: 'cancel' },
+          { text: 'Upgrade Plan', onPress: () => navigation.navigate('MatrimonyUpgrade') },
+        ]
+      );
+      return;
+    }
     if (candidate.contactPhone) {
       Linking.openURL(`tel:${candidate.contactPhone}`).catch(() => {
         Alert.alert('Call Failed', 'Could not open phone dialer.');
@@ -444,15 +613,51 @@ export default function MatrimonyMatchDetailScreen({ navigation, route }: any) {
       return;
     }
     Alert.alert(
-      'Contact Protected',
-      candidate.interestStatus === 'accepted'
-        ? `Phone number (${candidate.maskedPhone || 'hidden'}) could not be loaded.`
-        : `Direct phone calling unlocks once ${candidate.displayName} accepts your interest.`
+      'Unlock Contact Number',
+      `Unlock ${candidate.displayName}'s contact number (${
+        entitlements.contactNumberLimit < 0
+          ? 'Unlimited'
+          : `${entitlements.contactNumbersRemaining}/${entitlements.contactNumberLimit} left`
+      }) to call?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Unlock & View', onPress: handleUnlockContact },
+      ]
     );
   };
 
+  const handleWhatsAppCandidate = () => {
+    if (!entitlements || entitlements.tier === 'free' || !entitlements.whatsappAccess) {
+      Alert.alert(
+        'Upgrade for WhatsApp',
+        'Opening WhatsApp chats is available for Silver, Gold, and Platinum members.',
+        [
+          { text: 'Not Now', style: 'cancel' },
+          { text: 'Upgrade Plan', onPress: () => navigation.navigate('MatrimonyUpgrade') },
+        ]
+      );
+      return;
+    }
+    if (!candidate.contactPhone) {
+      handleUnlockContact();
+      return;
+    }
+    const digits = candidate.contactPhone.replace(/[^\d]/g, '');
+    const waDigits = digits.length === 10 ? `91${digits}` : digits;
+    Linking.openURL(`https://wa.me/${waDigits}`).catch(() => {
+      Alert.alert('WhatsApp Unavailable', 'Could not open WhatsApp on this device.');
+    });
+  };
+
   const handleSendMessageCandidate = () => {
-    if (candidate.interestStatus === 'accepted') {
+    if (candidate.interestStatus !== 'accepted') {
+      Alert.alert(
+        'Send Message',
+        `Personalised messaging unlocks once ${candidate.displayName} accepts your interest.`
+      );
+      return;
+    }
+    const openChatRoom = () => {
       setLightboxPhotos([]);
       navigation.navigate('MatrimonyChat', {
         targetUid: candidate.uid,
@@ -470,12 +675,20 @@ export default function MatrimonyMatchDetailScreen({ navigation, route }: any) {
           contactPhone: candidate.contactPhone || null,
         },
       });
+    };
+
+    if (entitlements && !entitlements.messageAccess) {
+      Alert.alert(
+        'Upgrade to Send Messages',
+        'Sending personalised messages requires an active Silver, Gold, or Platinum membership. You can still view any past chat history.',
+        [
+          { text: 'View History', style: 'cancel', onPress: openChatRoom },
+          { text: 'Upgrade Plan', onPress: () => navigation.navigate('MatrimonyUpgrade') },
+        ]
+      );
       return;
     }
-    Alert.alert(
-      'Send Message',
-      `Direct messaging opens once ${candidate.displayName} accepts your interest.`
-    );
+    openChatRoom();
   };
 
   const dividerColor = isDark ? 'rgba(255,255,255,0.1)' : '#E5E7EB';
@@ -767,9 +980,13 @@ export default function MatrimonyMatchDetailScreen({ navigation, route }: any) {
           </MatchPhotoCarousel>
         </View>
 
-        {/* Clean Verified Ribbon right below hero image */}
+        {/* Clean Verified Ribbon below hero image */}
         <View style={styles.verifiedPlainRow}>
-          <VerifiedRibbonBadge fontFamily={fontFamily} />
+          <VerifiedRibbonBadge
+            fontFamily={fontFamily}
+            variant={candidate.verificationSummary?.trustLevel}
+            tier={candidate.candidateTier}
+          />
         </View>
 
         {/* Member Summary Header */}
@@ -831,15 +1048,36 @@ export default function MatrimonyMatchDetailScreen({ navigation, route }: any) {
                   {dobDisplay}
                 </Text>
                 {!hasUnlockedDob ? (
-                  <TouchableOpacity
-                    style={styles.upgradeLinkRow}
-                    onPress={handleUpgradeToView}
-                    activeOpacity={0.75}
-                  >
-                    <Lock size={14} color={UPGRADE_AMBER} />
-                    <Text style={[styles.upgradeLinkText, { fontFamily }]}>Upgrade to view</Text>
-                    <ChevronRight size={15} color={UPGRADE_AMBER} />
-                  </TouchableOpacity>
+                  entitlements && entitlements.tier !== 'free' && entitlements.contactNumberLimit !== 0 ? (
+                    <TouchableOpacity
+                      style={styles.upgradeLinkRow}
+                      onPress={handleUnlockContact}
+                      disabled={unlockingContact}
+                      activeOpacity={0.75}
+                    >
+                      <Lock size={14} color={UPGRADE_AMBER} />
+                      <Text style={[styles.upgradeLinkText, { fontFamily }]}>
+                        {unlockingContact
+                          ? 'Unlocking...'
+                          : `Unlock DOB & Contact (${
+                              entitlements.contactNumberLimit < 0
+                                ? 'Unlimited'
+                                : `${entitlements.contactNumbersRemaining} left`
+                            })`}
+                      </Text>
+                      <ChevronRight size={15} color={UPGRADE_AMBER} />
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.upgradeLinkRow}
+                      onPress={handleUpgradeToView}
+                      activeOpacity={0.75}
+                    >
+                      <Lock size={14} color={UPGRADE_AMBER} />
+                      <Text style={[styles.upgradeLinkText, { fontFamily }]}>Upgrade to view</Text>
+                      <ChevronRight size={15} color={UPGRADE_AMBER} />
+                    </TouchableOpacity>
+                  )
                 ) : null}
               </View>
             </View>
@@ -877,16 +1115,80 @@ export default function MatrimonyMatchDetailScreen({ navigation, route }: any) {
                     : candidate.maskedPhone || '+91 **********'}
                 </Text>
                 {!candidate.contactPhone ? (
-                  <TouchableOpacity
-                    style={styles.upgradeLinkRow}
-                    onPress={handleUpgradeToView}
-                    activeOpacity={0.75}
-                  >
-                    <Lock size={14} color={UPGRADE_AMBER} />
-                    <Text style={[styles.upgradeLinkText, { fontFamily }]}>Upgrade to view</Text>
-                    <ChevronRight size={15} color={UPGRADE_AMBER} />
-                  </TouchableOpacity>
-                ) : null}
+                  entitlements && entitlements.tier !== 'free' && entitlements.contactNumberLimit !== 0 ? (
+                    <TouchableOpacity
+                      style={styles.upgradeLinkRow}
+                      onPress={handleUnlockContact}
+                      disabled={unlockingContact}
+                      activeOpacity={0.75}
+                    >
+                      <Lock size={14} color={UPGRADE_AMBER} />
+                      <Text style={[styles.upgradeLinkText, { fontFamily }]}>
+                        {unlockingContact
+                          ? 'Unlocking contact...'
+                          : `View Contact Number (${
+                              entitlements.contactNumberLimit < 0
+                                ? 'Unlimited'
+                                : `${entitlements.contactNumbersRemaining}/${entitlements.contactNumberLimit} left`
+                            })`}
+                      </Text>
+                      <ChevronRight size={15} color={UPGRADE_AMBER} />
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.upgradeLinkRow}
+                      onPress={handleUpgradeToView}
+                      activeOpacity={0.75}
+                    >
+                      <Lock size={14} color={UPGRADE_AMBER} />
+                      <Text style={[styles.upgradeLinkText, { fontFamily }]}>Upgrade to view</Text>
+                      <ChevronRight size={15} color={UPGRADE_AMBER} />
+                    </TouchableOpacity>
+                  )
+                ) : (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 }}>
+                    <TouchableOpacity
+                      onPress={handleCallCandidate}
+                      activeOpacity={0.8}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 5,
+                        backgroundColor: isDark ? 'rgba(224,75,90,0.18)' : '#FEF2F2',
+                        borderColor: CORAL_RED,
+                        borderWidth: 1,
+                        borderRadius: 16,
+                        paddingHorizontal: 10,
+                        paddingVertical: 4,
+                      }}
+                    >
+                      <Phone size={13} color={CORAL_RED} />
+                      <Text style={{ color: CORAL_RED, fontWeight: '700', fontSize: 12, fontFamily }}>
+                        Call
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={handleWhatsAppCandidate}
+                      activeOpacity={0.8}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 5,
+                        backgroundColor: isDark ? 'rgba(22,163,74,0.18)' : '#F0FDF4',
+                        borderColor: '#16A34A',
+                        borderWidth: 1,
+                        borderRadius: 16,
+                        paddingHorizontal: 10,
+                        paddingVertical: 4,
+                      }}
+                    >
+                      <MessageCircle size={13} color="#16A34A" />
+                      <Text style={{ color: '#16A34A', fontWeight: '700', fontSize: 12, fontFamily }}>
+                        WhatsApp
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
             </View>
           </View>
@@ -914,6 +1216,70 @@ export default function MatrimonyMatchDetailScreen({ navigation, route }: any) {
             {renderKvRow('Drinking Habits', candidate.habits?.drinkingHabits || 'Not Specified')}
           </View>
         </View>
+
+        {/* Detailed Compatibility Insights (Gold & Platinum detailed breakdown; Free/Silver summary) */}
+        {candidate.breakdown ? (
+          <View style={styles.sectionWrap}>
+            {renderSectionBanner(`Compatibility Breakdown (${candidate.matchScore}%)`, Sparkles)}
+            {entitlements?.tier === 'gold' || entitlements?.tier === 'platinum' ? (
+              <View style={{ gap: 8, paddingTop: 4 }}>
+                {[
+                  { label: 'Age Match', score: candidate.breakdown.ageScore, max: 15 },
+                  { label: 'Faith & Baptism', score: candidate.breakdown.faithScore, max: 15 },
+                  { label: 'Family Values', score: candidate.breakdown.familyScore ?? 0, max: 15 },
+                  { label: 'Education', score: candidate.breakdown.educationScore ?? 0, max: 10 },
+                  { label: 'Career', score: candidate.breakdown.careerScore, max: 10 },
+                  { label: 'Location', score: candidate.breakdown.locationScore, max: 10 },
+                  { label: 'Lifestyle', score: candidate.breakdown.lifestyleScore ?? candidate.breakdown.habitsScore, max: 10 },
+                  { label: 'Height', score: candidate.breakdown.heightScore, max: 5 },
+                  { label: 'Additional Prefs', score: candidate.breakdown.additionalScore ?? candidate.breakdown.interestsScore, max: 10 },
+                ].map((row) => {
+                  const pct = Math.max(0, Math.min(100, Math.round((row.score / row.max) * 100)));
+                  return (
+                    <View key={row.label} style={{ gap: 3 }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                        <Text style={{ fontSize: 12.5, fontWeight: '600', color: colors.text, fontFamily }}>
+                          {row.label}
+                        </Text>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#16A34A', fontFamily }}>
+                          {row.score}/{row.max}
+                        </Text>
+                      </View>
+                      <View style={{ height: 6, borderRadius: 4, backgroundColor: isDark ? '#334155' : '#E2E8F0', overflow: 'hidden' }}>
+                        <View style={{ width: `${pct}%`, height: 6, backgroundColor: '#16A34A', borderRadius: 4 }} />
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : (
+              <TouchableOpacity
+                onPress={handleUpgradeToView}
+                activeOpacity={0.8}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: 12,
+                  borderRadius: 10,
+                  backgroundColor: isDark ? 'rgba(217,119,6,0.12)' : '#FFFBEB',
+                  borderWidth: 1,
+                  borderColor: isDark ? 'rgba(217,119,6,0.35)' : '#FDE68A',
+                }}
+              >
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text, fontFamily }}>
+                    Overall Match Score: {candidate.matchScore}%
+                  </Text>
+                  <Text style={{ fontSize: 11.5, color: colors.textSecondary, fontFamily }}>
+                    Upgrade to Gold or Platinum for factor-by-factor compatibility insights.
+                  </Text>
+                </View>
+                <Lock size={16} color="#D97706" />
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : null}
 
         {/* Her / His Partner Preferences Comparison Card (Screenshots 5-10) */}
         {prefComparison ? (
@@ -1550,6 +1916,44 @@ export default function MatrimonyMatchDetailScreen({ navigation, route }: any) {
           }
         }}
       />
+
+      {interestToast ? (
+        interestToast.kind === 'sent' ? (
+          <View
+            style={[
+              styles.interestUndoToast,
+              { bottom: Math.max(insets.bottom, 12) + 114 },
+            ]}
+          >
+            <Text style={[styles.interestToastText, { fontFamily }]} numberOfLines={1}>
+              Interest sent to {interestToast.name}
+            </Text>
+            <View style={styles.interestToastDivider} />
+            <TouchableOpacity
+              style={styles.interestToastUndoBtn}
+              onPress={() => handleUndoSendInterest(interestToast.uid, interestToast.name)}
+              activeOpacity={0.8}
+            >
+              <Undo2 size={15} color="#FFFFFF" strokeWidth={2.2} />
+              <Text style={[styles.interestToastUndoText, { fontFamily }]}>Undo</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View
+            style={[
+              styles.interestCancelledToastWrap,
+              { bottom: Math.max(insets.bottom, 12) + 114 },
+            ]}
+            pointerEvents="none"
+          >
+            <View style={styles.interestCancelledToast}>
+              <Text style={[styles.interestCancelledText, { fontFamily }]}>
+                Your interest has been cancelled
+              </Text>
+            </View>
+          </View>
+        )
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -2215,6 +2619,70 @@ const styles = StyleSheet.create({
   },
   moreSheetText: {
     fontSize: 15.5,
+    fontWeight: '600',
+  },
+  interestUndoToast: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    backgroundColor: '#3F3F46',
+    borderRadius: 12,
+    paddingLeft: 18,
+    paddingRight: 16,
+    paddingVertical: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 7,
+  },
+  interestToastText: {
+    color: '#FFFFFF',
+    fontSize: 13.5,
+    fontWeight: '600',
+    flex: 1,
+    marginRight: 12,
+  },
+  interestToastDivider: {
+    width: 1,
+    height: 22,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    marginRight: 14,
+  },
+  interestToastUndoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 2,
+  },
+  interestToastUndoText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  interestCancelledToastWrap: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    alignItems: 'center',
+  },
+  interestCancelledToast: {
+    backgroundColor: '#3F3F46',
+    borderRadius: 12,
+    paddingHorizontal: 22,
+    paddingVertical: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 7,
+  },
+  interestCancelledText: {
+    color: '#FFFFFF',
+    fontSize: 13.5,
     fontWeight: '600',
   },
 });

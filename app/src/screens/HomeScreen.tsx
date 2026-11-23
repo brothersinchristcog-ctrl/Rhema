@@ -26,11 +26,9 @@ import {
   UIManager
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Font from 'expo-font';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { formatDateDisplay, formatDateMonthYear, formatSermonDuration, formatTimeTo12Hour } from '../utils/DateUtils';
-import { getMatrimonyQuickAccessItem } from '../modules/matrimony/quickAccessItem';
 import { 
   Bell, 
   Hexagon,
@@ -98,7 +96,6 @@ import { getVerseBackgroundUrl } from '../constants/VerseBackgrounds';
 import { BibleService } from '../services/BibleService';
 import { SupportedLanguage } from '../locales';
 import { CustomAlert } from '../components/CustomAlert';
-import { RHEMA_LOGO_PATH, RHEMA_LOGO_VIEWBOX } from './auth/rhemaLogoPath';
 import ServiceRosterService from '../services/ServiceRosterService';
 import {
   RHEMA_YOUTUBE_CHANNEL_URL,
@@ -959,9 +956,12 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
 };
 
 /* ───────────── unique signature church hero & greeting card ───────────── */
+type HeroSlideIcon = 'sermons' | 'prayer' | 'celebrate' | 'giving' | 'matrimony';
+
 interface HeroSlideItem {
   key: string;
   eyebrow?: string;
+  icon?: HeroSlideIcon;
   brand?: string;
   title: string;
   telugu: string;
@@ -981,6 +981,7 @@ const HERO_SLIDES: HeroSlideItem[] = [
   },
   {
     key: 'sermons',
+    icon: 'sermons',
     title: 'Hear the Word anywhere',
     telugu: 'ఎక్కడైనా దేవుని వాక్యం వినండి',
     subtitle: 'Watch or listen to every Sunday message.',
@@ -989,6 +990,7 @@ const HERO_SLIDES: HeroSlideItem[] = [
   },
   {
     key: 'prayer',
+    icon: 'prayer',
     title: 'You never pray alone',
     telugu: 'మీరు ఎప్పుడూ ఒంటరిగా ప్రార్థించరు',
     subtitle: 'Share a request and the church stands with you.',
@@ -997,6 +999,7 @@ const HERO_SLIDES: HeroSlideItem[] = [
   },
   {
     key: 'celebrate',
+    icon: 'celebrate',
     title: 'Celebrate together',
     telugu: 'కలిసి ఆనందిద్దాం',
     subtitle: 'Send birthday and anniversary greetings with a verse.',
@@ -1005,6 +1008,7 @@ const HERO_SLIDES: HeroSlideItem[] = [
   },
   {
     key: 'giving',
+    icon: 'giving',
     title: 'Give with joy',
     telugu: 'సంతోషంగా ఇవ్వండి',
     subtitle: 'Support the ministry securely, with a receipt every time.',
@@ -1013,6 +1017,7 @@ const HERO_SLIDES: HeroSlideItem[] = [
   },
   {
     key: 'matrimony',
+    icon: 'matrimony',
     title: 'Blessed unions in Christ',
     telugu: 'క్రీస్తులో ఆశీర్వదించబడిన బంధాలు',
     subtitle: 'Find a Christ-centred match in the church family.',
@@ -1053,13 +1058,11 @@ const PremiumHero = ({
   const isSmallPhone = heroWidth < 350;   // e.g. iPhone SE (~320-340px)
   const deviceScale = isSmallPhone ? 0.86 : isCompactPhone ? 0.92 : 1.0;
 
-  // 1. Greeting Text: 25px on standard phone, gracefully scaled on smaller phones
-  const greetingTextSize = Math.round(25 * deviceScale);
-
-  // 2. User Name: Flexible length-based, scaled proportionally by device
+  // 1. User Name & Greeting Text: Flexible length-based, scaled proportionally by device
   const nameLen = fullName.length;
   const baseUserNameSize = nameLen <= 8 ? 25 : nameLen <= 14 ? 22 : nameLen <= 20 ? 19 : 17;
   const dynamicUserNameSize = Math.round(baseUserNameSize * deviceScale);
+  const greetingTextSize = dynamicUserNameSize;
 
   // Responsive element widths
   const avatarSize = isSmallPhone ? 50 : isCompactPhone ? 54 : 58;
@@ -1098,95 +1101,134 @@ const PremiumHero = ({
     return () => clearInterval(interval);
   }, [slideOpacities]);
 
-  const renderSlideBody = (slide: HeroSlideItem) => (
-    <>
-      {slide.eyebrow ? (
-        <View style={hStyles.celebratingRow}>
-          <View style={hStyles.celebratingLine} />
-          <Text style={hStyles.celebratingScript}>{slide.eyebrow}</Text>
-          <View style={hStyles.celebratingLine} />
-        </View>
-      ) : null}
+  const renderSlideIcon = (iconName: HeroSlideIcon) => {
+    const iconSize = 13;
+    const color = '#FFFFFF';
+    switch (iconName) {
+      case 'sermons':
+        return <Play size={iconSize} color={color} strokeWidth={2.3} />;
+      case 'prayer':
+        return <Heart size={iconSize} color={color} strokeWidth={2.3} />;
+      case 'celebrate':
+        return <Sparkles size={iconSize} color={color} strokeWidth={2.3} />;
+      case 'giving':
+        return <DollarSign size={iconSize} color={color} strokeWidth={2.3} />;
+      case 'matrimony':
+        return (
+          <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+            <Circle cx="9.5" cy="13.5" r="5" stroke={color} strokeWidth={2.1} />
+            <Circle cx="14.5" cy="13.5" r="5" stroke={color} strokeWidth={2.1} />
+            <Path d="M12 4.5l1.1 1.7-1.1 1.7-1.1-1.7L12 4.5z" fill={color} />
+          </Svg>
+        );
+    }
+  };
 
-      {slide.brand ? (
-        <View style={[hStyles.splashBrandScaleWrap, { transform: [{ scale: isSmallPhone ? 0.74 : 0.82 }] }]}>
-          <View style={hStyles.splashBrandLogoBox}>
-            <Svg width="100%" height="100%" viewBox={RHEMA_LOGO_VIEWBOX}>
-              <Path d={RHEMA_LOGO_PATH} fill="#0B1F5C" fillRule="evenodd" />
-            </Svg>
-            <Text style={hStyles.splashBrandSub} numberOfLines={1} adjustsFontSizeToFit>
-              GLOBAL MINISTRIES
+  const renderSlideBody = (slide: HeroSlideItem) => {
+    if (slide.brand) {
+      return (
+        <>
+          <View style={hStyles.welcomeBrandRow}>
+            <Text
+              style={[
+                hStyles.welcomeBrandName,
+                isSmallPhone && { fontSize: 36, lineHeight: 40 },
+              ]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              {slide.brand}
+            </Text>
+            <Text
+              style={[
+                hStyles.welcomeBrandSub,
+                isSmallPhone && { fontSize: 15.5, lineHeight: 19 },
+              ]}
+              numberOfLines={2}
+            >
+              {slide.title.replace(/\s+/, '\n')}
             </Text>
           </View>
-        </View>
-      ) : (
+
+          <Text
+            style={[
+              hStyles.slideTelugu,
+              { fontSize: isSmallPhone ? 14 : 15.5, marginTop: 4 },
+            ]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.78}
+          >
+            {slide.telugu}
+          </Text>
+
+          <Text
+            style={[
+              hStyles.slideSub,
+              { fontSize: isSmallPhone ? 12 : 13, marginTop: 2 },
+            ]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.72}
+          >
+            {slide.subtitle}
+          </Text>
+        </>
+      );
+    }
+
+    return (
+      <>
         <Text
-          style={[hStyles.slideMainTitle, isSmallPhone && { fontSize: 19, lineHeight: 24 }]}
-          numberOfLines={2}
+          style={[
+            hStyles.slideMainTitle,
+            { fontSize: isSmallPhone ? 19.5 : 22, lineHeight: isSmallPhone ? 24 : 27 },
+          ]}
+          numberOfLines={1}
           adjustsFontSizeToFit
-          minimumFontScale={0.85}
+          minimumFontScale={0.8}
         >
           {slide.title}
         </Text>
-      )}
 
-      <Text
-        style={hStyles.slideTelugu}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-        minimumFontScale={0.78}
-      >
-        {slide.telugu}
-      </Text>
-
-      <Text
-        style={hStyles.slideSub}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-        minimumFontScale={0.72}
-      >
-        {slide.subtitle}
-      </Text>
-
-      {slide.ctaLabel && slide.route ? (
-        <TouchableOpacity
-          style={hStyles.celebrateCta}
-          onPress={() => onSlideAction && onSlideAction(slide.route!)}
-          activeOpacity={0.9}
+        <Text
+          style={[hStyles.slideTelugu, { fontSize: 12.5, marginTop: 1 }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.78}
         >
-          <Text style={hStyles.celebrateCtaText}>{slide.ctaLabel}</Text>
-          <ChevronRight size={15} color="#FFFFFF" />
-        </TouchableOpacity>
-      ) : null}
-    </>
-  );
+          {slide.telugu}
+        </Text>
+
+        <Text
+          style={[hStyles.slideSub, { fontSize: 12.5, lineHeight: 17, marginTop: 2 }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.72}
+        >
+          {slide.subtitle}
+        </Text>
+
+        {slide.ctaLabel && slide.route ? (
+          <TouchableOpacity
+            style={hStyles.celebrateCta}
+            onPress={() => onSlideAction && onSlideAction(slide.route!)}
+            activeOpacity={0.88}
+          >
+            {slide.icon ? renderSlideIcon(slide.icon) : null}
+            <Text style={hStyles.celebrateCtaText}>{slide.ctaLabel}</Text>
+            <View style={hStyles.celebrateCtaArrow}>
+              <ChevronRight size={13} color="#FFFFFF" strokeWidth={2.5} />
+            </View>
+          </TouchableOpacity>
+        ) : null}
+      </>
+    );
+  };
 
   const enter = useRef(new Animated.Value(0)).current;
-  const [cursiveLoaded, setCursiveLoaded] = useState(() => {
-    try {
-      return Font.isLoaded('Pacifico') || Font.isLoaded('Yellowtail');
-    } catch {
-      return false;
-    }
-  });
   useEffect(() => {
     Animated.timing(enter, { toValue: 1, duration: 800, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
-    let isMounted = true;
-    Font.loadAsync({
-      Pacifico: require('../../assets/fonts/Pacifico-Regular.ttf'),
-      'Pacifico-Regular': require('../../assets/fonts/Pacifico-Regular.ttf'),
-      Borel: require('../../assets/fonts/Borel-Regular.ttf'),
-      'Borel-Regular': require('../../assets/fonts/Borel-Regular.ttf'),
-      Satisfy: require('../../assets/fonts/Satisfy-Regular.ttf'),
-      'Satisfy-Regular': require('../../assets/fonts/Satisfy-Regular.ttf'),
-      CaveatBrush: require('../../assets/fonts/CaveatBrush-Regular.ttf'),
-      'CaveatBrush-Regular': require('../../assets/fonts/CaveatBrush-Regular.ttf'),
-      Yellowtail: require('../../assets/fonts/Yellowtail-Regular.ttf'),
-      'Yellowtail-Regular': require('../../assets/fonts/Yellowtail-Regular.ttf'),
-    })
-      .then(() => { if (isMounted) setCursiveLoaded(true); })
-      .catch((err) => console.warn('Bold cursive font load error:', err));
-    return () => { isMounted = false; };
   }, [enter]);
 
   return (
@@ -1231,31 +1273,23 @@ const PremiumHero = ({
             </View>
           </TouchableOpacity>
 
-          {/* Center Column: Greeting + Bold Serif User Name */}
+          {/* Center Column: Serif Greeting + Bold Serif User Name */}
           <View style={{ flex: 1, minWidth: 0, marginLeft: isSmallPhone ? 10 : 12, paddingRight: isCompactPhone ? 8 : 12, justifyContent: 'center' }}>
-            <View style={gStyles.greetRow}>
-              <Text
-                {...({ fixedFontSize: true, allowFontScaling: false } as any)}
-                style={[
-                  gStyles.greet,
-                  {
-                    fontFamily: cursiveLoaded ? 'Pacifico' : (Platform.OS === 'ios' ? 'Snell Roundhand' : 'Pacifico'),
-                    fontSize: greetingTextSize,
-                    fontStyle: 'normal',
-                    fontWeight: 'normal',
-                    letterSpacing: 0.2,
-                    color: theme.heroGreet,
-                    textShadowColor: 'transparent',
-                    textShadowRadius: 0,
-                  }
-                ]}
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.72}
-              >
-                {greet}
-              </Text>
-            </View>
+            <Text
+              {...({ fixedFontSize: true, allowFontScaling: false } as any)}
+              style={[
+                hStyles.greetingText,
+                {
+                  color: theme.heroGreet,
+                  fontSize: greetingTextSize,
+                }
+              ]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.68}
+            >
+              {greet}
+            </Text>
 
             {/* USER NAME: Flexible responsive sizing (short = big, long = clearly visible) */}
             <Text
@@ -1381,45 +1415,25 @@ const hStyles = StyleSheet.create({
     justifyContent: 'center',
     gap: 4,
   },
-  celebratingRow: {
+  welcomeBrandRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 10,
   },
-  celebratingLine: {
-    width: 30,
-    height: 1,
-    backgroundColor: '#94A3B8',
-    opacity: 0.65,
+  welcomeBrandName: {
+    fontSize: 44,
+    lineHeight: 48,
+    fontWeight: '800',
+    letterSpacing: -0.8,
+    color: '#231642',
   },
-  celebratingScript: {
-    fontSize: 15,
-    fontStyle: 'italic',
-    fontFamily: SERIF,
-    fontWeight: '600',
-    color: '#334155',
-  },
-  splashBrandScaleWrap: {
-    width: 210,
-    height: 68,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  splashBrandLogoBox: {
-    width: 210,
-    height: 88,
-  },
-  splashBrandSub: {
-    position: 'absolute',
-    left: 73,
-    top: 67,
-    width: 136,
-    textAlign: 'center',
-    fontSize: 10.5,
+  welcomeBrandSub: {
+    fontSize: 17.5,
+    lineHeight: 21,
     fontWeight: '700',
-    letterSpacing: 2.2,
-    color: '#07153F',
-    fontFamily: SERIF,
+    color: '#231642',
+    textAlign: 'left',
   },
   slideMainTitle: {
     fontSize: 21,
@@ -1445,24 +1459,40 @@ const hStyles = StyleSheet.create({
     width: '100%',
   },
   celebrateCta: {
-    marginTop: 6,
+    marginTop: 8,
     backgroundColor: '#2E1A47',
-    borderRadius: 22,
-    paddingHorizontal: 20,
-    paddingVertical: 8,
+    borderRadius: 99,
+    paddingLeft: 14,
+    paddingRight: 7,
+    paddingVertical: 6,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 8,
+    shadowColor: '#2E1A47',
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
   },
   celebrateCtaText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  celebrateCtaArrow: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cardWrap: { borderRadius: 24, overflow: 'hidden', marginBottom: 6 },
   greetingCard: { borderRadius: 24, paddingVertical: 18, paddingHorizontal: 18, borderWidth: 1, overflow: 'hidden', position: 'relative' },
   cardInnerFrame: { position: 'absolute', top: 6, left: 6, right: 6, bottom: 6, borderRadius: 18, borderWidth: 1 },
   cardRow: { flexDirection: 'row', alignItems: 'center' },
+  greetingText: { fontSize: 23, fontWeight: 'normal', fontFamily: SERIF, letterSpacing: 0.2 },
   userName: { fontSize: 23, fontWeight: '700', fontFamily: SERIF, letterSpacing: 0.2, marginTop: 2, textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
   blessedPill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', marginTop: 12, paddingVertical: 4.5, paddingLeft: 8, paddingRight: 12, borderRadius: 20, borderWidth: 1, gap: 6 },
   blessedText: { fontSize: 11.5, fontWeight: '700', letterSpacing: 0.5 },
@@ -3152,7 +3182,6 @@ export default function HomeScreen() {
       icon: require('../../assets/3d_party_popper.png'),
       onPress: () => navigation.navigate('Testimonies'),
     },
-    getMatrimonyQuickAccessItem(() => handleGuestProtectedNavigation('Matrimony')),
   ];
 
   const sermonPanResponder = useRef(

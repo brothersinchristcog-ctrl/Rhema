@@ -136,6 +136,17 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
   );
 
   const [roomReady, setRoomReady] = useState(Boolean(initialRoomId && initialPeer));
+  const [canMessage, setCanMessage] = useState<boolean>(() => {
+    const cachedMem =
+      matrimonyApi.getCachedRegistration()?.profile?.membership ||
+      matrimonyApi.getCachedStatus()?.profile?.membership;
+    if (!cachedMem) return false;
+    return (
+      cachedMem.status === 'active' &&
+      cachedMem.tier !== 'free' &&
+      (!cachedMem.validUntilMs || cachedMem.validUntilMs > Date.now())
+    );
+  });
   const [roomError, setRoomError] = useState<string | null>(null);
   const [messages, setMessages] = useState<MatrimonyChatMessage[]>([]);
   const [presence, setPresence] = useState<MatrimonyPresenceState | null>(null);
@@ -182,6 +193,7 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
         setRoomId(res.roomId);
         setPeer(res.peer);
         if (res.self) setSelfInfo(res.self);
+        setCanMessage(res.canMessage !== false);
         setRoomReady(true);
         setRoomError(null);
       })
@@ -257,6 +269,10 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
   };
 
   const handleSendText = async (overrideText?: string) => {
+    if (!canMessage) {
+      navigation.navigate('MatrimonyUpgrade');
+      return;
+    }
     const textToSend = (overrideText ?? inputText).trim();
     if (!textToSend || !roomId || !myUid || !peer || sending) return;
     if (!overrideText) setInputText('');
@@ -285,6 +301,10 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
   };
 
   const handlePickAndSendImage = async () => {
+    if (!canMessage) {
+      navigation.navigate('MatrimonyUpgrade');
+      return;
+    }
     if (!roomId || !myUid || !peer || uploadingImage) return;
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -756,7 +776,59 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
           </View>
         )}
 
-        {/* Sticky WhatsApp Input Composer */}
+        {/* Sticky WhatsApp Input Composer (or Read-Only Lock Banner for Free / Expired members) */}
+        {!canMessage && roomReady ? (
+          <View
+            style={[
+              styles.composerRow,
+              {
+                paddingBottom: closedBottomPadding,
+                backgroundColor: isDark ? '#182229' : '#FFF7ED',
+                borderTopWidth: StyleSheet.hairlineWidth,
+                borderTopColor: isDark ? 'rgba(255,255,255,0.1)' : '#FDBA74',
+                paddingHorizontal: 14,
+                paddingTop: 10,
+                gap: 10,
+              },
+            ]}
+          >
+            <View style={{ flex: 1 }}>
+              <Text
+                style={{
+                  color: isDark ? '#FDE68A' : '#9A3412',
+                  fontSize: 12.5,
+                  fontWeight: '700',
+                  fontFamily,
+                }}
+              >
+                Read-only chat history
+              </Text>
+              <Text
+                style={{
+                  color: isDark ? '#CBD5E1' : '#7C2D12',
+                  fontSize: 11.5,
+                  fontFamily,
+                }}
+              >
+                Upgrade to Silver, Gold, or Platinum to send personalised messages.
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('MatrimonyUpgrade')}
+              activeOpacity={0.85}
+              style={{
+                backgroundColor: '#D97706',
+                paddingHorizontal: 14,
+                paddingVertical: 9,
+                borderRadius: 20,
+              }}
+            >
+              <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 12.5, fontFamily }}>
+                Upgrade
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
         <View
           style={[
             styles.composerRow,
@@ -818,6 +890,7 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
             )}
           </TouchableOpacity>
         </View>
+        )}
         </Animated.View>
         </KeyboardAvoidingView>
       </View>

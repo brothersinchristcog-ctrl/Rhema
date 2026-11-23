@@ -73,7 +73,7 @@ function isAdminRoleRecord(record) {
         userTypeStr.includes('pastor') ||
         userTypeStr.includes('super'));
 }
-async function requireMatrimonyAdmin(request) {
+export async function requireMatrimonyAdmin(request) {
     const uid = request.auth?.uid;
     if (!uid) {
         throw new HttpsError('unauthenticated', 'Authentication is required.');
