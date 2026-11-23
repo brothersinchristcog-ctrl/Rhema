@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue, Firestore, DocumentReference, DocumentSnapshot } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import { getMessaging } from 'firebase-admin/messaging';
 import { COLLECTIONS, DEFAULT_CHURCH_ID, MATRIMONY_BUCKET } from './constants.js';
 import { seedMutualMatchChatOnAccept } from './chat.js';
-import { assertMatrimonyProfileActive, getAdminProfileRef, getBlocksCol, getProfileRef, getShortlistedByCol, getShortlistsCol, getViewedByCol, getViewsCol, readBlockDocs, readPrefsSnap, readPrivateSnap, readShortlistedByDocs, readShortlistDocs, readViewedByDocs, readViewDocs, } from './store.js';
+import { getCurrentMonthKey, resolveActiveTierFromProfile, resolveMemberEntitlements, } from './entitlements.js';
+import { assertMatrimonyProfileActive, getAdminProfileRef, getBlocksCol, getPrefsRef, getPrivateRef, getProfileRef, getShortlistedByCol, getShortlistsCol, getUnlockedContactsCol, getUsageRef, getViewedByCol, getViewsCol, readBlockDocs, readPrefsSnap, readPrivateSnap, readShortlistedByDocs, readShortlistDocs, readViewedByDocs, readViewDocs, } from './store.js';
 import { assertNonEmptyString, optionalBoolean, optionalNumber, optionalString } from './validation.js';
 function requireAuthUid(request) {
     const uid = request.auth?.uid;
@@ -62,6 +63,24 @@ async function resolveSingleMatchPhotoUrl(bucket, path, expires) {
         }
     }
 }
+async function batchGetDocMap(db, refs) {
+    const out = new Map();
+    if (refs.length === 0)
+        return out;
+    const CHUNK = 200;
+    const chunks = [];
+    for (let i = 0; i < refs.length; i += CHUNK) {
+        chunks.push(refs.slice(i, i + CHUNK));
+    }
+    const chunkResults = await Promise.all(chunks.map((c) => db.getAll(...c)));
+    chunkResults.forEach((snaps) => {
+        snaps.forEach((s) => {
+            out.set(s.ref.path, s);
+        });
+    });
+    return out;
+}
+const WARM_VIEWER_FEED_CACHE = new Map();
 async function resolveMatchPhotoUrls(paths) {
     if (!paths.length)
         return [];
@@ -210,12 +229,16 @@ function evaluateCompatibility(viewer, viewerPrivate, viewerPrefs, candidate, ca
         matchReasons: [],
         breakdown: {
             ageScore: 0,
+            educationScore: 0,
             interestsScore: 0,
             heightScore: 0,
             maritalScore: 0,
+            familyScore: 0,
             faithScore: 0,
             careerScore: 0,
             locationScore: 0,
+            lifestyleScore: 0,
+            additionalScore: 0,
             habitsScore: 0,
         },
     };
@@ -450,15 +473,15 @@ function evaluateCompatibility(viewer, viewerPrivate, viewerPrefs, candidate, ca
     // members in partner_preferences mode (especially when optional profile fields like habits
     // are unset). Explicit selections in `filters` still hard-filter in section 1 above.
     const matchReasons = [];
-    // Score A: Age Criteria (14 pts)
-    let ageScore = 7;
+    // Score 1: Age (15 pts)
+    let ageScore = 8;
     if (cAge !== null) {
         if (cAge >= prefAgeMin && cAge <= prefAgeMax) {
-            ageScore = 11;
+            ageScore = 12;
             const cMin = candidatePrefs?.age?.min;
             const cMax = candidatePrefs?.age?.max;
             if (vAge !== null && typeof cMin === 'number' && typeof cMax === 'number' && vAge >= cMin && vAge <= cMax) {
-                ageScore = 14;
+                ageScore = 15;
                 matchReasons.push('Mutual age preference');
             }
             else {
@@ -467,41 +490,60 @@ function evaluateCompatibility(viewer, viewerPrivate, viewerPrefs, candidate, ca
         }
         else {
             const dist = cAge < prefAgeMin ? prefAgeMin - cAge : cAge - prefAgeMax;
-            ageScore = Math.max(0, 9 - dist * 2);
+            ageScore = Math.max(0, 10 - dist * 2);
         }
     }
-    // Score B: Height + Marital + Mother Tongue + Physical Status (12 pts)
+    // Score 2: Height (5 pts)
     let heightScore = 3;
     if (cHeight !== null) {
         if (cHeight >= minH && cHeight <= maxH)
-            heightScore = 4;
+            heightScore = 5;
         else if (Math.abs(cHeight < minH ? minH - cHeight : cHeight - maxH) <= 5)
-            heightScore = 2;
+            heightScore = 3;
         else
             heightScore = 0;
     }
-    let maritalScore = 3;
-    if (prefMaritals.length > 0 && prefMaritals.includes(cMarital)) {
-        maritalScore = 3;
+    // Score 3: Family Values & Background + Mother Tongue (15 pts)
+    let familyScore = 0;
+    const candFamVal = normalizeAnyOption(candidate.familySummary?.familyValues);
+    const viewFamVal = normalizeAnyOption(viewer.familySummary?.familyValues);
+    if (candFamVal !== 'any' && viewFamVal !== 'any' && candFamVal === viewFamVal) {
+        familyScore += 5;
+        matchReasons.push('Aligned family values');
     }
-    // Mother tongue (pref + mutual tongue bonus)
-    let motherTongueScore = 0;
+    else if (candFamVal === 'any' || viewFamVal === 'any') {
+        familyScore += 3;
+    }
+    else {
+        familyScore += 2;
+    }
+    const candFamType = normalizeAnyOption(candidate.familySummary?.familyType);
+    const viewFamType = normalizeAnyOption(viewer.familySummary?.familyType);
+    const candFamStatus = normalizeAnyOption(candidate.familySummary?.familyStatus);
+    const viewFamStatus = normalizeAnyOption(viewer.familySummary?.familyStatus);
+    if (candFamType !== 'any' && viewFamType !== 'any' && candFamType === viewFamType)
+        familyScore += 3;
+    else
+        familyScore += 2;
+    if (candFamStatus !== 'any' && viewFamStatus !== 'any' && candFamStatus === viewFamStatus)
+        familyScore += 2;
+    else
+        familyScore += 1;
     const prefMT = normalizeAnyOption(viewerPrefs?.motherTongue);
     const candMT = normalizeAnyOption(candidate.motherTongue);
     const viewMT = normalizeAnyOption(viewer.motherTongue);
     if (prefMT !== 'any' && candMT !== 'any' && candMT === prefMT) {
-        motherTongueScore = 4;
+        familyScore += 5;
         matchReasons.push('Same mother tongue');
     }
     else if (prefMT === 'any' && viewMT !== 'any' && candMT === viewMT) {
-        motherTongueScore = 4;
+        familyScore += 5;
         matchReasons.push('Same mother tongue');
     }
     else if (prefMT === 'any') {
-        motherTongueScore = 2;
+        familyScore += 3;
     }
-    const physicalScore = prefPhys === 'any' || candPhys === prefPhys ? 1 : 0;
-    // Score C: Hobbies & Interests Overlap (14 pts)
+    // Score 4: Shared Interests & Lifestyle (10 pts)
     const viewerInterestList = flattenInterests(viewer.interests);
     const candidateInterestList = flattenInterests(candidate.interests);
     const viewerLowerSet = new Set(viewerInterestList.map((i) => i.toLowerCase()));
@@ -517,7 +559,6 @@ function evaluateCompatibility(viewer, viewerPrivate, viewerPrefs, candidate, ca
     if (filters.sharedInterestsOnly && sharedInterests.length === 0) {
         return fail;
     }
-    // Also count overlapping non-empty interest categories (music, sports, reading, hobbies, etc.)
     const interestKeys = ['hobbies', 'music', 'reading', 'movies', 'sports', 'food', 'languages'];
     let sharedCategoryCount = 0;
     for (const k of interestKeys) {
@@ -531,22 +572,34 @@ function evaluateCompatibility(viewer, viewerPrivate, viewerPrefs, candidate, ca
     let interestsScore = 0;
     if (sharedInterests.length > 0) {
         if (sharedInterests.length >= 4)
-            interestsScore = 14;
-        else if (sharedInterests.length === 3)
-            interestsScore = 12;
-        else if (sharedInterests.length === 2)
-            interestsScore = 10;
+            interestsScore = 6;
+        else if (sharedInterests.length >= 2)
+            interestsScore = 5;
         else
-            interestsScore = 8;
+            interestsScore = 4;
         matchReasons.push(`${sharedInterests.length} shared ${sharedInterests.length === 1 ? 'interest' : 'interests'}`);
     }
     else if (sharedCategoryCount >= 2) {
-        interestsScore = 5;
+        interestsScore = 3;
     }
     else if (viewerInterestList.length === 0 || candidateInterestList.length === 0) {
-        interestsScore = 4;
+        interestsScore = 2;
     }
-    // Score D: Religious Information Alignment (14 pts)
+    let habitsScore = 0;
+    const prefEat = normalizeAnyOption(viewerPrefs?.eatingHabits);
+    const candEat = normalizeAnyOption(candidate.habits?.eatingHabits);
+    if (prefEat === 'any' || candEat === prefEat)
+        habitsScore += 2;
+    const prefDrink = normalizeAnyOption(viewerPrefs?.drinkingHabits);
+    const candDrink = normalizeAnyOption(candidate.habits?.drinkingHabits);
+    if (prefDrink === 'any' || candDrink === prefDrink)
+        habitsScore += 1;
+    const prefSmoke = normalizeAnyOption(viewerPrefs?.smokingHabits);
+    const candSmoke = normalizeAnyOption(candidate.habits?.smokingHabits);
+    if (prefSmoke === 'any' || candSmoke === prefSmoke)
+        habitsScore += 1;
+    const lifestyleScore = interestsScore + habitsScore; // max 10
+    // Score 5: Faith-Related Preferences (15 pts)
     let faithScore = 0;
     const candReligion = normalizeAnyOption(candidate.faithSummary?.religion || 'Christian');
     const viewReligion = normalizeAnyOption(viewer.faithSummary?.religion || 'Christian');
@@ -580,7 +633,7 @@ function evaluateCompatibility(viewer, viewerPrivate, viewerPrefs, candidate, ca
     const candFaithVal = normalizeAnyOption(candidate.faithSummary?.religiousValues);
     const viewFaithVal = normalizeAnyOption(viewer.faithSummary?.religiousValues);
     if (candFaithVal !== 'any' && viewFaithVal !== 'any' && candFaithVal === viewFaithVal) {
-        faithScore += 2;
+        faithScore += 3;
     }
     else {
         faithScore += 1;
@@ -588,9 +641,8 @@ function evaluateCompatibility(viewer, viewerPrivate, viewerPrefs, candidate, ca
     if (candidate.faithSummary?.baptized === true) {
         faithScore += viewer.faithSummary?.baptized === true ? 3 : 2;
     }
-    // Score E: Professional Information Closeness & Match (16 pts)
-    let careerScore = 0;
-    // E1. Education match or closeness (up to 6 pts)
+    // Score 6: Education (10 pts)
+    let educationScore = 0;
     if (prefEduList.length > 0) {
         const exactOrClose = prefEduList.reduce((best, e) => {
             const res = areEducationsClose(candEdu, e);
@@ -601,32 +653,33 @@ function evaluateCompatibility(viewer, viewerPrivate, viewerPrefs, candidate, ca
             return best;
         }, 'none');
         if (exactOrClose === 'exact') {
-            careerScore += 6;
+            educationScore = 10;
             matchReasons.push('Matches education preference');
         }
         else if (exactOrClose === 'close') {
-            careerScore += 5;
+            educationScore = 8;
             matchReasons.push('Close education field');
         }
         else {
-            careerScore += 1;
+            educationScore = 3;
         }
     }
     else {
         const vsViewerEdu = areEducationsClose(candEdu, viewer.education?.qualification);
         if (vsViewerEdu === 'exact') {
-            careerScore += 6;
+            educationScore = 10;
             matchReasons.push('Similar education');
         }
         else if (vsViewerEdu === 'close') {
-            careerScore += 5;
+            educationScore = 8;
             matchReasons.push('Close education field');
         }
         else {
-            careerScore += 3;
+            educationScore = 5;
         }
     }
-    // E2. Occupation match or closeness (up to 5 pts)
+    // Score 7: Career (10 pts)
+    let careerScore = 0;
     const prefOcc = normalizeAnyOption(viewerPrefs?.occupation);
     const candOcc = candidate.career?.profession;
     const viewOcc = viewer.career?.profession;
@@ -654,7 +707,6 @@ function evaluateCompatibility(viewer, viewerPrivate, viewerPrefs, candidate, ca
             careerScore += 3;
         }
     }
-    // E3. Employment type + Annual Income (up to 5 pts)
     const prefEmp = normalizeAnyOption(viewerPrefs?.employedIn);
     const candEmp = normalizeAnyOption(candidate.career?.employmentType);
     const viewEmp = normalizeAnyOption(viewer.career?.employmentType);
@@ -669,7 +721,7 @@ function evaluateCompatibility(viewer, viewerPrivate, viewerPrefs, candidate, ca
     if (matchesIncomePref(prefIncome, candIncome)) {
         careerScore += 2;
     }
-    // Score F: Location Proximity & Preference (12 pts)
+    // Score 8: Location (10 pts)
     let locationScore = 0;
     const prefCountries = Array.isArray(viewerPrefs?.locations?.preferredCountries)
         ? viewerPrefs.locations.preferredCountries.map(normalizeAnyOption).filter((x) => x !== 'any')
@@ -677,10 +729,10 @@ function evaluateCompatibility(viewer, viewerPrivate, viewerPrefs, candidate, ca
     const candCountry = normalizeAnyOption(candidate.location?.country);
     const viewCountry = normalizeAnyOption(viewer.location?.country);
     if (prefCountries.length === 0) {
-        locationScore += candCountry === viewCountry ? 4 : 2;
+        locationScore += candCountry === viewCountry ? 3 : 1;
     }
     else if (candCountry !== 'any' && prefCountries.includes(candCountry)) {
-        locationScore += 4;
+        locationScore += 3;
     }
     const prefStates = Array.isArray(viewerPrefs?.locations?.preferredStates)
         ? viewerPrefs.locations.preferredStates.map(normalizeAnyOption).filter((x) => x !== 'any')
@@ -708,17 +760,19 @@ function evaluateCompatibility(viewer, viewerPrivate, viewerPrefs, candidate, ca
         ? viewerPrefs.locations.preferredCities.map(normalizeAnyOption).filter((x) => x !== 'any')
         : [];
     if (prefCities.length > 0 && candCity !== 'any' && prefCities.includes(candCity)) {
-        locationScore += 4;
+        locationScore += 3;
         matchReasons.push('Preferred city');
     }
     else if (candCity !== 'any' && viewCity !== 'any' && candCity === viewCity) {
-        locationScore += 4;
+        locationScore += 3;
         matchReasons.push('Same city');
     }
     else if (prefCities.length === 0 && viewerPrefs?.locations?.openToRelocation !== false) {
         locationScore += 2;
     }
-    // Score G: Mutual Partner Preference Alignment across all 19 criteria (18 pts total, + 4 Habits pts)
+    // Score 9: Additional Preferences (Marital, Physical, Reciprocal Preference Alignment - 10 pts)
+    const maritalScore = prefMaritals.length === 0 || prefMaritals.includes(cMarital) ? 2 : 0;
+    const physicalScore = prefPhys === 'any' || candPhys === prefPhys ? 2 : 0;
     const candMatchesViewerPref = buildPartnerPrefComparison(candidate, candidatePrivate, viewer, viewerPrefs);
     const viewerMatchesCandPref = buildPartnerPrefComparison(viewer, viewerPrivate, candidate, candidatePrefs);
     const candRatio = candMatchesViewerPref.totalCount > 0
@@ -727,47 +781,24 @@ function evaluateCompatibility(viewer, viewerPrivate, viewerPrefs, candidate, ca
     const viewerRatio = viewerMatchesCandPref.totalCount > 0
         ? viewerMatchesCandPref.matchedCount / viewerMatchesCandPref.totalCount
         : 0.7;
-    const mutualPrefScore = Math.round(((candRatio + viewerRatio) / 2) * 18);
+    const mutualPrefScore = Math.round(((candRatio + viewerRatio) / 2) * 6);
     if (candRatio >= 0.75 && viewerRatio >= 0.75) {
         matchReasons.unshift('High mutual match');
     }
     if (filters.mutualMatchesOnly && (candRatio < 0.65 || viewerRatio < 0.65)) {
         return fail;
     }
-    let habitsScore = 0;
-    const prefEat = normalizeAnyOption(viewerPrefs?.eatingHabits);
-    const candEat = normalizeAnyOption(candidate.habits?.eatingHabits);
-    if (prefEat === 'any' || candEat === prefEat)
-        habitsScore += 2;
-    const prefDrink = normalizeAnyOption(viewerPrefs?.drinkingHabits);
-    const candDrink = normalizeAnyOption(candidate.habits?.drinkingHabits);
-    if (prefDrink === 'any' || candDrink === prefDrink)
-        habitsScore += 1;
-    const prefSmoke = normalizeAnyOption(viewerPrefs?.smokingHabits);
-    const candSmoke = normalizeAnyOption(candidate.habits?.smokingHabits);
-    if (prefSmoke === 'any' || candSmoke === prefSmoke)
-        habitsScore += 1;
-    // Profile completeness & verified photo trust boost (0-4 pts)
-    let trustBonus = 0;
-    if (candidate.profilePhoto)
-        trustBonus += 2;
-    if (Array.isArray(candidate.gallery) && candidate.gallery.length > 0)
-        trustBonus += 1;
-    if (typeof candidate.profileCompletion === 'number' && candidate.profileCompletion >= 85) {
-        trustBonus += 1;
-    }
+    const additionalScore = maritalScore + physicalScore + mutualPrefScore; // max 10
+    // Compatibility score is 100% independent of subscription tier
     const totalScore = Math.min(100, Math.round(ageScore +
         heightScore +
-        maritalScore +
-        motherTongueScore +
-        physicalScore +
-        interestsScore +
-        faithScore +
+        educationScore +
         careerScore +
         locationScore +
-        mutualPrefScore +
-        habitsScore +
-        trustBonus));
+        familyScore +
+        faithScore +
+        lifestyleScore +
+        additionalScore));
     const uniqueReasons = Array.from(new Set(matchReasons)).slice(0, 6);
     return {
         eligible: true,
@@ -776,13 +807,17 @@ function evaluateCompatibility(viewer, viewerPrivate, viewerPrefs, candidate, ca
         matchReasons: uniqueReasons,
         breakdown: {
             ageScore,
+            educationScore,
             interestsScore,
             heightScore,
-            maritalScore: maritalScore + motherTongueScore + physicalScore,
+            maritalScore,
+            familyScore,
             faithScore,
             careerScore,
             locationScore,
-            habitsScore: habitsScore + mutualPrefScore,
+            lifestyleScore,
+            additionalScore,
+            habitsScore,
         },
     };
 }
@@ -1073,23 +1108,41 @@ function buildPartnerPrefComparison(viewer, viewerPrivate, candidate, candPrefs)
     return { matchedCount, totalCount, sections };
 }
 async function formatMatchCandidatePayload(params) {
-    const { candUid, viewer, viewerPrivate, candidate, candPriv, candPrefs, evaluation, isShortlisted, interestStatus, interestSentAtMs = 0, joinedAtMs, viewedAtMs = 0, } = params;
+    const { candUid, viewer, viewerPrivate, candidate, candPriv, candPrefs, evaluation, isShortlisted, interestStatus, interestSentAtMs = 0, joinedAtMs, viewedAtMs = 0, viewerEntitlements, unlockedContactSet, candidateTierOverride, preResolvedPhotoMap, } = params;
+    const lookupPhoto = (p) => {
+        if (preResolvedPhotoMap && preResolvedPhotoMap.has(p)) {
+            return Promise.resolve(preResolvedPhotoMap.get(p) ?? null);
+        }
+        return resolveMatchPhotoUrls([p]).then((u) => u[0] || null);
+    };
     const [signedProfilePhoto, signedGallery] = await Promise.all([
-        candidate.profilePhoto
-            ? resolveMatchPhotoUrls([candidate.profilePhoto]).then((u) => u[0] || null)
-            : Promise.resolve(null),
+        candidate.profilePhoto ? lookupPhoto(String(candidate.profilePhoto)) : Promise.resolve(null),
         Array.isArray(candidate.gallery) && candidate.gallery.length > 0
-            ? resolveMatchPhotoUrls(candidate.gallery)
+            ? Promise.all(candidate.gallery
+                .filter((g) => typeof g === 'string' && g.length > 0)
+                .map((g) => lookupPhoto(g))).then((arr) => arr.filter((u) => Boolean(u)))
             : Promise.resolve([]),
     ]);
     const partnerPreferencesComparison = buildPartnerPrefComparison(viewer, viewerPrivate, candidate, candPrefs);
     const managedType = String(candPriv?.profileManager?.type || 'self').toLowerCase();
-    const viewerTier = String(viewer?.membership?.tier || 'free').toLowerCase();
-    const viewerMembershipValidUntilMs = Number(viewer?.membership?.validUntilMs || 0);
-    const viewerHasPaidMembership = viewerTier !== 'free' &&
-        viewer?.membership?.status === 'active' &&
-        (viewerMembershipValidUntilMs === 0 || viewerMembershipValidUntilMs > Date.now());
-    const canUnlockPrivate = interestStatus === 'accepted' || viewerHasPaidMembership;
+    const candidateTier = candidateTierOverride ?? resolveActiveTierFromProfile(candidate);
+    const isHighlighted = candidateTier === 'platinum' ? 'platinum' : candidateTier === 'gold' ? 'gold' : 'none';
+    const visibilityPriority = candidateTier === 'platinum' ? 2 : candidateTier === 'gold' ? 1 : 0;
+    const hasPhoto = Boolean(candidate.profilePhoto);
+    const isBaptized = candidate.faithSummary?.baptized === true;
+    const verificationSummary = {
+        adminApproved: candidate.profileStatus === 'approved',
+        churchMemberVerified: true,
+        photoVerified: hasPhoto,
+        baptismVerified: isBaptized,
+        trustLevel: (hasPhoto && isBaptized ? 'prime_verified' : 'verified'),
+    };
+    // Contact numbers & exact DOB require active paid subscription AND either Platinum (unlimited) or explicit unlock
+    const hasPaidViewer = Boolean(viewerEntitlements && viewerEntitlements.tier !== 'free');
+    const isContactUnlocked = Boolean(hasPaidViewer &&
+        (viewerEntitlements.contactNumberLimit < 0 || unlockedContactSet?.has(candUid)));
+    const canUnlockContact = Boolean(hasPaidViewer &&
+        (viewerEntitlements.contactNumberLimit < 0 || viewerEntitlements.contactNumbersRemaining > 0));
     return {
         uid: candUid,
         displayName: candidate.displayName || 'Rhema Member',
@@ -1110,10 +1163,16 @@ async function formatMatchCandidatePayload(params) {
         familySummary: candidate.familySummary || {},
         familyDetails: candPriv.familyDetails || null,
         annualIncomeRange: candPriv?.incomeDetails?.annualIncomeRange || '',
-        dob: canUnlockPrivate ? (candPriv?.dob || null) : null,
+        dob: isContactUnlocked ? (candPriv?.dob || null) : null,
         maskedDob: maskDob(candPriv?.dob),
         maskedPhone: maskPhoneNumber(candPriv?.phoneNumber),
-        contactPhone: canUnlockPrivate ? (candPriv?.phoneNumber || null) : null,
+        contactPhone: isContactUnlocked ? (candPriv?.phoneNumber || null) : null,
+        isContactUnlocked,
+        canUnlockContact,
+        candidateTier,
+        isHighlighted,
+        visibilityPriority,
+        verificationSummary,
         partnerPreferencesComparison,
         signedProfilePhoto,
         signedGallery,
@@ -1202,17 +1261,81 @@ function mapViewerPrefsToFilter(viewerPrefs) {
  * 1. getMatrimonyMatches
  * Returns real verified opposite-gender matches scored by Partner Preferences, Age, & Hobbies/Interests.
  */
-export const getMatrimonyMatches = onCall({ invoker: 'public' }, async (request) => {
+export const getMatrimonyMatches = onCall({ invoker: 'public', cpu: 1, memory: '512MiB', maxInstances: 20 }, async (request) => {
     const uid = requireAuthUid(request);
     const db = getFirestore();
-    await assertMatrimonyProfileActive(db, uid);
     const tab = optionalString(request.data?.tab, 30) || 'all';
     const matchBasisRaw = optionalString(request.data?.matchBasis, 30);
     const matchBasis = matchBasisRaw === 'all_filters' ? 'all_filters' : 'partner_preferences';
+    const matchTierRaw = optionalString(request.data?.matchTier, 20);
+    const matchTier = matchTierRaw === 'prime' ? 'prime' : 'regular';
     const sortBy = optionalString(request.data?.sortBy, 30) || 'best_match';
+    const offset = optionalNumber(request.data?.offset, 0, 5000, 'offset') ?? 0;
+    const limit = optionalNumber(request.data?.limit, 1, 200, 'limit');
     const rawFilters = (request.data?.filters && typeof request.data.filters === 'object')
         ? request.data.filters
         : {};
+    const feedCacheKey = `${uid}|${tab}|${matchBasis}|${matchTier}|${sortBy}|${JSON.stringify(rawFilters)}`;
+    if (offset > 0) {
+        const warmFeed = WARM_VIEWER_FEED_CACHE.get(feedCacheKey);
+        if (warmFeed && warmFeed.expiresAtMs > Date.now()) {
+            const cachedPageSlice = limit !== undefined
+                ? warmFeed.validScored.slice(offset, offset + limit)
+                : warmFeed.validScored.slice(offset);
+            const uniquePhotoPaths = new Set();
+            cachedPageSlice.forEach((item) => {
+                if (item.candidate?.profilePhoto)
+                    uniquePhotoPaths.add(String(item.candidate.profilePhoto));
+                if (Array.isArray(item.candidate?.gallery)) {
+                    item.candidate.gallery.forEach((g) => {
+                        if (typeof g === 'string' && g)
+                            uniquePhotoPaths.add(g);
+                    });
+                }
+            });
+            const preResolvedPhotoMap = new Map();
+            const bucket = getStorage().bucket(MATRIMONY_BUCKET);
+            const expires = Date.now() + 60 * 60 * 1000;
+            await Promise.all(Array.from(uniquePhotoPaths).map(async (p) => {
+                preResolvedPhotoMap.set(p, await resolveSingleMatchPhotoUrl(bucket, p, expires));
+            }));
+            const validMatches = await Promise.all(cachedPageSlice.map((item) => formatMatchCandidatePayload({
+                candUid: item.uid,
+                viewer: warmFeed.viewer,
+                viewerPrivate: warmFeed.viewerPrivate,
+                candidate: item.candidate,
+                candPriv: item.candPriv,
+                candPrefs: item.candPrefs,
+                evaluation: item.evaluation,
+                isShortlisted: item.isShortlisted,
+                interestStatus: item.interestStatus,
+                interestSentAtMs: item.interestSentAtMs,
+                joinedAtMs: item.joinedAtMs,
+                viewedAtMs: item.viewedAtMs,
+                viewerEntitlements: warmFeed.viewerEntitlements,
+                unlockedContactSet: warmFeed.unlockedContactSet,
+                candidateTierOverride: item.candTier,
+                preResolvedPhotoMap,
+            })));
+            return {
+                success: true,
+                matches: validMatches,
+                totalCount: warmFeed.totalMatchedCount,
+                hasMore: offset + validMatches.length < warmFeed.totalMatchedCount,
+                nextOffset: offset + validMatches.length,
+                totalAvailableCount: warmFeed.totalAvailableCount,
+                hiddenCount: warmFeed.hiddenCount,
+                viewerGender: warmFeed.viewerGender,
+                targetGender: warmFeed.targetGender,
+                viewerPhoto: warmFeed.viewerPhoto,
+                viewerPreferencesFilter: warmFeed.viewerPreferencesFilter,
+                preferencesUpdatedAtMs: warmFeed.preferencesUpdatedAtMs,
+                viewerEntitlements: warmFeed.viewerEntitlements,
+                lockedAdvancedFilters: warmFeed.lockedAdvancedFilters,
+            };
+        }
+    }
+    await assertMatrimonyProfileActive(db, uid);
     const rawEduFilter = Array.isArray(rawFilters.education)
         ? rawFilters.education
             .map((x) => optionalString(x, 120))
@@ -1260,7 +1383,7 @@ export const getMatrimonyMatches = onCall({ invoker: 'public' }, async (request)
         withPhotoOnly: optionalBoolean(rawFilters.withPhotoOnly),
         sharedInterestsOnly: optionalBoolean(rawFilters.sharedInterestsOnly),
     };
-    const [viewerProfSnap, viewerPrivateSnap, viewerPrefsSnap, shortlistDocs, blockDocs, sentInterestsSnap, shortlistedByDocs, viewDocs, viewedByDocs,] = await Promise.all([
+    const [viewerProfSnap, viewerPrivateSnap, viewerPrefsSnap, shortlistDocs, blockDocs, sentInterestsSnap, shortlistedByDocs, viewDocs, viewedByDocs, activeSubsSnap,] = await Promise.all([
         getProfileRef(db, uid).get(),
         readPrivateSnap(db, uid),
         readPrefsSnap(db, uid),
@@ -1270,6 +1393,7 @@ export const getMatrimonyMatches = onCall({ invoker: 'public' }, async (request)
         tab === 'shortlisted_you' ? readShortlistedByDocs(db, uid) : Promise.resolve([]),
         tab === 'viewed_by_you' ? readViewDocs(db, uid) : Promise.resolve([]),
         tab === 'viewed_you' ? readViewedByDocs(db, uid) : Promise.resolve([]),
+        db.collection(COLLECTIONS.SUBSCRIPTIONS).where('status', '==', 'active').get(),
     ]);
     if (!viewerProfSnap.exists) {
         return {
@@ -1282,9 +1406,33 @@ export const getMatrimonyMatches = onCall({ invoker: 'public' }, async (request)
         };
     }
     const viewer = viewerProfSnap.data() || {};
+    const viewerEntitlements = await resolveMemberEntitlements(db, uid, viewer);
+    const unlockedContactSet = new Set(viewerEntitlements.unlockedContactUids);
     const viewerPrivate = viewerPrivateSnap.exists ? viewerPrivateSnap.data() || {} : {};
     const viewerPrefs = viewerPrefsSnap.exists ? viewerPrefsSnap.data() || {} : {};
     const viewerGender = normalizeGender(viewer.gender);
+    // Enforce Gold/Platinum-only Advanced Filters on the backend
+    let lockedAdvancedFilters = false;
+    if (!viewerEntitlements.advancedFilters) {
+        const advancedKeys = [
+            'annualIncome',
+            'occupation',
+            'employmentType',
+            'eatingHabits',
+            'drinkingHabits',
+            'smokingHabits',
+            'familyStatus',
+            'familyType',
+            'familyValues',
+            'mutualMatchesOnly',
+        ];
+        for (const key of advancedKeys) {
+            if (filters[key] !== undefined && filters[key] !== false && filters[key] !== '') {
+                lockedAdvancedFilters = true;
+                delete filters[key];
+            }
+        }
+    }
     const viewerPhoto = viewer.profilePhoto
         ? (await resolveMatchPhotoUrls([viewer.profilePhoto]))[0] || null
         : null;
@@ -1325,6 +1473,17 @@ export const getMatrimonyMatches = onCall({ invoker: 'public' }, async (request)
         .where('churchId', '==', DEFAULT_CHURCH_ID)
         .where('profileStatus', '==', 'approved')
         .get();
+    const activeSubTierByUid = new Map();
+    const nowCheckMs = Date.now();
+    activeSubsSnap.docs.forEach((sDoc) => {
+        const sData = sDoc.data() || {};
+        const sTier = String(sData.tier || '').toLowerCase();
+        const sEnd = typeof sData.expiryDateMs === 'number' ? sData.expiryDateMs : 0;
+        if ((sTier === 'silver' || sTier === 'gold' || sTier === 'platinum') &&
+            (sEnd === 0 || sEnd > nowCheckMs)) {
+            activeSubTierByUid.set(String(sData.uid || sDoc.id), sTier);
+        }
+    });
     // Filter strictly opposite gender and non-self / non-dismissed before fetching preferences
     const eligibleDocs = candidatesSnap.docs.filter((doc) => {
         if (doc.id === uid)
@@ -1348,56 +1507,102 @@ export const getMatrimonyMatches = onCall({ invoker: 'public' }, async (request)
     const effectiveBasis = isActivityListTab
         ? 'all_filters'
         : matchBasis;
-    const scoredResults = await Promise.all(eligibleDocs.map(async (doc) => {
+    // Pre-filter cheap metadata & tab membership BEFORE reading subcollections or signing photos
+    const candidatePool = eligibleDocs.filter((doc) => {
         const candidate = doc.data();
-        const [candPrefsSnap, candPrivSnap] = await Promise.all([
-            readPrefsSnap(db, doc.id),
-            readPrivateSnap(db, doc.id),
-        ]);
-        const candPrefs = candPrefsSnap.exists ? candPrefsSnap.data() || {} : {};
-        const candPriv = candPrivSnap.exists ? candPrivSnap.data() || {} : {};
-        const evaluation = evaluateCompatibility(viewer, viewerPrivate, viewerPrefs, candidate, candPriv, candPrefs, filters, effectiveBasis);
-        if (!evaluation.eligible)
-            return null;
+        const profTier = resolveActiveTierFromProfile(candidate);
+        const resolvedTier = profTier !== 'free' ? profTier : activeSubTierByUid.get(doc.id) || 'free';
+        if (matchTier === 'prime' && resolvedTier === 'free') {
+            return false;
+        }
         const isShortlisted = shortlistedSet.has(doc.id);
         const createdOrApprovedMs = toTimestampMs(candidate.approvedAt) ||
             toTimestampMs(candidate.submittedAt) ||
             toTimestampMs(candidate.createdAt);
         if ((tab === 'shortlisted' || tab === 'shortlisted_by_you') && !isShortlisted)
-            return null;
-        if (tab === 'shortlisted_you') {
-            let didShortlistViewer = shortlistedBySet.has(doc.id);
-            if (!didShortlistViewer) {
-                const legacyReverse = await getShortlistsCol(db, doc.id).doc(uid).get().catch(() => null);
-                didShortlistViewer = Boolean(legacyReverse?.exists);
-            }
-            if (!didShortlistViewer)
-                return null;
-        }
+            return false;
         if (tab === 'viewed_you' && !viewedByMap.has(doc.id))
-            return null;
+            return false;
         if (tab === 'viewed_by_you' && !viewedMap.has(doc.id))
-            return null;
+            return false;
         if (tab === 'newly_joined' && createdOrApprovedMs > 0 && createdOrApprovedMs < thirtyDaysAgoMs) {
-            return null;
-        }
-        if (tab === 'shared_interests' && evaluation.sharedInterests.length === 0) {
-            return null;
-        }
-        if (!matchesViewerPreferenceTab(tab, viewer, viewerPrefs, candidate, candPrefs)) {
-            return null;
+            return false;
         }
         if (filters.createdWithin && filters.createdWithin !== 'all') {
             const refMs = createdOrApprovedMs || toTimestampMs(candidate.updatedAt);
             const daysMap = { today: 1, '3d': 3, '1w': 7, '1m': 30 };
             const cutoffMs = Date.now() - daysMap[filters.createdWithin] * 24 * 60 * 60 * 1000;
             if (!refMs || refMs < cutoffMs)
-                return null;
+                return false;
         }
-        return formatMatchCandidatePayload({
-            candUid: doc.id,
-            viewer,
-            viewerPrivate,
+        return true;
+    });
+    // Batch-read all candidate prefs & private docs in 2 grouped db.getAll RPCs instead of 2N single .get() calls
+    const prefsRefs = candidatePool.map((d) => getPrefsRef(db, d.id));
+    const privRefs = candidatePool.map((d) => getPrivateRef(db, d.id));
+    const [subDocMap, legacyShortlistFlags] = await Promise.all([
+        batchGetDocMap(db, [...prefsRefs, ...privRefs]),
+        tab === 'shortlisted_you'
+            ? Promise.all(candidatePool.map(async (d) => {
+                if (shortlistedBySet.has(d.id))
+                    return true;
+                const legacy = await getShortlistsCol(db, d.id).doc(uid).get().catch(() => null);
+                return Boolean(legacy?.exists);
+            }))
+            : Promise.resolve([]),
+    ]);
+    // Fallback legacy collections only for UIDs missing subcollection docs
+    const missingLegacyPrefsRefs = [];
+    const missingLegacyPrivRefs = [];
+    candidatePool.forEach((d) => {
+        const pSnap = subDocMap.get(getPrefsRef(db, d.id).path);
+        if (!pSnap?.exists)
+            missingLegacyPrefsRefs.push(db.collection(COLLECTIONS.PREFERENCES).doc(d.id));
+        const vSnap = subDocMap.get(getPrivateRef(db, d.id).path);
+        if (!vSnap?.exists)
+            missingLegacyPrivRefs.push(db.collection(COLLECTIONS.PRIVATE).doc(d.id));
+    });
+    const legacyDocMap = missingLegacyPrefsRefs.length > 0 || missingLegacyPrivRefs.length > 0
+        ? await batchGetDocMap(db, [...missingLegacyPrefsRefs, ...missingLegacyPrivRefs])
+        : new Map();
+    // Step 1: Score & evaluate eligibility WITHOUT expensive GCS photo signing or comparison tables
+    const scoredResults = candidatePool.map((doc, idx) => {
+        const candidate = doc.data();
+        if (tab === 'shortlisted_you' && !legacyShortlistFlags[idx]) {
+            return null;
+        }
+        const subPrefsSnap = subDocMap.get(getPrefsRef(db, doc.id).path);
+        const candPrefsSnap = subPrefsSnap?.exists
+            ? subPrefsSnap
+            : legacyDocMap.get(db.collection(COLLECTIONS.PREFERENCES).doc(doc.id).path);
+        const subPrivSnap = subDocMap.get(getPrivateRef(db, doc.id).path);
+        const candPrivSnap = subPrivSnap?.exists
+            ? subPrivSnap
+            : legacyDocMap.get(db.collection(COLLECTIONS.PRIVATE).doc(doc.id).path);
+        const candPrefs = candPrefsSnap?.exists ? candPrefsSnap.data() || {} : {};
+        const candPriv = candPrivSnap?.exists ? candPrivSnap.data() || {} : {};
+        const evaluation = evaluateCompatibility(viewer, viewerPrivate, viewerPrefs, candidate, candPriv, candPrefs, filters, effectiveBasis);
+        if (!evaluation.eligible)
+            return null;
+        if (tab === 'shared_interests' && evaluation.sharedInterests.length === 0) {
+            return null;
+        }
+        if (!matchesViewerPreferenceTab(tab, viewer, viewerPrefs, candidate, candPrefs)) {
+            return null;
+        }
+        const isShortlisted = shortlistedSet.has(doc.id);
+        const createdOrApprovedMs = toTimestampMs(candidate.approvedAt) ||
+            toTimestampMs(candidate.submittedAt) ||
+            toTimestampMs(candidate.createdAt);
+        const updatedAtMs = toTimestampMs(candidate.updatedAt) || createdOrApprovedMs;
+        const profTier = resolveActiveTierFromProfile(candidate);
+        const candTier = profTier !== 'free' ? profTier : activeSubTierByUid.get(doc.id) ?? 'free';
+        const visibilityPriority = candTier === 'platinum' ? 2 : candTier === 'gold' ? 1 : 0;
+        const hasPhoto = Boolean(candidate.profilePhoto);
+        const photoCount = (candidate.profilePhoto ? 1 : 0) +
+            (Array.isArray(candidate.gallery) ? candidate.gallery.length : 0);
+        return {
+            uid: doc.id,
             candidate,
             candPriv,
             candPrefs,
@@ -1406,14 +1611,23 @@ export const getMatrimonyMatches = onCall({ invoker: 'public' }, async (request)
             interestStatus: interestStatusMap.get(doc.id) || null,
             interestSentAtMs: interestSentAtMap.get(doc.id) || 0,
             joinedAtMs: createdOrApprovedMs,
+            updatedAtMs,
             viewedAtMs: tab === 'viewed_you'
                 ? viewedByMap.get(doc.id) || 0
                 : tab === 'viewed_by_you'
                     ? viewedMap.get(doc.id) || 0
                     : 0,
-        });
-    }));
-    const validMatches = scoredResults.filter((m) => m !== null);
+            age: typeof candidate.age === 'number' ? candidate.age : null,
+            location: candidate.location || {},
+            matchScore: evaluation.score,
+            sharedInterests: evaluation.sharedInterests,
+            candTier,
+            visibilityPriority,
+            photoCount,
+            hasPhoto,
+        };
+    });
+    const validScored = scoredResults.filter((m) => m !== null);
     const viewerCityNorm = normalizeAnyOption(viewer.location?.village || viewer.location?.city);
     const viewerStateNorm = normalizeAnyOption(viewer.location?.state);
     const viewerCountryNorm = normalizeAnyOption(viewer.location?.country);
@@ -1429,7 +1643,8 @@ export const getMatrimonyMatches = onCall({ invoker: 'public' }, async (request)
             return 1;
         return 0;
     };
-    validMatches.sort((a, b) => {
+    // Step 2: Sort lightweight ranked items BEFORE slicing & signing photos
+    validScored.sort((a, b) => {
         if (tab === 'viewed_you') {
             const diff = (viewedByMap.get(b.uid) || 0) - (viewedByMap.get(a.uid) || 0);
             if (diff !== 0)
@@ -1488,23 +1703,107 @@ export const getMatrimonyMatches = onCall({ invoker: 'public' }, async (request)
             }
             return b.matchScore - a.matchScore;
         }
-        // Default: best_match (Compatibility Score desc, then shared interests, then photo, then recent)
+        // Default: best_match
+        // - On PRIME (paid-only): rank by Platinum/Gold tier priority then compatibility score.
+        // - On Regular (all paid + free): blend compatibility score with a gentle visibility boost (+6 Platinum, +3 Gold)
+        //   so both unpaid (Free) and paid members appear naturally near the top.
+        if (matchTier === 'prime') {
+            const aTierRank = a.matchScore >= 40 ? (a.visibilityPriority ?? 0) : -1;
+            const bTierRank = b.matchScore >= 40 ? (b.visibilityPriority ?? 0) : -1;
+            if (bTierRank !== aTierRank)
+                return bTierRank - aTierRank;
+        }
+        else {
+            const aBoost = a.matchScore >= 40 ? (a.visibilityPriority ?? 0) * 3 : 0;
+            const bBoost = b.matchScore >= 40 ? (b.visibilityPriority ?? 0) * 3 : 0;
+            const aWeighted = a.matchScore + aBoost;
+            const bWeighted = b.matchScore + bBoost;
+            if (bWeighted !== aWeighted)
+                return bWeighted - aWeighted;
+        }
         if (b.matchScore !== a.matchScore)
             return b.matchScore - a.matchScore;
         if (b.sharedInterests.length !== a.sharedInterests.length) {
             return b.sharedInterests.length - a.sharedInterests.length;
         }
-        if ((b.signedProfilePhoto ? 1 : 0) !== (a.signedProfilePhoto ? 1 : 0)) {
-            return (b.signedProfilePhoto ? 1 : 0) - (a.signedProfilePhoto ? 1 : 0);
+        if ((b.hasPhoto ? 1 : 0) !== (a.hasPhoto ? 1 : 0)) {
+            return (b.hasPhoto ? 1 : 0) - (a.hasPhoto ? 1 : 0);
         }
         return b.joinedAtMs - a.joinedAtMs;
     });
+    // Step 3: Slice only the requested page, pre-dedupe photo signing, and cache scored feed for instant Page 2
+    const totalMatchedCount = validScored.length;
+    const pageSlice = limit !== undefined ? validScored.slice(offset, offset + limit) : validScored.slice(offset);
+    const uniquePagePhotoPaths = new Set();
+    pageSlice.forEach((item) => {
+        if (item.candidate?.profilePhoto)
+            uniquePagePhotoPaths.add(String(item.candidate.profilePhoto));
+        if (Array.isArray(item.candidate?.gallery)) {
+            item.candidate.gallery.forEach((g) => {
+                if (typeof g === 'string' && g)
+                    uniquePagePhotoPaths.add(g);
+            });
+        }
+    });
+    const preResolvedPhotoMap = new Map();
+    if (uniquePagePhotoPaths.size > 0) {
+        const bucket = getStorage().bucket(MATRIMONY_BUCKET);
+        const expires = Date.now() + 60 * 60 * 1000;
+        await Promise.all(Array.from(uniquePagePhotoPaths).map(async (p) => {
+            preResolvedPhotoMap.set(p, await resolveSingleMatchPhotoUrl(bucket, p, expires));
+        }));
+    }
+    const validMatches = await Promise.all(pageSlice.map((item) => formatMatchCandidatePayload({
+        candUid: item.uid,
+        viewer,
+        viewerPrivate,
+        candidate: item.candidate,
+        candPriv: item.candPriv,
+        candPrefs: item.candPrefs,
+        evaluation: item.evaluation,
+        isShortlisted: item.isShortlisted,
+        interestStatus: item.interestStatus,
+        interestSentAtMs: item.interestSentAtMs,
+        joinedAtMs: item.joinedAtMs,
+        viewedAtMs: item.viewedAtMs,
+        viewerEntitlements,
+        unlockedContactSet,
+        candidateTierOverride: item.candTier,
+        preResolvedPhotoMap,
+    })));
     const viewerPreferencesFilter = mapViewerPrefsToFilter(viewerPrefs);
     const preferencesUpdatedAtMs = toTimestampMs(viewerPrefs.updatedAt);
+    if (offset === 0) {
+        WARM_VIEWER_FEED_CACHE.set(feedCacheKey, {
+            expiresAtMs: Date.now() + 30_000,
+            viewer,
+            viewerPrivate,
+            viewerEntitlements,
+            unlockedContactSet,
+            lockedAdvancedFilters,
+            totalMatchedCount,
+            totalAvailableCount: eligibleDocs.length,
+            hiddenCount: blockDocs.filter((d) => d.data()?.type === 'dont_show').length,
+            viewerGender,
+            targetGender,
+            viewerPhoto,
+            viewerPreferencesFilter,
+            preferencesUpdatedAtMs,
+            validScored,
+        });
+        // Cap memory usage for warm container caches
+        if (WARM_VIEWER_FEED_CACHE.size > 40) {
+            const oldestKey = WARM_VIEWER_FEED_CACHE.keys().next().value;
+            if (oldestKey)
+                WARM_VIEWER_FEED_CACHE.delete(oldestKey);
+        }
+    }
     return {
         success: true,
         matches: validMatches,
-        totalCount: validMatches.length,
+        totalCount: totalMatchedCount,
+        hasMore: offset + validMatches.length < totalMatchedCount,
+        nextOffset: offset + validMatches.length,
         totalAvailableCount: eligibleDocs.length,
         hiddenCount: blockDocs.filter((d) => d.data()?.type === 'dont_show').length,
         viewerGender,
@@ -1512,6 +1811,8 @@ export const getMatrimonyMatches = onCall({ invoker: 'public' }, async (request)
         viewerPhoto,
         viewerPreferencesFilter,
         preferencesUpdatedAtMs,
+        viewerEntitlements,
+        lockedAdvancedFilters,
     };
 });
 /**
@@ -1535,6 +1836,20 @@ export const toggleMatrimonyShortlist = onCall({ invoker: 'public', cpu: 'gcf_ge
             legacyRef.delete().catch(() => undefined),
         ]);
         return { success: true, shortlisted: false };
+    }
+    // Enforce tier-based shortlist cap (Free: 10, Silver: 25, Gold: 50, Platinum: 70)
+    const [entitlements, existingShortlists] = await Promise.all([
+        resolveMemberEntitlements(db, uid),
+        readShortlistDocs(db, uid),
+    ]);
+    if (entitlements.shortlistLimit >= 0 &&
+        existingShortlists.length >= entitlements.shortlistLimit) {
+        throw new HttpsError('resource-exhausted', `Your ${entitlements.planName} plan allows up to ${entitlements.shortlistLimit} shortlisted profiles. Remove one or upgrade to shortlist more.`, {
+            reasonCode: 'SHORTLIST_LIMIT_REACHED',
+            limit: entitlements.shortlistLimit,
+            used: existingShortlists.length,
+            tier: entitlements.tier,
+        });
     }
     const now = FieldValue.serverTimestamp();
     await Promise.all([
@@ -1637,9 +1952,15 @@ export const sendMatrimonyInterest = onCall({ invoker: 'public', cpu: 'gcf_gen1'
     }
     const db = getFirestore();
     await assertMatrimonyProfileActive(db, uid);
-    const [senderSnap, targetSnap] = await Promise.all([
+    const [senderSnap, targetSnap, targetMemberSnap] = await Promise.all([
         getProfileRef(db, uid).get(),
         getProfileRef(db, targetUid).get(),
+        db
+            .collection('Rhema Church')
+            .doc(DEFAULT_CHURCH_ID)
+            .collection('members')
+            .doc(targetUid)
+            .get(),
     ]);
     if (!senderSnap.exists || !targetSnap.exists) {
         throw new HttpsError('not-found', 'Profile not found.');
@@ -1654,61 +1975,104 @@ export const sendMatrimonyInterest = onCall({ invoker: 'public', cpu: 'gcf_gen1'
     if (!sGender || !tGender || sGender === tGender) {
         throw new HttpsError('failed-precondition', 'Profiles are not compatible for matching.');
     }
-    const now = FieldValue.serverTimestamp();
+    const entitlements = await resolveMemberEntitlements(db, uid, sender);
+    const monthKey = getCurrentMonthKey();
+    const nowMs = Date.now();
+    const hourKey = new Date(nowMs + 330 * 60 * 1000).toISOString().slice(0, 13);
     const docId = `${uid}_${targetUid}`;
     const reverseDocId = `${targetUid}_${uid}`;
-    const reverseSnap = await db.collection(COLLECTIONS.INTERESTS).doc(reverseDocId).get();
-    const reverseStatus = reverseSnap.exists ? reverseSnap.data()?.status : null;
-    const isMutual = reverseStatus === 'pending' || reverseStatus === 'accepted';
-    const status = isMutual ? 'accepted' : 'pending';
-    const batch = db.batch();
-    batch.set(db.collection(COLLECTIONS.INTERESTS).doc(docId), {
-        senderUid: uid,
-        receiverUid: targetUid,
-        status,
-        churchId: DEFAULT_CHURCH_ID,
-        createdAt: now,
-        updatedAt: now,
-    }, { merge: true });
-    if (isMutual) {
-        batch.set(db.collection(COLLECTIONS.INTERESTS).doc(reverseDocId), { status: 'accepted', updatedAt: now }, { merge: true });
-        const pair = [uid, targetUid].sort();
-        batch.set(db.collection(COLLECTIONS.MATCHES).doc(`${pair[0]}_${pair[1]}`), {
-            participantIds: pair,
+    const interestRef = db.collection(COLLECTIONS.INTERESTS).doc(docId);
+    const reverseRef = db.collection(COLLECTIONS.INTERESTS).doc(reverseDocId);
+    const usageRef = getUsageRef(db, uid);
+    const now = FieldValue.serverTimestamp();
+    const txResult = await db.runTransaction(async (tx) => {
+        const [existingSnap, reverseSnap, usageSnap] = await Promise.all([
+            tx.get(interestRef),
+            tx.get(reverseRef),
+            tx.get(usageRef),
+        ]);
+        const reverseStatus = reverseSnap.exists ? reverseSnap.data()?.status : null;
+        const isMutual = reverseStatus === 'pending' || reverseStatus === 'accepted';
+        const status = isMutual ? 'accepted' : 'pending';
+        const usageData = usageSnap.exists ? usageSnap.data() || {} : {};
+        const currentMonthCount = usageData.currentMonthKey === monthKey ? Number(usageData.interestsSentThisMonth || 0) : 0;
+        const currentHourCount = usageData.hourKey === hourKey ? Number(usageData.interestsSentThisHour || 0) : 0;
+        const lastSentMs = Number(usageData.lastInterestSentAtMs || 0);
+        const existingStatus = existingSnap.exists ? String(existingSnap.data()?.status || '') : '';
+        const isFreshInterest = !existingSnap.exists || existingStatus === 'withdrawn' || existingStatus === 'declined';
+        let nextMonthCount = currentMonthCount;
+        if (isFreshInterest) {
+            if (lastSentMs > 0 && nowMs - lastSentMs < 1500) {
+                throw new HttpsError('resource-exhausted', 'Please wait a moment before sending another interest.', { reasonCode: 'COOLDOWN_ACTIVE' });
+            }
+            if (currentHourCount >= 40) {
+                throw new HttpsError('resource-exhausted', 'Hourly interest limit reached for spam protection. Please try again shortly.', { reasonCode: 'HOURLY_BURST_LIMIT' });
+            }
+            if (entitlements.monthlyInterestLimit >= 0 &&
+                currentMonthCount >= entitlements.monthlyInterestLimit) {
+                throw new HttpsError('resource-exhausted', `You have reached your ${entitlements.planName} limit of ${entitlements.monthlyInterestLimit} interests this month. Upgrade to send unlimited interests.`, {
+                    reasonCode: 'MONTHLY_INTEREST_LIMIT_REACHED',
+                    limit: entitlements.monthlyInterestLimit,
+                    used: currentMonthCount,
+                    tier: entitlements.tier,
+                    monthKey,
+                });
+            }
+            nextMonthCount = currentMonthCount + 1;
+            tx.set(usageRef, {
+                uid,
+                currentMonthKey: monthKey,
+                interestsSentThisMonth: nextMonthCount,
+                hourKey,
+                interestsSentThisHour: currentHourCount + 1,
+                lastInterestSentAtMs: nowMs,
+                updatedAt: now,
+            }, { merge: true });
+        }
+        tx.set(interestRef, {
+            senderUid: uid,
+            receiverUid: targetUid,
+            status,
             churchId: DEFAULT_CHURCH_ID,
-            createdAt: now,
+            createdAt: existingSnap.exists ? existingSnap.data()?.createdAt || now : now,
             updatedAt: now,
         }, { merge: true });
-    }
-    batch.set(db.collection(COLLECTIONS.NOTIFICATIONS).doc(), {
-        recipientUid: targetUid,
-        senderUid: uid,
-        type: isMutual ? 'MUTUAL_MATCH' : 'INTEREST_RECEIVED',
-        title: isMutual ? 'New Mutual Match!' : 'New Matrimony Interest',
-        body: isMutual
-            ? `${sender.displayName || 'A Rhema member'} also expressed interest in your profile.`
-            : `${sender.displayName || 'A Rhema member'} sent you a Matrimony interest.`,
-        read: false,
-        createdAt: now,
+        if (isMutual) {
+            tx.set(reverseRef, { status: 'accepted', updatedAt: now }, { merge: true });
+            const pair = [uid, targetUid].sort();
+            tx.set(db.collection(COLLECTIONS.MATCHES).doc(`${pair[0]}_${pair[1]}`), {
+                participantIds: pair,
+                churchId: DEFAULT_CHURCH_ID,
+                createdAt: now,
+                updatedAt: now,
+            }, { merge: true });
+        }
+        if (isFreshInterest || isMutual) {
+            tx.set(db.collection(COLLECTIONS.NOTIFICATIONS).doc(), {
+                recipientUid: targetUid,
+                senderUid: uid,
+                type: isMutual ? 'MUTUAL_MATCH' : 'INTEREST_RECEIVED',
+                title: isMutual ? 'New Mutual Match!' : 'New Matrimony Interest',
+                body: isMutual
+                    ? `${sender.displayName || 'A Rhema member'} also expressed interest in your profile.`
+                    : `${sender.displayName || 'A Rhema member'} sent you a Matrimony interest.`,
+                read: false,
+                createdAt: now,
+            });
+        }
+        return { isMutual, status, interestsSentThisMonth: nextMonthCount };
     });
-    await batch.commit();
-    if (isMutual) {
+    if (txResult.isMutual) {
         await seedMutualMatchChatOnAccept(db, uid, targetUid);
     }
     // Best-effort push notification
     try {
-        const targetMember = await db
-            .collection('Rhema Church')
-            .doc(DEFAULT_CHURCH_ID)
-            .collection('members')
-            .doc(targetUid)
-            .get();
-        const fcmToken = targetMember.data()?.fcmToken;
+        const fcmToken = targetMemberSnap.data()?.fcmToken;
         if (fcmToken) {
             await getMessaging().send({
                 token: fcmToken,
                 notification: {
-                    title: isMutual ? 'New Mutual Match!' : 'New Matrimony Interest',
+                    title: txResult.isMutual ? 'New Mutual Match!' : 'New Matrimony Interest',
                     body: `${sender.displayName || 'A Rhema member'} expressed interest in your Matrimony profile.`,
                 },
                 data: { type: 'MATRIMONY_INTEREST', module: 'matrimony' },
@@ -1718,7 +2082,124 @@ export const sendMatrimonyInterest = onCall({ invoker: 'public', cpu: 'gcf_gen1'
     catch (err) {
         console.warn('sendMatrimonyInterest push warning:', err);
     }
-    return { success: true, interestStatus: status, isMutual };
+    const interestsRemaining = entitlements.monthlyInterestLimit < 0
+        ? -1
+        : Math.max(0, entitlements.monthlyInterestLimit - txResult.interestsSentThisMonth);
+    return {
+        success: true,
+        interestStatus: txResult.status,
+        isMutual: txResult.isMutual,
+        interestsSentThisMonth: txResult.interestsSentThisMonth,
+        interestsRemaining,
+        monthlyInterestLimit: entitlements.monthlyInterestLimit,
+    };
+});
+/**
+ * 4b. unlockMatrimonyContact
+ * Unlocks verified contact phone & DOB for a target profile, consuming 1 contact credit
+ * for Silver (10) / Gold (40) or free for Platinum (-1). Idempotent within active cycle.
+ */
+export const unlockMatrimonyContact = onCall({ invoker: 'public', cpu: 'gcf_gen1', concurrency: 1, maxInstances: 10 }, async (request) => {
+    const uid = requireAuthUid(request);
+    const targetUid = assertNonEmptyString(request.data?.targetUid, 'targetUid', 128);
+    if (uid === targetUid) {
+        throw new HttpsError('invalid-argument', 'Cannot unlock your own contact.');
+    }
+    const db = getFirestore();
+    await assertMatrimonyProfileActive(db, uid);
+    const [targetProfSnap, targetPrivSnap, blockAB, blockBA, entitlements] = await Promise.all([
+        getProfileRef(db, targetUid).get(),
+        readPrivateSnap(db, targetUid),
+        db.collection(COLLECTIONS.BLOCKS).doc(`${uid}_${targetUid}`).get(),
+        db.collection(COLLECTIONS.BLOCKS).doc(`${targetUid}_${uid}`).get(),
+        resolveMemberEntitlements(db, uid),
+    ]);
+    if (!targetProfSnap.exists) {
+        throw new HttpsError('not-found', 'Profile not found.');
+    }
+    if (blockAB.exists || blockBA.exists) {
+        throw new HttpsError('permission-denied', 'This profile is unavailable.');
+    }
+    const targetData = targetProfSnap.data() || {};
+    if (targetData.profileStatus !== 'approved') {
+        throw new HttpsError('failed-precondition', 'Profile is not approved.');
+    }
+    if (entitlements.contactNumberLimit === 0 || entitlements.tier === 'free') {
+        throw new HttpsError('permission-denied', 'Upgrade to Silver, Gold, or Platinum to view verified contact details.', { reasonCode: 'UPGRADE_REQUIRED', tier: entitlements.tier });
+    }
+    const targetPriv = targetPrivSnap.exists ? targetPrivSnap.data() || {} : {};
+    const contactPhone = String(targetPriv.phone || targetPriv.mobile || targetPriv.contactPhone || targetData.phone || '').trim() || null;
+    const dob = String(targetPriv.dob || targetData.dob || '').trim() || null;
+    const unlockRef = getUnlockedContactsCol(db, uid).doc(targetUid);
+    const usageRef = getUsageRef(db, uid);
+    const now = FieldValue.serverTimestamp();
+    const nowMs = Date.now();
+    const txRes = await db.runTransaction(async (tx) => {
+        const [unlockSnap, usageSnap] = await Promise.all([tx.get(unlockRef), tx.get(usageRef)]);
+        const unlockData = unlockSnap.exists ? unlockSnap.data() || {} : null;
+        const sameCycle = unlockData &&
+            (!entitlements.subscriptionId ||
+                !unlockData.subscriptionId ||
+                unlockData.subscriptionId === entitlements.subscriptionId);
+        const usageData = usageSnap.exists ? usageSnap.data() || {} : {};
+        const currentViewed = entitlements.subscriptionId && usageData.subscriptionId === entitlements.subscriptionId
+            ? Math.max(Number(usageData.contactNumbersViewedCount || 0), entitlements.contactNumbersViewedCount)
+            : entitlements.contactNumbersViewedCount;
+        if (sameCycle) {
+            return {
+                alreadyUnlocked: true,
+                contactNumbersViewedCount: currentViewed,
+            };
+        }
+        if (entitlements.contactNumberLimit >= 0 &&
+            currentViewed >= entitlements.contactNumberLimit) {
+            throw new HttpsError('resource-exhausted', `You have used all ${entitlements.contactNumberLimit} contact number views in your ${entitlements.planName} plan. Upgrade to Platinum for unlimited contacts.`, {
+                reasonCode: 'CONTACT_UNLOCK_LIMIT_REACHED',
+                limit: entitlements.contactNumberLimit,
+                used: currentViewed,
+                tier: entitlements.tier,
+            });
+        }
+        const nextViewed = currentViewed + 1;
+        tx.set(unlockRef, {
+            targetUid,
+            subscriptionId: entitlements.subscriptionId,
+            tier: entitlements.tier,
+            unlockedAt: now,
+            unlockedAtMs: nowMs,
+        }, { merge: true });
+        tx.set(usageRef, {
+            uid,
+            subscriptionId: entitlements.subscriptionId,
+            contactNumbersViewedCount: nextViewed,
+            updatedAt: now,
+        }, { merge: true });
+        return {
+            alreadyUnlocked: false,
+            contactNumbersViewedCount: nextViewed,
+        };
+    });
+    if (!txRes.alreadyUnlocked) {
+        await db.collection(COLLECTIONS.AUDIT_LOGS).add({
+            action: 'MATRIMONY_CONTACT_UNLOCKED',
+            actorUid: uid,
+            targetUid,
+            tier: entitlements.tier,
+            subscriptionId: entitlements.subscriptionId,
+            createdAt: now,
+        });
+    }
+    const contactNumbersRemaining = entitlements.contactNumberLimit < 0
+        ? -1
+        : Math.max(0, entitlements.contactNumberLimit - txRes.contactNumbersViewedCount);
+    return {
+        success: true,
+        alreadyUnlocked: txRes.alreadyUnlocked,
+        contactPhone,
+        dob,
+        contactNumbersViewedCount: txRes.contactNumbersViewedCount,
+        contactNumbersRemaining,
+    };
 });
 /**
  * 5. getMatrimonyInterestsHub
@@ -1743,6 +2224,8 @@ export const getMatrimonyInterestsHub = onCall({ invoker: 'public' }, async (req
     const viewerPrivate = viewerPrivSnap.exists ? viewerPrivSnap.data() || {} : {};
     const viewerPrefs = viewerPrefsSnap.exists ? viewerPrefsSnap.data() || {} : {};
     const shortlistedSet = new Set(shortlistDocs.map((d) => d.id));
+    const viewerEntitlements = await resolveMemberEntitlements(db, uid, viewer);
+    const unlockedContactSet = new Set(viewerEntitlements.unlockedContactUids);
     const counterpartUids = new Set();
     receivedSnap.docs.forEach((d) => {
         const s = d.data()?.senderUid;
@@ -1783,6 +2266,8 @@ export const getMatrimonyInterestsHub = onCall({ invoker: 'public' }, async (req
             isShortlisted: shortlistedSet.has(otherUid),
             interestStatus: null,
             joinedAtMs,
+            viewerEntitlements,
+            unlockedContactSet,
         });
         candidateMap.set(otherUid, payload);
     }));
@@ -1838,7 +2323,7 @@ export const getMatrimonyInterestsHub = onCall({ invoker: 'public' }, async (req
     })
         .filter((x) => x !== null)
         .sort((a, b) => (b.updatedAtMs || b.createdAtMs) - (a.updatedAtMs || a.createdAtMs));
-    return { success: true, received, sent };
+    return { success: true, received, sent, viewerEntitlements };
 });
 /**
  * 6. respondMatrimonyInterest

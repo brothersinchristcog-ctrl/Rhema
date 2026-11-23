@@ -32,7 +32,9 @@ export { guestInviteLanding } from './guestInvite.js';
 export { startMatrimonyRegistration, saveMatrimonyDraft, submitMatrimonyProfile, resetMatrimonyProfile, getMatrimonyStatus, uploadMatrimonyPhoto, } from './matrimony/registration.js';
 export { getMatrimonyAdminDashboard, getMatrimonyPendingProfiles, getMatrimonyAdminProfileDetail, approveMatrimonyProfile, rejectMatrimonyProfile, requestMatrimonyCorrection, suspendMatrimonyProfile, removeMatrimonyProfileForAbuse, deleteMatrimonyProfile, inactivateMatrimonyProfile, activateMatrimonyProfile, resolveMatrimonyReport, } from './matrimony/admin.js';
 export { onMatrimonyProfileDeleted, onMatrimonyAdminProfileDeleted, } from './matrimony/triggers.js';
-export { getMatrimonyMatches, toggleMatrimonyShortlist, recordMatrimonyProfileView, dismissMatrimonyMatch, restoreMatrimonyMatches, sendMatrimonyInterest, getMatrimonyInterestsHub, respondMatrimonyInterest, reportMatrimonyProfile, } from './matrimony/matches.js';
-export { ensureMatrimonyChatRoom, getMatrimonyChatContacts, notifyMatrimonyChatMessage, } from './matrimony/chat.js';
-export { createMatrimonyUpgradeOrder, verifyMatrimonyUpgradePayment, } from './matrimony/membership.js';
+export { getMatrimonyMatches, toggleMatrimonyShortlist, recordMatrimonyProfileView, dismissMatrimonyMatch, restoreMatrimonyMatches, sendMatrimonyInterest, unlockMatrimonyContact, getMatrimonyInterestsHub, respondMatrimonyInterest, reportMatrimonyProfile, } from './matrimony/matches.js';
+export { ensureMatrimonyChatRoom, getMatrimonyChatContacts, notifyMatrimonyChatMessage, sendMatrimonyMessage, } from './matrimony/chat.js';
+export { getMatrimonyPlans, getMemberEntitlements, createMatrimonyUpgradeOrder, verifyMatrimonyUpgradePayment, expireMatrimonySubscriptions, } from './matrimony/membership.js';
+export { adminGetMatrimonyPlansAndSubs, adminUpsertMatrimonyPlan, adminGrantComplimentarySubscription, } from './matrimony/adminPlans.js';
+export { seedMatrimonyTestUsers, deleteMatrimonyTestUsers, } from './matrimony/testSeed.js';
 //# sourceMappingURL=index.d.ts.map

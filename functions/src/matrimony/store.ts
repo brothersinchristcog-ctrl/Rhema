@@ -51,6 +51,22 @@ export function getBlocksCol(db: Firestore, uid: string) {
   return getProfileRef(db, uid).collection(SUBCOLLECTIONS.BLOCKS);
 }
 
+export function getUnlockedContactsCol(db: Firestore, uid: string) {
+  return getProfileRef(db, uid).collection(SUBCOLLECTIONS.UNLOCKED_CONTACTS);
+}
+
+export function getSubscriptionRef(db: Firestore, uid: string) {
+  return db.collection(COLLECTIONS.SUBSCRIPTIONS).doc(uid);
+}
+
+export function getEntitlementRef(db: Firestore, uid: string) {
+  return db.collection(COLLECTIONS.ENTITLEMENTS).doc(uid);
+}
+
+export function getUsageRef(db: Firestore, uid: string) {
+  return db.collection(COLLECTIONS.USAGE).doc(uid);
+}
+
 export function getAdminProfileRef(db: Firestore, uid: string) {
   return db.collection(COLLECTIONS.ADMIN_PROFILES).doc(uid);
 }

@@ -6,6 +6,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getStorage } from 'firebase-admin/storage';
 import { COLLECTIONS, DEFAULT_CHURCH_ID, MATRIMONY_BUCKET } from './constants.js';
+import { resolveMemberEntitlements, syncEntitlementsToRtdb } from './entitlements.js';
 import { assertMatrimonyProfileActive, getProfileRef, readBlockDocs, readPrivateSnap } from './store.js';
 import { assertNonEmptyString, optionalString } from './validation.js';
 export const MATRIMONY_RTDB_URL = 'https://rhema-global-ministries-default-rtdb.firebaseio.com';
@@ -128,13 +129,23 @@ async function seedChatParticipantsInRtdb(params) {
 }
 /**
  * 1. ensureMatrimonyChatRoom
- * Verifies mutual-match eligibility and provisions participants & inbox metadata in RTDB.
+ * Verifies mutual-match eligibility, resolves viewer's messageAccess entitlement,
+ * exposes contactPhone ONLY if Platinum or explicitly unlocked, and provisions RTDB room.
+ * Free/expired members keep read access to existing chat history with canMessage=false.
  */
 export const ensureMatrimonyChatRoom = onCall({ invoker: 'public' }, async (request) => {
     const uid = requireAuthUid(request);
     const targetUid = assertNonEmptyString(request.data?.targetUid, 'targetUid', 128);
     const db = getFirestore();
     const { viewerData, targetData, targetPrivate } = await verifyMutualChatEligibility(db, uid, targetUid);
+    const entitlements = await resolveMemberEntitlements(db, uid, viewerData);
+    await syncEntitlementsToRtdb(uid, {
+        tier: entitlements.tier,
+        canMessage: entitlements.messageAccess,
+        validUntilMs: entitlements.expiryDateMs,
+    });
+    const canSeePhone = entitlements.tier !== 'free' &&
+        (entitlements.contactNumberLimit < 0 || entitlements.unlockedContactUids.includes(targetUid));
     const [viewerPhoto, targetPhoto] = await Promise.all([
         resolveSinglePhotoUrl(viewerData.profilePhoto),
         resolveSinglePhotoUrl(targetData.profilePhoto),
@@ -143,6 +154,7 @@ export const ensureMatrimonyChatRoom = onCall({ invoker: 'public' }, async (requ
     const targetCity = targetData.location?.village || targetData.location?.city || targetData.location?.state || '';
     const targetCode = targetData.matrimonyId || `RM${targetUid.slice(0, 7).toUpperCase()}`;
     const viewerCode = viewerData.matrimonyId || `RM${uid.slice(0, 7).toUpperCase()}`;
+    const exposedPhone = canSeePhone ? targetPrivate.phoneNumber || null : null;
     await seedChatParticipantsInRtdb({
         roomId,
         uid,
@@ -155,11 +167,13 @@ export const ensureMatrimonyChatRoom = onCall({ invoker: 'public' }, async (requ
         targetCode,
         targetAge: typeof targetData.age === 'number' ? targetData.age : null,
         targetCity,
-        targetPhone: targetPrivate.phoneNumber || null,
+        targetPhone: exposedPhone,
     });
     return {
         success: true,
         roomId,
+        canMessage: entitlements.messageAccess,
+        viewerTier: entitlements.tier,
         peer: {
             uid: targetUid,
             displayName: targetData.displayName || 'Rhema Member',
@@ -167,7 +181,7 @@ export const ensureMatrimonyChatRoom = onCall({ invoker: 'public' }, async (requ
             signedProfilePhoto: targetPhoto,
             age: typeof targetData.age === 'number' ? targetData.age : null,
             city: targetCity,
-            contactPhone: targetPrivate.phoneNumber || null,
+            contactPhone: exposedPhone,
         },
         self: {
             uid,
@@ -179,6 +193,7 @@ export const ensureMatrimonyChatRoom = onCall({ invoker: 'public' }, async (requ
 /**
  * 2. getMatrimonyChatContacts
  * Ensures RTDB chat rooms & inbox entries exist for all Mutual Matches of the viewer.
+ * Respects viewer's contact unlock entitlement and exposes messageAccess status.
  */
 export const getMatrimonyChatContacts = onCall({ invoker: 'public', cpu: 'gcf_gen1', concurrency: 1, maxInstances: 10 }, async (request) => {
     const uid = requireAuthUid(request);
@@ -200,9 +215,17 @@ export const getMatrimonyChatContacts = onCall({ invoker: 'public', cpu: 'gcf_ge
         readBlockDocs(db, uid),
     ]);
     if (!viewerProfSnap.exists) {
-        return { success: true, contacts: [], self: { uid, displayName: 'Rhema Member', signedProfilePhoto: null } };
+        return {
+            success: true,
+            canMessage: false,
+            viewerTier: 'free',
+            contacts: [],
+            self: { uid, displayName: 'Rhema Member', signedProfilePhoto: null },
+        };
     }
     const viewerData = viewerProfSnap.data() || {};
+    const entitlements = await resolveMemberEntitlements(db, uid, viewerData);
+    const unlockedSet = new Set(entitlements.unlockedContactUids);
     const viewerPhoto = await resolveSinglePhotoUrl(viewerData.profilePhoto);
     const viewerCode = viewerData.matrimonyId || `RM${uid.slice(0, 7).toUpperCase()}`;
     const blockedSet = new Set(blocks.map((d) => d.id));
@@ -245,6 +268,9 @@ export const getMatrimonyChatContacts = onCall({ invoker: 'public', cpu: 'gcf_ge
         const tCity = tData.location?.village || tData.location?.city || tData.location?.state || '';
         const tAge = typeof tData.age === 'number' ? tData.age : null;
         const roomId = getRoomId(uid, targetUid);
+        const canSeePhone = entitlements.tier !== 'free' &&
+            (entitlements.contactNumberLimit < 0 || unlockedSet.has(targetUid));
+        const exposedPhone = canSeePhone ? tPriv.phoneNumber || null : null;
         await seedChatParticipantsInRtdb({
             roomId,
             uid,
@@ -257,7 +283,7 @@ export const getMatrimonyChatContacts = onCall({ invoker: 'public', cpu: 'gcf_ge
             targetCode: tCode,
             targetAge: tAge,
             targetCity: tCity,
-            targetPhone: tPriv.phoneNumber || null,
+            targetPhone: exposedPhone,
         }).catch(() => undefined);
         contacts.push({
             roomId,
@@ -267,12 +293,14 @@ export const getMatrimonyChatContacts = onCall({ invoker: 'public', cpu: 'gcf_ge
             signedProfilePhoto: tPhoto,
             age: tAge,
             city: tCity,
-            contactPhone: tPriv.phoneNumber || null,
+            contactPhone: exposedPhone,
             matchTierEligible: Boolean(tPhoto),
         });
     }));
     return {
         success: true,
+        canMessage: entitlements.messageAccess,
+        viewerTier: entitlements.tier,
         contacts,
         self: {
             uid,
@@ -283,7 +311,7 @@ export const getMatrimonyChatContacts = onCall({ invoker: 'public', cpu: 'gcf_ge
 });
 /**
  * 3. notifyMatrimonyChatMessage
- * Sends a push notification to the recipient when a real-time chat message is sent.
+ * Verifies messageAccess entitlement and sends a push notification to the recipient.
  */
 export const notifyMatrimonyChatMessage = onCall({ invoker: 'public' }, async (request) => {
     const uid = requireAuthUid(request);
@@ -291,6 +319,10 @@ export const notifyMatrimonyChatMessage = onCall({ invoker: 'public' }, async (r
     const previewText = optionalString(request.data?.previewText, 180) || 'Sent you a message';
     const db = getFirestore();
     await assertMatrimonyProfileActive(db, uid);
+    const entitlements = await resolveMemberEntitlements(db, uid);
+    if (!entitlements.messageAccess) {
+        throw new HttpsError('permission-denied', 'Upgrade to Silver, Gold, or Platinum to send personalised messages.', { reasonCode: 'UPGRADE_REQUIRED_MESSAGING' });
+    }
     const [senderSnap, memberSnap, userSnap] = await Promise.all([
         getProfileRef(db, uid).get(),
         db
@@ -334,20 +366,65 @@ export const notifyMatrimonyChatMessage = onCall({ invoker: 'public' }, async (r
         return { success: true, sent: false };
     }
 });
+/**
+ * 4. sendMatrimonyMessage
+ * Server-validated personalised message action (checks active paid plan + mutual match + block status).
+ */
+export const sendMatrimonyMessage = onCall({ invoker: 'public' }, async (request) => {
+    const uid = requireAuthUid(request);
+    const targetUid = assertNonEmptyString(request.data?.targetUid, 'targetUid', 128);
+    const text = optionalString(request.data?.text, 2000) || '';
+    const imageUrl = optionalString(request.data?.imageUrl, 1000) || null;
+    if (!text && !imageUrl) {
+        throw new HttpsError('invalid-argument', 'Message text or image is required.');
+    }
+    const db = getFirestore();
+    const { viewerData, targetData } = await verifyMutualChatEligibility(db, uid, targetUid);
+    const entitlements = await resolveMemberEntitlements(db, uid, viewerData);
+    if (!entitlements.messageAccess) {
+        throw new HttpsError('permission-denied', 'Upgrade to Silver, Gold, or Platinum to send personalised messages.', { reasonCode: 'UPGRADE_REQUIRED_MESSAGING' });
+    }
+    const roomId = getRoomId(uid, targetUid);
+    const rtdb = getRtdb();
+    const msgRef = rtdb.ref(`matrimony_chats/${roomId}/messages`).push();
+    const msgId = msgRef.key || randomUUID();
+    const createdAt = ServerValue.TIMESTAMP;
+    const preview = imageUrl && !text ? '📷 Photo' : text.slice(0, 120);
+    await rtdb.ref().update({
+        [`matrimony_chats/${roomId}/participants/${uid}`]: true,
+        [`matrimony_chats/${roomId}/participants/${targetUid}`]: true,
+        [`matrimony_chats/${roomId}/messages/${msgId}`]: {
+            id: msgId,
+            senderUid: uid,
+            text,
+            type: imageUrl ? 'image' : 'text',
+            imageUrl,
+            createdAt,
+        },
+        [`matrimony_inbox/${uid}/${roomId}/lastMessageText`]: preview,
+        [`matrimony_inbox/${uid}/${roomId}/lastMessageSenderUid`]: uid,
+        [`matrimony_inbox/${uid}/${roomId}/lastMessageId`]: msgId,
+        [`matrimony_inbox/${uid}/${roomId}/lastMessageAt`]: createdAt,
+        [`matrimony_inbox/${targetUid}/${roomId}/lastMessageText`]: preview,
+        [`matrimony_inbox/${targetUid}/${roomId}/lastMessageSenderUid`]: uid,
+        [`matrimony_inbox/${targetUid}/${roomId}/lastMessageId`]: msgId,
+        [`matrimony_inbox/${targetUid}/${roomId}/lastMessageAt`]: createdAt,
+        [`matrimony_inbox/${targetUid}/${roomId}/unreadCount`]: ServerValue.increment(1),
+        [`matrimony_inbox/${targetUid}/${roomId}/peerName`]: viewerData.displayName || 'Rhema Member',
+        [`matrimony_inbox/${uid}/${roomId}/peerName`]: targetData.displayName || 'Rhema Member',
+    });
+    return { success: true, roomId, messageId: msgId };
+});
 export async function seedMutualMatchChatOnAccept(db, uidA, uidB) {
     try {
-        const [aSnap, bSnap, aPrivSnap, bPrivSnap] = await Promise.all([
+        const [aSnap, bSnap] = await Promise.all([
             getProfileRef(db, uidA).get(),
             getProfileRef(db, uidB).get(),
-            readPrivateSnap(db, uidA),
-            readPrivateSnap(db, uidB),
         ]);
         if (!aSnap.exists || !bSnap.exists)
             return;
         const a = aSnap.data() || {};
         const b = bSnap.data() || {};
-        const aPriv = aPrivSnap.exists ? aPrivSnap.data() || {} : {};
-        const bPriv = bPrivSnap.exists ? bPrivSnap.data() || {} : {};
         const [aPhoto, bPhoto] = await Promise.all([
             resolveSinglePhotoUrl(a.profilePhoto),
             resolveSinglePhotoUrl(b.profilePhoto),
@@ -365,7 +442,6 @@ export async function seedMutualMatchChatOnAccept(db, uidA, uidB) {
             [`matrimony_inbox/${uidA}/${roomId}/peerCode`]: b.matrimonyId || `RM${uidB.slice(0, 7).toUpperCase()}`,
             [`matrimony_inbox/${uidA}/${roomId}/peerAge`]: typeof b.age === 'number' ? b.age : null,
             [`matrimony_inbox/${uidA}/${roomId}/peerCity`]: b.location?.village || b.location?.city || b.location?.state || null,
-            [`matrimony_inbox/${uidA}/${roomId}/contactPhone`]: bPriv.phoneNumber || null,
             [`matrimony_inbox/${uidB}/${roomId}/roomId`]: roomId,
             [`matrimony_inbox/${uidB}/${roomId}/peerUid`]: uidA,
             [`matrimony_inbox/${uidB}/${roomId}/peerName`]: a.displayName || 'Rhema Member',
@@ -373,7 +449,6 @@ export async function seedMutualMatchChatOnAccept(db, uidA, uidB) {
             [`matrimony_inbox/${uidB}/${roomId}/peerCode`]: a.matrimonyId || `RM${uidA.slice(0, 7).toUpperCase()}`,
             [`matrimony_inbox/${uidB}/${roomId}/peerAge`]: typeof a.age === 'number' ? a.age : null,
             [`matrimony_inbox/${uidB}/${roomId}/peerCity`]: a.location?.village || a.location?.city || a.location?.state || null,
-            [`matrimony_inbox/${uidB}/${roomId}/contactPhone`]: aPriv.phoneNumber || null,
         });
     }
     catch (err) {

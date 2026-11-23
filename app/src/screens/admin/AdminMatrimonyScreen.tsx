@@ -18,6 +18,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Crown,
   Flag,
   HeartHandshake,
   PauseCircle,
@@ -36,6 +37,7 @@ import {
   AdminMatrimonyProfileSummary,
   matrimonyApi,
 } from '../../modules/matrimony';
+import AdminMatrimonyPlansModal from './AdminMatrimonyPlansModal';
 
 const CORAL = '#E05A5A';
 const GREEN = '#16A34A';
@@ -87,6 +89,7 @@ export default function AdminMatrimonyScreen({ navigation }: any) {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [plansModalVisible, setPlansModalVisible] = useState(false);
 
   const fetchProfiles = useCallback(async (targetFilter: FilterTab, silent = false) => {
     if (!silent) setLoading(true);
@@ -354,12 +357,26 @@ export default function AdminMatrimonyScreen({ navigation }: any) {
           </Text>
         </View>
 
-        <TouchableOpacity
-          style={[styles.iconBtn, { backgroundColor: cardSurface, borderColor }]}
-          onPress={() => fetchProfiles(filter)}
-        >
-          <RefreshCw size={18} color={primaryText} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity
+            style={[
+              styles.iconBtn,
+              { backgroundColor: cardSurface, borderColor, width: 'auto', paddingHorizontal: 10, flexDirection: 'row', gap: 5 },
+            ]}
+            onPress={() => setPlansModalVisible(true)}
+          >
+            <Crown size={16} color={AMBER} />
+            <Text style={{ color: primaryText, fontSize: 12, fontWeight: '800', fontFamily: appFontFamily }}>
+              Plans
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.iconBtn, { backgroundColor: cardSurface, borderColor }]}
+            onPress={() => fetchProfiles(filter)}
+          >
+            <RefreshCw size={18} color={primaryText} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Summary Counts Strip */}
@@ -525,6 +542,12 @@ export default function AdminMatrimonyScreen({ navigation }: any) {
           }
         />
       )}
+
+      <AdminMatrimonyPlansModal
+        visible={plansModalVisible}
+        onClose={() => setPlansModalVisible(false)}
+        profiles={profiles}
+      />
     </SafeAreaView>
   );
 }

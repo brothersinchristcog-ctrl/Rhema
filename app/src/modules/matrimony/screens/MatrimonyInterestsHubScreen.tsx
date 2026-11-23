@@ -541,7 +541,7 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
 
               <View style={styles.cardInfoCol}>
                 <View style={styles.cardTopBadgeRow}>
-                  <VerifiedRibbonBadge fontFamily={fontFamily} />
+                  <VerifiedRibbonBadge fontFamily={fontFamily} tier={c.candidateTier} />
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     {c.isShortlisted ? (
                       <View style={styles.sentShortlistTag}>
@@ -674,7 +674,7 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
             style={styles.cardInfoCol}
           >
             <View style={styles.cardTopBadgeRow}>
-              <VerifiedRibbonBadge fontFamily={fontFamily} />
+              <VerifiedRibbonBadge fontFamily={fontFamily} tier={c.candidateTier} />
               <View style={[styles.statusBadge, { backgroundColor: statusMeta.bg }]}>
                 <Text style={[styles.statusBadgeText, { color: statusMeta.text }]}>
                   {statusMeta.label}

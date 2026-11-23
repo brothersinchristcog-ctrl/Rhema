@@ -11,6 +11,7 @@ export declare const SUBCOLLECTIONS: {
     readonly VIEWS: "views";
     readonly VIEWED_BY: "viewed_by";
     readonly BLOCKS: "blocks";
+    readonly UNLOCKED_CONTACTS: "unlocked_contacts";
 };
 export declare const SUBDOC_IDS: {
     readonly PRIVATE_INFO: "info";
@@ -21,6 +22,11 @@ export declare const COLLECTIONS: {
     readonly PROFILES: "matrimony_profiles";
     readonly ADMIN_PROFILES: "matrimony_admin_profiles";
     readonly BANS: "matrimony_bans";
+    readonly PLANS: "matrimony_plans";
+    readonly SUBSCRIPTIONS: "matrimony_subscriptions";
+    readonly ENTITLEMENTS: "matrimony_entitlements";
+    readonly USAGE: "matrimony_usage";
+    readonly PAYMENT_HISTORY: "matrimony_payment_history";
     readonly PRIVATE: "matrimony_private";
     readonly PREFERENCES: "matrimony_preferences";
     readonly VERIFICATIONS: "matrimony_verifications";

@@ -1908,6 +1908,7 @@ export {
   dismissMatrimonyMatch,
   restoreMatrimonyMatches,
   sendMatrimonyInterest,
+  unlockMatrimonyContact,
   getMatrimonyInterestsHub,
   respondMatrimonyInterest,
   reportMatrimonyProfile,
@@ -1917,9 +1918,24 @@ export {
   ensureMatrimonyChatRoom,
   getMatrimonyChatContacts,
   notifyMatrimonyChatMessage,
+  sendMatrimonyMessage,
 } from './matrimony/chat.js';
 
 export {
+  getMatrimonyPlans,
+  getMemberEntitlements,
   createMatrimonyUpgradeOrder,
   verifyMatrimonyUpgradePayment,
+  expireMatrimonySubscriptions,
 } from './matrimony/membership.js';
+
+export {
+  adminGetMatrimonyPlansAndSubs,
+  adminUpsertMatrimonyPlan,
+  adminGrantComplimentarySubscription,
+} from './matrimony/adminPlans.js';
+
+export {
+  seedMatrimonyTestUsers,
+  deleteMatrimonyTestUsers,
+} from './matrimony/testSeed.js';

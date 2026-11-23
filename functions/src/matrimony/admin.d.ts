@@ -1,3 +1,9 @@
+export declare function requireMatrimonyAdmin(request: {
+    auth?: {
+        uid?: string;
+        token?: Record<string, any>;
+    };
+}): Promise<string>;
 interface FormattedReportItem {
     id: string;
     targetUid: string;

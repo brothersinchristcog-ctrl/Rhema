@@ -907,5 +907,30 @@ service cloud.firestore {
     match /matrimony_admin_profiles/{uid} {
       allow read, write: if false;
     }
+
+    match /matrimony_plans/{planId} {
+      allow read: if matrimonySignedIn();
+      allow write: if false;
+    }
+
+    match /matrimony_subscriptions/{uid} {
+      allow read: if isMatrimonyOwner(uid);
+      allow write: if false;
+    }
+
+    match /matrimony_entitlements/{uid} {
+      allow read: if isMatrimonyOwner(uid);
+      allow write: if false;
+    }
+
+    match /matrimony_usage/{uid} {
+      allow read: if isMatrimonyOwner(uid);
+      allow write: if false;
+    }
+
+    match /matrimony_payment_history/{paymentId} {
+      allow read: if matrimonySignedIn() && resource.data.uid == request.auth.uid;
+      allow write: if false;
+    }
   }
 }

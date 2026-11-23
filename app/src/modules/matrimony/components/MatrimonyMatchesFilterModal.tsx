@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   ScrollView,
   StyleSheet,
@@ -10,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Check, Pencil, Search, X } from 'lucide-react-native';
+import { ArrowLeft, Check, Lock, Pencil, Search, X } from 'lucide-react-native';
 import { FONT_STYLE_OPTIONS, useTheme } from '../../../context/ThemeContext';
 import {
   COUNTRY_OPTIONS,
@@ -84,7 +85,21 @@ interface Props {
   onClose: () => void;
   onApply: (nextFilters: MatrimonyMatchesFilter) => void;
   onReset?: (revertedFilters: MatrimonyMatchesFilter) => void;
+  canUseAdvancedFilters?: boolean;
+  onPressUpgrade?: () => void;
 }
+
+const ADVANCED_FILTER_FIELDS = new Set<PickerFieldKey>([
+  'occupation',
+  'annualIncome',
+  'employmentType',
+  'eatingHabits',
+  'drinkingHabits',
+  'smokingHabits',
+  'familyStatus',
+  'familyType',
+  'familyValues',
+]);
 
 function formatCompactHeight(cm?: number): string {
   if (!cm) return '';
@@ -332,6 +347,8 @@ export default function MatrimonyMatchesFilterModal({
   onClose,
   onApply,
   onReset,
+  canUseAdvancedFilters = true,
+  onPressUpgrade,
 }: Props) {
   const insets = useSafeAreaInsets();
   const { colors, isDark, fontStyle } = useTheme();
@@ -528,9 +545,11 @@ export default function MatrimonyMatchesFilterModal({
           matchBasis: previewBasis,
           sortBy,
           filters: overrides,
+          offset: 0,
+          limit: 1,
         });
         if (!cancelled) {
-          setPreviewCount(res.matches?.length ?? res.totalCount ?? 0);
+          setPreviewCount(res.totalCount ?? res.matches?.length ?? 0);
         }
       } catch {
         // Retain last known count on transient network issues
@@ -712,6 +731,30 @@ export default function MatrimonyMatchesFilterModal({
 
   const modifiedRowBg = isDark ? 'rgba(224,83,95,0.16)' : '#FDF2F4';
 
+  const promptAdvancedFilterUpgrade = () => {
+    if (onPressUpgrade) {
+      Alert.alert(
+        'Gold & Platinum Filter',
+        'Advanced lifestyle, income, and family preference filters are available on Gold and Platinum plans.',
+        [
+          { text: 'Not Now', style: 'cancel' },
+          {
+            text: 'View Plans',
+            onPress: () => {
+              onClose();
+              onPressUpgrade();
+            },
+          },
+        ]
+      );
+    } else {
+      Alert.alert(
+        'Gold & Platinum Filter',
+        'Upgrade to Gold or Platinum to use advanced preference filters.'
+      );
+    }
+  };
+
   const renderFilterRow = (
     label: string,
     valueText: string,
@@ -719,6 +762,7 @@ export default function MatrimonyMatchesFilterModal({
     options?: { isLast?: boolean; customValueNode?: React.ReactNode }
   ) => {
     const modified = isFieldModified(field);
+    const isLocked = !canUseAdvancedFilters && ADVANCED_FILTER_FIELDS.has(field);
     return (
       <TouchableOpacity
         style={[
@@ -729,30 +773,56 @@ export default function MatrimonyMatchesFilterModal({
           },
         ]}
         activeOpacity={0.7}
-        onPress={() => openFieldPicker(field)}
+        onPress={() => {
+          if (isLocked) {
+            promptAdvancedFilterUpgrade();
+            return;
+          }
+          openFieldPicker(field);
+        }}
       >
-        <Text style={[styles.rowLabel, { color: colors.text, fontFamily }]}>{label}</Text>
-        <View style={styles.rowRight}>
-          {options?.customValueNode || (
-            <Text
-              style={[
-                styles.rowValue,
-                {
-                  color: modified
-                    ? CORAL_RED
-                    : valueText === 'Any' || valueText === "Doesn't Matter" || valueText === 'Any Division'
-                    ? colors.textSecondary
-                    : colors.text,
-                  fontWeight: modified ? '700' : '600',
-                  fontFamily,
-                },
-              ]}
-              numberOfLines={2}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Text style={[styles.rowLabel, { color: colors.text, fontFamily }]}>{label}</Text>
+          {isLocked ? (
+            <View
+              style={{
+                backgroundColor: isDark ? 'rgba(217,119,6,0.22)' : '#FEF3C7',
+                paddingHorizontal: 6,
+                paddingVertical: 1,
+                borderRadius: 6,
+              }}
             >
-              {valueText}
-            </Text>
+              <Text style={{ fontSize: 9.5, fontWeight: '800', color: '#B45309' }}>GOLD+</Text>
+            </View>
+          ) : null}
+        </View>
+        <View style={styles.rowRight}>
+          {isLocked ? (
+            <Lock size={15} color="#D97706" strokeWidth={2} />
+          ) : (
+            <>
+              {options?.customValueNode || (
+                <Text
+                  style={[
+                    styles.rowValue,
+                    {
+                      color: modified
+                        ? CORAL_RED
+                        : valueText === 'Any' || valueText === "Doesn't Matter" || valueText === 'Any Division'
+                        ? colors.textSecondary
+                        : colors.text,
+                      fontWeight: modified ? '700' : '600',
+                      fontFamily,
+                    },
+                  ]}
+                  numberOfLines={2}
+                >
+                  {valueText}
+                </Text>
+              )}
+              <Pencil size={16} color={colors.text} strokeWidth={1.8} />
+            </>
           )}
-          <Pencil size={16} color={colors.text} strokeWidth={1.8} />
         </View>
       </TouchableOpacity>
     );
@@ -925,25 +995,49 @@ export default function MatrimonyMatchesFilterModal({
               },
             ]}
             activeOpacity={0.75}
-            onPress={() => updateDraft((p) => ({ ...p, mutualMatchesOnly: !p.mutualMatchesOnly }))}
+            onPress={() => {
+              if (!canUseAdvancedFilters) {
+                promptAdvancedFilterUpgrade();
+                return;
+              }
+              updateDraft((p) => ({ ...p, mutualMatchesOnly: !p.mutualMatchesOnly }));
+            }}
           >
             <View style={{ flex: 1, paddingRight: 12 }}>
-              <Text style={[styles.rowLabel, { color: colors.text, fontFamily }]}>Mutual Matches</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={[styles.rowLabel, { color: colors.text, fontFamily }]}>Mutual Matches</Text>
+                {!canUseAdvancedFilters ? (
+                  <View
+                    style={{
+                      backgroundColor: isDark ? 'rgba(217,119,6,0.22)' : '#FEF3C7',
+                      paddingHorizontal: 6,
+                      paddingVertical: 1,
+                      borderRadius: 6,
+                    }}
+                  >
+                    <Text style={{ fontSize: 9.5, fontWeight: '800', color: '#B45309' }}>GOLD+</Text>
+                  </View>
+                ) : null}
+              </View>
               <Text style={[styles.rowSub, { color: colors.textSecondary, fontFamily }]}>
                 Profiles matching your preferences & vice versa
               </Text>
             </View>
-            <View
-              style={[
-                styles.squareCheck,
-                {
-                  borderColor: draft.mutualMatchesOnly ? CORAL_RED : '#64748B',
-                  backgroundColor: draft.mutualMatchesOnly ? CORAL_RED : 'transparent',
-                },
-              ]}
-            >
-              {draft.mutualMatchesOnly ? <Check size={14} color="#FFFFFF" strokeWidth={2.8} /> : null}
-            </View>
+            {!canUseAdvancedFilters ? (
+              <Lock size={16} color="#D97706" />
+            ) : (
+              <View
+                style={[
+                  styles.squareCheck,
+                  {
+                    borderColor: draft.mutualMatchesOnly ? CORAL_RED : '#64748B',
+                    backgroundColor: draft.mutualMatchesOnly ? CORAL_RED : 'transparent',
+                  },
+                ]}
+              >
+                {draft.mutualMatchesOnly ? <Check size={14} color="#FFFFFF" strokeWidth={2.8} /> : null}
+              </View>
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity
