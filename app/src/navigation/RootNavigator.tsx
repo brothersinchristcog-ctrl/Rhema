@@ -1442,10 +1442,10 @@ function Navigation() {
       let initialSnapshotHandled = false;
 
       const initNotifications = async () => {
+        await NotificationService.setupCategoriesAndChannels();
         const hasPermission = await NotificationService.requestUserPermission();
         if (hasPermission) {
           await NotificationService.getFcmToken();
-          await NotificationService.setupCategoriesAndChannels();
         }
 
         // Initialize Daily Verses Background Sync & Local Notifications

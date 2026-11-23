@@ -1090,6 +1090,203 @@ function formatLiveNotification(churchName, rawTitle) {
         pushBody: "Join us for a time of worship, prayer and God's Word. Our live service is now streaming on YouTube. Be blessed!",
     };
 }
+async function collectChurchMemberTokens(db, churchId) {
+    const tokenSet = new Set();
+    const tokenDocRefs = new Map();
+    const trackToken = (rawToken, docRef) => {
+        if (typeof rawToken !== 'string')
+            return;
+        const tk = rawToken.trim();
+        if (tk.length <= 10)
+            return;
+        tokenSet.add(tk);
+        const list = tokenDocRefs.get(tk) || [];
+        list.push(docRef);
+        tokenDocRefs.set(tk, list);
+    };
+    const isInactiveStatus = (status) => {
+        const s = String(status || '').trim().toLowerCase();
+        return s === 'left' || s === 'rejected' || s === 'inactive';
+    };
+    for (const rootCol of ['Rhema Church', 'churches']) {
+        try {
+            const memSnap = await db.collection(rootCol).doc(churchId).collection('members').get();
+            memSnap.forEach((doc) => {
+                const m = doc.data() || {};
+                if (isInactiveStatus(m.status))
+                    return;
+                trackToken(m.fcmToken, doc.ref);
+                if (Array.isArray(m.fcmTokens)) {
+                    m.fcmTokens.forEach((t) => trackToken(t, doc.ref));
+                }
+            });
+        }
+        catch (err) {
+            console.warn(`[YouTubeLivePush] Could not read ${rootCol}/${churchId}/members tokens:`, err);
+        }
+    }
+    try {
+        const usersSnap = await db.collection('users').get();
+        usersSnap.forEach((doc) => {
+            const u = doc.data() || {};
+            const uChurch = u.primaryChurchId || u.churchId || 'rhema';
+            if (churchId && uChurch !== churchId)
+                return;
+            trackToken(u.fcmToken, doc.ref);
+            if (Array.isArray(u.fcmTokens)) {
+                u.fcmTokens.forEach((t) => trackToken(t, doc.ref));
+            }
+        });
+    }
+    catch (err) {
+        console.warn('[YouTubeLivePush] Could not read users tokens:', err);
+    }
+    return { tokens: Array.from(tokenSet), tokenDocRefs };
+}
+async function cleanupInvalidFcmTokens(invalidTokens, tokenDocRefs) {
+    if (invalidTokens.length === 0)
+        return;
+    const docRemovals = new Map();
+    invalidTokens.forEach((tk) => {
+        const refs = tokenDocRefs.get(tk) || [];
+        refs.forEach((docRef) => {
+            const entry = docRemovals.get(docRef.path) || { ref: docRef, tokens: [] };
+            entry.tokens.push(tk);
+            docRemovals.set(docRef.path, entry);
+        });
+    });
+    await Promise.allSettled(Array.from(docRemovals.values()).map(async ({ ref, tokens }) => {
+        const snap = await ref.get().catch(() => null);
+        const data = snap?.exists ? snap.data() || {} : {};
+        const updatePayload = {
+            fcmTokens: FieldValue.arrayRemove(...tokens),
+        };
+        if (typeof data.fcmToken === 'string' && tokens.includes(data.fcmToken.trim())) {
+            updatePayload.fcmToken = FieldValue.delete();
+        }
+        await ref.update(updatePayload).catch(() => { });
+    }));
+}
+/**
+ * Shared YouTube Live FCM dispatcher:
+ * Sends BOTH direct token multicast (to every active member device registered in Firestore)
+ * and topic broadcast (`church_{churchId}`), with full Android `notification` + `android.notification`
+ * (`channelId: 'church_alerts'`, shared `tag` & `collapseKey`) so killed/background Android devices
+ * always display the alert natively without duplicates.
+ */
+export async function dispatchYouTubeLivePush(db, params) {
+    const messaging = getMessaging();
+    const { churchId, videoId = '', liveUrl, pushTitle, pushBody, streamTitle = '', docId } = params;
+    const collapseTag = videoId ? `youtube_live_${videoId}` : `youtube_live_${churchId}`;
+    const dataPayload = {
+        type: 'youtube_live',
+        videoId: String(videoId),
+        url: String(liveUrl),
+        churchId: String(churchId),
+        title: pushTitle,
+        body: pushBody,
+        pushTitle,
+        pushBody,
+        streamTitle: String(streamTitle || pushTitle),
+        screen: 'YouTubeLive',
+        ...(docId ? { id: String(docId) } : {}),
+    };
+    const sharedAndroid = {
+        priority: 'high',
+        collapseKey: collapseTag,
+        notification: {
+            title: pushTitle,
+            body: pushBody,
+            sound: 'default',
+            priority: 'max',
+            channelId: 'church_alerts',
+            tag: collapseTag,
+            defaultSound: true,
+            defaultVibrateTimings: true,
+        },
+    };
+    const sharedApns = {
+        headers: {
+            'apns-priority': '10',
+            'apns-collapse-id': collapseTag,
+        },
+        payload: {
+            aps: {
+                alert: {
+                    title: pushTitle,
+                    body: pushBody,
+                },
+                sound: 'default',
+                badge: 1,
+                category: 'youtube_live',
+            },
+        },
+    };
+    const { tokens, tokenDocRefs } = await collectChurchMemberTokens(db, churchId);
+    console.log(`📱 [YouTubeLivePush] Collected ${tokens.length} device token(s) for church ${churchId}.`);
+    let multicastSuccess = 0;
+    let multicastFailed = 0;
+    const invalidTokens = [];
+    for (let i = 0; i < tokens.length; i += 500) {
+        const batch = tokens.slice(i, i + 500);
+        try {
+            const response = await messaging.sendEachForMulticast({
+                notification: { title: pushTitle, body: pushBody },
+                data: dataPayload,
+                android: sharedAndroid,
+                apns: sharedApns,
+                tokens: batch,
+            });
+            multicastSuccess += response.successCount;
+            multicastFailed += response.failureCount;
+            if (response.failureCount > 0) {
+                const errorCounts = {};
+                response.responses.forEach((resp, idx) => {
+                    if (!resp.success) {
+                        const code = String(resp.error?.code || 'unknown');
+                        errorCounts[code] = (errorCounts[code] || 0) + 1;
+                        if (code === 'messaging/registration-token-not-registered' ||
+                            code === 'messaging/invalid-registration-token') {
+                            const badTk = batch[idx];
+                            if (badTk)
+                                invalidTokens.push(badTk);
+                        }
+                    }
+                });
+                console.warn('[YouTubeLivePush] Multicast partial failure summary:', errorCounts);
+            }
+        }
+        catch (batchErr) {
+            multicastFailed += batch.length;
+            console.error('[YouTubeLivePush] Multicast batch error:', batchErr);
+        }
+    }
+    if (invalidTokens.length > 0) {
+        cleanupInvalidFcmTokens(invalidTokens, tokenDocRefs).catch(() => { });
+    }
+    let topicSent = false;
+    try {
+        await messaging.send({
+            notification: { title: pushTitle, body: pushBody },
+            data: dataPayload,
+            topic: `church_${churchId}`,
+            android: sharedAndroid,
+            apns: sharedApns,
+        });
+        topicSent = true;
+        console.log(`✅ [YouTubeLivePush] Topic push sent to church_${churchId} (multicast: ${multicastSuccess}/${tokens.length}).`);
+    }
+    catch (topicErr) {
+        console.error(`[YouTubeLivePush] Error sending topic push to church_${churchId}:`, topicErr);
+    }
+    return {
+        delivered: multicastSuccess > 0 || topicSent,
+        totalTokens: tokens.length,
+        multicastSuccess,
+        multicastFailed,
+        topicSent,
+    };
+}
 export async function checkChurchYouTubeLive(churchDoc, churchId, db) {
     if (!churchId || churchId === 'global')
         return;
@@ -1306,38 +1503,7 @@ export async function checkChurchYouTubeLive(churchDoc, churchId, db) {
             if (shouldSendPush) {
                 const churchName = cData.name || 'Rhema Global Ministries';
                 const { pushTitle, pushBody } = formatLiveNotification(churchName, streamTitle);
-                console.log(`🚨 Auto YouTube Live detected for church ${churchId} (${churchName})! Sending single push for ${resolvedVideoId}...`);
-                // 1. Send data-only push to Android (rendered cleanly via NotificationService.displayLiveNotification
-                // with "📺 Join Live Now" action button) and categorized alert to iOS APNs.
-                const topicMessage = {
-                    data: {
-                        type: 'youtube_live',
-                        videoId: resolvedVideoId,
-                        url: liveWatchUrl,
-                        churchId: churchId,
-                        title: streamTitle || pushTitle,
-                        pushTitle: pushTitle,
-                        pushBody: pushBody,
-                    },
-                    topic: `church_${churchId}`,
-                    android: {
-                        priority: 'high',
-                    },
-                    apns: {
-                        headers: { 'apns-priority': '10' },
-                        payload: {
-                            aps: {
-                                alert: {
-                                    title: pushTitle,
-                                    body: pushBody,
-                                },
-                                sound: 'default',
-                                badge: 1,
-                                category: 'youtube_live',
-                            },
-                        },
-                    },
-                };
+                console.log(`🚨 Auto YouTube Live detected for church ${churchId} (${churchName})! Dispatching push for ${resolvedVideoId}...`);
                 // 1. Always persist deterministically in broadcasts subcollection (youtube_live_{videoId})
                 // so the Updates screen ALWAYS shows the live alert immediately with zero duplicates.
                 const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
@@ -1358,21 +1524,39 @@ export async function checkChurchYouTubeLive(churchDoc, churchId, db) {
                     .catch((bErr) => {
                     console.error('Error writing YouTube Live broadcast for Updates screen:', bErr);
                 });
-                // 2. Send topic push to all church members
+                // 2. Send to all registered member tokens (multicast) + church topic with shared tag deduplication
                 try {
-                    await getMessaging().send(topicMessage);
-                    // Record completion only after FCM topic delivery succeeded
-                    await churchDoc.ref
-                        .update({
-                        'youtubeLiveState.lastNotifiedVideoId': resolvedVideoId,
-                        'youtubeLiveState.lastNotifiedAt': FieldValue.serverTimestamp(),
-                        'youtubeLiveState.pendingNotifyVideoId': FieldValue.delete(),
-                        'youtubeLiveState.pendingNotifyAt': FieldValue.delete(),
-                    })
-                        .catch(() => { });
+                    const pushResult = await dispatchYouTubeLivePush(db, {
+                        churchId,
+                        videoId: resolvedVideoId,
+                        liveUrl: liveWatchUrl,
+                        pushTitle,
+                        pushBody,
+                        streamTitle,
+                        docId: `youtube_live_${resolvedVideoId}`,
+                    });
+                    if (pushResult.delivered) {
+                        await churchDoc.ref
+                            .update({
+                            'youtubeLiveState.lastNotifiedVideoId': resolvedVideoId,
+                            'youtubeLiveState.lastNotifiedAt': FieldValue.serverTimestamp(),
+                            'youtubeLiveState.pendingNotifyVideoId': FieldValue.delete(),
+                            'youtubeLiveState.pendingNotifyAt': FieldValue.delete(),
+                        })
+                            .catch(() => { });
+                    }
+                    else {
+                        console.warn('[checkChurchYouTubeLive] No FCM delivery succeeded; releasing pending claim for retry.');
+                        await churchDoc.ref
+                            .update({
+                            'youtubeLiveState.pendingNotifyVideoId': FieldValue.delete(),
+                            'youtubeLiveState.pendingNotifyAt': FieldValue.delete(),
+                        })
+                            .catch(() => { });
+                    }
                 }
                 catch (sendErr) {
-                    console.error('Error sending YouTube Live topic push; releasing pending claim for retry:', sendErr);
+                    console.error('Error dispatching YouTube Live push; releasing pending claim for retry:', sendErr);
                     await churchDoc.ref
                         .update({
                         'youtubeLiveState.pendingNotifyVideoId': FieldValue.delete(),

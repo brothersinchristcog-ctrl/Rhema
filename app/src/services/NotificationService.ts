@@ -795,6 +795,8 @@ class NotificationService {
       }
 
       const topicName = `church_${churchId}`;
+      // Ensure FCM instance has registered a token before subscribing to topics
+      await messaging().getToken().catch(() => null);
       await messaging().subscribeToTopic(topicName);
       console.log(`📡 Subscribed to FCM topic: ${topicName}`);
     } catch (error: any) {

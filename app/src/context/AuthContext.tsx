@@ -456,25 +456,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             (async () => {
               try {
                 const NotificationService = require('../services/NotificationService').default;
+                await NotificationService.setupCategoriesAndChannels().catch(() => {});
                 await NotificationService.requestUserPermission().catch(() => {});
                 const token = await messaging().getToken().catch(() => null);
                 if (token) {
-                  await require('../services/firebaseConfig').firestore()
-                    .collection('Rhema Church').doc(targetChurchId)
-                    .collection('members').doc(userState.uid).set({
-                      fcmToken: token
-                    }, { merge: true });
-
-                  await NotificationService.subscribeToChurchTopic(targetChurchId);
+                  await NotificationService.saveTokenToFirestore(token);
                 }
+                await NotificationService.subscribeToChurchTopic(targetChurchId);
 
                 messaging().onTokenRefresh(async (newToken) => {
-                  await require('../services/firebaseConfig').firestore()
-                    .collection('Rhema Church').doc(targetChurchId)
-                    .collection('members').doc(userState.uid).set({
-                      fcmToken: newToken
-                    }, { merge: true });
-
+                  await NotificationService.saveTokenToFirestore(newToken);
                   await NotificationService.subscribeToChurchTopic(targetChurchId);
                 });
               } catch (err) {

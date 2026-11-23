@@ -52,14 +52,36 @@
       },
       "notificationChannels": [
         {
+          "name": "Church Live & Updates",
+          "importance": "MAX",
+          "showBadge": true,
+          "sound": "default",
+          "id": "church_alerts"
+        },
+        {
           "name": "Daily Verse",
           "importance": "HIGH",
           "showBadge": true,
           "sound": "default",
           "id": "daily_verse"
+        },
+        {
+          "name": "Daily Bible Quiz",
+          "importance": "HIGH",
+          "showBadge": true,
+          "sound": "default",
+          "id": "daily_quiz"
+        },
+        {
+          "name": "Church Messages & Groups",
+          "importance": "MAX",
+          "showBadge": true,
+          "sound": "default",
+          "id": "church_chat"
         }
       ],
       "permissions": [
+        "android.permission.POST_NOTIFICATIONS",
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.READ_EXTERNAL_STORAGE",

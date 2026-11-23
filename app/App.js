@@ -168,31 +168,38 @@ export default function App() {
 
     const unsubscribe = messaging().onMessage(async remoteMessage => {
       const rawData = remoteMessage?.data || {};
-      const title = remoteMessage?.notification?.title || rawData.title || (rawData.type ? `New ${rawData.type.replace(/_/g, ' ')}` : 'New Notification');
-      const body = remoteMessage?.notification?.body || rawData.body || 'You have a new message.';
+      const title =
+        remoteMessage?.notification?.title ||
+        rawData.pushTitle ||
+        rawData.title ||
+        (rawData.type ? `New ${rawData.type.replace(/_/g, ' ')}` : 'New Notification');
+      const body =
+        remoteMessage?.notification?.body ||
+        rawData.pushBody ||
+        rawData.body ||
+        'You have a new message.';
       const password = rawData.password || (body.match(/Passcode:\s*([A-Za-z0-9]+)/i)?.[1]) || '';
       
       const isLive = rawData.type === 'youtube_live';
       if (isLive) {
         NotificationService.displayLiveNotification(rawData, title, body).catch(e => console.warn(e));
-        return;
-      }
-
-      if (rawData.type === 'CHURCH_CHAT' && navigationRef.isReady()) {
-        const currentRoute = navigationRef.getCurrentRoute();
-        if (
-          currentRoute?.name === 'RhemaChatRoom' &&
-          currentRoute?.params?.roomId &&
-          currentRoute.params.roomId === rawData.roomId
-        ) {
-          return;
+      } else {
+        if (rawData.type === 'CHURCH_CHAT' && navigationRef.isReady()) {
+          const currentRoute = navigationRef.getCurrentRoute();
+          if (
+            currentRoute?.name === 'RhemaChatRoom' &&
+            currentRoute?.params?.roomId &&
+            currentRoute.params.roomId === rawData.roomId
+          ) {
+            return;
+          }
         }
+
+        // Also post to Android/iOS system notification bar (with deduplication) so it appears in the device notification drawer
+        NotificationService.displaySystemPushNotification(title, body, rawData).catch(() => {});
       }
 
-      // Also post to Android/iOS system notification bar (with deduplication) so it appears in the device notification drawer
-      NotificationService.displaySystemPushNotification(title, body, rawData).catch(() => {});
-
-      setNotification({ title, body, password, remoteMessage, isLive: false });
+      setNotification({ title, body, password, remoteMessage, isLive });
       
       Animated.sequence([
         Animated.timing(slideAnim, {

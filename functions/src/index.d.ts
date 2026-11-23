@@ -23,6 +23,11 @@ export declare const triggerDailyPromisePushHttp: import("firebase-functions/v2/
  */
 export declare const checkYouTubeLive: import("firebase-functions/v2/scheduler").ScheduleFunction;
 export declare const triggerTestYouTubeLive: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
+    delivered: boolean;
+    totalTokens: number;
+    multicastSuccess: number;
+    multicastFailed: number;
+    topicSent: boolean;
     success: boolean;
     broadcastId: string;
 }>, unknown>;
