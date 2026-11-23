@@ -1697,10 +1697,10 @@ export const EventsTicker = ({
   // Both English and Telugu cards generated with 38 designer colors
   const items = useMemo(() => {
     const evList = (events && events.length > 0) ? events : [
-      { title: 'Sunday Worship Service', titleTelugu: 'ఆదివారపు ఆరాధన', time: '10:00 AM - 12:30 PM' },
-      { title: 'Midweek Bible Study', titleTelugu: 'బైబిల్ స్టడీ', time: '7:00 PM - 8:30 PM' },
-      { title: 'Early Morning Prayer', titleTelugu: 'ఉదయ కాల ప్రార్థన', time: '6:00 AM - 7:30 AM' },
-      { title: 'Youth Revival Fellowship', titleTelugu: 'యూత్ కూడిక', time: '6:30 PM - 8:30 PM' },
+      { title: 'Sunday Worship Service', titleTelugu: 'ఆదివారపు ఆరాధన', time: '10:00 AM - 12:30 PM', isServiceTiming: true },
+      { title: 'Midweek Bible Study', titleTelugu: 'బైబిల్ స్టడీ', time: '7:00 PM - 8:30 PM', isServiceTiming: true },
+      { title: 'Early Morning Prayer', titleTelugu: 'ఉదయ కాల ప్రార్థన', time: '6:00 AM - 7:30 AM', isServiceTiming: true },
+      { title: 'Youth Revival Fellowship', titleTelugu: 'యూత్ కూడిక', time: '6:30 PM - 8:30 PM', isServiceTiming: true },
     ];
 
     const result: any[] = [];
@@ -1708,28 +1708,43 @@ export const EventsTicker = ({
       const enTitle = cleanEnglishTitle(ev.title);
       const teTitle = getTeluguServiceTitle(ev.title, ev.titleTelugu);
       const cleanTime = cleanTimeText(ev.time || '');
+      const cleanDateLabel = (ev.dateLabel || '').trim();
+      const scheduleLine = cleanDateLabel
+        ? (cleanTime ? `${cleanDateLabel}  •  ${cleanTime}` : cleanDateLabel)
+        : cleanTime;
 
-      // 1. English Event Card
+      const enCategory = ev.isServiceTiming
+        ? 'CHURCH SERVICE TIMINGS'
+        : ev.categoryEn || 'UPCOMING EVENT';
+      const teCategory = ev.isServiceTiming
+        ? 'ఆరాధన సమయములు'
+        : ev.categoryTe || 'రాబోవు కూడిక';
+
+      // 1. English Card
       const enColor = EVENT_CARD_PALETTE[(idx * 2) % EVENT_CARD_PALETTE.length];
       result.push({
         id: `ev-en-${idx}`,
-        category: 'UPCOMING EVENT',
+        category: enCategory,
         eventName: enTitle,
         time: cleanTime,
-        title: cleanTime ? `${enTitle}  •  ${cleanTime}` : enTitle,
-        raw: ev,
+        scheduleMeta: scheduleLine,
+        title: scheduleLine ? `${enTitle}  •  ${scheduleLine}` : enTitle,
+        raw: ev.isServiceTiming ? null : ev,
+        isServiceTiming: Boolean(ev.isServiceTiming),
         colorConfig: enColor,
       });
 
-      // 2. Dedicated Telugu Event Card
+      // 2. Dedicated Telugu Card
       const teColor = EVENT_CARD_PALETTE[(idx * 2 + 1) % EVENT_CARD_PALETTE.length];
       result.push({
         id: `ev-te-${idx}`,
-        category: 'రాబోవు కూడిక',
+        category: teCategory,
         eventName: teTitle,
         time: cleanTime,
-        title: cleanTime ? `${teTitle}  •  ${cleanTime}` : teTitle,
-        raw: ev,
+        scheduleMeta: scheduleLine,
+        title: scheduleLine ? `${teTitle}  •  ${scheduleLine}` : teTitle,
+        raw: ev.isServiceTiming ? null : ev,
+        isServiceTiming: Boolean(ev.isServiceTiming),
         colorConfig: teColor,
       });
     });
@@ -1839,8 +1854,7 @@ export const EventsTicker = ({
           const cfg = item.colorConfig || EVENT_CARD_PALETTE[idx % EVENT_CARD_PALETTE.length];
           const textColor = cfg.isLight ? '#111827' : '#FFFFFF';
           const kickerColor = cfg.isLight ? '#4B5563' : 'rgba(255, 255, 255, 0.78)';
-          // Normal event names fit on single row; only split into 2 rows if massive (> 55 chars)
-          const isHugeTitle = Boolean(item.time && (item.eventName?.length || 0) > 55);
+          const hasScheduleMeta = Boolean(item.scheduleMeta);
 
           return (
             <TouchableOpacity
@@ -1851,7 +1865,7 @@ export const EventsTicker = ({
                 { width: cardWidth, backgroundColor: cfg.bg }
               ]}
               onPress={() => {
-                if (item.raw) {
+                if (item.raw && !item.isServiceTiming) {
                   onEventPress ? onEventPress(item.raw) : onSeeAll?.();
                 } else {
                   onSeeAll?.();
@@ -1863,20 +1877,23 @@ export const EventsTicker = ({
                   <Text style={[mqCardStyles.kickerText, { color: kickerColor }]} numberOfLines={1}>
                     {item.category || 'Upcoming Event'}
                   </Text>
-                  {isHugeTitle ? (
+                  {hasScheduleMeta ? (
                     <View style={mqCardStyles.twoRowWrap}>
                       <Text
                         style={[mqCardStyles.titleText, { color: textColor }]}
                         numberOfLines={1}
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.85}
+                        ellipsizeMode="tail"
                       >
                         {item.eventName}
                       </Text>
                       <View style={mqCardStyles.timeRow}>
-                        <Clock size={11} color={kickerColor} strokeWidth={2.2} style={{ marginRight: 4 }} />
+                        {item.isServiceTiming ? (
+                          <Clock size={11} color={kickerColor} strokeWidth={2.2} style={{ marginRight: 4 }} />
+                        ) : (
+                          <Calendar size={11} color={kickerColor} strokeWidth={2.2} style={{ marginRight: 4 }} />
+                        )}
                         <Text style={[mqCardStyles.timeRowText, { color: kickerColor }]} numberOfLines={1}>
-                          {item.time}
+                          {item.scheduleMeta}
                         </Text>
                       </View>
                     </View>
@@ -2652,95 +2669,8 @@ export default function HomeScreen() {
     };
   }, [activeChurch?.id, refreshHomeLiveStream]);
 
-  const renderInlineLiveYouTubeCard = () => {
-    if (!homeIsLive || !homeLiveVideoId) return null;
-    const playerHeight = Math.round(Math.max(screenWidth - 48, 220) * (9 / 16));
-    const yUrl = resolveRhemaYoutubeUrl(activeChurch?.socialLinks?.youtube);
-    const openInAppLive = () =>
-      navigation.navigate('YouTubeLive', {
-        channelUrl: yUrl,
-        videoId: homeLiveVideoId,
-        title: homeLiveTitle || 'Rhema Ministry Live',
-      });
-
-    return (
-      <View
-        style={[
-          styles.inlineLiveYoutubeOuter,
-          { borderColor: screenTheme.bentoYoutubeBorder },
-        ]}
-      >
-        <LinearGradient
-          colors={screenTheme.bentoYoutubeGradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.inlineLiveYoutubeCard}
-        >
-          <View style={styles.inlineLiveHeaderRow}>
-            <View style={styles.inlineLiveHeaderLeft}>
-              <Image
-                source={require('../../assets/3d_youtube.png')}
-                style={{ width: 28, height: 24, marginRight: 8 }}
-                resizeMode="contain"
-              />
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <View style={styles.bentoLiveBadgeWrap}>
-                    <View style={styles.bentoLiveDot} />
-                    <Text style={styles.bentoLiveTag}>LIVE NOW</Text>
-                  </View>
-                  <Text
-                    style={[styles.inlineLiveChannelTxt, { color: screenTheme.bentoYoutubeSub }]}
-                    numberOfLines={1}
-                  >
-                    Rhema Ministry Live
-                  </Text>
-                </View>
-                <Text
-                  style={[styles.inlineLiveTitleTxt, { color: screenTheme.bentoYoutubeText }]}
-                  numberOfLines={1}
-                >
-                  {homeLiveTitle || 'Live Worship Service'}
-                </Text>
-              </View>
-            </View>
-
-            <TouchableOpacity
-              style={styles.inlineLiveExpandBtn}
-              activeOpacity={0.85}
-              onPress={openInAppLive}
-            >
-              <Maximize2 size={13} color="#FFFFFF" />
-              <Text style={styles.inlineLiveExpandTxt}>Full View</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={[styles.inlineLivePlayerWrap, { height: playerHeight }]}>
-            {isHomeFocused ? (
-              <RhemaYouTubePlayer
-                height={playerHeight}
-                play={isHomeFocused}
-                autoPlay={true}
-                isLive={true}
-                videoId={homeLiveVideoId}
-                title={homeLiveTitle || 'Rhema Ministry Live'}
-                showExternalButton={false}
-              />
-            ) : (
-              <TouchableOpacity
-                style={styles.inlineLivePausedBox}
-                activeOpacity={0.85}
-                onPress={openInAppLive}
-              >
-                <Radio size={24} color="#EF4444" />
-                <Text style={styles.inlineLivePausedTxt}>Tap to Watch Live In-App</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </LinearGradient>
-      </View>
-    );
-  };
+  // Inline YouTube live player removed per user preference; users access the stream via the dedicated YouTube Live screen.
+  const renderInlineLiveYouTubeCard = () => null;
 
   useEffect(() => {
     const cId = activeChurch?.id || 'rhema';
@@ -4211,8 +4141,88 @@ export default function HomeScreen() {
   }, [member, authMember, user?.photoURL]);
 
   const tickerEvents = useMemo(() => {
-    const list = (todayEvents && todayEvents.length > 0) ? todayEvents : (events || []);
-    if (list.length === 0) {
+    const parseEvDateLocal = (raw?: string | any): Date | null => {
+      if (!raw) return null;
+      if (raw instanceof Date) return isNaN(raw.getTime()) ? null : raw;
+      if (typeof raw?.toDate === 'function') {
+        const d = raw.toDate();
+        return isNaN(d.getTime()) ? null : d;
+      }
+      const clean = String(raw).trim().split('T')[0];
+      const parts = clean.split(/[-/]/);
+      if (parts.length === 3) {
+        if (parts[0].length === 4) {
+          const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+          return isNaN(d.getTime()) ? null : d;
+        }
+        if (parts[2].length === 4) {
+          const d = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
+          return isNaN(d.getTime()) ? null : d;
+        }
+      }
+      const fallback = new Date(clean);
+      return isNaN(fallback.getTime()) ? null : fallback;
+    };
+
+    const parseTimeEndMins = (ev: any): number | null => {
+      let tStr = ev.endTime;
+      if (!tStr && ev.time && /[-–]/.test(String(ev.time))) {
+        const segs = String(ev.time).split(/[-–]/);
+        tStr = segs[segs.length - 1]?.trim();
+      }
+      if (!tStr) return null;
+      const upper = String(tStr).toUpperCase().trim();
+      if (!upper.includes(':')) return null;
+      const isPM = upper.includes('PM');
+      const isAM = upper.includes('AM');
+      const numeric = upper.replace(/AM|PM|\s+/g, '');
+      const [hRaw, mRaw] = numeric.split(':');
+      let h = parseInt(hRaw, 10);
+      const m = parseInt(mRaw, 10) || 0;
+      if (isNaN(h)) return null;
+      if (isPM && h < 12) h += 12;
+      if (isAM && h === 12) h = 0;
+      return h * 60 + m;
+    };
+
+    const now = new Date();
+    const todayMidnight = new Date(now);
+    todayMidnight.setHours(0, 0, 0, 0);
+    const nowMins = now.getHours() * 60 + now.getMinutes();
+
+    const combinedMap = new Map<string, any>();
+    [...(todayEvents || []), ...(events || [])].forEach((ev: any) => {
+      if (!ev) return;
+      const key = ev.id || `${ev.title || ''}_${ev.date || ''}`;
+      if (!combinedMap.has(key)) combinedMap.set(key, ev);
+    });
+
+    const activeAndUpcoming = Array.from(combinedMap.values())
+      .filter((ev: any) => {
+        const statusLower = String(ev.status || '').toLowerCase();
+        if (statusLower === 'completed' || statusLower === 'cancelled' || statusLower === 'ended') {
+          return false;
+        }
+        const startD = parseEvDateLocal(ev.date || ev.startDate || ev.eventDate);
+        const endD = parseEvDateLocal(ev.endDate || ev.date || ev.startDate || ev.eventDate);
+        if (!endD) return false;
+        const endMidnight = new Date(endD);
+        endMidnight.setHours(0, 0, 0, 0);
+        if (endMidnight.getTime() < todayMidnight.getTime()) return false;
+        if (endMidnight.getTime() === todayMidnight.getTime()) {
+          const endMins = parseTimeEndMins(ev);
+          if (endMins !== null && nowMins > endMins) return false;
+        }
+        return Boolean(startD || endD);
+      })
+      .sort((a: any, b: any) => {
+        const aStart = parseEvDateLocal(a.date || a.startDate)?.getTime() || 0;
+        const bStart = parseEvDateLocal(b.date || b.startDate)?.getTime() || 0;
+        return aStart - bStart;
+      });
+
+    // If no active or upcoming events exist, display church service timings cleanly
+    if (activeAndUpcoming.length === 0) {
       const timings = activeChurch?.serviceTimings || [];
       if (timings.length > 0) {
         return timings.map((st: any) => {
@@ -4227,22 +4237,85 @@ export default function HomeScreen() {
           return {
             title: st.name || 'Church Service',
             titleTelugu: st.nameTelugu || getTeluguServiceTitle(st.name),
+            dateLabel: (st.note || '').trim() || undefined,
             time: timeEn,
             timeTelugu: timeTe,
+            isServiceTiming: true,
+            categoryEn: 'CHURCH SERVICE TIMINGS',
+            categoryTe: 'ఆరాధన సమయములు',
             raw: st,
           };
         });
       }
       return [
-        { title: 'Morning Prayer', titleTelugu: 'ఉదయ కాల ప్రార్థన', time: '6:00 AM - 7:30 AM', timeTelugu: 'ఉదయం 6:00 - 7:30' },
-        { title: 'Worship Service', titleTelugu: 'ఆరాధన కూడిక', time: '10:00 AM - 12:30 PM', timeTelugu: 'ఉదయం 10:00 - మధ్యాహ్నం 12:30' },
-        { title: 'Evening Fellowship', titleTelugu: 'సాయంకాల సహవాసం', time: '6:30 PM - 8:30 PM', timeTelugu: 'సాయంత్రం 6:30 - రాత్రి 8:30' },
+        {
+          title: 'Morning Prayer',
+          titleTelugu: 'ఉదయ కాల ప్రార్థన',
+          time: '6:00 AM - 7:30 AM',
+          timeTelugu: 'ఉదయం 6:00 - 7:30',
+          isServiceTiming: true,
+          categoryEn: 'CHURCH SERVICE TIMINGS',
+          categoryTe: 'ఆరాధన సమయములు',
+        },
+        {
+          title: 'Worship Service',
+          titleTelugu: 'ఆరాధన కూడిక',
+          time: '10:00 AM - 12:30 PM',
+          timeTelugu: 'ఉదయం 10:00 - మధ్యాహ్నం 12:30',
+          isServiceTiming: true,
+          categoryEn: 'CHURCH SERVICE TIMINGS',
+          categoryTe: 'ఆరాధన సమయములు',
+        },
+        {
+          title: 'Evening Fellowship',
+          titleTelugu: 'సాయంకాల సహవాసం',
+          time: '6:30 PM - 8:30 PM',
+          timeTelugu: 'సాయంత్రం 6:30 - రాత్రి 8:30',
+          isServiceTiming: true,
+          categoryEn: 'CHURCH SERVICE TIMINGS',
+          categoryTe: 'ఆరాధన సమయములు',
+        },
       ];
     }
-    return list.map((ev: any) => {
+
+    const fmtShortDate = (d: Date, includeYear = false) =>
+      d.toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        ...(includeYear ? { year: 'numeric' } : {}),
+      });
+
+    return activeAndUpcoming.map((ev: any) => {
+      const startD = parseEvDateLocal(ev.date || ev.startDate || ev.eventDate);
+      const endD = parseEvDateLocal(ev.endDate || ev.date || ev.startDate || ev.eventDate);
+      const startMid = startD ? new Date(startD.getFullYear(), startD.getMonth(), startD.getDate()) : null;
+      const endMid = endD ? new Date(endD.getFullYear(), endD.getMonth(), endD.getDate()) : null;
+
+      const isActiveOngoing = Boolean(
+        startMid &&
+        endMid &&
+        todayMidnight.getTime() >= startMid.getTime() &&
+        todayMidnight.getTime() <= endMid.getTime()
+      );
+
+      let dateLabel = '';
+      if (startMid && endMid && startMid.getTime() !== endMid.getTime()) {
+        const sameYear = startMid.getFullYear() === endMid.getFullYear();
+        dateLabel = sameYear
+          ? `${fmtShortDate(startMid)} – ${fmtShortDate(endMid, true)}`
+          : `${fmtShortDate(startMid, true)} – ${fmtShortDate(endMid, true)}`;
+      } else if (startMid) {
+        dateLabel =
+          startMid.getTime() === todayMidnight.getTime()
+            ? `Today · ${fmtShortDate(startMid, true)}`
+            : fmtShortDate(startMid, true);
+      } else if (ev.date) {
+        dateLabel = formatDateDisplay(ev.date);
+      }
+
       const sEn = ev.startTime ? formatEventTime(ev.startTime, 'en') : '';
       const eEn = ev.endTime ? formatEventTime(ev.endTime, 'en') : '';
-      const timeEn = sEn ? (eEn ? `${sEn} - ${eEn}` : sEn) : (ev.date ? formatDateDisplay(ev.date) : 'Today');
+      const timeEn = sEn ? (eEn ? `${sEn} - ${eEn}` : sEn) : (ev.time || '');
 
       const sTe = ev.startTime ? formatEventTime(ev.startTime, 'te') : '';
       const eTe = ev.endTime ? formatEventTime(ev.endTime, 'te') : '';
@@ -4251,8 +4324,12 @@ export default function HomeScreen() {
       return {
         title: ev.title || 'Church Event',
         titleTelugu: ev.titleTelugu || ev.title,
+        dateLabel,
         time: timeEn,
         timeTelugu: timeTe,
+        isServiceTiming: false,
+        categoryEn: isActiveOngoing ? 'ACTIVE EVENT' : 'UPCOMING EVENT',
+        categoryTe: isActiveOngoing ? 'ప్రస్తుత కూడిక' : 'రాబోవు కూడిక',
         raw: ev,
       };
     });
@@ -4392,7 +4469,7 @@ export default function HomeScreen() {
               theme={screenTheme}
               onSeeAll={() => navigation.navigate('Events')} 
               onEventPress={(evItem) => {
-                if (evItem?.raw) {
+                if (evItem?.raw && !evItem?.isServiceTiming) {
                   navigation.navigate('EventDetails', { event: evItem.raw });
                 } else {
                   navigation.navigate('Events');
@@ -4543,35 +4620,52 @@ export default function HomeScreen() {
                               {
                                 borderColor: screenTheme.promiseCardBorder,
                                 borderWidth: 1,
+                                overflow: 'hidden',
                                 shadowColor: screenTheme.isDark ? '#000' : '#0F172A',
-                                shadowOpacity: screenTheme.isDark ? 0.35 : 0.06,
+                                shadowOpacity: screenTheme.isDark ? 0.35 : 0.08,
                                 shadowRadius: 10,
-                                elevation: screenTheme.isDark ? 4 : 2,
+                                elevation: screenTheme.isDark ? 4 : 3,
                               }
                             ]}
                             imageStyle={{ borderRadius: 24 }}
                             resizeMode="cover"
                           >
                             <LinearGradient
-                              colors={['rgba(15, 23, 42, 0.45)', 'rgba(15, 23, 42, 0.88)']}
-                              style={StyleSheet.absoluteFillObject}
+                              colors={['rgba(15, 23, 42, 0.58)', 'rgba(15, 23, 42, 0.90)']}
+                              style={[StyleSheet.absoluteFillObject, { borderRadius: 24 }]}
                             />
 
-                            <Text style={[styles.phLabel, { color: screenTheme.promiseLabel }]} maxFontSizeMultiplier={1.15}>
-                              {greeting}
-                            </Text>
+                            <View style={{
+                              alignSelf: 'center',
+                              backgroundColor: 'rgba(15, 23, 42, 0.55)',
+                              borderWidth: 1,
+                              borderColor: 'rgba(255, 255, 255, 0.22)',
+                              paddingHorizontal: 14,
+                              paddingVertical: 4,
+                              borderRadius: 999,
+                              marginBottom: 12,
+                            }}>
+                              <Text style={[styles.phLabel, { color: '#FDE68A', marginBottom: 0 }]} maxFontSizeMultiplier={1.15}>
+                                {greeting}
+                              </Text>
+                            </View>
 
                             {/* Main Verse Block */}
                             <View style={styles.vdVerseBlock}>
                               
                               <View style={styles.vdVerseTextContainer}>
-                                <Text style={[styles.vdTopRightQuote, { color: screenTheme.promiseQuote }]} pointerEvents="none">”</Text>
+                                <Text style={[styles.vdTopRightQuote, { color: 'rgba(255, 255, 255, 0.18)' }]} pointerEvents="none">”</Text>
 
                                 {/* Primary localized verse (Telugu / Primary) */}
                                 <Text 
                                   style={[
                                     styles.vdVerseTe, 
-                                    { color: screenTheme.promiseVerseTe },
+                                    {
+                                      color: '#FFFFFF',
+                                      textShadowColor: 'rgba(0, 0, 0, 0.65)',
+                                      textShadowOffset: { width: 0, height: 1 },
+                                      textShadowRadius: 3,
+                                    },
                                     !loc.secondaryVerse && { fontSize: 17, lineHeight: 26 }
                                   ]} 
                                   maxFontSizeMultiplier={1.15}
@@ -4581,20 +4675,31 @@ export default function HomeScreen() {
 
                                 {/* Secondary verse (English) if distinct */}
                                 {loc.secondaryVerse && loc.secondaryVerse !== loc.primaryVerse ? (
-                                  <Text style={[styles.vdVerseEn, { color: screenTheme.promiseVerseEn }]} maxFontSizeMultiplier={1.15}>
+                                  <Text
+                                    style={[
+                                      styles.vdVerseEn,
+                                      {
+                                        color: 'rgba(241, 245, 249, 0.95)',
+                                        textShadowColor: 'rgba(0, 0, 0, 0.55)',
+                                        textShadowOffset: { width: 0, height: 1 },
+                                        textShadowRadius: 2,
+                                      },
+                                    ]}
+                                    maxFontSizeMultiplier={1.15}
+                                  >
                                     {stripHtml(loc.secondaryVerse)}
                                   </Text>
                                 ) : null}
 
                                 {/* Reference Line inside Scripture column */}
                                 <View style={styles.vdReferenceRow}>
-                                  <Text style={[styles.vdRefPrimary, { color: screenTheme.promiseRefPrimary }]} maxFontSizeMultiplier={1.15}>
+                                  <Text style={[styles.vdRefPrimary, { color: '#FCD34D' }]} maxFontSizeMultiplier={1.15}>
                                     {loc.primaryReference}
                                   </Text>
                                   {loc.secondaryReference && loc.secondaryReference !== loc.primaryReference ? (
                                     <>
-                                      <Text style={[styles.vdRefDivider, { color: screenTheme.promiseRefDivider }]} maxFontSizeMultiplier={1.15}>|</Text>
-                                      <Text style={[styles.vdRefSecondary, { color: screenTheme.promiseRefSecondary }]} maxFontSizeMultiplier={1.15}>
+                                      <Text style={[styles.vdRefDivider, { color: 'rgba(255, 255, 255, 0.45)' }]} maxFontSizeMultiplier={1.15}>|</Text>
+                                      <Text style={[styles.vdRefSecondary, { color: '#E2E8F0' }]} maxFontSizeMultiplier={1.15}>
                                         {loc.secondaryReference}
                                       </Text>
                                     </>
@@ -4835,7 +4940,7 @@ export default function HomeScreen() {
                     </View>
                   );
                 })}
-                {homeIsLive && homeLiveVideoId ? renderInlineLiveYouTubeCard() : null}
+                {/* Render inline live youtube player card removed per user request (users use dedicated YouTube Live screen) */}
               </View>
             ) : (
               /* ── Bento Grid: Asymmetric Floating Cards ── */
@@ -5306,8 +5411,7 @@ export default function HomeScreen() {
               </LinearGradient>
             </TouchableOpacity>
 
-            {/* ── LIVE YOUTUBE PLAYER DIRECTLY IN BENTO HOME SECTION WHEN LIVE ── */}
-            {homeIsLive && homeLiveVideoId ? renderInlineLiveYouTubeCard() : null}
+            {/* ── LIVE YOUTUBE PLAYER DIRECTLY IN BENTO HOME SECTION REMOVED (DEDICATED YOUTUBE LIVE SCREEN USED) ── */}
 
             {/* ── EXPANDABLE BENTO SECTION (Rows 6, 7 & 8) ── */}
             {showAllBento && (
@@ -5317,11 +5421,10 @@ export default function HomeScreen() {
               style={styles.bentoRow6}
               onLayout={(e) => setOnlineMeetingsY(e.nativeEvent.layout.y)}
             >
-              {/* When inline live video is already active above, lay out Meetings & Members side-by-side */}
-              <View style={homeIsLive && homeLiveVideoId ? styles.bentoRow6Horizontal : styles.bentoRow6LeftCol}>
+              <View style={styles.bentoRow6LeftCol}>
                 {/* 1. Online Meetings */}
                 <TouchableOpacity
-                  style={[styles.clayMeetingsTouch, homeIsLive && homeLiveVideoId && { flex: 1 }]}
+                  style={styles.clayMeetingsTouch}
                   activeOpacity={0.85}
                   onPress={() => navigation.navigate('OnlineMeetings')}
                 >
@@ -5363,7 +5466,7 @@ export default function HomeScreen() {
 
                 {/* 2. Members */}
                 <TouchableOpacity
-                  style={[styles.clayMembersTouch, homeIsLive && homeLiveVideoId && { flex: 1 }]}
+                  style={styles.clayMembersTouch}
                   activeOpacity={0.85}
                   onPress={handleOpenMembers}
                 >
@@ -5404,8 +5507,7 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               </View>
 
-              {/* Right Column: Big YouTube Card (shown when stream is not already playing inline above) */}
-              {!(homeIsLive && homeLiveVideoId) && (
+              {/* Right Column: Big YouTube Card */}
               <TouchableOpacity
                 style={styles.clayYoutubeBigTouch}
                 activeOpacity={0.88}
@@ -5459,7 +5561,6 @@ export default function HomeScreen() {
                   </View>
                 </LinearGradient>
               </TouchableOpacity>
-              )}
             </View>
 
             {/* ── ROW 7: Service Roster Banner Card (matches 4-in-a-Row Quick Access items) ── */}

@@ -91,7 +91,7 @@ export const SERMON_CARD_COLORS: CardColorDef[] = [
   { name: 'Sage Green',      color: '#5A7A64' }, // 19 (rich evergreen sage)
 ];
 
-const getSermonCardColor = (index: number): CardColorDef => {
+export const getSermonCardColor = (index: number): CardColorDef => {
   const safeIndex = typeof index === 'number' && !isNaN(index) ? Math.abs(index) : 0;
   return SERMON_CARD_COLORS[safeIndex % SERMON_CARD_COLORS.length];
 };
@@ -304,7 +304,7 @@ const Icon = ({ name, size = 22, color = '#111827' }: { name: string; size?: num
 };
 
 /* ───────────── Poster / Thumbnail ───────────── */
-const POSTER: [string, string][] = [
+export const POSTER: [string, string][] = [
   ['#2a1450', '#d9672a'],
   ['#3a1a4a', '#e0508a'],
   ['#1a2144', '#5a2a1e'],

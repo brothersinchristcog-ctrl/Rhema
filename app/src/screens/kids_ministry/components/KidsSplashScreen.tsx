@@ -5,156 +5,224 @@ import {
   Text,
   TouchableOpacity,
   Animated,
-  Dimensions,
-  Platform,
   StatusBar,
+  Image,
+  ScrollView,
+  ActivityIndicator,
 } from 'react-native';
-import { Shield, BookOpen, Award, ArrowRight, Sparkles } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ArrowLeft, ArrowRight, Plus } from 'lucide-react-native';
+import { useTheme } from '../../../context/ThemeContext';
+import { ChildRecord } from '../../../types/KidsMinistryTypes';
 
-const { width, height } = Dimensions.get('window');
+const WELCOME_GIRL_ILLUSTRATION = require('../../../../assets/rhema_kids_welcome_girl.png');
 
 interface Props {
-  onEnter: () => void;
+  childrenList: ChildRecord[];
+  loadingChildren?: boolean;
+  selectedChildIndex?: number;
+  onSelectChild?: (index: number) => void;
+  onContinue: () => void;
+  onAddKid: () => void;
+  onBack: () => void;
   churchName?: string;
 }
 
-export default function KidsSplashScreen({ onEnter, churchName }: Props) {
+export default function KidsSplashScreen({
+  childrenList,
+  loadingChildren = false,
+  onContinue,
+  onAddKid,
+  onBack,
+}: Props) {
+  const insets = useSafeAreaInsets();
+  const { isDark } = useTheme();
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.92)).current;
-  const glowAnim = useRef(new Animated.Value(0.6)).current;
-  const barAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(18)).current;
 
   useEffect(() => {
-    // Fade in and scale up
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 700,
+        duration: 450,
         useNativeDriver: true,
       }),
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        friction: 6,
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        friction: 7,
         useNativeDriver: true,
-      }),
-      // Progress bar animation (2.5s)
-      Animated.timing(barAnim, {
-        toValue: 1,
-        duration: 2500,
-        useNativeDriver: false,
       }),
     ]).start();
-
-    // Subtle breathing glow animation
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(glowAnim, {
-          toValue: 1,
-          duration: 1800,
-          useNativeDriver: true,
-        }),
-        Animated.timing(glowAnim, {
-          toValue: 0.6,
-          duration: 1800,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
   }, []);
 
-  const progressWidth = barAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0%', '100%'],
-  });
+  const hasChildren = childrenList.length > 0;
+
+  const palette = {
+    bg: isDark ? '#0B0F19' : '#FFFDF8',
+    topBlob: isDark ? 'rgba(139, 92, 246, 0.16)' : '#EFE9FE',
+    sideBlob: isDark ? 'rgba(139, 92, 246, 0.12)' : '#F3EDFF',
+    backCircle: isDark ? '#181E2E' : '#FFFFFF',
+    backBorder: isDark ? '#2D3548' : '#E5E7EB',
+    title: isDark ? '#F8FAFC' : '#1E1B4B',
+    subtitle: isDark ? '#94A3B8' : '#64748B',
+    bubbleBg: isDark ? '#271E4A' : '#EFE9FE',
+    bubbleText: isDark ? '#EDE9FE' : '#1E1B4B',
+    primaryBtn: '#7C3AED',
+    secondaryText: isDark ? '#C4B5FD' : '#6D28D9',
+  };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#000000" />
+    <View style={[styles.container, { backgroundColor: palette.bg, paddingTop: insets.top }]}>
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={palette.bg}
+      />
 
-      {/* Top Ministry Banner */}
-      <View style={styles.topHeader}>
-        <Text style={styles.topMotto}>
-          {churchName || 'RHEMA GLOBAL MINISTRIES'}
-        </Text>
-      </View>
-
-      {/* Main Center Content */}
-      <Animated.View
+      {/* Playful Pastel Corner Shapes matching modern child-friendly entry UI */}
+      <View style={[styles.topLeftBlob, { backgroundColor: palette.topBlob }]} pointerEvents="none" />
+      <View style={[styles.rightMidBlob, { backgroundColor: palette.sideBlob }]} pointerEvents="none" />
+      <View
         style={[
-          styles.centerContent,
-          {
-            opacity: fadeAnim,
-            transform: [{ scale: scaleAnim }],
-          },
+          styles.bottomLeftLeafA,
+          { backgroundColor: isDark ? 'rgba(74, 222, 128, 0.16)' : '#86EFAC' },
         ]}
-      >
-        {/* Golden Cross & Crown Emblem */}
-        <View style={styles.emblemContainer}>
-          <Animated.View
-            style={[
-              styles.glowAura,
-              {
-                opacity: glowAnim,
-              },
-            ]}
-          />
-          <View style={styles.emblemBox}>
-            <Text style={styles.crossSymbol}>✝</Text>
-            <Text style={styles.kidsLabel}>KIDS</Text>
-            <View style={styles.nextGenPill}>
-              <Text style={styles.nextGenText}>NEXT GEN</Text>
-            </View>
-          </View>
-        </View>
+        pointerEvents="none"
+      />
+      <View
+        style={[
+          styles.bottomLeftLeafB,
+          { backgroundColor: isDark ? 'rgba(132, 204, 22, 0.18)' : '#A3E635' },
+        ]}
+        pointerEvents="none"
+      />
+      <View
+        style={[
+          styles.bottomRightLeafA,
+          { backgroundColor: isDark ? 'rgba(74, 222, 128, 0.16)' : '#86EFAC' },
+        ]}
+        pointerEvents="none"
+      />
+      <View
+        style={[
+          styles.bottomRightLeafB,
+          { backgroundColor: isDark ? 'rgba(132, 204, 22, 0.18)' : '#A3E635' },
+        ]}
+        pointerEvents="none"
+      />
 
-        {/* Grand Welcome Typography */}
-        <Text style={styles.welcomeSub}>Welcome to</Text>
-        <Text style={styles.brandTitle}>Rhema Kids</Text>
-        <Text style={styles.tagline}>Sunday School & Child Ministry</Text>
-
-        {/* Mark 10:14 Scripture Card */}
-        <View style={styles.scriptureCard}>
-          <Text style={styles.scriptureTelugu}>
-            "చిన్న బిడ్డలను నా యొద్దకు రానియ్యుడి, వారిని ఆటంకపరచవద్దు; దేవుని రాజ్యము వీరిదే."
-          </Text>
-          <Text style={styles.scriptureEnglish}>
-            "Let the little children come to Me, and do not hinder them, for the kingdom of God belongs to such as these."
-          </Text>
-          <Text style={styles.scriptureRef}>— మార్కు (Mark) 10:14</Text>
-        </View>
-
-        {/* 3 Core Highlights */}
-        <View style={styles.highlightsRow}>
-          <View style={styles.highlightPill}>
-            <Shield size={12} color="#10B981" />
-            <Text style={styles.highlightText}>Safe Check-In</Text>
-          </View>
-          <View style={styles.highlightPill}>
-            <BookOpen size={12} color="#60A5FA" />
-            <Text style={styles.highlightText}>Bilingual LMS</Text>
-          </View>
-          <View style={styles.highlightPill}>
-            <Award size={12} color="#FBBF24" />
-            <Text style={styles.highlightText}>Bible Quizzes</Text>
-          </View>
-        </View>
-      </Animated.View>
-
-      {/* Bottom Progress Bar & Enter Button */}
-      <View style={styles.bottomArea}>
-        <View style={styles.progressTrack}>
-          <Animated.View style={[styles.progressBar, { width: progressWidth }]} />
-        </View>
-
+      {/* Top Row: Back button */}
+      <View style={styles.topBar}>
         <TouchableOpacity
-          style={styles.enterBtn}
-          onPress={onEnter}
-          activeOpacity={0.88}
+          onPress={onBack}
+          style={[
+            styles.backBtn,
+            { backgroundColor: palette.backCircle, borderColor: palette.backBorder },
+          ]}
+          activeOpacity={0.8}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <Text style={styles.enterBtnText}>Enter Rhema Kids</Text>
-          <ArrowRight size={18} color="#000000" strokeWidth={2.4} />
+          <ArrowLeft size={20} color={palette.title} strokeWidth={2.5} />
         </TouchableOpacity>
       </View>
+
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: Math.max(24, insets.bottom + 16) },
+        ]}
+      >
+        <Animated.View
+          style={[
+            styles.centerWrap,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
+          {/* Welcome Headline */}
+          <Text style={[styles.headline, { color: palette.title }]}>
+            {hasChildren ? 'Welcome to Rhema Kids!' : "Welcome! Let's get started"}
+          </Text>
+          <Text style={[styles.subHeadline, { color: palette.subtitle }]}>
+            {hasChildren
+              ? "We're so happy you're here!"
+              : 'Sunday School, Bible stories & fun learning'}
+          </Text>
+
+          {loadingChildren ? (
+            <View style={{ paddingVertical: 56, alignItems: 'center', gap: 12 }}>
+              <ActivityIndicator size="large" color={palette.primaryBtn} />
+              <Text style={{ fontSize: 13, fontWeight: '600', color: palette.subtitle }}>
+                Loading Rhema Kids...
+              </Text>
+            </View>
+          ) : (
+            <>
+              {/* Central Cartoon Girl Welcome Illustration (transparent PNG directly on background) */}
+              <View style={styles.heroIllustrationWrap}>
+                <Image
+                  source={WELCOME_GIRL_ILLUSTRATION}
+                  style={styles.heroIllustrationImage}
+                  resizeMode="contain"
+                />
+              </View>
+
+              {/* Soft Lavender Welcome Bubble */}
+              <View style={[styles.greetingBubble, { backgroundColor: palette.bubbleBg }]}>
+                <Text style={[styles.greetingTitle, { color: palette.bubbleText }]}>
+                  Hi there! 👋
+                </Text>
+                <Text style={[styles.greetingDesc, { color: palette.bubbleText }]}>
+                  {hasChildren
+                    ? "Let's explore amazing Bible stories, Sunday School lessons & songs made just for you!"
+                    : 'Add your child to unlock Sunday School check-in, Bible stories, quizzes & worship songs!'}
+                </Text>
+              </View>
+
+              {/* Primary CTA Button */}
+              {hasChildren ? (
+                <>
+                  <TouchableOpacity
+                    style={[styles.primaryCtaBtn, { backgroundColor: palette.primaryBtn }]}
+                    onPress={onContinue}
+                    activeOpacity={0.88}
+                  >
+                    <Text style={styles.primaryCtaText}>Continue</Text>
+                    <View style={styles.ctaArrowCircle}>
+                      <ArrowRight size={18} color={palette.primaryBtn} strokeWidth={2.8} />
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.secondaryAddLink}
+                    onPress={onAddKid}
+                    activeOpacity={0.75}
+                  >
+                    <Plus size={15} color={palette.secondaryText} strokeWidth={2.6} />
+                    <Text style={[styles.secondaryAddText, { color: palette.secondaryText }]}>
+                      Add Kid
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.primaryCtaBtn, { backgroundColor: palette.primaryBtn }]}
+                  onPress={onAddKid}
+                  activeOpacity={0.88}
+                >
+                  <Text style={styles.primaryCtaText}>Add Kid</Text>
+                  <View style={styles.ctaArrowCircle}>
+                    <Plus size={18} color={palette.primaryBtn} strokeWidth={3} />
+                  </View>
+                </TouchableOpacity>
+              )}
+            </>
+          )}
+        </Animated.View>
+      </ScrollView>
     </View>
   );
 }
@@ -162,193 +230,168 @@ export default function KidsSplashScreen({ onEnter, churchName }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: Platform.OS === 'ios' ? 48 : 32,
-  },
-  topHeader: {
-    paddingTop: 8,
-  },
-  topMotto: {
-    color: '#FBBF24',
-    fontSize: 11,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    letterSpacing: 2.2,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  centerContent: {
-    alignItems: 'center',
-    width: '100%',
-    marginVertical: 'auto',
-  },
-  emblemContainer: {
     position: 'relative',
-    marginBottom: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
+    overflow: 'hidden',
   },
-  glowAura: {
+  topLeftBlob: {
     position: 'absolute',
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: 'rgba(251, 191, 36, 0.22)',
+    top: -60,
+    left: -50,
+    width: 210,
+    height: 190,
+    borderRadius: 100,
   },
-  emblemBox: {
-    width: 96,
-    height: 96,
-    borderRadius: 24,
-    backgroundColor: '#1A2D5A',
-    borderWidth: 2,
-    borderColor: 'rgba(251, 191, 36, 0.85)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#FBBF24',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 18,
-    elevation: 10,
-    position: 'relative',
-  },
-  crossSymbol: {
-    color: '#FFFFFF',
-    fontSize: 32,
-    fontWeight: '900',
-    lineHeight: 36,
-  },
-  kidsLabel: {
-    color: '#FDE68A',
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 2,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-  },
-  nextGenPill: {
+  rightMidBlob: {
     position: 'absolute',
-    top: -10,
-    backgroundColor: '#FBBF24',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 999,
+    top: '44%',
+    right: -70,
+    width: 150,
+    height: 150,
+    borderRadius: 75,
   },
-  nextGenText: {
-    color: '#000000',
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 0.8,
+  bottomLeftLeafA: {
+    position: 'absolute',
+    bottom: -24,
+    left: -14,
+    width: 78,
+    height: 78,
+    borderRadius: 39,
+    transform: [{ rotate: '25deg' }],
   },
-  welcomeSub: {
-    fontSize: 16,
-    color: '#FFFFFF',
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-    fontWeight: '600',
+  bottomLeftLeafB: {
+    position: 'absolute',
+    bottom: -18,
+    left: 34,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
   },
-  brandTitle: {
-    fontSize: 34,
-    color: '#FBBF24',
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-    fontWeight: '900',
-    letterSpacing: 0.5,
-    marginTop: 2,
+  bottomRightLeafA: {
+    position: 'absolute',
+    bottom: -24,
+    right: -14,
+    width: 78,
+    height: 78,
+    borderRadius: 39,
+    transform: [{ rotate: '-25deg' }],
   },
-  tagline: {
-    fontSize: 13,
-    color: '#9CA3AF',
-    marginTop: 4,
-    fontWeight: '500',
+  bottomRightLeafB: {
+    position: 'absolute',
+    bottom: -18,
+    right: 34,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
   },
-  scriptureCard: {
-    marginTop: 24,
-    padding: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    width: '100%',
-    alignItems: 'center',
-  },
-  scriptureTelugu: {
-    fontSize: 13,
-    color: '#FEF3C7',
-    textAlign: 'center',
-    lineHeight: 20,
-    fontWeight: '600',
-  },
-  scriptureEnglish: {
-    fontSize: 12,
-    color: '#D1D5DB',
-    textAlign: 'center',
-    lineHeight: 18,
-    fontStyle: 'italic',
-    marginTop: 8,
-  },
-  scriptureRef: {
-    fontSize: 11,
-    color: '#FBBF24',
-    fontWeight: '700',
-    marginTop: 8,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-  },
-  highlightsRow: {
+  topBar: {
     flexDirection: 'row',
-    gap: 8,
-    marginTop: 20,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 8,
+    zIndex: 2,
   },
-  highlightPill: {
+  backBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 6,
+  },
+  centerWrap: {
+    alignItems: 'center',
+    width: '100%',
+  },
+  headline: {
+    fontSize: 27,
+    fontWeight: '900',
+    textAlign: 'center',
+    letterSpacing: -0.3,
+  },
+  subHeadline: {
+    fontSize: 14.5,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 14,
+  },
+  heroIllustrationWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 8,
+  },
+  heroIllustrationImage: {
+    width: 215,
+    height: 215,
+  },
+  greetingBubble: {
+    width: '100%',
+    borderRadius: 22,
+    paddingHorizontal: 22,
+    paddingVertical: 18,
+    alignItems: 'center',
+    marginTop: 12,
+    marginBottom: 24,
+  },
+  greetingTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  greetingDesc: {
+    fontSize: 14.5,
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 21,
+  },
+  primaryCtaBtn: {
+    width: '100%',
+    height: 56,
+    borderRadius: 999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  primaryCtaText: {
+    color: '#FFFFFF',
+    fontSize: 16.5,
+    fontWeight: '800',
+  },
+  ctaArrowCircle: {
+    position: 'absolute',
+    right: 10,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  secondaryAddLink: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: '#18181B',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#27272A',
+    marginTop: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
-  highlightText: {
-    color: '#D4D4D8',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  bottomArea: {
-    width: '100%',
-    gap: 14,
-    paddingBottom: 8,
-  },
-  progressTrack: {
-    width: '100%',
-    height: 3,
-    backgroundColor: '#18181B',
-    borderRadius: 999,
-    overflow: 'hidden',
-  },
-  progressBar: {
-    height: '100%',
-    backgroundColor: '#FBBF24',
-    borderRadius: 999,
-  },
-  enterBtn: {
-    width: '100%',
-    height: 52,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 999,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    shadowColor: '#FFFFFF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  enterBtnText: {
-    color: '#000000',
-    fontSize: 15,
-    fontWeight: '800',
-    letterSpacing: 0.3,
+  secondaryAddText: {
+    fontSize: 13.5,
+    fontWeight: '700',
   },
 });

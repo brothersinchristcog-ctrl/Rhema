@@ -11,13 +11,13 @@ import {
   Alert,
   ActivityIndicator,
   Linking,
-  Dimensions,
+  StatusBar,
+  KeyboardAvoidingView,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView, initialWindowMetrics } from 'react-native-safe-area-context';
 import {
   X,
   Plus,
-  ShieldCheck,
   UserCheck,
   Phone,
   Mail,
@@ -25,14 +25,16 @@ import {
   Users,
   Search,
   Check,
-  ChevronDown,
-  Info,
-  User,
+  ShieldCheck,
+  BookOpen,
 } from 'lucide-react-native';
 import KidsMinistryService from '../../../../services/KidsMinistryService';
-import { KidsTeacherRecord, KidsClassTier, KidsTeacherRole } from '../../../../types/KidsMinistryTypes';
-
-const { width, height } = Dimensions.get('window');
+import {
+  KidsTeacherRecord,
+  KidsClassTier,
+  KidsTeacherRole,
+} from '../../../../types/KidsMinistryTypes';
+import { useAdminTheme } from '../../../../utils/adminThemeHelper';
 
 interface AdminTeachersModalProps {
   visible: boolean;
@@ -42,6 +44,8 @@ interface AdminTeachersModalProps {
   onClose: () => void;
 }
 
+const AVATAR_COLORS = ['#2563EB', '#7C3AED', '#059669', '#D97706', '#DB2777', '#0891B2'];
+
 export default function AdminTeachersModal({
   visible,
   teachers,
@@ -49,7 +53,22 @@ export default function AdminTeachersModal({
   churchId,
   onClose,
 }: AdminTeachersModalProps) {
-  const insets = useSafeAreaInsets();
+  const {
+    isDark,
+    screenBg,
+    cardSurface,
+    secondarySurface,
+    primaryText,
+    secondaryText,
+    borderColor,
+    barStyle,
+  } = useAdminTheme();
+
+  const placeholderColor = isDark ? '#64748B' : '#94A3B8';
+  const blueAccent = isDark ? '#60A5FA' : '#2563EB';
+  const emeraldAccent = isDark ? '#34D399' : '#059669';
+  const violetAccent = isDark ? '#A78BFA' : '#7C3AED';
+
   const [showAddForm, setShowAddForm] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<'all' | 'teachers' | 'volunteers'>('all');
 
@@ -63,7 +82,6 @@ export default function AdminTeachersModal({
   const [submitting, setSubmitting] = useState(false);
 
   // Member search dropdown
-  const [memberSearchQuery, setMemberSearchQuery] = useState('');
   const [searchingMembers, setSearchingMembers] = useState(false);
   const [memberResults, setMemberResults] = useState<any[]>([]);
   const [showMemberDropdown, setShowMemberDropdown] = useState(false);
@@ -74,12 +92,11 @@ export default function AdminTeachersModal({
     primary: 'Primary Stars (6-8 yrs)',
     junior: 'Junior Champions (9-12 yrs)',
     teens: 'Teens for Christ (13-17 yrs)',
+    mixed: 'Mixed Age Group (All Ages)',
   };
 
-  // Trigger search on typing in Full Name
   const handleSearchMembers = async (text: string) => {
     setNewName(text);
-    setMemberSearchQuery(text);
     if (!text.trim()) {
       setMemberResults([]);
       setShowMemberDropdown(false);
@@ -118,7 +135,10 @@ export default function AdminTeachersModal({
 
   const handleAddTeacher = async () => {
     if (!newName.trim() || !newPhone.trim()) {
-      Alert.alert('Missing Required Fields', 'Please enter or select the faculty member’s name and phone number.');
+      Alert.alert(
+        'Missing Required Fields',
+        'Please enter or select the faculty member’s name and phone number.'
+      );
       return;
     }
 
@@ -137,11 +157,14 @@ export default function AdminTeachersModal({
         safeguardingStatus: 'verified',
       });
 
-      Alert.alert('Faculty Registered! 🎉', `${newName} has been added to the Sunday School team.`);
+      Alert.alert(
+        'Faculty Registered',
+        `${newName.trim()} has been added to the Sunday School roster.`
+      );
       handleClearSelection();
       setShowAddForm(false);
     } catch (e: any) {
-      Alert.alert('Failed', e.message || 'Could not register faculty member');
+      Alert.alert('Failed', e?.message || 'Could not register faculty member.');
     } finally {
       setSubmitting(false);
     }
@@ -160,7 +183,7 @@ export default function AdminTeachersModal({
             try {
               await KidsMinistryService.deleteTeacher(churchId, t.id);
             } catch (e: any) {
-              Alert.alert('Error', e.message || 'Could not delete teacher');
+              Alert.alert('Error', e?.message || 'Could not delete teacher.');
             }
           },
         },
@@ -168,320 +191,561 @@ export default function AdminTeachersModal({
     );
   };
 
+  const teacherCount = teachers.filter(
+    t => t.role === 'lead_teacher' || t.role === 'assistant_teacher'
+  ).length;
+  const volunteerCount = teachers.filter(t => t.role === 'volunteer').length;
+
   const filteredTeachers = teachers.filter(t => {
-    if (activeSubTab === 'teachers') return t.role === 'lead_teacher' || t.role === 'assistant_teacher';
+    if (activeSubTab === 'teachers') {
+      return t.role === 'lead_teacher' || t.role === 'assistant_teacher';
+    }
     if (activeSubTab === 'volunteers') return t.role === 'volunteer';
     return true;
   });
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <View style={[styles.modalCard, { paddingTop: Math.max(insets.top, 16) }]}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={{ flex: 1 }}>
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+        <SafeAreaView style={[styles.safeRoot, { backgroundColor: screenBg }]} edges={['top', 'bottom']}>
+          <StatusBar barStyle={barStyle} backgroundColor={screenBg} />
+
+          {/* Clean Header */}
+          <View style={[styles.header, { borderBottomColor: borderColor }]}>
+            <View style={{ flex: 1, marginRight: 10 }}>
               <View style={styles.badgeRow}>
-                <View style={styles.primaryBadge}>
-                  <Text style={styles.primaryBadgeText}>SUNDAY SCHOOL ROSTER</Text>
+                <View style={[styles.primaryBadge, { backgroundColor: isDark ? '#1E3A8A' : '#DBEAFE' }]}>
+                  <Text style={[styles.primaryBadgeText, { color: blueAccent }]}>
+                    SUNDAY SCHOOL ROSTER
+                  </Text>
                 </View>
-                <View style={styles.countBadge}>
-                  <Text style={styles.countBadgeText}>{teachers.length} Active</Text>
+                <View
+                  style={[
+                    styles.countBadge,
+                    {
+                      backgroundColor: isDark ? 'rgba(52, 211, 153, 0.14)' : '#DCFCE7',
+                      borderColor: isDark ? 'rgba(52, 211, 153, 0.3)' : '#BBF7D0',
+                    },
+                  ]}
+                >
+                  <Text style={[styles.countBadgeText, { color: emeraldAccent }]}>
+                    {teachers.length} Active
+                  </Text>
                 </View>
               </View>
-              <Text style={styles.headerTitle}>Faculty & Volunteers</Text>
-              <Text style={styles.headerSubtitle}>
-                Manage approved Sunday School educators, helpers, and active service assignments.
+              <Text style={[styles.headerTitle, { color: primaryText }]}>Faculty & Helpers</Text>
+              <Text style={[styles.headerSubtitle, { color: secondaryText }]}>
+                Manage Sunday School teachers, volunteers, and classroom assignments.
               </Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <X size={20} color="#9CA3AF" />
+
+            <TouchableOpacity
+              onPress={onClose}
+              style={[styles.closeBtn, { backgroundColor: secondarySurface, borderColor }]}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <X size={19} color={primaryText} />
             </TouchableOpacity>
           </View>
 
-          {/* Subtabs & Register Button */}
-          <View style={styles.topActionBar}>
-            <View style={styles.filterPillsRow}>
-              <TouchableOpacity
-                style={[styles.filterPill, activeSubTab === 'all' && styles.filterPillActive]}
-                onPress={() => setActiveSubTab('all')}
-              >
-                <Text style={[styles.filterPillText, activeSubTab === 'all' && styles.filterPillTextActive]}>
-                  All ({teachers.length})
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.filterPill, activeSubTab === 'teachers' && styles.filterPillActive]}
-                onPress={() => setActiveSubTab('teachers')}
-              >
-                <Text style={[styles.filterPillText, activeSubTab === 'teachers' && styles.filterPillTextActive]}>
-                  Teachers
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.filterPill, activeSubTab === 'volunteers' && styles.filterPillActive]}
-                onPress={() => setActiveSubTab('volunteers')}
-              >
-                <Text style={[styles.filterPillText, activeSubTab === 'volunteers' && styles.filterPillTextActive]}>
-                  Volunteers
-                </Text>
-              </TouchableOpacity>
+          {/* Segmented Filter Tabs + Clean Action Button Bar */}
+          <View style={[styles.controlsBar, { borderBottomColor: borderColor }]}>
+            <View style={[styles.segmentedRow, { backgroundColor: secondarySurface, borderColor }]}>
+              {(
+                [
+                  { id: 'all', label: `All (${teachers.length})` },
+                  { id: 'teachers', label: `Teachers (${teacherCount})` },
+                  { id: 'volunteers', label: `Helpers (${volunteerCount})` },
+                ] as const
+              ).map(tab => {
+                const active = activeSubTab === tab.id;
+                return (
+                  <TouchableOpacity
+                    key={tab.id}
+                    style={[
+                      styles.segmentTab,
+                      active && { backgroundColor: blueAccent },
+                    ]}
+                    onPress={() => setActiveSubTab(tab.id)}
+                    activeOpacity={0.85}
+                  >
+                    <Text
+                      style={[
+                        styles.segmentTabText,
+                        { color: active ? '#FFFFFF' : secondaryText },
+                        active && { fontWeight: '800' },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {tab.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
             {!showAddForm && (
               <TouchableOpacity
-                style={styles.addTeacherBtn}
+                style={[styles.addFacultyBannerBtn, { backgroundColor: violetAccent }]}
                 onPress={() => setShowAddForm(true)}
                 activeOpacity={0.88}
               >
                 <Plus size={16} color="#FFFFFF" strokeWidth={2.8} />
-                <Text style={styles.addTeacherBtnText}>Register New</Text>
+                <Text style={styles.addFacultyBannerText}>Register New Teacher / Helper</Text>
               </TouchableOpacity>
             )}
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-            {/* ── EXPANDABLE REGISTRATION FORM ── */}
-            {showAddForm && (
-              <View style={styles.formContainer}>
-                <View style={styles.formHeader}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              automaticallyAdjustKeyboardInsets
+              contentContainerStyle={styles.scrollContent}
+            >
+              {/* ── EXPANDABLE REGISTRATION FORM ── */}
+              {showAddForm && (
+                <View style={[styles.formContainer, { backgroundColor: cardSurface, borderColor }]}>
+                  <View style={[styles.formHeader, { borderBottomColor: borderColor }]}>
                     <View style={styles.formIconBox}>
-                      <UserCheck size={18} color="#FBBF24" />
+                      <UserCheck size={18} color="#D97706" />
                     </View>
-                    <View>
-                      <Text style={styles.formTitle}>Register Sunday School Faculty</Text>
-                      <Text style={styles.formSubtitle}>Link an existing church member or enter new details</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.formTitle, { color: primaryText }]}>
+                        Register Faculty / Helper
+                      </Text>
+                      <Text style={[styles.formSubtitle, { color: secondaryText }]}>
+                        Search church members or enter details manually
+                      </Text>
                     </View>
-                  </View>
-                  <TouchableOpacity onPress={() => setShowAddForm(false)} style={styles.closeFormBtn}>
-                    <X size={18} color="#9CA3AF" />
-                  </TouchableOpacity>
-                </View>
-
-                {/* Section 1: Member Identity */}
-                <View style={styles.formSection}>
-                  <Text style={styles.sectionLabel}>1. CHURCH MEMBER LOOKUP & IDENTITY</Text>
-
-                  {selectedMemberId ? (
-                    <View style={styles.selectedMemberCard}>
-                      <View style={styles.selectedMemberAvatar}>
-                        <Check size={16} color="#10B981" />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.selectedMemberName}>{newName}</Text>
-                        <Text style={styles.selectedMemberMeta}>Linked Registered Church Member</Text>
-                      </View>
-                      <TouchableOpacity onPress={handleClearSelection} style={styles.clearSelectionBtn}>
-                        <Text style={styles.clearSelectionText}>Change</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ) : (
-                    <View style={{ position: 'relative', zIndex: 10 }}>
-                      <View style={styles.inputSearchBox}>
-                        <Search size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
-                        <TextInput
-                          style={styles.inputSearch}
-                          value={newName}
-                          onChangeText={handleSearchMembers}
-                          placeholder="Search registered members or type full name..."
-                          placeholderTextColor="#6B7280"
-                        />
-                        {searchingMembers && <ActivityIndicator size="small" color="#FBBF24" />}
-                      </View>
-
-                      {/* Dropdown Suggestions */}
-                      {showMemberDropdown && memberResults.length > 0 && (
-                        <View style={styles.dropdownList}>
-                          <Text style={styles.dropdownHeader}>EXISTING CHURCH MEMBERS (TAP TO SELECT):</Text>
-                          {memberResults.map(m => {
-                            const displayName = (m.name || `${m.firstName || ''} ${m.lastName || ''}`).trim();
-                            const phone = m.phone || m.mobileNumber || m.phoneNumber || 'No phone recorded';
-                            return (
-                              <TouchableOpacity
-                                key={m.id}
-                                style={styles.dropdownItem}
-                                onPress={() => handleSelectMember(m)}
-                              >
-                                <View style={styles.dropdownAvatar}>
-                                  <Text style={styles.dropdownAvatarText}>{displayName.charAt(0)}</Text>
-                                </View>
-                                <View style={{ flex: 1 }}>
-                                  <Text style={styles.dropdownItemName}>{displayName}</Text>
-                                  <Text style={styles.dropdownItemPhone}>{phone}</Text>
-                                </View>
-                                <View style={styles.selectPill}>
-                                  <Text style={styles.selectPillText}>Select</Text>
-                                </View>
-                              </TouchableOpacity>
-                            );
-                          })}
-                        </View>
-                      )}
-                    </View>
-                  )}
-
-                  <View style={{ marginTop: 10 }}>
-                    <Text style={styles.inputLabel}>Mobile / WhatsApp Number *</Text>
-                    <TextInput
-                      style={styles.inputField}
-                      value={newPhone}
-                      onChangeText={setNewPhone}
-                      keyboardType="phone-pad"
-                      placeholder="e.g. +91 98765 43210"
-                      placeholderTextColor="#6B7280"
-                    />
+                    <TouchableOpacity
+                      onPress={() => setShowAddForm(false)}
+                      style={[styles.closeFormBtn, { backgroundColor: secondarySurface }]}
+                    >
+                      <X size={17} color={secondaryText} />
+                    </TouchableOpacity>
                   </View>
 
-                  <View style={{ marginTop: 10 }}>
-                    <Text style={styles.inputLabel}>Email Address (Optional)</Text>
-                    <TextInput
-                      style={styles.inputField}
-                      value={newEmail}
-                      onChangeText={setNewEmail}
-                      keyboardType="email-address"
-                      placeholder="teacher@rhema.church"
-                      placeholderTextColor="#6B7280"
-                      autoCapitalize="none"
-                    />
-                  </View>
-                </View>
+                  {/* Section 1: Member Identity */}
+                  <View style={styles.formSection}>
+                    <Text style={[styles.sectionLabel, { color: blueAccent }]}>
+                      1. MEMBER LOOKUP & CONTACT
+                    </Text>
 
-                {/* Section 2: Role & Class Assignment */}
-                <View style={styles.formSection}>
-                  <Text style={styles.sectionLabel}>2. MINISTRY ROLE & ASSIGNED CLASSROOM</Text>
-
-                  <Text style={styles.inputLabel}>Faculty Role:</Text>
-                  <View style={styles.roleChipsRow}>
-                    {[
-                      { key: 'lead_teacher', label: 'Lead Teacher' },
-                      { key: 'assistant_teacher', label: 'Assistant Teacher' },
-                      { key: 'volunteer', label: 'Volunteer / Helper' },
-                    ].map(r => (
-                      <TouchableOpacity
-                        key={r.key}
-                        style={[styles.roleChip, newRole === r.key && styles.roleChipActive]}
-                        onPress={() => setNewRole(r.key as any)}
+                    {selectedMemberId ? (
+                      <View
+                        style={[
+                          styles.selectedMemberCard,
+                          { backgroundColor: secondarySurface, borderColor },
+                        ]}
                       >
-                        <Text style={[styles.roleChipText, newRole === r.key && styles.roleChipTextActive]}>
-                          {r.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-
-                  <Text style={[styles.inputLabel, { marginTop: 12 }]}>Assigned Sunday School Tier:</Text>
-                  <View style={styles.tierSelectorGrid}>
-                    {(['nursery', 'beginners', 'primary', 'junior', 'teens'] as KidsClassTier[]).map(t => (
-                      <TouchableOpacity
-                        key={t}
-                        style={[styles.tierCard, newTier === t && styles.tierCardActive]}
-                        onPress={() => setNewTier(t)}
-                      >
-                        <Text style={[styles.tierCardTitle, newTier === t && styles.tierCardTitleActive]}>
-                          {tierNames[t].split(' ')[0]}
-                        </Text>
-                        <Text style={[styles.tierCardSub, newTier === t && styles.tierCardSubActive]}>
-                          {tierNames[t].split('(')[1]?.replace(')', '') || t}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-
-                {/* Action Buttons */}
-                <View style={styles.formActionsRow}>
-                  <TouchableOpacity
-                    style={styles.cancelBtn}
-                    onPress={() => {
-                      handleClearSelection();
-                      setShowAddForm(false);
-                    }}
-                  >
-                    <Text style={styles.cancelBtnText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.submitBtn, submitting && { opacity: 0.7 }]}
-                    onPress={handleAddTeacher}
-                    disabled={submitting}
-                  >
-                    {submitting ? (
-                      <ActivityIndicator size="small" color="#000000" />
-                    ) : (
-                      <Text style={styles.submitBtnText}>Save Faculty Member</Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-
-            {/* ── TEACHER ROSTER LIST ── */}
-            {filteredTeachers.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Users size={36} color="#6B7280" />
-                <Text style={styles.emptyTitle}>No Faculty Records Found</Text>
-                <Text style={styles.emptySub}>
-                  Register Sunday School teachers and volunteers to assign them to classrooms.
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.teachersGrid}>
-                {filteredTeachers.map(teacher => {
-                  const isPresent = todayAttendance.some(a => a.teacherDocId === teacher.id);
-                  const isLead = teacher.role === 'lead_teacher';
-                  const isVolunteer = teacher.role === 'volunteer';
-
-                  return (
-                    <View key={teacher.id} style={styles.teacherCard}>
-                      <View style={styles.teacherCardTop}>
-                        <View style={[styles.avatarBox, isPresent && styles.avatarBoxPresent]}>
-                          <Text style={styles.avatarText}>{teacher.name.charAt(0)}</Text>
+                        <View style={styles.selectedMemberAvatar}>
+                          <Check size={16} color="#10B981" />
                         </View>
-
                         <View style={{ flex: 1 }}>
-                          <View style={styles.nameHeaderRow}>
-                            <Text style={styles.teacherName}>{teacher.name}</Text>
-                            <View style={[styles.dutyPill, isPresent ? styles.dutyPillPresent : styles.dutyPillScheduled]}>
-                              <Text style={[styles.dutyPillText, isPresent ? styles.dutyPillTextPresent : styles.dutyPillTextScheduled]}>
-                                {isPresent ? 'On Duty Today ✓' : 'Scheduled'}
-                              </Text>
-                            </View>
-                          </View>
-
-                          <View style={styles.roleTagRow}>
-                            <View style={[styles.roleTag, isLead ? styles.roleTagLead : isVolunteer ? styles.roleTagVol : styles.roleTagAsst]}>
-                              <Text style={styles.roleTagText}>
-                                {isLead ? 'Lead Teacher' : isVolunteer ? 'Volunteer Helper' : 'Assistant Teacher'}
-                              </Text>
-                            </View>
-                            <Text style={styles.classLabel}>{teacher.assignedClassName}</Text>
-                          </View>
+                          <Text style={[styles.selectedMemberName, { color: primaryText }]}>
+                            {newName}
+                          </Text>
+                          <Text style={[styles.selectedMemberMeta, { color: emeraldAccent }]}>
+                            Linked Registered Church Member
+                          </Text>
                         </View>
+                        <TouchableOpacity
+                          onPress={handleClearSelection}
+                          style={[
+                            styles.clearSelectionBtn,
+                            { backgroundColor: cardSurface, borderColor },
+                          ]}
+                        >
+                          <Text style={[styles.clearSelectionText, { color: secondaryText }]}>
+                            Change
+                          </Text>
+                        </TouchableOpacity>
                       </View>
-
-                      {/* Contact & Status Meta */}
-                      <View style={styles.teacherCardBottom}>
-                        <View style={styles.contactDetailsCol}>
-                          {teacher.phone ? (
-                            <TouchableOpacity
-                              style={styles.contactItem}
-                              onPress={() => Linking.openURL(`tel:${teacher.phone}`)}
-                            >
-                              <Phone size={13} color="#10B981" />
-                              <Text style={styles.contactItemText}>{teacher.phone}</Text>
-                            </TouchableOpacity>
-                          ) : null}
-                          {teacher.email ? (
-                            <View style={styles.contactItem}>
-                              <Mail size={12} color="#94A3B8" />
-                              <Text style={[styles.contactItemText, { color: '#94A3B8' }]}>{teacher.email}</Text>
-                            </View>
-                          ) : null}
+                    ) : (
+                      <View style={{ position: 'relative', zIndex: 10 }}>
+                        <View
+                          style={[
+                            styles.inputSearchBox,
+                            { backgroundColor: secondarySurface, borderColor },
+                          ]}
+                        >
+                          <Search size={16} color={secondaryText} style={{ marginRight: 8 }} />
+                          <TextInput
+                            style={[styles.inputSearch, { color: primaryText }]}
+                            value={newName}
+                            onChangeText={handleSearchMembers}
+                            placeholder="Search member or type full name *"
+                            placeholderTextColor={placeholderColor}
+                          />
+                          {searchingMembers && <ActivityIndicator size="small" color="#F59E0B" />}
                         </View>
 
-                        <View style={styles.cardActionsRow}>
+                        {showMemberDropdown && memberResults.length > 0 && (
+                          <View
+                            style={[
+                              styles.dropdownList,
+                              { backgroundColor: cardSurface, borderColor },
+                            ]}
+                          >
+                            <Text style={[styles.dropdownHeader, { color: secondaryText }]}>
+                              TAP A MEMBER TO AUTO-FILL
+                            </Text>
+                            {memberResults.map(m => {
+                              const displayName = (
+                                m.name || `${m.firstName || ''} ${m.lastName || ''}`
+                              ).trim();
+                              const phone =
+                                m.phone || m.mobileNumber || m.phoneNumber || 'No phone recorded';
+                              return (
+                                <TouchableOpacity
+                                  key={m.id}
+                                  style={[styles.dropdownItem, { borderBottomColor: borderColor }]}
+                                  onPress={() => handleSelectMember(m)}
+                                >
+                                  <View style={styles.dropdownAvatar}>
+                                    <Text style={styles.dropdownAvatarText}>
+                                      {displayName.charAt(0)}
+                                    </Text>
+                                  </View>
+                                  <View style={{ flex: 1 }}>
+                                    <Text style={[styles.dropdownItemName, { color: primaryText }]}>
+                                      {displayName}
+                                    </Text>
+                                    <Text style={[styles.dropdownItemPhone, { color: secondaryText }]}>
+                                      {phone}
+                                    </Text>
+                                  </View>
+                                  <View
+                                    style={[
+                                      styles.selectPill,
+                                      { backgroundColor: isDark ? '#1E3A8A' : '#DBEAFE' },
+                                    ]}
+                                  >
+                                    <Text style={[styles.selectPillText, { color: blueAccent }]}>
+                                      Select
+                                    </Text>
+                                  </View>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        )}
+                      </View>
+                    )}
+
+                    <View>
+                      <Text style={[styles.inputLabel, { color: primaryText }]}>
+                        Mobile / WhatsApp Number *
+                      </Text>
+                      <TextInput
+                        style={[
+                          styles.inputField,
+                          { backgroundColor: secondarySurface, borderColor, color: primaryText },
+                        ]}
+                        value={newPhone}
+                        onChangeText={setNewPhone}
+                        keyboardType="phone-pad"
+                        placeholder="e.g. +91 98765 43210"
+                        placeholderTextColor={placeholderColor}
+                      />
+                    </View>
+
+                    <View>
+                      <Text style={[styles.inputLabel, { color: primaryText }]}>
+                        Email Address (Optional)
+                      </Text>
+                      <TextInput
+                        style={[
+                          styles.inputField,
+                          { backgroundColor: secondarySurface, borderColor, color: primaryText },
+                        ]}
+                        value={newEmail}
+                        onChangeText={setNewEmail}
+                        keyboardType="email-address"
+                        placeholder="teacher@church.org"
+                        placeholderTextColor={placeholderColor}
+                        autoCapitalize="none"
+                      />
+                    </View>
+                  </View>
+
+                  {/* Section 2: Role & Class Assignment */}
+                  <View style={styles.formSection}>
+                    <Text style={[styles.sectionLabel, { color: blueAccent }]}>
+                      2. MINISTRY ROLE & CLASSROOM
+                    </Text>
+
+                    <View style={styles.roleChipsRow}>
+                      {[
+                        { key: 'lead_teacher', label: 'Lead Teacher' },
+                        { key: 'assistant_teacher', label: 'Assistant' },
+                        { key: 'volunteer', label: 'Helper' },
+                      ].map(r => {
+                        const active = newRole === r.key;
+                        return (
                           <TouchableOpacity
-                            style={styles.deleteTeacherBtn}
+                            key={r.key}
+                            style={[
+                              styles.roleChip,
+                              { backgroundColor: secondarySurface, borderColor },
+                              active && { backgroundColor: blueAccent, borderColor: blueAccent },
+                            ]}
+                            onPress={() => setNewRole(r.key as KidsTeacherRole)}
+                          >
+                            <Text
+                              style={[
+                                styles.roleChipText,
+                                { color: active ? '#FFFFFF' : secondaryText },
+                                active && { fontWeight: '800' },
+                              ]}
+                            >
+                              {r.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+
+                    <View style={styles.tierSelectorGrid}>
+                      {(
+                        [
+                          'nursery',
+                          'beginners',
+                          'primary',
+                          'junior',
+                          'teens',
+                          'mixed',
+                        ] as KidsClassTier[]
+                      ).map(t => {
+                        const active = newTier === t;
+                        return (
+                          <TouchableOpacity
+                            key={t}
+                            style={[
+                              styles.tierCard,
+                              { backgroundColor: secondarySurface, borderColor },
+                              active && {
+                                backgroundColor: isDark ? '#1E3A8A' : '#DBEAFE',
+                                borderColor: blueAccent,
+                              },
+                            ]}
+                            onPress={() => setNewTier(t)}
+                          >
+                            <Text
+                              style={[
+                                styles.tierCardTitle,
+                                { color: active ? blueAccent : primaryText },
+                              ]}
+                            >
+                              {tierNames[t].split(' ')[0]}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.tierCardSub,
+                                { color: active ? blueAccent : secondaryText },
+                              ]}
+                            >
+                              {tierNames[t].split('(')[1]?.replace(')', '') || t}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+
+                  <View style={styles.formActionsRow}>
+                    <TouchableOpacity
+                      style={[styles.cancelBtn, { backgroundColor: secondarySurface, borderColor }]}
+                      onPress={() => {
+                        handleClearSelection();
+                        setShowAddForm(false);
+                      }}
+                    >
+                      <Text style={[styles.cancelBtnText, { color: primaryText }]}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.submitBtn, { backgroundColor: violetAccent }, submitting && { opacity: 0.7 }]}
+                      onPress={handleAddTeacher}
+                      disabled={submitting}
+                    >
+                      {submitting ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <Text style={styles.submitBtnText}>Save Member</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {/* ── FACULTY ROSTER LIST ── */}
+              {filteredTeachers.length === 0 ? (
+                <View style={[styles.emptyCard, { backgroundColor: cardSurface, borderColor }]}>
+                  <View style={[styles.emptyIconCircle, { backgroundColor: secondarySurface }]}>
+                    <Users size={28} color={secondaryText} />
+                  </View>
+                  <Text style={[styles.emptyTitle, { color: primaryText }]}>
+                    No Faculty Records Yet
+                  </Text>
+                  <Text style={[styles.emptySub, { color: secondaryText }]}>
+                    Register Sunday School teachers and volunteers to assign them to classrooms.
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.teachersList}>
+                  {filteredTeachers.map((teacher, idx) => {
+                    const isPresent = todayAttendance.some(a => a.teacherDocId === teacher.id);
+                    const isLead = teacher.role === 'lead_teacher';
+                    const isVolunteer = teacher.role === 'volunteer';
+                    const avatarColor = isPresent
+                      ? '#10B981'
+                      : AVATAR_COLORS[idx % AVATAR_COLORS.length];
+
+                    const rolePillBg = isLead
+                      ? isDark
+                        ? 'rgba(59, 130, 246, 0.18)'
+                        : '#DBEAFE'
+                      : isVolunteer
+                      ? isDark
+                        ? 'rgba(168, 85, 247, 0.18)'
+                        : '#F3E8FF'
+                      : isDark
+                      ? 'rgba(245, 158, 11, 0.18)'
+                      : '#FEF3C7';
+
+                    const rolePillText = isLead
+                      ? isDark
+                        ? '#93C5FD'
+                        : '#1D4ED8'
+                      : isVolunteer
+                      ? isDark
+                        ? '#D8B4FE'
+                        : '#7E22CE'
+                      : isDark
+                      ? '#FDE68A'
+                      : '#B45309';
+
+                    return (
+                      <View
+                        key={teacher.id}
+                        style={[
+                          styles.teacherCard,
+                          { backgroundColor: cardSurface, borderColor },
+                          !isDark && styles.cardShadowLight,
+                        ]}
+                      >
+                        <View style={styles.teacherCardTop}>
+                          <View style={[styles.avatarBox, { backgroundColor: avatarColor }]}>
+                            <Text style={styles.avatarText}>
+                              {(teacher.name || 'T').charAt(0).toUpperCase()}
+                            </Text>
+                          </View>
+
+                          <View style={{ flex: 1, gap: 5 }}>
+                            <View style={styles.nameHeaderRow}>
+                              <Text style={[styles.teacherName, { color: primaryText }]} numberOfLines={1}>
+                                {teacher.name}
+                              </Text>
+                              <View
+                                style={[
+                                  styles.statusPill,
+                                  {
+                                    backgroundColor: isPresent
+                                      ? isDark
+                                        ? 'rgba(16, 185, 129, 0.16)'
+                                        : '#DCFCE7'
+                                      : secondarySurface,
+                                  },
+                                ]}
+                              >
+                                <ShieldCheck
+                                  size={11}
+                                  color={isPresent ? emeraldAccent : secondaryText}
+                                />
+                                <Text
+                                  style={[
+                                    styles.statusPillText,
+                                    { color: isPresent ? emeraldAccent : secondaryText },
+                                  ]}
+                                >
+                                  {isPresent ? 'On Duty' : 'Approved'}
+                                </Text>
+                              </View>
+                            </View>
+
+                            <View style={styles.roleTagsWrap}>
+                              <View style={[styles.roleTag, { backgroundColor: rolePillBg }]}>
+                                <Text style={[styles.roleTagText, { color: rolePillText }]}>
+                                  {isLead
+                                    ? 'Lead Teacher'
+                                    : isVolunteer
+                                    ? 'Helper / Volunteer'
+                                    : 'Assistant Teacher'}
+                                </Text>
+                              </View>
+                              <View
+                                style={[
+                                  styles.classChip,
+                                  { backgroundColor: secondarySurface, borderColor },
+                                ]}
+                              >
+                                <BookOpen size={11} color={secondaryText} />
+                                <Text style={[styles.classLabel, { color: secondaryText }]} numberOfLines={1}>
+                                  {teacher.assignedClassName || 'Sunday School'}
+                                </Text>
+                              </View>
+                            </View>
+                          </View>
+                        </View>
+
+                        <View style={[styles.teacherCardBottom, { borderTopColor: borderColor }]}>
+                          <View style={styles.contactDetailsCol}>
+                            {teacher.phone ? (
+                              <TouchableOpacity
+                                style={[
+                                  styles.callActionPill,
+                                  {
+                                    backgroundColor: isDark
+                                      ? 'rgba(16, 185, 129, 0.14)'
+                                      : '#ECFDF5',
+                                    borderColor: isDark ? '#065F46' : '#A7F3D0',
+                                  },
+                                ]}
+                                onPress={() => Linking.openURL(`tel:${teacher.phone}`)}
+                              >
+                                <Phone size={12.5} color={emeraldAccent} />
+                                <Text style={[styles.callActionText, { color: emeraldAccent }]}>
+                                  {teacher.phone}
+                                </Text>
+                              </TouchableOpacity>
+                            ) : null}
+
+                            {teacher.email ? (
+                              <View style={styles.emailRow}>
+                                <Mail size={12} color={secondaryText} />
+                                <Text
+                                  style={[styles.emailText, { color: secondaryText }]}
+                                  numberOfLines={1}
+                                >
+                                  {teacher.email}
+                                </Text>
+                              </View>
+                            ) : null}
+                          </View>
+
+                          <TouchableOpacity
+                            style={[
+                              styles.deleteTeacherBtn,
+                              {
+                                backgroundColor: isDark
+                                  ? 'rgba(239, 68, 68, 0.14)'
+                                  : '#FEF2F2',
+                              },
+                            ]}
                             onPress={() => handleDelete(teacher)}
                             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                           >
@@ -489,41 +753,30 @@ export default function AdminTeachersModal({
                           </TouchableOpacity>
                         </View>
                       </View>
-                    </View>
-                  );
-                })}
-              </View>
-            )}
-          </ScrollView>
-        </View>
-      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </SafeAreaProvider>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
-    justifyContent: 'flex-end',
-  },
-  modalCard: {
-    backgroundColor: '#0F172A', // Premium Navy Slate
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 20,
-    borderTopWidth: 1.5,
-    borderColor: '#1E293B',
-    maxHeight: '94%',
+  safeRoot: {
     flex: 1,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    paddingBottom: 16,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#1E293B',
   },
   badgeRow: {
     flexDirection: 'row',
@@ -532,282 +785,238 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   primaryBadge: {
-    backgroundColor: '#1E3A8A',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 999,
   },
   primaryBadgeText: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#93C5FD',
-    letterSpacing: 1.2,
+    letterSpacing: 0.8,
   },
   countBadge: {
-    backgroundColor: 'rgba(52, 211, 153, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(52, 211, 153, 0.3)',
   },
   countBadgeText: {
     fontSize: 10,
-    fontWeight: '700',
-    color: '#34D399',
+    fontWeight: '800',
   },
   headerTitle: {
     fontSize: 20,
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     fontWeight: '800',
-    color: '#FFFFFF',
   },
   headerSubtitle: {
     fontSize: 12,
-    color: '#94A3B8',
-    marginTop: 3,
-    lineHeight: 18,
+    marginTop: 2,
+    lineHeight: 17,
   },
   closeBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#1E293B',
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  topActionBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 14,
-    gap: 12,
+  controlsBar: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 10,
+    borderBottomWidth: 1,
   },
-  filterPillsRow: {
+  segmentedRow: {
     flexDirection: 'row',
-    gap: 6,
-  },
-  filterPill: {
-    backgroundColor: '#1E293B',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#334155',
+    padding: 3,
+    gap: 4,
   },
-  filterPillActive: {
-    backgroundColor: '#3B82F6',
-    borderColor: '#3B82F6',
-  },
-  filterPillText: {
-    fontSize: 11,
-    color: '#94A3B8',
-    fontWeight: '600',
-  },
-  filterPillTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-  },
-  addTeacherBtn: {
-    backgroundColor: '#1E40AF',
-    paddingHorizontal: 14,
+  segmentTab: {
+    flex: 1,
     paddingVertical: 8,
-    borderRadius: 999,
-    flexDirection: 'row',
+    borderRadius: 9,
     alignItems: 'center',
-    gap: 6,
-    borderWidth: 1,
-    borderColor: '#3B82F6',
+    justifyContent: 'center',
   },
-  addTeacherBtnText: {
-    color: '#FFFFFF',
-    fontSize: 12,
+  segmentTabText: {
+    fontSize: 11.5,
     fontWeight: '700',
   },
+  addFacultyBannerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 11,
+    borderRadius: 12,
+  },
+  addFacultyBannerText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
   scrollContent: {
-    paddingBottom: 40,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 42,
     gap: 14,
   },
   formContainer: {
-    backgroundColor: '#1E293B',
     borderRadius: 20,
     padding: 16,
-    borderWidth: 1.5,
-    borderColor: '#334155',
-    gap: 16,
+    borderWidth: 1,
+    gap: 14,
   },
   formHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 10,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
   },
   formIconBox: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+    backgroundColor: 'rgba(251, 191, 36, 0.16)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   formTitle: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#FFFFFF',
   },
   formSubtitle: {
-    fontSize: 11,
-    color: '#94A3B8',
+    fontSize: 11.5,
     marginTop: 1,
   },
   closeFormBtn: {
-    padding: 4,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   formSection: {
-    gap: 8,
+    gap: 10,
   },
   sectionLabel: {
-    fontSize: 10,
+    fontSize: 10.5,
     fontWeight: '800',
-    color: '#60A5FA',
-    letterSpacing: 1,
+    letterSpacing: 0.8,
   },
-  inputSearchBox: {
-    backgroundColor: '#0F172A',
-    borderWidth: 1.5,
-    borderColor: '#3B82F6',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+  selectedMemberCard: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  selectedMemberAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectedMemberName: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  selectedMemberMeta: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  clearSelectionBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  clearSelectionText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  inputSearchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    height: 44,
   },
   inputSearch: {
     flex: 1,
-    color: '#FFFFFF',
-    fontSize: 13,
-    padding: 0,
+    fontSize: 13.5,
   },
   dropdownList: {
-    backgroundColor: '#0B1329',
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: '#3B82F6',
     marginTop: 6,
-    padding: 8,
-    maxHeight: 220,
-    elevation: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
   dropdownHeader: {
-    fontSize: 9,
+    fontSize: 9.5,
     fontWeight: '800',
-    color: '#94A3B8',
-    letterSpacing: 1,
-    paddingHorizontal: 6,
-    paddingVertical: 4,
+    letterSpacing: 0.7,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 6,
   },
   dropdownItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
     borderBottomWidth: 1,
-    borderBottomColor: '#1E293B',
   },
   dropdownAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: '#3B82F6',
     alignItems: 'center',
     justifyContent: 'center',
   },
   dropdownAvatarText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
   },
   dropdownItemName: {
-    color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 13.5,
     fontWeight: '700',
   },
   dropdownItemPhone: {
-    color: '#94A3B8',
     fontSize: 11,
   },
   selectPill: {
-    backgroundColor: '#1E3A8A',
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
   },
   selectPillText: {
-    color: '#93C5FD',
     fontSize: 11,
-    fontWeight: '700',
-  },
-  selectedMemberCard: {
-    backgroundColor: '#0F172A',
-    borderWidth: 1.5,
-    borderColor: '#10B981',
-    borderRadius: 12,
-    padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  selectedMemberAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: 'rgba(16, 185, 129, 0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  selectedMemberName: {
-    color: '#FFFFFF',
-    fontSize: 14,
     fontWeight: '800',
   },
-  selectedMemberMeta: {
-    color: '#34D399',
-    fontSize: 11,
-  },
-  clearSelectionBtn: {
-    backgroundColor: '#1E293B',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  clearSelectionText: {
-    color: '#94A3B8',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  rowTwoCols: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 6,
-  },
   inputLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#CBD5E1',
     marginBottom: 4,
   },
   inputField: {
-    backgroundColor: '#0F172A',
-    borderRadius: 10,
+    height: 44,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#334155',
-    color: '#FFFFFF',
-    fontSize: 13,
     paddingHorizontal: 12,
-    paddingVertical: 9,
+    fontSize: 13.5,
   },
   roleChipsRow: {
     flexDirection: 'row',
@@ -815,63 +1024,35 @@ const styles = StyleSheet.create({
   },
   roleChip: {
     flex: 1,
-    backgroundColor: '#0F172A',
     paddingVertical: 9,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#334155',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  roleChipActive: {
-    backgroundColor: '#3B82F6',
-    borderColor: '#60A5FA',
-  },
   roleChipText: {
-    fontSize: 11,
-    color: '#94A3B8',
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  roleChipTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   tierSelectorGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: 8,
   },
   tierCard: {
-    width: '31%',
-    backgroundColor: '#0F172A',
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 6,
+    width: '48%',
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#334155',
-    alignItems: 'center',
-  },
-  tierCardActive: {
-    backgroundColor: '#1E3A8A',
-    borderColor: '#60A5FA',
+    paddingHorizontal: 10,
+    paddingVertical: 9,
   },
   tierCardTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#E2E8F0',
-  },
-  tierCardTitleActive: {
-    color: '#93C5FD',
+    fontSize: 12.5,
     fontWeight: '800',
   },
   tierCardSub: {
-    fontSize: 9,
-    color: '#64748B',
-    marginTop: 1,
-  },
-  tierCardSubActive: {
-    color: '#BFDBFE',
+    fontSize: 10.5,
+    marginTop: 2,
   },
   formActionsRow: {
     flexDirection: 'row',
@@ -881,79 +1062,84 @@ const styles = StyleSheet.create({
   cancelBtn: {
     flex: 1,
     height: 44,
-    backgroundColor: '#334155',
-    borderRadius: 12,
+    borderRadius: 999,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   cancelBtnText: {
-    color: '#E2E8F0',
     fontSize: 13,
     fontWeight: '700',
   },
   submitBtn: {
-    flex: 2,
+    flex: 1.6,
     height: 44,
-    backgroundColor: '#3B82F6',
-    borderRadius: 12,
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
   },
   submitBtnText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 13.5,
     fontWeight: '800',
   },
-  emptyState: {
-    padding: 40,
+  emptyCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 32,
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  emptyIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
   },
   emptyTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#E2E8F0',
+    fontSize: 15.5,
+    fontWeight: '800',
   },
   emptySub: {
-    fontSize: 12,
-    color: '#94A3B8',
+    fontSize: 12.5,
     textAlign: 'center',
-    maxWidth: 280,
+    lineHeight: 18,
   },
-  teachersGrid: {
-    gap: 10,
+  teachersList: {
+    gap: 12,
   },
   teacherCard: {
-    backgroundColor: '#1E293B',
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#334155',
+    padding: 14,
     gap: 12,
+  },
+  cardShadowLight: {
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
   },
   teacherCardTop: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 12,
   },
   avatarBox: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#334155',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  avatarBoxPresent: {
-    backgroundColor: '#065F46',
-    borderWidth: 1.5,
-    borderColor: '#34D399',
+    flexShrink: 0,
   },
   avatarText: {
-    fontSize: 17,
-    fontWeight: '800',
     color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '900',
   },
   nameHeaderRow: {
     flexDirection: 'row',
@@ -962,112 +1148,95 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   teacherName: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#FFFFFF',
     flex: 1,
-  },
-  dutyPill: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  dutyPillPresent: {
-    backgroundColor: 'rgba(16, 185, 129, 0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.4)',
-  },
-  dutyPillScheduled: {
-    backgroundColor: '#334155',
-  },
-  dutyPillText: {
-    fontSize: 10,
+    fontSize: 15.5,
     fontWeight: '800',
   },
-  dutyPillTextPresent: {
-    color: '#34D399',
-  },
-  dutyPillTextScheduled: {
-    color: '#94A3B8',
-  },
-  roleTagRow: {
+  statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  statusPillText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+  },
+  roleTagsWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 6,
-    marginTop: 4,
   },
   roleTag: {
     paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  roleTagLead: {
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
-  },
-  roleTagAsst: {
-    backgroundColor: 'rgba(251, 191, 36, 0.18)',
-  },
-  roleTagVol: {
-    backgroundColor: 'rgba(168, 85, 247, 0.2)',
+    paddingVertical: 3,
+    borderRadius: 999,
   },
   roleTagText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#E2E8F0',
+    fontSize: 10.5,
+    fontWeight: '800',
+  },
+  classChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    maxWidth: '100%',
   },
   classLabel: {
-    fontSize: 11,
-    color: '#94A3B8',
+    fontSize: 10.5,
+    fontWeight: '600',
   },
   teacherCardBottom: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 8,
+    paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: '#334155',
+    gap: 10,
   },
   contactDetailsCol: {
+    flex: 1,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  contactItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  contactItemText: {
-    fontSize: 11,
-    color: '#E2E8F0',
-    fontWeight: '600',
-  },
-  pinBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#0F172A',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  pinBadgeText: {
-    fontSize: 10,
-    color: '#FBBF24',
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    fontWeight: '700',
-  },
-  cardActionsRow: {
-    flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: 8,
   },
+  callActionPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  callActionText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  emailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flexShrink: 1,
+  },
+  emailText: {
+    fontSize: 11.5,
+    fontWeight: '500',
+  },
   deleteTeacherBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
 });

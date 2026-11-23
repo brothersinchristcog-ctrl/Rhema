@@ -1855,6 +1855,9 @@ export {
   onRegistrationRequestUpdated,
   onVolunteerPostCreated,
   onVolunteerPostUpdated,
+  onKidsSessionCreated,
+  onKidsSessionUpdated,
+  onKidsAttendanceAbsentCreated,
 } from './notifications.js';
 
 export {
@@ -1869,6 +1872,13 @@ export {
   bookResponsibilitySlotHttp,
   declineResponsibilitySlotHttp,
 } from './rosterNotifications.js';
+
+export {
+  createZoomMeeting,
+  createZoomMeetingHttp,
+  generateZoomMeetingLink,
+  createBibleClass,
+} from './meetings.js';
 
 export { guestInviteLanding } from './guestInvite.js';
 

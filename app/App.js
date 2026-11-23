@@ -17,12 +17,13 @@ import './src/services/firebaseConfig';
 import NotificationService from './src/services/NotificationService';
 
 // Configure Google Sign-In once at app startup (before any screen mounts)
-// In @react-native-google-signin v14+, webClientId is auto-read from google-services.json
+// webClientId is read from EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID or auto-resolved from google-services.json
 try {
+  const configuredWebClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
   GoogleSignin.configure({
     scopes: ['https://www.googleapis.com/auth/meetings.space.created'],
-    offlineAccess: true,
-    webClientId: '962252889183-jomnitu1s1317td9fmdq9qbo7d8sdbhb.apps.googleusercontent.com',
+    offlineAccess: false,
+    ...(configuredWebClientId ? { webClientId: configuredWebClientId } : {}),
   });
 } catch (e) {
   console.warn('GoogleSignin configure error:', e);

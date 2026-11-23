@@ -22,11 +22,13 @@ import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThem
 
 export interface BiblePickerResult {
   book: string;
+  bookTe?: string;
   bookIndex: number;
   chapter: number;
   verse?: number | string;
   chapterRange?: string;
   referenceString: string;
+  referenceStringTelugu?: string;
 }
 
 export interface BibleScopeResult {
@@ -162,12 +164,19 @@ export default function BibleReferencePickerModal({
     if (!currentBook) return;
     const vStr = String(vNum).trim();
     const ref = vStr ? `${currentBook.nameEn} ${selectedChapter}:${vStr}` : `${currentBook.nameEn} ${selectedChapter}`;
+    const refTe = currentBook.nameTe
+      ? vStr
+        ? `${currentBook.nameTe} ${selectedChapter}:${vStr}`
+        : `${currentBook.nameTe} ${selectedChapter}`
+      : ref;
     onSelectReference?.({
       book: currentBook.nameEn,
+      bookTe: currentBook.nameTe,
       bookIndex: currentBook.index,
       chapter: selectedChapter,
       verse: vNum,
       referenceString: ref,
+      referenceStringTelugu: refTe,
     });
     handleClose();
   };
@@ -178,12 +187,19 @@ export default function BibleReferencePickerModal({
     const sCh = wholeBook ? 1 : Math.min(startChapter, endChapter);
     const eCh = wholeBook ? maxChapters : Math.max(startChapter, endChapter);
     const ref = sCh === eCh ? `${currentBook.nameEn} ${sCh}` : `${currentBook.nameEn} ${sCh}-${eCh}`;
+    const refTe = currentBook.nameTe
+      ? sCh === eCh
+        ? `${currentBook.nameTe} ${sCh}`
+        : `${currentBook.nameTe} ${sCh}-${eCh}`
+      : ref;
     onSelectReference?.({
       book: currentBook.nameEn,
+      bookTe: currentBook.nameTe,
       bookIndex: currentBook.index,
       chapter: sCh,
       chapterRange: `${sCh}-${eCh}`,
       referenceString: ref,
+      referenceStringTelugu: refTe,
     });
     handleClose();
   };
@@ -191,11 +207,15 @@ export default function BibleReferencePickerModal({
   // Finalize Whole Single Chapter Reference without needing verse
   const handleConfirmSingleChapterOnly = (ch: number) => {
     if (!currentBook) return;
+    const ref = `${currentBook.nameEn} ${ch}`;
+    const refTe = currentBook.nameTe ? `${currentBook.nameTe} ${ch}` : ref;
     onSelectReference?.({
       book: currentBook.nameEn,
+      bookTe: currentBook.nameTe,
       bookIndex: currentBook.index,
       chapter: ch,
-      referenceString: `${currentBook.nameEn} ${ch}`,
+      referenceString: ref,
+      referenceStringTelugu: refTe,
     });
     handleClose();
   };

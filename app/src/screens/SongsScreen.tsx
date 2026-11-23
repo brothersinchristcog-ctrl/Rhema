@@ -267,12 +267,12 @@ export const SONG_CARD_COLORS: SongCardColorDef[] = [
   { name: 'Imperial Noir',     color: '#141518' }, // 200
 ];
 
-const getSongCardColor = (index: number): SongCardColorDef => {
+export const getSongCardColor = (index: number): SongCardColorDef => {
   const safeIndex = typeof index === 'number' && !isNaN(index) ? Math.abs(index) : 0;
   return SONG_CARD_COLORS[safeIndex % SONG_CARD_COLORS.length];
 };
 
-const isColorLight = (hex: string): boolean => {
+export const isColorLight = (hex: string): boolean => {
   if (!hex || !hex.startsWith('#')) return true;
   const c = hex.replace('#', '');
   const r = parseInt(c.substring(0, 2), 16) || 0;

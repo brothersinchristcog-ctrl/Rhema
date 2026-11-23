@@ -1,5 +1,6 @@
 import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { getMessaging } from 'firebase-admin/messaging';
 import axios from 'axios';
 const getDb = () => getFirestore();
 let cachedZoomToken = null;
@@ -7,11 +8,11 @@ let cachedZoomToken = null;
  * Helper: Acquire Server-to-Server OAuth access token from Zoom
  */
 export async function getZoomServerToServerToken() {
-    const accountId = process.env.ZOOM_ACCOUNT_ID;
-    const clientId = process.env.ZOOM_CLIENT_ID;
-    const clientSecret = process.env.ZOOM_CLIENT_SECRET;
+    const accountId = process.env.ZOOM_ACCOUNT_ID?.trim();
+    const clientId = process.env.ZOOM_CLIENT_ID?.trim();
+    const clientSecret = process.env.ZOOM_CLIENT_SECRET?.trim();
     if (!accountId || !clientId || !clientSecret) {
-        throw new Error('Zoom Server-to-Server credentials missing in backend environment. Please set ZOOM_ACCOUNT_ID, ZOOM_CLIENT_ID, and ZOOM_CLIENT_SECRET.');
+        throw new Error('Zoom Server-to-Server credentials missing in backend environment. Please set ZOOM_ACCOUNT_ID, ZOOM_CLIENT_ID, and ZOOM_CLIENT_SECRET in functions/.env.');
     }
     // Check in-memory cached token (with 60-second buffer)
     if (cachedZoomToken && Date.now() < cachedZoomToken.expiresAt - 60000) {
@@ -49,52 +50,68 @@ export function extractZoomUserId(accessToken) {
     }
     return 'me';
 }
+async function scheduleZoomMeetingOnApi(params) {
+    const accessToken = await getZoomServerToServerToken();
+    const userId = extractZoomUserId(accessToken);
+    const startDt = params.startTime ? new Date(params.startTime) : new Date();
+    let durationMinutes = Number(params.duration) || 0;
+    if (!durationMinutes) {
+        const endDt = params.endTime
+            ? new Date(params.endTime)
+            : new Date(startDt.getTime() + 60 * 60 * 1000);
+        durationMinutes = Math.max(15, Math.round((endDt.getTime() - startDt.getTime()) / 60000));
+    }
+    const response = await axios.post(`https://api.zoom.us/v2/users/${userId}/meetings`, {
+        topic: params.topic,
+        agenda: params.description || '',
+        type: 2, // Scheduled meeting
+        start_time: startDt.toISOString(),
+        duration: Math.max(15, durationMinutes),
+        timezone: 'UTC',
+        password: String(params.password || Math.floor(100000 + Math.random() * 900000)),
+        settings: {
+            host_video: true,
+            participant_video: true,
+            join_before_host: true,
+            mute_upon_entry: true,
+            waiting_room: false,
+            approval_type: 0,
+        },
+    }, {
+        headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+        },
+    });
+    const meetingData = response.data;
+    return {
+        success: true,
+        meetingId: String(meetingData.id),
+        meetingUrl: meetingData.join_url,
+        meetingUri: meetingData.join_url,
+        password: meetingData.password || '',
+        startUrl: meetingData.start_url || '',
+    };
+}
 /**
  * 📹 CREATE ZOOM MEETING (Callable Function)
- * Called by the Admin App when clicking "Generate Link" for Zoom Meetings.
- * Uses Zoom Server-to-Server OAuth on the backend without exposing secrets.
+ * Called by backend services or ZoomService.
  */
 export const createZoomMeeting = onCall({ cors: true, invoker: 'public' }, async (request) => {
-    const { title, description, startTime, endTime, churchId } = request.data || {};
-    if (!title) {
+    const { title, topic, description, startTime, endTime, duration, password } = request.data || {};
+    const resolvedTopic = String(topic || title || '').trim();
+    if (!resolvedTopic) {
         throw new HttpsError('invalid-argument', 'Title is required for the meeting.');
     }
     try {
-        const accessToken = await getZoomServerToServerToken();
-        const userId = extractZoomUserId(accessToken);
-        const startDt = startTime ? new Date(startTime) : new Date();
-        const endDt = endTime ? new Date(endTime) : new Date(startDt.getTime() + 60 * 60 * 1000);
-        const durationMinutes = Math.max(15, Math.round((endDt.getTime() - startDt.getTime()) / 60000));
-        const response = await axios.post(`https://api.zoom.us/v2/users/${userId}/meetings`, {
-            topic: title,
-            agenda: description || '',
-            type: 2, // Scheduled meeting
-            start_time: startDt.toISOString(),
-            duration: durationMinutes,
-            timezone: 'UTC',
-            password: String(request.data?.password || Math.floor(100000 + Math.random() * 900000)),
-            settings: {
-                host_video: true,
-                participant_video: true,
-                join_before_host: true,
-                mute_upon_entry: true,
-                waiting_room: false,
-                approval_type: 0,
-            },
-        }, {
-            headers: {
-                Authorization: `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-            },
+        return await scheduleZoomMeetingOnApi({
+            topic: resolvedTopic,
+            description,
+            startTime,
+            endTime,
+            duration,
+            password,
         });
-        const meetingData = response.data;
-        return {
-            success: true,
-            meetingId: String(meetingData.id),
-            meetingUrl: meetingData.join_url,
-            password: meetingData.password || '',
-            startUrl: meetingData.start_url || '',
-        };
     }
     catch (err) {
         console.error('[createZoomMeeting] Error:', err?.response?.data || err?.message || err);
@@ -105,50 +122,147 @@ export const createZoomMeeting = onCall({ cors: true, invoker: 'public' }, async
     }
 });
 /**
+ * 📹 GENERATE ZOOM MEETING LINK (Callable Function in asia-south1)
+ * Called by AdminZoomMeetingsCreate.tsx when tapping "+ Generate Zoom Meet Link".
+ */
+export const generateZoomMeetingLink = onCall({ region: 'asia-south1', cors: true, invoker: 'public' }, async (request) => {
+    const { topic, title, description, startTime, endTime, duration, password } = request.data || {};
+    const resolvedTopic = String(topic || title || 'Church Online Meeting').trim();
+    try {
+        return await scheduleZoomMeetingOnApi({
+            topic: resolvedTopic,
+            description,
+            startTime,
+            endTime,
+            duration,
+            password,
+        });
+    }
+    catch (err) {
+        console.error('[generateZoomMeetingLink] Error:', err?.response?.data || err?.message || err);
+        const msg = err?.response?.data?.message ||
+            err?.message ||
+            'Failed to generate Zoom meeting link via Zoom API';
+        throw new HttpsError('internal', msg);
+    }
+});
+/**
+ * 📅 CREATE ONLINE MEETING / BIBLE CLASS & NOTIFY MEMBERS (asia-south1)
+ * Called by AdminZoomMeetingsCreate.tsx for both Google Meet and Zoom meetings.
+ */
+export const createBibleClass = onCall({ region: 'asia-south1', cors: true, invoker: 'public' }, async (request) => {
+    const data = request.data || {};
+    const rawChurchId = String(data.churchId || 'rhema').trim();
+    const churchId = rawChurchId === 'default' || !rawChurchId ? 'rhema' : rawChurchId;
+    const title = String(data.title || '').trim();
+    const meetingLink = String(data.meetingLink || '').trim();
+    if (!title || !meetingLink) {
+        throw new HttpsError('invalid-argument', 'Title and meeting link are required.');
+    }
+    try {
+        const db = getDb();
+        const startMs = typeof data.startTimestamp === 'number' && !isNaN(data.startTimestamp)
+            ? data.startTimestamp
+            : Date.now();
+        const endMs = typeof data.endTimestamp === 'number' && !isNaN(data.endTimestamp) && data.endTimestamp > startMs
+            ? data.endTimestamp
+            : startMs + 60 * 60 * 1000;
+        // Convert DD-MM-YYYY -> YYYY-MM-DD when provided for scheduledDate sorting
+        let scheduledDate;
+        if (typeof data.date === 'string' && data.date.includes('-')) {
+            const parts = data.date.trim().split('-');
+            if (parts.length === 3 && parts[2].length === 4) {
+                scheduledDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+            }
+        }
+        const meetingRef = db
+            .collection('Rhema Church')
+            .doc(churchId)
+            .collection('online_meetings')
+            .doc();
+        const meetingDoc = {
+            id: meetingRef.id,
+            churchId,
+            title,
+            topic: String(data.topic || ''),
+            description: String(data.topic || ''),
+            bibleBook: String(data.bibleBook || ''),
+            date: String(data.date || ''),
+            scheduledDate: scheduledDate || new Date(startMs).toISOString().split('T')[0],
+            startTimeLabel: String(data.startTime || ''),
+            endTimeLabel: String(data.endTime || ''),
+            startTime: Timestamp.fromMillis(startMs),
+            endTime: Timestamp.fromMillis(endMs),
+            teacherId: String(data.teacherId || 'admin'),
+            teacherName: String(data.teacherName || 'Church Admin'),
+            meetingLink,
+            meetingUrl: meetingLink,
+            url: meetingLink,
+            provider: String(data.provider || 'zoom'),
+            meetingType: String(data.meetingType || data.provider || 'zoom'),
+            recurrence: String(data.recurrence || 'NONE'),
+            status: 'upcoming',
+            notificationSent: true,
+            notificationSentAt: FieldValue.serverTimestamp(),
+            createdAt: FieldValue.serverTimestamp(),
+        };
+        // Save for Member screens (Rhema Church/{churchId}/online_meetings)
+        // and Admin Online Meetings dashboard (churches/default/online_meetings) without duplicate push trigger
+        await Promise.all([
+            meetingRef.set(meetingDoc),
+            db.collection('churches').doc('default').collection('online_meetings').doc(meetingRef.id).set(meetingDoc),
+        ]);
+        // Notify subscribed church members once
+        try {
+            const providerLabel = data.provider === 'google_meet' ? 'Google Meet' : 'Zoom';
+            await getMessaging().send({
+                notification: {
+                    title: `📅 New ${providerLabel}: ${title}`,
+                    body: `${data.date ? `${data.date} · ` : ''}${data.startTime ? `${data.startTime} — ` : ''}Tap to view meeting link.`,
+                },
+                data: {
+                    type: 'online_meeting',
+                    meetingId: meetingRef.id,
+                    churchId,
+                    provider: String(data.provider || ''),
+                    url: meetingLink,
+                },
+                topic: `church_${churchId}`,
+            });
+        }
+        catch (pushErr) {
+            console.warn('[createBibleClass] FCM topic push warning:', pushErr?.message || pushErr);
+        }
+        return {
+            success: true,
+            id: meetingRef.id,
+        };
+    }
+    catch (err) {
+        console.error('[createBibleClass] Error:', err);
+        throw new HttpsError('internal', err?.message || 'Failed to schedule meeting.');
+    }
+});
+/**
  * 🔗 HTTP Trigger Alternative for createZoomMeeting
  */
 export const createZoomMeetingHttp = onRequest({ cors: true, invoker: 'public' }, async (req, res) => {
-    const { title, description, startTime, endTime } = req.body || {};
-    if (!title) {
+    const { title, topic, description, startTime, endTime, duration, password } = req.body || {};
+    const resolvedTopic = String(topic || title || '').trim();
+    if (!resolvedTopic) {
         res.status(400).json({ error: 'Title is required for the meeting.' });
         return;
     }
     try {
-        const accessToken = await getZoomServerToServerToken();
-        const userId = extractZoomUserId(accessToken);
-        const startDt = startTime ? new Date(startTime) : new Date();
-        const endDt = endTime ? new Date(endTime) : new Date(startDt.getTime() + 60 * 60 * 1000);
-        const durationMinutes = Math.max(15, Math.round((endDt.getTime() - startDt.getTime()) / 60000));
-        const response = await axios.post(`https://api.zoom.us/v2/users/${userId}/meetings`, {
-            topic: title,
-            agenda: description || '',
-            type: 2,
-            start_time: startDt.toISOString(),
-            duration: durationMinutes,
-            timezone: 'UTC',
-            password: String(req.body?.password || Math.floor(100000 + Math.random() * 900000)),
-            settings: {
-                host_video: true,
-                participant_video: true,
-                join_before_host: true,
-                mute_upon_entry: true,
-                waiting_room: false,
-                approval_type: 0,
-            },
-        }, {
-            headers: {
-                Authorization: `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-            },
+        const result = await scheduleZoomMeetingOnApi({
+            topic: resolvedTopic,
+            description,
+            startTime,
+            endTime,
+            duration,
+            password,
         });
-        const meetingData = response.data;
-        res.status(200).json({
-            success: true,
-            meetingId: String(meetingData.id),
-            meetingUrl: meetingData.join_url,
-            password: meetingData.password || '',
-            startUrl: meetingData.start_url || '',
-        });
+        res.status(200).json(result);
     }
     catch (err) {
         console.error('[createZoomMeetingHttp] Error:', err?.response?.data || err?.message || err);

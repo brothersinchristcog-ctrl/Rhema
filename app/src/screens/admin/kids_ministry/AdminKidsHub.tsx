@@ -12,6 +12,7 @@ import {
   Platform,
   Alert,
   Modal,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -36,10 +37,14 @@ import {
   Clock,
   BookOpen,
   TrendingUp,
+  Layers,
 } from 'lucide-react-native';
 import { useAuth } from '../../../context/AuthContext';
 import { AdminTabContext } from '../../../context/AdminTabContext';
 import KidsMinistryService from '../../../services/KidsMinistryService';
+import { CustomAlert } from '../../../components/CustomAlert';
+import { useAdminTheme } from '../../../utils/adminThemeHelper';
+import { formatDateDisplay, toStandardDateString } from '../../../utils/DateUtils';
 import {
   ChildRecord,
   KidsClassRecord,
@@ -48,10 +53,21 @@ import {
   KidsQuiz,
   KidsWorshipSong,
   KidsCurriculumLesson,
+  KidsCurriculumConfig,
   KidsVBSEventRecord,
   KidsCertificateData,
+  KidsCertificateSettings,
+  KidsAttendanceSession,
+  KidsProgramType,
+  KidsSessionRecord,
+  KidsTeacherAttendanceRecord,
+  resolveActiveCurriculumLesson,
+  splitCurriculumLessons,
+  formatCurriculumDateDisplay,
+  getCurriculumWeekDate,
+  getKidsProgramVisual,
 } from '../../../types/KidsMinistryTypes';
-import EnrollChildModal from '../../kids_ministry/components/EnrollChildModal';
+import TeacherEnrollChildModal from '../../kids_ministry/components/TeacherEnrollChildModal';
 import EditClassModal from './components/EditClassModal';
 import ClassRosterModal from './components/ClassRosterModal';
 import PromotionManagerModal from './components/PromotionManagerModal';
@@ -62,11 +78,31 @@ import AdminAICopilotModal from './components/AdminAICopilotModal';
 import AdminVBSManagerModal from './components/AdminVBSManagerModal';
 import KidsCertificateModal from '../../kids_ministry/components/KidsCertificateModal';
 import AdminKidsReportsModal from './components/AdminKidsReportsModal';
+import ChildProfileDetailModal from './components/ChildProfileDetailModal';
+import AdminSessionManagerModal from './components/AdminSessionManagerModal';
 
 const { width } = Dimensions.get('window');
 
+const formatDateMonthYear = (dateStr: string | null | undefined): string => {
+  if (!dateStr) return '';
+  const clean = String(dateStr).trim().split('T')[0];
+  const parts = clean.split('-');
+  if (parts.length === 3 && parts[0].length === 4) {
+    const y = parts[0];
+    const m = parseInt(parts[1], 10) - 1;
+    const d = parts[2].padStart(2, '0');
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    if (m >= 0 && m < 12) {
+      return `${d} ${months[m]} ${y}`;
+    }
+    return `${d}-${parts[1]}-${y}`;
+  }
+  return clean;
+};
+
 export default function AdminKidsHub({ navigation }: any) {
   const insets = useSafeAreaInsets();
+  const { isDark, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor, barStyle } = useAdminTheme();
   const { member } = useAuth();
   const churchId = member?.churchId || 'rhema';
   const adminTabCtx = useContext(AdminTabContext);
@@ -101,8 +137,130 @@ export default function AdminKidsHub({ navigation }: any) {
   const [showCurriculumModal, setShowCurriculumModal] = useState(false);
   const [showAICopilotModal, setShowAICopilotModal] = useState(false);
   const [showVBSModal, setShowVBSModal] = useState(false);
+  const [resumeVBSOnCertClose, setResumeVBSOnCertClose] = useState(false);
   const [showReportsModal, setShowReportsModal] = useState(false);
   const [selectedCertData, setSelectedCertData] = useState<KidsCertificateData | null>(null);
+  const [certSettings, setCertSettings] = useState<KidsCertificateSettings | null>(null);
+  const [selectedChildProfile, setSelectedChildProfile] = useState<ChildRecord | null>(null);
+
+  // Program-based Attendance Sessions state
+  const [programSessions, setProgramSessions] = useState<KidsAttendanceSession[]>([]);
+  const [selectedSession, setSelectedSession] = useState<KidsAttendanceSession | null>(null);
+  const [sessionCustodyRecords, setSessionCustodyRecords] = useState<KidsSessionRecord[]>([]);
+  const [sessionAttendanceLogs, setSessionAttendanceLogs] = useState<any[]>([]);
+  const [sessionTeacherAttendance, setSessionTeacherAttendance] = useState<KidsTeacherAttendanceRecord[]>([]);
+  const [sessionFilterType, setSessionFilterType] = useState<'all' | KidsProgramType>('all');
+  const [showSessionManagerModal, setShowSessionManagerModal] = useState(false);
+  const [sessionToEdit, setSessionToEdit] = useState<KidsAttendanceSession | null>(null);
+  const [sessionManagerTab, setSessionManagerTab] = useState<'create' | 'list'>('create');
+  const [finalizingSession, setFinalizingSession] = useState(false);
+
+  const handleFinalizeSelectedSession = () => {
+    if (!selectedSession || finalizingSession) return;
+    if (selectedSession.attendanceFinalized) {
+      Alert.alert(
+        'Already Finalized',
+        `Attendance for "${selectedSession.programTitle}" (${formatDateDisplay(selectedSession.date)}) has already been finalized.`
+      );
+      return;
+    }
+
+    const activeEnrolledCount = children.filter(
+      c => c.enrollmentStatus !== 'inactive' && c.enrollmentStatus !== 'graduated'
+    ).length;
+    const presentIds = new Set(sessionCustodyRecords.map(r => r.childDocId));
+    sessionAttendanceLogs.forEach(a => {
+      if (a?.childDocId && a?.status !== 'absent') presentIds.add(a.childDocId);
+    });
+    const unrecordedCount = Math.max(0, activeEnrolledCount - presentIds.size);
+
+    Alert.alert(
+      'Finalize Program Attendance?',
+      `"${selectedSession.programTitle}" (${formatDateDisplay(selectedSession.date)})\n\n• Checked In / Present: ${presentIds.size}\n• Enrolled Not Checked In (will be marked Absent): ${unrecordedCount}\n\nParents of children not checked in will now receive an absent notification.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Finalize & Notify',
+          style: 'default',
+          onPress: async () => {
+            try {
+              setFinalizingSession(true);
+              const staffName =
+                member?.name ||
+                `${member?.firstName || ''} ${member?.lastName || ''}`.trim() ||
+                'Kids Ministry Admin';
+              const res = await KidsMinistryService.finalizeProgramAttendance(churchId, {
+                session: selectedSession,
+                enrolledChildren: children,
+                finalizedByMemberId: member?.id || 'admin',
+                finalizedByName: staffName,
+              });
+              setSelectedSession(prev =>
+                prev && prev.id === selectedSession.id
+                  ? {
+                      ...prev,
+                      status: 'completed',
+                      attendanceFinalized: true,
+                      presentCount: res.presentCount,
+                      absentCount: res.absentCount,
+                    }
+                  : prev
+              );
+              Alert.alert(
+                'Attendance Finalized ✓',
+                `Present: ${res.presentCount} · Absent: ${res.absentCount}. Parent attendance records & notifications updated.`
+              );
+            } catch (err: any) {
+              Alert.alert('Finalization Failed', err?.message || 'Could not finalize attendance.');
+            } finally {
+              setFinalizingSession(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleOpenAddSession = () => {
+    setSessionToEdit(null);
+    setSessionManagerTab('create');
+    setShowSessionManagerModal(true);
+  };
+
+  const handleOpenEditSession = (sess?: KidsAttendanceSession | null) => {
+    const target = sess || selectedSession;
+    if (!target) return;
+    setSessionToEdit(target);
+    setSessionManagerTab('create');
+    setShowSessionManagerModal(true);
+  };
+
+  const handleDeleteSession = (sess?: KidsAttendanceSession | null) => {
+    const target = sess || selectedSession;
+    if (!target) return;
+    Alert.alert(
+      'Delete Program Session',
+      `Are you sure you want to delete "${target.programTitle}" (${formatDateDisplay(target.date)})?\n\nHistorical child attendance and custody logs remain preserved.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await KidsMinistryService.deleteProgramSession(churchId, target.id);
+              if (selectedSession?.id === target.id) {
+                const remaining = programSessions.filter(s => s.id !== target.id);
+                setSelectedSession(remaining.length > 0 ? remaining[0] : null);
+              }
+            } catch (e: any) {
+              Alert.alert('Error', e?.message || 'Could not delete session.');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   // Beautiful Delete Confirmation Modal state
   const [childToDelete, setChildToDelete] = useState<{ id: string; name: string; childId?: string; parentName?: string; assignedClassName?: string } | null>(null);
@@ -113,6 +271,7 @@ export default function AdminKidsHub({ navigation }: any) {
   const [quizzes, setQuizzes] = useState<KidsQuiz[]>([]);
   const [songs, setSongs] = useState<KidsWorshipSong[]>([]);
   const [curriculum, setCurriculum] = useState<KidsCurriculumLesson[]>([]);
+  const [curriculumConfig, setCurriculumConfig] = useState<KidsCurriculumConfig | null>(null);
   const [vbsEvent, setVbsEvent] = useState<KidsVBSEventRecord | null>(null);
 
   // Load children, classes, teachers, curriculum & VBS (Realtime)
@@ -158,15 +317,47 @@ export default function AdminKidsHub({ navigation }: any) {
       setSongs(list);
     });
 
-    // 8. Realtime listener for 52-Week Curriculum
+    // 8. Realtime listener for 52-Week & Custom Curriculum
     const unsubCurriculum = KidsMinistryService.subscribeToCurriculum(churchId, list => {
       setCurriculum(list);
+    });
+
+    // 8b. Realtime listener for Curriculum Config (52-Week vs Custom Weekly)
+    const unsubCurConfig = KidsMinistryService.subscribeToCurriculumConfig(churchId, cfg => {
+      setCurriculumConfig(cfg);
     });
 
     // 9. Realtime listener for VBS Events
     const unsubVBS = KidsMinistryService.subscribeToVBSEvent(churchId, ev => {
       setVbsEvent(ev);
     });
+
+    // 10. Realtime listener for Program Attendance Sessions
+    const unsubSessions = KidsMinistryService.subscribeToProgramSessions(churchId, sessionList => {
+      setProgramSessions(sessionList);
+      setSelectedSession(prev => {
+        if (prev) {
+          const matching = sessionList.find(s => s.id === prev.id);
+          if (matching) return matching;
+        }
+        if (sessionList.length === 0) return null;
+        const today = toStandardDateString(new Date());
+        const todaySess = sessionList.find(s => s.date === today && s.status === 'active');
+        return todaySess || sessionList[0] || null;
+      });
+    });
+
+    // Do NOT auto-create a Sunday School session with today's date; wait for explicit admin creation.
+
+    // Reconcile any unlinked household member profile photos onto Kids records
+    KidsMinistryService.reconcileAllChildPhotos(churchId).catch(() => {});
+
+    // Load saved Sunday School Director & Senior Pastor certificate leadership defaults
+    KidsMinistryService.getCertificateSettings(churchId)
+      .then(cfg => {
+        if (cfg) setCertSettings(cfg);
+      })
+      .catch(() => {});
 
     return () => {
       unsubClasses();
@@ -177,14 +368,56 @@ export default function AdminKidsHub({ navigation }: any) {
       unsubQuizzes();
       unsubSongs();
       unsubCurriculum();
+      unsubCurConfig();
       unsubVBS();
+      unsubSessions();
     };
   }, [churchId]);
+
+  // Realtime subscription strictly scoped to the selected Program Session
+  useEffect(() => {
+    if (!selectedSession) {
+      setSessionCustodyRecords([]);
+      setSessionAttendanceLogs([]);
+      setSessionTeacherAttendance([]);
+      return;
+    }
+
+    const unsubCustody = KidsMinistryService.subscribeToSessionCustodyRecords(
+      churchId,
+      selectedSession,
+      records => setSessionCustodyRecords(records)
+    );
+
+    const unsubLogs = KidsMinistryService.subscribeToSessionAttendanceLogs(
+      churchId,
+      selectedSession,
+      logs => setSessionAttendanceLogs(logs)
+    );
+
+    const unsubTeachers = KidsMinistryService.subscribeToSessionTeacherAttendance(
+      churchId,
+      selectedSession,
+      tRecords => setSessionTeacherAttendance(tRecords)
+    );
+
+    return () => {
+      unsubCustody();
+      unsubLogs();
+      unsubTeachers();
+    };
+  }, [churchId, selectedSession?.id]);
 
   // Children eligible for next tier promotion
   const promotionCandidates = useMemo(() => {
     return KidsMinistryService.checkPromotionEligibility(children);
   }, [children]);
+
+  // Filter program sessions by category
+  const filteredSessions = useMemo(() => {
+    if (sessionFilterType === 'all') return programSessions;
+    return programSessions.filter(s => s.programType === sessionFilterType);
+  }, [programSessions, sessionFilterType]);
 
   // Search filter for children roster
   const filteredChildren = useMemo(() => {
@@ -257,36 +490,36 @@ export default function AdminKidsHub({ navigation }: any) {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#000000" />
+    <View style={[styles.container, { backgroundColor: screenBg, paddingTop: insets.top }]}>
+      <StatusBar barStyle={barStyle} backgroundColor={screenBg} />
 
       {/* ── TOP NAV HEADER ── */}
-      <View style={styles.headerRow}>
+      <View style={[styles.headerRow, { backgroundColor: screenBg, borderBottomColor: borderColor }]}>
         <TouchableOpacity
-          style={styles.backBtn}
+          style={[styles.backBtn, { backgroundColor: secondarySurface }]}
           onPress={handleBack}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />
+          <ArrowLeft size={20} color={primaryText} strokeWidth={2.4} />
         </TouchableOpacity>
 
         <View style={styles.headerTitles}>
-          <Text style={styles.headerTitleSerif}>Kids Ministry Hub</Text>
-          <Text style={styles.headerSubtitle}>Sunday School & Child Safety Administration</Text>
+          <Text style={[styles.headerTitleSerif, { color: primaryText }]}>Kids Ministry Hub</Text>
+          <Text style={[styles.headerSubtitle, { color: secondaryText }]}>Sunday School & Child Safety Administration</Text>
         </View>
 
         <TouchableOpacity
-          style={styles.addBtn}
+          style={[styles.addBtn, { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }]}
           onPress={() => setShowEnrollModal(true)}
           activeOpacity={0.8}
         >
-          <Plus size={14} color="#000000" strokeWidth={2.8} />
-          <Text style={styles.addBtnText}>Enroll</Text>
+          <Plus size={14} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.8} />
+          <Text style={[styles.addBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>Enroll</Text>
         </TouchableOpacity>
       </View>
 
       {/* ── TAB PILLS (HORIZONTALLY SCROLLABLE SO NO TAB IS CLIPPED) ── */}
-      <View style={styles.tabsRowWrapper}>
+      <View style={[styles.tabsRowWrapper, { backgroundColor: screenBg, borderBottomColor: borderColor }]}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -296,37 +529,69 @@ export default function AdminKidsHub({ navigation }: any) {
           overScrollMode="never"
         >
           <TouchableOpacity
-            style={[styles.tabPill, activeTab === 'overview' && styles.tabPillActive]}
+            style={[
+              styles.tabPill,
+              { backgroundColor: secondarySurface, borderColor: borderColor },
+              activeTab === 'overview' && { backgroundColor: isDark ? '#FFFFFF' : '#0F172A', borderColor: isDark ? '#FFFFFF' : '#0F172A' }
+            ]}
             onPress={() => setActiveTab('overview')}
           >
-            <Text style={[styles.tabPillText, activeTab === 'overview' && styles.tabPillTextActive]}>
+            <Text style={[
+              styles.tabPillText,
+              { color: secondaryText },
+              activeTab === 'overview' && { color: isDark ? '#000000' : '#FFFFFF', fontWeight: '800' }
+            ]}>
               Overview
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabPill, activeTab === 'children' && styles.tabPillActive]}
+            style={[
+              styles.tabPill,
+              { backgroundColor: secondarySurface, borderColor: borderColor },
+              activeTab === 'children' && { backgroundColor: isDark ? '#FFFFFF' : '#0F172A', borderColor: isDark ? '#FFFFFF' : '#0F172A' }
+            ]}
             onPress={() => setActiveTab('children')}
           >
-            <Text style={[styles.tabPillText, activeTab === 'children' && styles.tabPillTextActive]}>
+            <Text style={[
+              styles.tabPillText,
+              { color: secondaryText },
+              activeTab === 'children' && { color: isDark ? '#000000' : '#FFFFFF', fontWeight: '800' }
+            ]}>
               Children ({children.length})
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabPill, activeTab === 'classes' && styles.tabPillActive]}
+            style={[
+              styles.tabPill,
+              { backgroundColor: secondarySurface, borderColor: borderColor },
+              activeTab === 'classes' && { backgroundColor: isDark ? '#FFFFFF' : '#0F172A', borderColor: isDark ? '#FFFFFF' : '#0F172A' }
+            ]}
             onPress={() => setActiveTab('classes')}
           >
-            <Text style={[styles.tabPillText, activeTab === 'classes' && styles.tabPillTextActive]}>
+            <Text style={[
+              styles.tabPillText,
+              { color: secondaryText },
+              activeTab === 'classes' && { color: isDark ? '#000000' : '#FFFFFF', fontWeight: '800' }
+            ]}>
               Classes ({classes.length}){promotionCandidates.length > 0 ? ` · 🎓 ${promotionCandidates.length}` : ''}
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabPill, activeTab === 'curriculum' && styles.tabPillActive]}
+            style={[
+              styles.tabPill,
+              { backgroundColor: secondarySurface, borderColor: borderColor },
+              activeTab === 'curriculum' && { backgroundColor: isDark ? '#FFFFFF' : '#0F172A', borderColor: isDark ? '#FFFFFF' : '#0F172A' }
+            ]}
             onPress={() => setActiveTab('curriculum')}
           >
-            <Text style={[styles.tabPillText, activeTab === 'curriculum' && styles.tabPillTextActive]}>
+            <Text style={[
+              styles.tabPillText,
+              { color: secondaryText },
+              activeTab === 'curriculum' && { color: isDark ? '#000000' : '#FFFFFF', fontWeight: '800' }
+            ]}>
               Curriculum
             </Text>
           </TouchableOpacity>
@@ -346,113 +611,646 @@ export default function AdminKidsHub({ navigation }: any) {
           {/* ==================================================== */}
           {activeTab === 'overview' && (
             <>
-              {/* 4 Clean & Compact Executive Metric Cards */}
+              {/* ── REDESIGNED MODERN PROGRAM ATTENDANCE CARD ── */}
+              {(() => {
+                if (!selectedSession) {
+                  return (
+                    <View style={[styles.compactEmptySessionCard, { backgroundColor: cardSurface, borderColor }]}>
+                      <View style={styles.compactEmptyTopRow}>
+                        <View
+                          style={[
+                            styles.compactEmptyIconBox,
+                            {
+                              backgroundColor: isDark ? 'rgba(59, 130, 246, 0.14)' : '#EFF6FF',
+                              borderColor: isDark ? 'rgba(96, 165, 250, 0.3)' : '#BFDBFE',
+                            },
+                          ]}
+                        >
+                          <Calendar size={18} color={isDark ? '#60A5FA' : '#2563EB'} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.compactEmptyTitle, { color: primaryText }]} numberOfLines={1}>
+                            No Program Session Created
+                          </Text>
+                          <Text style={[styles.compactEmptySub, { color: secondaryText }]} numberOfLines={2}>
+                            Schedule a Sunday School, VBS, or event date to enable check-in.
+                          </Text>
+                        </View>
+                      </View>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.compactCreateSessionBtn,
+                          {
+                            backgroundColor: isDark ? '#FFFFFF' : '#0F172A',
+                          },
+                        ]}
+                        onPress={handleOpenAddSession}
+                        activeOpacity={0.85}
+                      >
+                        <Plus size={14} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.5} />
+                        <Text
+                          style={[
+                            styles.compactCreateSessionBtnText,
+                            { color: isDark ? '#000000' : '#FFFFFF' },
+                          ]}
+                        >
+                          Create Program Session
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                }
+
+                const visual = getKidsProgramVisual(selectedSession.programType, isDark);
+                const displayTitle = selectedSession.programTitle || visual.label;
+                const normTitle = displayTitle.trim().toLowerCase();
+                const showDistinctCategory =
+                  normTitle !== visual.label.trim().toLowerCase() &&
+                  normTitle !== visual.shortLabel.trim().toLowerCase();
+
+                const isFinalized = Boolean(selectedSession.attendanceFinalized);
+                const statusMeta = isFinalized
+                  ? {
+                      label: 'FINALIZED',
+                      dot: '#10B981',
+                      text: isDark ? '#34D399' : '#047857',
+                      bg: isDark ? 'rgba(16, 185, 129, 0.16)' : '#ECFDF5',
+                      border: isDark ? 'rgba(52, 211, 153, 0.35)' : '#A7F3D0',
+                    }
+                  : selectedSession.status === 'upcoming'
+                  ? {
+                      label: 'UPCOMING',
+                      dot: '#3B82F6',
+                      text: isDark ? '#60A5FA' : '#1D4ED8',
+                      bg: isDark ? 'rgba(59, 130, 246, 0.16)' : '#EFF6FF',
+                      border: isDark ? 'rgba(96, 165, 250, 0.35)' : '#BFDBFE',
+                    }
+                  : selectedSession.status === 'completed'
+                  ? {
+                      label: 'COMPLETED',
+                      dot: '#F59E0B',
+                      text: isDark ? '#FBBF24' : '#B45309',
+                      bg: isDark ? 'rgba(245, 158, 11, 0.16)' : '#FFFBEB',
+                      border: isDark ? 'rgba(251, 191, 36, 0.35)' : '#FDE68A',
+                    }
+                  : {
+                      label: 'ACTIVE',
+                      dot: '#10B981',
+                      text: isDark ? '#34D399' : '#059669',
+                      bg: isDark ? 'rgba(16, 185, 129, 0.16)' : '#ECFDF5',
+                      border: isDark ? 'rgba(52, 211, 153, 0.35)' : '#A7F3D0',
+                    };
+
+                const presentTotal = selectedSession.presentCount ?? sessionCustodyRecords.length;
+                const absentTotal = selectedSession.absentCount ?? 0;
+                const liveCheckedInCount = sessionCustodyRecords.filter(c => c.status === 'active').length;
+                const assignedFacultyCount = selectedSession.assignedTeacherIds?.length || 0;
+
+                return (
+                  <View style={[styles.sessionHeroCard, { backgroundColor: cardSurface, borderColor }]}>
+                    {/* Program Color Accent Strip */}
+                    <View style={[styles.programCardAccentBar, { backgroundColor: visual.accentColor }]} />
+
+                    <View style={styles.sessionCardBody}>
+                      {/* Header Row: Icon + Program Name (+ Single Category Badge if distinct) + Status Pill */}
+                      <View style={styles.sessionHeaderRow}>
+                        <View
+                          style={[
+                            styles.programEmojiBox,
+                            { backgroundColor: visual.softBg, borderColor: visual.softBorder },
+                          ]}
+                        >
+                          <Image
+                            source={visual.iconImage}
+                            style={{ width: 30, height: 30 }}
+                            resizeMode="contain"
+                          />
+                        </View>
+
+                        <View style={{ flex: 1, paddingRight: 8 }}>
+                          {showDistinctCategory && (
+                            <View
+                              style={[
+                                styles.categoryTagInline,
+                                { backgroundColor: visual.softBg, borderColor: visual.softBorder },
+                              ]}
+                            >
+                              <Text style={[styles.categoryTagInlineText, { color: visual.accentColor }]}>
+                                {visual.shortLabel.toUpperCase()}
+                              </Text>
+                            </View>
+                          )}
+                          <Text style={[styles.selectedSessionTitle, { color: primaryText }]} numberOfLines={2}>
+                            {displayTitle}
+                          </Text>
+                          <Text style={[styles.programSessionSub, { color: secondaryText }]} numberOfLines={1}>
+                            {selectedSession.description?.trim() || 'Kids Ministry Attendance Session'}
+                          </Text>
+                        </View>
+
+                        <View
+                          style={[
+                            styles.liveStatusPill,
+                            { backgroundColor: statusMeta.bg, borderColor: statusMeta.border },
+                          ]}
+                        >
+                          <View style={[styles.livePulseDot, { backgroundColor: statusMeta.dot }]} />
+                          <Text style={[styles.liveStatusText, { color: statusMeta.text }]}>
+                            {statusMeta.label}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* 3-Column Equal Metadata Grid (Single Clear Date, Time, Faculty) */}
+                      <View style={styles.sessionMetaGrid}>
+                        <View style={[styles.metaGridTile, { backgroundColor: secondarySurface, borderColor }]}>
+                          <View style={styles.metaGridLabelRow}>
+                            <Calendar size={12} color={visual.accentColor} />
+                            <Text style={[styles.metaGridEyebrow, { color: secondaryText }]}>DATE</Text>
+                          </View>
+                          <Text style={[styles.metaGridValue, { color: primaryText }]} numberOfLines={1}>
+                            {formatDateMonthYear(selectedSession.date) || 'Not Set'}
+                          </Text>
+                        </View>
+
+                        <View style={[styles.metaGridTile, { backgroundColor: secondarySurface, borderColor }]}>
+                          <View style={styles.metaGridLabelRow}>
+                            <Clock size={12} color="#3B82F6" />
+                            <Text style={[styles.metaGridEyebrow, { color: secondaryText }]}>TIME</Text>
+                          </View>
+                          <Text style={[styles.metaGridValue, { color: primaryText }]} numberOfLines={1}>
+                            {selectedSession.startTime || 'Not Set'}
+                          </Text>
+                        </View>
+
+                        <View style={[styles.metaGridTile, { backgroundColor: secondarySurface, borderColor }]}>
+                          <View style={styles.metaGridLabelRow}>
+                            <Users size={12} color="#10B981" />
+                            <Text style={[styles.metaGridEyebrow, { color: secondaryText }]}>FACULTY</Text>
+                          </View>
+                          <Text style={[styles.metaGridValue, { color: primaryText }]} numberOfLines={1}>
+                            {assignedFacultyCount} Assigned
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Attendance Summary Banner */}
+                      {selectedSession ? (
+                        <View
+                          style={[
+                            styles.finalizeBar,
+                            {
+                              backgroundColor: isFinalized
+                                ? isDark
+                                  ? 'rgba(16, 185, 129, 0.12)'
+                                  : '#F0FDF4'
+                                : secondarySurface,
+                              borderColor: isFinalized
+                                ? isDark
+                                  ? 'rgba(52, 211, 153, 0.35)'
+                                  : '#BBF7D0'
+                                : borderColor,
+                            },
+                          ]}
+                        >
+                          <View style={styles.finalizeLeft}>
+                            <CheckCircle
+                              size={16}
+                              color={isFinalized ? '#10B981' : '#3B82F6'}
+                            />
+                            <View style={{ flex: 1 }}>
+                              <Text
+                                style={[
+                                  styles.finalizeBarTitle,
+                                  { color: isFinalized ? (isDark ? '#34D399' : '#047857') : primaryText },
+                                ]}
+                              >
+                                {isFinalized ? 'Attendance Finalized' : 'Attendance Open'}
+                              </Text>
+                              {!isFinalized && (
+                                <Text style={[styles.finalizeBarSub, { color: secondaryText }]}>
+                                  {liveCheckedInCount} checked in · Tap finalize after service
+                                </Text>
+                              )}
+                            </View>
+                          </View>
+
+                          {isFinalized ? (
+                            <View style={styles.attendanceStatsPills}>
+                              <View
+                                style={[
+                                  styles.attStatChip,
+                                  {
+                                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.2)' : '#DCFCE7',
+                                  },
+                                ]}
+                              >
+                                <Text style={[styles.attStatChipText, { color: isDark ? '#6EE7B7' : '#047857' }]}>
+                                  {presentTotal} Present
+                                </Text>
+                              </View>
+                              <View
+                                style={[
+                                  styles.attStatChip,
+                                  {
+                                    backgroundColor: isDark ? 'rgba(239, 68, 68, 0.2)' : '#FEE2E2',
+                                  },
+                                ]}
+                              >
+                                <Text style={[styles.attStatChipText, { color: isDark ? '#FCA5A5' : '#B91C1C' }]}>
+                                  {absentTotal} Absent
+                                </Text>
+                              </View>
+                            </View>
+                          ) : (
+                            <TouchableOpacity
+                              style={[
+                                styles.finalizeActionBtn,
+                                { backgroundColor: '#10B981', opacity: finalizingSession ? 0.7 : 1 },
+                              ]}
+                              onPress={handleFinalizeSelectedSession}
+                              disabled={finalizingSession}
+                              activeOpacity={0.85}
+                            >
+                              {finalizingSession ? (
+                                <ActivityIndicator size="small" color="#FFFFFF" />
+                              ) : (
+                                <Text style={styles.finalizeActionBtnText}>Finalize</Text>
+                              )}
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      ) : null}
+
+                      {/* Clean Uniform 3-Button Action Toolbar (Add | Edit | Delete) */}
+                      <View style={styles.sessionActionsToolbar}>
+                        <TouchableOpacity
+                          style={[
+                            styles.toolbarPrimaryBtn,
+                            { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' },
+                          ]}
+                          onPress={handleOpenAddSession}
+                          activeOpacity={0.85}
+                        >
+                          <Plus size={14} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.5} />
+                          <Text
+                            style={[
+                              styles.toolbarPrimaryBtnText,
+                              { color: isDark ? '#000000' : '#FFFFFF' },
+                            ]}
+                          >
+                            Add
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.toolbarSecondaryBtn,
+                            { backgroundColor: secondarySurface, borderColor },
+                          ]}
+                          onPress={() => handleOpenEditSession(selectedSession)}
+                          activeOpacity={0.82}
+                        >
+                          <Edit3 size={14} color={primaryText} />
+                          <Text style={[styles.toolbarSecondaryBtnText, { color: primaryText }]}>
+                            Edit
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.toolbarDeleteBtn,
+                            {
+                              backgroundColor: isDark ? 'rgba(239, 68, 68, 0.14)' : '#FEF2F2',
+                              borderColor: isDark ? 'rgba(239, 68, 68, 0.35)' : '#FECACA',
+                            },
+                          ]}
+                          onPress={() => handleDeleteSession(selectedSession)}
+                          activeOpacity={0.82}
+                        >
+                          <Trash2 size={14} color="#EF4444" />
+                          <Text style={styles.toolbarDeleteBtnText}>Delete</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {/* Session Switcher Tray */}
+                      {programSessions.length > 0 && (
+                        <View style={[styles.sessionSwitcherTray, { borderTopColor: borderColor }]}>
+                          <View style={styles.trayHeaderRow}>
+                            <Text style={[styles.trayHeading, { color: secondaryText }]}>
+                              PROGRAM SESSIONS
+                            </Text>
+                            <TouchableOpacity
+                              style={[
+                                styles.manageAllBtn,
+                                {
+                                  backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF',
+                                },
+                              ]}
+                              onPress={() => {
+                                setSessionToEdit(null);
+                                setSessionManagerTab('list');
+                                setShowSessionManagerModal(true);
+                              }}
+                              activeOpacity={0.8}
+                            >
+                              <Text style={[styles.trayCount, { color: isDark ? '#60A5FA' : '#2563EB' }]}>
+                                Manage All ({filteredSessions.length})
+                              </Text>
+                              <ChevronRight size={13} color={isDark ? '#60A5FA' : '#2563EB'} />
+                            </TouchableOpacity>
+                          </View>
+
+                          {programSessions.length > 1 && (
+                            <>
+                              {/* Quick Program Type Filter Chips */}
+                              <ScrollView
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                                contentContainerStyle={styles.sessionTypeChipsRow}
+                              >
+                                {(
+                                  [
+                                    'all',
+                                    'sunday_school',
+                                    'vbs',
+                                    'special_meeting',
+                                    'childrens_worship',
+                                    'summer_camp',
+                                    'bible_study',
+                                  ] as const
+                                ).map(pType => {
+                                  const isSel = sessionFilterType === pType;
+                                  const chipLabel =
+                                    pType === 'all'
+                                      ? 'All'
+                                      : getKidsProgramVisual(pType, isDark).shortLabel;
+                                  return (
+                                    <TouchableOpacity
+                                      key={pType}
+                                      style={[
+                                        styles.sessionTypeChip,
+                                        { backgroundColor: secondarySurface, borderColor },
+                                        isSel && {
+                                          backgroundColor: isDark ? '#FFFFFF' : '#0F172A',
+                                          borderColor: isDark ? '#FFFFFF' : '#0F172A',
+                                        },
+                                      ]}
+                                      onPress={() => setSessionFilterType(pType)}
+                                    >
+                                      <Text
+                                        style={[
+                                          styles.sessionTypeChipText,
+                                          { color: secondaryText },
+                                          isSel && {
+                                            color: isDark ? '#000000' : '#FFFFFF',
+                                            fontWeight: '800',
+                                          },
+                                        ]}
+                                      >
+                                        {chipLabel}
+                                      </Text>
+                                    </TouchableOpacity>
+                                  );
+                                })}
+                              </ScrollView>
+
+                              {/* Horizontal Sessions Carousel */}
+                              <ScrollView
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                                contentContainerStyle={styles.sessionsCarousel}
+                              >
+                                {filteredSessions.map(sess => {
+                                  const isSelected = selectedSession?.id === sess.id;
+                                  const sessVisual = getKidsProgramVisual(sess.programType, isDark);
+                                  const pillBadge = sess.attendanceFinalized
+                                    ? 'Finalized'
+                                    : isSelected
+                                    ? 'Active'
+                                    : sess.status === 'upcoming'
+                                    ? 'Upcoming'
+                                    : 'Open';
+                                  return (
+                                    <TouchableOpacity
+                                      key={sess.id}
+                                      style={[
+                                        styles.sessionCardPill,
+                                        { backgroundColor: secondarySurface, borderColor },
+                                        isSelected && {
+                                          borderColor: sessVisual.accentColor,
+                                          borderWidth: 1.5,
+                                          backgroundColor: sessVisual.softBg,
+                                        },
+                                      ]}
+                                      onPress={() => setSelectedSession(sess)}
+                                      activeOpacity={0.82}
+                                    >
+                                      <View style={styles.sessionPillTopRow}>
+                                        <View
+                                          style={[
+                                            styles.sessionPillEmojiWrap,
+                                            { backgroundColor: isSelected ? cardSurface : sessVisual.softBg },
+                                          ]}
+                                        >
+                                          <Image
+                                            source={sessVisual.iconImage}
+                                            style={{ width: 17, height: 17 }}
+                                            resizeMode="contain"
+                                          />
+                                        </View>
+                                        <View
+                                          style={[
+                                            styles.activeTagBadge,
+                                            {
+                                              backgroundColor: isSelected
+                                                ? sessVisual.accentColor
+                                                : isDark
+                                                ? 'rgba(148, 163, 184, 0.2)'
+                                                : '#E2E8F0',
+                                            },
+                                          ]}
+                                        >
+                                          <Text
+                                            style={[
+                                              styles.activeTagText,
+                                              {
+                                                color: isSelected ? '#FFFFFF' : secondaryText,
+                                              },
+                                            ]}
+                                          >
+                                            {pillBadge}
+                                          </Text>
+                                        </View>
+                                      </View>
+
+                                      <Text
+                                        style={[styles.sessionPillTitle, { color: primaryText }]}
+                                        numberOfLines={1}
+                                      >
+                                        {sess.programTitle}
+                                      </Text>
+
+                                      <Text style={[styles.sessionPillDate, { color: secondaryText }]} numberOfLines={1}>
+                                        {formatDateMonthYear(sess.date)}
+                                        {sess.startTime ? ` · ${sess.startTime}` : ''}
+                                      </Text>
+                                    </TouchableOpacity>
+                                  );
+                                })}
+                              </ScrollView>
+                            </>
+                          )}
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                );
+              })()}
+
+              {/* 4 Clean & Truthful Program-Scoped Executive Metric Cards */}
               <View style={styles.kpiGrid}>
                 {/* 1. Enrolled Children */}
-                <View style={styles.kpiCard}>
+                <View style={[styles.kpiCard, { backgroundColor: cardSurface, borderColor }]}>
                   <View style={styles.kpiHeaderRow}>
                     <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
                       <Users size={16} color="#60A5FA" />
                     </View>
-                    <Text style={styles.kpiNumber}>{children.length}</Text>
+                    <Text style={[styles.kpiNumber, { color: primaryText }]}>{children.length}</Text>
                   </View>
-                  <Text style={styles.kpiTitle}>Enrolled Kids</Text>
-                  <Text style={styles.kpiSub}>Total Sunday School</Text>
+                  <Text style={[styles.kpiTitle, { color: primaryText }]}>Enrolled Kids</Text>
+                  <Text style={[styles.kpiSub, { color: secondaryText }]}>Total registered</Text>
                 </View>
 
-                {/* 2. Checked-In Today */}
-                <View style={styles.kpiCard}>
+                {/* 2. Checked-In for Selected Program Session */}
+                <View style={[styles.kpiCard, { backgroundColor: cardSurface, borderColor }]}>
                   <View style={styles.kpiHeaderRow}>
                     <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
                       <UserCheck size={16} color="#34D399" />
                     </View>
                     <Text style={[styles.kpiNumber, { color: '#34D399' }]}>
-                      {children.filter(c => c.custodyStatus === 'checked_in').length}
+                      {sessionCustodyRecords.filter(c => c.status === 'active').length}
                     </Text>
                   </View>
-                  <Text style={styles.kpiTitle}>Checked-In</Text>
-                  <Text style={styles.kpiSub}>Active today in class</Text>
+                  <Text style={[styles.kpiTitle, { color: primaryText }]}>Checked-In</Text>
+                  <Text style={[styles.kpiSub, { color: secondaryText }]} numberOfLines={1}>
+                    {selectedSession?.programTitle || 'No active session'}
+                  </Text>
                 </View>
 
-                {/* 3. Faculty On Duty */}
-                <View style={styles.kpiCard}>
+                {/* 3. Faculty On Duty for Selected Session */}
+                <View style={[styles.kpiCard, { backgroundColor: cardSurface, borderColor }]}>
                   <View style={styles.kpiHeaderRow}>
                     <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
                       <Clock size={16} color="#FBBF24" />
                     </View>
                     <Text style={[styles.kpiNumber, { color: '#FBBF24' }]}>
-                      {todayTeacherAttendance.length}/{teachers.length || 5}
+                      {selectedSession
+                        ? `${sessionTeacherAttendance.length}/${selectedSession.assignedTeacherIds?.length || teachers.length || 0}`
+                        : '0/0'}
                     </Text>
                   </View>
-                  <Text style={styles.kpiTitle}>Faculty On Duty</Text>
-                  <Text style={styles.kpiSub}>Clocked-in teachers</Text>
+                  <Text style={[styles.kpiTitle, { color: primaryText }]}>Faculty On Duty</Text>
+                  <Text style={[styles.kpiSub, { color: secondaryText }]}>Present / Assigned</Text>
                 </View>
 
-                {/* 4. Face Scan Ready */}
-                <View style={styles.kpiCard}>
+                {/* 4. Verified Face Scans in Selected Session */}
+                <View style={[styles.kpiCard, { backgroundColor: cardSurface, borderColor }]}>
                   <View style={styles.kpiHeaderRow}>
                     <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(139, 92, 246, 0.15)' }]}>
                       <Camera size={16} color="#C084FC" />
                     </View>
                     <Text style={[styles.kpiNumber, { color: '#A78BFA' }]}>
-                      {children.filter(c => c.faceEnrolled).length}
+                      {sessionAttendanceLogs.filter(a => a.status !== 'absent' && a.method === 'face_scan').length}
                     </Text>
                   </View>
-                  <Text style={styles.kpiTitle}>Face Scan</Text>
-                  <Text style={styles.kpiSub}>Biometric profiles</Text>
+                  <Text style={[styles.kpiTitle, { color: primaryText }]}>Face Scans</Text>
+                  <Text style={[styles.kpiSub, { color: secondaryText }]}>Verified this session</Text>
                 </View>
               </View>
 
-              {/* Sunday Morning Stations */}
+              {/* Active Program Attendance Stations */}
               <View style={{ gap: 8, marginTop: 14, marginBottom: 4 }}>
-                <Text style={styles.sectionHeading}>SUNDAY MORNING ACTIVE STATIONS</Text>
+                <Text style={[styles.sectionHeading, { color: secondaryText }]}>
+                  ACTIVE ATTENDANCE STATIONS ·{' '}
+                  {selectedSession ? selectedSession.programTitle.toUpperCase() : 'NO SESSION SELECTED'}
+                </Text>
 
                 <View style={styles.stationsRow}>
-                  {/* Face Scan Kiosk */}
+                  {/* Face Scan Entrance Check-In */}
                   <TouchableOpacity
-                    style={styles.stationCard}
-                    onPress={() => navigation.navigate('KidsFaceScanKiosk')}
+                    style={[styles.stationCard, { backgroundColor: cardSurface, borderColor }]}
+                    onPress={() => {
+                      if (!selectedSession) {
+                        Alert.alert(
+                          'Create a Program Session First',
+                          'Please create a program session with its event date first so face scans and check-ins are linked to the right event.',
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Create Session', onPress: handleOpenAddSession },
+                          ]
+                        );
+                        return;
+                      }
+                      navigation.navigate('KidsFaceScanKiosk', {
+                        targetSessionId: selectedSession.id,
+                        sessionTitle: selectedSession.programTitle,
+                        programType: selectedSession.programType,
+                        sessionDate: selectedSession.date,
+                      });
+                    }}
                     activeOpacity={0.85}
                   >
                     <View style={[styles.stationIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
                       <Camera size={18} color="#60A5FA" />
                     </View>
-                    <Text style={styles.stationTitle}>Face Scan</Text>
-                    <Text style={styles.stationSub}>Entrance kiosk</Text>
+                    <Text style={[styles.stationTitle, { color: primaryText }]}>Entrance Check-In</Text>
+                    <Text style={[styles.stationSub, { color: secondaryText }]}>
+                      {selectedSession
+                        ? `Face, QR · ${formatDateMonthYear(selectedSession.date)}`
+                        : 'Select or create a session'}
+                    </Text>
                     <View style={styles.stationArrow}>
                       <ChevronRight size={14} color="#60A5FA" />
                     </View>
                   </TouchableOpacity>
 
-                  {/* Teacher Exit */}
+                  {/* Teacher Exit Scanner */}
                   <TouchableOpacity
-                    style={styles.stationCard}
-                    onPress={() => navigation.navigate('KidsCheckOutScanner')}
+                    style={[styles.stationCard, { backgroundColor: cardSurface, borderColor }]}
+                    onPress={() => {
+                      if (!selectedSession) {
+                        Alert.alert(
+                          'Create a Program Session First',
+                          'Please create or select a program session before opening the dismissal scanner.',
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Create Session', onPress: handleOpenAddSession },
+                          ]
+                        );
+                        return;
+                      }
+                      navigation.navigate('KidsCheckOutScanner', {
+                        targetSessionId: selectedSession.id,
+                        sessionTitle: selectedSession.programTitle,
+                        programType: selectedSession.programType,
+                        sessionDate: selectedSession.date,
+                      });
+                    }}
                     activeOpacity={0.85}
                   >
                     <View style={[styles.stationIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
                       <UserCheck size={18} color="#34D399" />
                     </View>
-                    <Text style={styles.stationTitle}>Teacher Exit</Text>
-                    <Text style={styles.stationSub}>Dismissal scanner</Text>
+                    <Text style={[styles.stationTitle, { color: primaryText }]}>Teacher Exit</Text>
+                    <Text style={[styles.stationSub, { color: secondaryText }]}>
+                      {selectedSession
+                        ? `Dismissal · ${formatDateMonthYear(selectedSession.date)}`
+                        : 'Dismissal scanner'}
+                    </Text>
                     <View style={styles.stationArrow}>
                       <ChevronRight size={14} color="#34D399" />
-                    </View>
-                  </TouchableOpacity>
-
-                  {/* Faculty Clock-In */}
-                  <TouchableOpacity
-                    style={styles.stationCard}
-                    onPress={() => navigation.navigate('KidsTeacherKiosk')}
-                    activeOpacity={0.85}
-                  >
-                    <View style={[styles.stationIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
-                      <Clock size={18} color="#FBBF24" />
-                    </View>
-                    <Text style={styles.stationTitle}>Clock-In</Text>
-                    <Text style={styles.stationSub}>Teacher arrival</Text>
-                    <View style={styles.stationArrow}>
-                      <ChevronRight size={14} color="#FBBF24" />
                     </View>
                   </TouchableOpacity>
                 </View>
@@ -460,12 +1258,12 @@ export default function AdminKidsHub({ navigation }: any) {
 
               {/* Management Portals - Clean 2x4 Grid (All 8 Portals in uniform card design) */}
               <View style={{ gap: 8, marginTop: 12 }}>
-                <Text style={styles.sectionHeading}>MANAGEMENT PORTALS</Text>
+                <Text style={[styles.sectionHeading, { color: secondaryText }]}>MANAGEMENT PORTALS</Text>
 
                 <View style={styles.portalGrid2x2}>
                   {/* Grid 1: Children Roster */}
                   <TouchableOpacity
-                    style={styles.portalGridCard}
+                    style={[styles.portalGridCard, { backgroundColor: cardSurface, borderColor }]}
                     onPress={() => setActiveTab('children')}
                     activeOpacity={0.82}
                   >
@@ -473,17 +1271,17 @@ export default function AdminKidsHub({ navigation }: any) {
                       <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.12)' }]}>
                         <Users size={18} color="#60A5FA" />
                       </View>
-                      <ChevronRight size={15} color="#64748B" />
+                      <ChevronRight size={15} color={secondaryText} />
                     </View>
-                    <Text style={styles.portalGridTitle}>Children Roster</Text>
-                    <Text style={styles.portalGridSub}>
+                    <Text style={[styles.portalGridTitle, { color: primaryText }]}>Children Roster</Text>
+                    <Text style={[styles.portalGridSub, { color: secondaryText }]}>
                       {children.length} enrolled · Medical & alerts
                     </Text>
                   </TouchableOpacity>
 
                   {/* Grid 2: Classrooms & Capacities */}
                   <TouchableOpacity
-                    style={styles.portalGridCard}
+                    style={[styles.portalGridCard, { backgroundColor: cardSurface, borderColor }]}
                     onPress={() => setActiveTab('classes')}
                     activeOpacity={0.82}
                   >
@@ -491,17 +1289,17 @@ export default function AdminKidsHub({ navigation }: any) {
                       <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
                         <Calendar size={18} color="#34D399" />
                       </View>
-                      <ChevronRight size={15} color="#64748B" />
+                      <ChevronRight size={15} color={secondaryText} />
                     </View>
-                    <Text style={styles.portalGridTitle}>Classrooms</Text>
-                    <Text style={styles.portalGridSub}>
+                    <Text style={[styles.portalGridTitle, { color: primaryText }]}>Classrooms</Text>
+                    <Text style={[styles.portalGridSub, { color: secondaryText }]}>
                       {classes.length} rooms · Capacities & age tiers
                     </Text>
                   </TouchableOpacity>
 
                   {/* Grid 3: Sunday School Faculty */}
                   <TouchableOpacity
-                    style={styles.portalGridCard}
+                    style={[styles.portalGridCard, { backgroundColor: cardSurface, borderColor }]}
                     onPress={() => setShowTeachersModal(true)}
                     activeOpacity={0.82}
                   >
@@ -509,17 +1307,17 @@ export default function AdminKidsHub({ navigation }: any) {
                       <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.12)' }]}>
                         <ShieldCheck size={18} color="#FBBF24" />
                       </View>
-                      <ChevronRight size={15} color="#64748B" />
+                      <ChevronRight size={15} color={secondaryText} />
                     </View>
-                    <Text style={styles.portalGridTitle}>Faculty & Helpers</Text>
-                    <Text style={styles.portalGridSub}>
-                      {teachers.length} members · {todayTeacherAttendance.length} on duty
+                    <Text style={[styles.portalGridTitle, { color: primaryText }]}>Faculty & Helpers</Text>
+                    <Text style={[styles.portalGridSub, { color: secondaryText }]}>
+                      {teachers.length} members · {sessionTeacherAttendance.length > 0 ? sessionTeacherAttendance.length : todayTeacherAttendance.length} on duty
                     </Text>
                   </TouchableOpacity>
 
                   {/* Grid 4: Bible Learning Center CMS */}
                   <TouchableOpacity
-                    style={styles.portalGridCard}
+                    style={[styles.portalGridCard, { backgroundColor: cardSurface, borderColor }]}
                     onPress={() => setShowContentManagerModal(true)}
                     activeOpacity={0.82}
                   >
@@ -527,35 +1325,35 @@ export default function AdminKidsHub({ navigation }: any) {
                       <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(168, 85, 247, 0.12)' }]}>
                         <BookOpen size={18} color="#C084FC" />
                       </View>
-                      <ChevronRight size={15} color="#64748B" />
+                      <ChevronRight size={15} color={secondaryText} />
                     </View>
-                    <Text style={styles.portalGridTitle}>Bible LMS CMS</Text>
-                    <Text style={styles.portalGridSub}>
+                    <Text style={[styles.portalGridTitle, { color: primaryText }]}>Bible LMS CMS</Text>
+                    <Text style={[styles.portalGridSub, { color: secondaryText }]}>
                       {stories.length} stories · {quizzes.length} quizzes · {songs.length} songs
                     </Text>
                   </TouchableOpacity>
 
                   {/* Grid 5: 52-Week Curriculum */}
                   <TouchableOpacity
-                    style={styles.portalGridCard}
-                    onPress={() => setActiveTab('curriculum')}
+                    style={[styles.portalGridCard, { backgroundColor: cardSurface, borderColor }]}
+                    onPress={() => setShowCurriculumModal(true)}
                     activeOpacity={0.82}
                   >
                     <View style={styles.portalCardHeader}>
                       <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(244, 114, 182, 0.12)' }]}>
                         <Sparkles size={18} color="#F472B6" />
                       </View>
-                      <ChevronRight size={15} color="#64748B" />
+                      <ChevronRight size={15} color={secondaryText} />
                     </View>
-                    <Text style={styles.portalGridTitle}>52-Wk Curriculum</Text>
-                    <Text style={styles.portalGridSub}>
+                    <Text style={[styles.portalGridTitle, { color: primaryText }]}>52-Wk Curriculum</Text>
+                    <Text style={[styles.portalGridSub, { color: secondaryText }]}>
                       52 weekly scripture & memory plans
                     </Text>
                   </TouchableOpacity>
 
                   {/* Grid 6: AI Lesson Studio */}
                   <TouchableOpacity
-                    style={styles.portalGridCard}
+                    style={[styles.portalGridCard, { backgroundColor: cardSurface, borderColor }]}
                     onPress={() => setShowAICopilotModal(true)}
                     activeOpacity={0.82}
                   >
@@ -563,17 +1361,17 @@ export default function AdminKidsHub({ navigation }: any) {
                       <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(147, 51, 234, 0.12)' }]}>
                         <Sparkles size={18} color="#A855F7" />
                       </View>
-                      <ChevronRight size={15} color="#64748B" />
+                      <ChevronRight size={15} color={secondaryText} />
                     </View>
-                    <Text style={styles.portalGridTitle}>Claude AI Studio</Text>
-                    <Text style={styles.portalGridSub}>
+                    <Text style={[styles.portalGridTitle, { color: primaryText }]}>Rhema AI Studio</Text>
+                    <Text style={[styles.portalGridSub, { color: secondaryText }]}>
                       Automated crafts, stories & quiz maker
                     </Text>
                   </TouchableOpacity>
 
                   {/* Grid 7: VBS & Special Camps */}
                   <TouchableOpacity
-                    style={styles.portalGridCard}
+                    style={[styles.portalGridCard, { backgroundColor: cardSurface, borderColor }]}
                     onPress={() => setShowVBSModal(true)}
                     activeOpacity={0.82}
                   >
@@ -581,17 +1379,17 @@ export default function AdminKidsHub({ navigation }: any) {
                       <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(239, 68, 68, 0.12)' }]}>
                         <Award size={18} color="#EF4444" />
                       </View>
-                      <ChevronRight size={15} color="#64748B" />
+                      <ChevronRight size={15} color={secondaryText} />
                     </View>
-                    <Text style={styles.portalGridTitle}>VBS & Camps</Text>
-                    <Text style={styles.portalGridSub}>
+                    <Text style={[styles.portalGridTitle, { color: primaryText }]}>VBS & Camps</Text>
+                    <Text style={[styles.portalGridSub, { color: secondaryText }]}>
                       Vacation Bible School registrations
                     </Text>
                   </TouchableOpacity>
 
                   {/* Grid 8: Analytics & Safety Reports */}
                   <TouchableOpacity
-                    style={styles.portalGridCard}
+                    style={[styles.portalGridCard, { backgroundColor: cardSurface, borderColor }]}
                     onPress={() => setShowReportsModal(true)}
                     activeOpacity={0.82}
                   >
@@ -599,10 +1397,10 @@ export default function AdminKidsHub({ navigation }: any) {
                       <View style={[styles.portalGridIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
                         <TrendingUp size={18} color="#34D399" />
                       </View>
-                      <ChevronRight size={15} color="#64748B" />
+                      <ChevronRight size={15} color={secondaryText} />
                     </View>
-                    <Text style={styles.portalGridTitle}>Safety Reports</Text>
-                    <Text style={styles.portalGridSub}>
+                    <Text style={[styles.portalGridTitle, { color: primaryText }]}>Safety Reports</Text>
+                    <Text style={[styles.portalGridSub, { color: secondaryText }]}>
                       Attendance logs, incident records & PDF
                     </Text>
                   </TouchableOpacity>
@@ -617,53 +1415,66 @@ export default function AdminKidsHub({ navigation }: any) {
           {activeTab === 'children' && (
             <>
               {/* Search Bar */}
-              <View style={styles.searchBar}>
-                <Search size={16} color="#9CA3AF" />
+              <View style={[styles.searchBar, { backgroundColor: secondarySurface, borderColor }]}>
+                <Search size={16} color={secondaryText} />
                 <TextInput
-                  style={styles.searchInput}
+                  style={[styles.searchInput, { color: primaryText }]}
                   value={searchQuery}
                   onChangeText={setSearchQuery}
                   placeholder="Filter children by name, phone, or ID..."
-                  placeholderTextColor="#6B7280"
+                  placeholderTextColor={secondaryText}
                 />
                 {searchQuery.length > 0 && (
                   <TouchableOpacity onPress={() => setSearchQuery('')}>
-                    <X size={16} color="#9CA3AF" />
+                    <X size={16} color={secondaryText} />
                   </TouchableOpacity>
                 )}
               </View>
 
               {filteredChildren.length === 0 ? (
-                <View style={styles.emptyCard}>
-                  <Text style={styles.emptyCardText}>No children found matching "{searchQuery}"</Text>
+                <View style={[styles.emptyCard, { backgroundColor: cardSurface, borderColor }]}>
+                  <Text style={[styles.emptyCardText, { color: secondaryText }]}>No children found matching "{searchQuery}"</Text>
                 </View>
               ) : (
                 filteredChildren.map(c => (
-                  <View key={c.id} style={styles.childCard}>
+                  <TouchableOpacity
+                    key={c.id}
+                    style={[styles.childCard, { backgroundColor: cardSurface, borderColor }]}
+                    onPress={() => setSelectedChildProfile(c)}
+                    activeOpacity={0.82}
+                  >
                     <View style={styles.childCardHeader}>
                       <View style={styles.avatarWrap}>
-                        <View style={styles.avatarCircle}>
-                          <Text style={styles.avatarInitials}>
-                            {c.firstName.charAt(0)}{c.lastName ? c.lastName.charAt(0) : ''}
-                          </Text>
+                        <View style={[styles.avatarCircle, { overflow: 'hidden' }]}>
+                          {c.photoUrl ? (
+                            <Image
+                              source={{ uri: c.photoUrl }}
+                              style={{ width: '100%', height: '100%' }}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <Text style={styles.avatarInitials}>
+                              {c.firstName.charAt(0)}{c.lastName ? c.lastName.charAt(0) : ''}
+                            </Text>
+                          )}
                         </View>
                         {c.faceEnrolled && (
-                          <View style={styles.faceCheckDot}>
+                          <View style={[styles.faceCheckDot, { borderColor: cardSurface }]}>
                             <Text style={{ fontSize: 8, color: '#FFFFFF' }}>✓</Text>
                           </View>
                         )}
                       </View>
 
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.childNameSerif}>{c.fullName}</Text>
+                        <Text style={[styles.childNameSerif, { color: primaryText }]}>{c.fullName}</Text>
 
-                        <Text style={styles.childMeta}>
+                        <Text style={[styles.childMeta, { color: secondaryText }]}>
                           Age: {c.age} · {c.gender === 'male' ? 'Boy' : 'Girl'} · {c.assignedClassName || 'Class'}
                         </Text>
 
                         {/* Kid ID Badge shown below Age */}
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                          <View style={styles.idBadge}>
+                          <View style={[styles.idBadge, { backgroundColor: secondarySurface, borderColor }]}>
                             <Text style={styles.idBadgeText}>ID: {c.childId}</Text>
                           </View>
                         </View>
@@ -698,19 +1509,19 @@ export default function AdminKidsHub({ navigation }: any) {
                       </TouchableOpacity>
                     </View>
 
-                    <View style={styles.childCardDivider} />
+                    <View style={[styles.childCardDivider, { backgroundColor: borderColor }]} />
 
                     <View style={styles.guardianRow}>
-                      <Text style={styles.guardianText} numberOfLines={1}>
+                      <Text style={[styles.guardianText, { color: secondaryText }]} numberOfLines={1}>
                         Parent: {c.parentName} ({c.parentPhone || 'No phone'})
                       </Text>
-                      <View style={styles.pickupPill}>
-                        <Text style={styles.pickupPillText}>
-                          {c.guardians ? c.guardians.length : 1} Pickups
+                      <View style={[styles.pickupPill, { backgroundColor: secondarySurface }]}>
+                        <Text style={[styles.pickupPillText, { color: primaryText }]}>
+                          {c.guardians ? c.guardians.length : 1} Pickups · View ›
                         </Text>
                       </View>
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 ))
               )}
             </>
@@ -722,14 +1533,14 @@ export default function AdminKidsHub({ navigation }: any) {
           {activeTab === 'classes' && (
             <View style={{ gap: 14 }}>
               {/* Annual Age Promotion Center Banner */}
-              <View style={styles.promotionBannerCard}>
+              <View style={[styles.promotionBannerCard, { backgroundColor: cardSurface, borderColor }]}>
                 <View style={styles.promotionBannerHeader}>
                   <View style={styles.gradIconBox}>
                     <GraduationCap size={22} color="#FBBF24" />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.promotionBannerTitle}>Annual Age Promotion Center</Text>
-                    <Text style={styles.promotionBannerSub}>
+                    <Text style={[styles.promotionBannerTitle, { color: primaryText }]}>Annual Age Promotion Center</Text>
+                    <Text style={[styles.promotionBannerSub, { color: secondaryText }]}>
                       {promotionCandidates.length > 0
                         ? `${promotionCandidates.length} children ready to graduate to next Sunday School tier`
                         : 'All children currently in their age-appropriate classes'}
@@ -748,12 +1559,12 @@ export default function AdminKidsHub({ navigation }: any) {
               </View>
 
               {/* Classes Action Header Bar */}
-              <View style={styles.classesActionBar}>
+              <View style={[styles.classesActionBar, { backgroundColor: cardSurface, borderColor }]}>
                 <View style={{ flex: 1, marginRight: 10 }}>
-                  <Text style={styles.classesHeaderTitle} numberOfLines={1}>
+                  <Text style={[styles.classesHeaderTitle, { color: primaryText }]} numberOfLines={1}>
                     Sunday School Classes ({classes.length})
                   </Text>
-                  <Text style={styles.classesHeaderSub} numberOfLines={2}>
+                  <Text style={[styles.classesHeaderSub, { color: secondaryText }]} numberOfLines={2}>
                     Create, edit, or delete classrooms
                   </Text>
                 </View>
@@ -768,10 +1579,10 @@ export default function AdminKidsHub({ navigation }: any) {
               </View>
 
               {classes.length === 0 ? (
-                <View style={styles.emptyClassesCard}>
-                  <GraduationCap size={34} color="#71717A" />
-                  <Text style={styles.emptyClassesTitle}>No Sunday School Classes Yet</Text>
-                  <Text style={styles.emptyClassesSub}>
+                <View style={[styles.emptyClassesCard, { backgroundColor: cardSurface, borderColor }]}>
+                  <GraduationCap size={34} color={secondaryText} />
+                  <Text style={[styles.emptyClassesTitle, { color: primaryText }]}>No Sunday School Classes Yet</Text>
+                  <Text style={[styles.emptyClassesSub, { color: secondaryText }]}>
                     Create your first classroom to start assigning children and teachers.
                   </Text>
                   <TouchableOpacity
@@ -796,16 +1607,18 @@ export default function AdminKidsHub({ navigation }: any) {
                       : '#10B981';
 
                   return (
-                    <View key={cls.id} style={styles.classCard}>
+                    <View key={cls.id} style={[styles.classCard, { backgroundColor: cardSurface, borderColor }]}>
                       <View style={styles.classCardHeader}>
                         <View style={{ flex: 1 }}>
                           <View style={styles.tierTag}>
                             <Text style={styles.tierTagText}>
-                              Age {cls.ageRange?.min ?? 0}–{cls.ageRange?.max ?? 14} yrs
+                              {cls.tier === 'mixed'
+                                ? 'Mixed Age Group · All Ages'
+                                : `Age ${cls.ageRange?.min ?? 0}–${cls.ageRange?.max ?? 14} yrs`}
                             </Text>
                           </View>
-                          <Text style={styles.classTitle}>{cls.name}</Text>
-                          <Text style={styles.classSchedule}>
+                          <Text style={[styles.classTitle, { color: primaryText }]}>{cls.name}</Text>
+                          <Text style={[styles.classSchedule, { color: secondaryText }]}>
                             {cls.roomNumber} · {cls.schedule?.dayOfWeek || 'Sunday'}s {cls.schedule?.startTime || '09:30'}–{cls.schedule?.endTime || '11:30'}
                           </Text>
                         </View>
@@ -814,12 +1627,12 @@ export default function AdminKidsHub({ navigation }: any) {
                           <Text style={[styles.capacityText, { color: barColor }]}>
                             {enrolledInClass} / {capacity}
                           </Text>
-                          <Text style={styles.capacitySub}>{percent}% Capacity</Text>
+                          <Text style={[styles.capacitySub, { color: secondaryText }]}>{percent}% Capacity</Text>
                         </View>
                       </View>
 
                       {/* Visual Capacity Bar */}
-                      <View style={styles.capacityBarTrack}>
+                      <View style={[styles.capacityBarTrack, { backgroundColor: secondarySurface }]}>
                         <View
                           style={[
                             styles.capacityBarFill,
@@ -831,10 +1644,10 @@ export default function AdminKidsHub({ navigation }: any) {
                         />
                       </View>
 
-                      <View style={styles.childCardDivider} />
+                      <View style={[styles.childCardDivider, { backgroundColor: borderColor }]} />
 
                       <View style={styles.classFooter}>
-                        <Text style={styles.teacherName} numberOfLines={1}>
+                        <Text style={[styles.teacherName, { color: primaryText }]} numberOfLines={1}>
                           Lead: {cls.leadTeacherName || 'TBD'}
                         </Text>
 
@@ -849,12 +1662,12 @@ export default function AdminKidsHub({ navigation }: any) {
                           </TouchableOpacity>
 
                           <TouchableOpacity
-                            style={styles.editClassBtn}
+                            style={[styles.editClassBtn, { backgroundColor: secondarySurface }]}
                             onPress={() => handleOpenEditClass(cls)}
                             activeOpacity={0.8}
                           >
-                            <Edit3 size={12} color="#9CA3AF" />
-                            <Text style={styles.editClassBtnText}>Edit</Text>
+                            <Edit3 size={12} color={secondaryText} />
+                            <Text style={[styles.editClassBtnText, { color: secondaryText }]}>Edit</Text>
                           </TouchableOpacity>
 
                           <TouchableOpacity
@@ -876,132 +1689,184 @@ export default function AdminKidsHub({ navigation }: any) {
           )}
 
           {/* ==================================================== */}
-          {/* TAB 4: 52-WEEK CURRICULUM                            */}
+          {/* TAB 4: CURRICULUM (52-WEEK OR CUSTOM WEEKLY)         */}
           {/* ==================================================== */}
-          {activeTab === 'curriculum' && (
-            <View style={{ gap: 12 }}>
-              <View style={styles.curriculumHero}>
-                <Sparkles size={20} color="#FBBF24" />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.curriculumHeroTitle}>52-Week Bilingual Curriculum</Text>
-                  <Text style={styles.curriculumHeroSub}>
-                    {curriculum.length || 52} Weeks · Telugu & English Syllabus for 2026-2027
-                  </Text>
-                </View>
-              </View>
+          {activeTab === 'curriculum' && (() => {
+            const { fiftyTwoWeekLessons, customLessons } = splitCurriculumLessons(curriculum);
+            const { lesson: activeLesson, mode: activeMode, activeDate } = resolveActiveCurriculumLesson({
+              config: curriculumConfig,
+              lessons: curriculum,
+            });
 
-              {/* 52-Week Full Syllabus Launcher */}
-              <TouchableOpacity
-                style={[styles.portalCard, { borderColor: '#10B981', borderWidth: 1 }]}
-                onPress={() => setShowCurriculumModal(true)}
-                activeOpacity={0.88}
-              >
-                <View style={[styles.portalIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]}>
-                  <Calendar size={22} color="#10B981" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.portalTitle, { color: '#10B981' }]}>
-                    Open 52-Week Curriculum Syllabus
-                  </Text>
-                  <Text style={styles.portalSub}>
-                    Browse Q1-Q4 schedules, set live Sunday active week & export to WhatsApp
-                  </Text>
-                </View>
-                <ChevronRight size={18} color="#10B981" />
-              </TouchableOpacity>
+            // Compute next upcoming lesson dynamically
+            let nextLesson: KidsCurriculumLesson | null = null;
+            let nextLessonDate: string | null = null;
+            if (activeMode === '52_week' && activeLesson) {
+              nextLesson = fiftyTwoWeekLessons.find(l => l.weekNumber === activeLesson.weekNumber + 1) || null;
+              if (nextLesson && curriculumConfig?.officialLaunchDate) {
+                nextLessonDate = getCurriculumWeekDate(curriculumConfig.officialLaunchDate, nextLesson.weekNumber);
+              }
+            } else if (activeMode === 'custom' && activeLesson) {
+              const idx = customLessons.findIndex(l => l.id === activeLesson.id);
+              nextLesson = idx >= 0 && idx + 1 < customLessons.length ? customLessons[idx + 1] : null;
+              nextLessonDate = nextLesson?.scheduledDate || null;
+            }
 
-              {/* Learning Content CMS Quick Launcher */}
-              <TouchableOpacity
-                style={[styles.portalCard, { borderColor: '#FBBF24', borderWidth: 1 }]}
-                onPress={() => setShowContentManagerModal(true)}
-                activeOpacity={0.88}
-              >
-                <View style={[styles.portalIconBox, { backgroundColor: 'rgba(251, 191, 36, 0.2)' }]}>
-                  <BookOpen size={22} color="#FBBF24" />
+            return (
+              <View style={{ gap: 12 }}>
+                <View style={[styles.curriculumHero, { backgroundColor: cardSurface, borderColor }]}>
+                  <Sparkles size={20} color="#FBBF24" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.curriculumHeroTitle, { color: primaryText }]}>
+                      {activeMode === '52_week' ? '52-Week Bilingual Curriculum' : 'Custom Weekly Curriculum'}
+                    </Text>
+                    <Text style={[styles.curriculumHeroSub, { color: secondaryText }]}>
+                      {activeMode === '52_week'
+                        ? `${fiftyTwoWeekLessons.length || 52} Weeks · ${
+                            curriculumConfig?.officialLaunchDate
+                              ? `Starts ${formatCurriculumDateDisplay(curriculumConfig.officialLaunchDate)}`
+                              : 'Start date not confirmed yet'
+                          }`
+                        : `${customLessons.length} Custom Weekly Lessons · Admin Scheduled Dates`}
+                    </Text>
+                  </View>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.portalTitle, { color: '#FBBF24' }]}>
-                    Open Bible Learning Center CMS
-                  </Text>
-                  <Text style={styles.portalSub}>
-                    Manage {stories.length} stories, {quizzes.length} interactive quizzes & {songs.length} action songs
-                  </Text>
-                </View>
-                <ChevronRight size={18} color="#FBBF24" />
-              </TouchableOpacity>
 
-              {/* Claude 3.5 Sonnet AI Studio Launcher */}
-              <TouchableOpacity
-                style={[styles.portalCard, { borderColor: '#8B5CF6', borderWidth: 1 }]}
-                onPress={() => setShowAICopilotModal(true)}
-                activeOpacity={0.88}
-              >
-                <View style={[styles.portalIconBox, { backgroundColor: 'rgba(139, 92, 246, 0.2)' }]}>
-                  <Sparkles size={22} color="#C084FC" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.portalTitle, { color: '#C084FC' }]}>
-                    Launch Claude 3.5 Sonnet AI Studio
-                  </Text>
-                  <Text style={styles.portalSub}>
-                    Generate bilingual lesson plans, 4-choice quizzes, storybooks & craft ideas
-                  </Text>
-                </View>
-                <ChevronRight size={18} color="#C084FC" />
-              </TouchableOpacity>
+                {/* Curriculum Manager Launcher (52-Week Toggle + Custom Builder) */}
+                <TouchableOpacity
+                  style={[styles.portalCard, { backgroundColor: cardSurface, borderColor: '#10B981', borderWidth: 1 }]}
+                  onPress={() => setShowCurriculumModal(true)}
+                  activeOpacity={0.88}
+                >
+                  <View style={[styles.portalIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]}>
+                    <Calendar size={22} color="#10B981" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.portalTitle, { color: '#10B981' }]}>
+                      Manage 52-Week & Custom Curriculum
+                    </Text>
+                    <Text style={[styles.portalSub, { color: secondaryText }]}>
+                      Toggle 52-Week Plan, confirm start date, or create custom weekly schedules
+                    </Text>
+                  </View>
+                  <ChevronRight size={18} color="#10B981" />
+                </TouchableOpacity>
 
-              {/* Active Lesson Card (Dynamic from Firestore) */}
-              {(() => {
-                const activeLesson = curriculum.find(l => l.isCurrentWeek) || curriculum[0];
-                if (!activeLesson) return null;
-                return (
-                  <View style={[styles.lessonCard, { borderColor: '#10B981' }]}>
+                {/* Learning Content CMS Quick Launcher */}
+                <TouchableOpacity
+                  style={[styles.portalCard, { backgroundColor: cardSurface, borderColor: '#FBBF24', borderWidth: 1 }]}
+                  onPress={() => setShowContentManagerModal(true)}
+                  activeOpacity={0.88}
+                >
+                  <View style={[styles.portalIconBox, { backgroundColor: 'rgba(251, 191, 36, 0.2)' }]}>
+                    <BookOpen size={22} color="#FBBF24" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.portalTitle, { color: '#FBBF24' }]}>
+                      Open Bible Learning Center CMS
+                    </Text>
+                    <Text style={[styles.portalSub, { color: secondaryText }]}>
+                      Manage {stories.length} stories, {quizzes.length} interactive quizzes & {songs.length} action songs
+                    </Text>
+                  </View>
+                  <ChevronRight size={18} color="#FBBF24" />
+                </TouchableOpacity>
+
+                {/* Rhema AI Studio Launcher */}
+                <TouchableOpacity
+                  style={[styles.portalCard, { backgroundColor: cardSurface, borderColor: '#8B5CF6', borderWidth: 1 }]}
+                  onPress={() => setShowAICopilotModal(true)}
+                  activeOpacity={0.88}
+                >
+                  <View style={[styles.portalIconBox, { backgroundColor: 'rgba(139, 92, 246, 0.2)' }]}>
+                    <Sparkles size={22} color="#C084FC" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.portalTitle, { color: '#C084FC' }]}>
+                      Launch Rhema AI Studio
+                    </Text>
+                    <Text style={[styles.portalSub, { color: secondaryText }]}>
+                      Generate bilingual lesson plans, 4-choice quizzes, storybooks & craft ideas
+                    </Text>
+                  </View>
+                  <ChevronRight size={18} color="#C084FC" />
+                </TouchableOpacity>
+
+                {/* Active Lesson Card (Dynamic from Firestore) */}
+                {activeLesson ? (
+                  <View style={[styles.lessonCard, { backgroundColor: cardSurface, borderColor: '#10B981' }]}>
                     <View style={styles.lessonHeader}>
                       <Text style={[styles.lessonWeek, { color: '#10B981' }]}>
-                        WEEK {activeLesson.weekNumber} · CURRENT ACTIVE SUNDAY
+                        {activeMode === '52_week' ? `WEEK ${activeLesson.weekNumber}` : 'CUSTOM SCHEDULE'}
+                        {activeDate ? ` · ${formatCurriculumDateDisplay(activeDate).toUpperCase()}` : ' · ACTIVE SUNDAY'}
                       </Text>
                       <Text style={styles.approvedBadge}>✓ Live Across App</Text>
                     </View>
-                    <Text style={styles.lessonTitle}>{activeLesson.title}</Text>
+                    <Text style={[styles.lessonTitle, { color: primaryText }]}>{activeLesson.title}</Text>
                     <Text style={[styles.lessonRef, { color: '#FBBF24' }]}>
                       {activeLesson.titleTelugu}
                     </Text>
-                    <Text style={styles.lessonRef}>
+                    <Text style={[styles.lessonRef, { color: secondaryText }]}>
                       {activeLesson.scriptureRef} · {activeLesson.scriptureRefTelugu}
                     </Text>
-                    <Text style={styles.lessonVerse}>
+                    <Text style={[styles.lessonVerse, { color: primaryText }]}>
                       "{activeLesson.memoryVerse.verseEnglish}"
                     </Text>
-                    <Text style={[styles.lessonVerse, { color: '#9CA3AF', fontStyle: 'normal' }]}>
-                      "{activeLesson.memoryVerse.verseTelugu}" — {activeLesson.memoryVerse.reference}
+                    {!!activeLesson.memoryVerse.verseTelugu && (
+                      <Text style={[styles.lessonVerse, { color: secondaryText, fontStyle: 'normal' }]}>
+                        "{activeLesson.memoryVerse.verseTelugu}" — {activeLesson.memoryVerse.reference}
+                      </Text>
+                    )}
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.lessonCard, { backgroundColor: cardSurface, borderColor: '#F59E0B' }]}
+                    onPress={() => setShowCurriculumModal(true)}
+                  >
+                    <Text style={[styles.lessonTitle, { color: primaryText }]}>
+                      No Custom Weekly Lesson Scheduled Yet
+                    </Text>
+                    <Text style={[styles.lessonRef, { color: secondaryText, marginTop: 4 }]}>
+                      Tap "Manage 52-Week & Custom Curriculum" above to create your first custom lesson.
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Next Upcoming Lesson Preview (Dynamic) */}
+                {nextLesson && (
+                  <View style={[styles.lessonCard, { backgroundColor: cardSurface, borderColor }]}>
+                    <View style={styles.lessonHeader}>
+                      <Text style={styles.lessonWeek}>
+                        {activeMode === '52_week' ? `WEEK ${nextLesson.weekNumber}` : 'UPCOMING'}
+                        {nextLessonDate ? ` · ${formatCurriculumDateDisplay(nextLessonDate).toUpperCase()}` : ' · NEXT SUNDAY'}
+                      </Text>
+                      <Text style={styles.approvedBadge}>✓ Upcoming</Text>
+                    </View>
+                    <Text style={[styles.lessonTitle, { color: primaryText }]}>
+                      {nextLesson.title} ({nextLesson.titleTelugu})
+                    </Text>
+                    <Text style={[styles.lessonRef, { color: secondaryText }]}>
+                      {nextLesson.scriptureRef} · {nextLesson.scriptureRefTelugu}
+                    </Text>
+                    <Text style={[styles.lessonVerse, { color: primaryText }]}>
+                      "{nextLesson.memoryVerse.verseEnglish}" — {nextLesson.memoryVerse.reference}
                     </Text>
                   </View>
-                );
-              })()}
-
-              <View style={styles.lessonCard}>
-                <View style={styles.lessonHeader}>
-                  <Text style={styles.lessonWeek}>WEEK 43 · NEXT SUNDAY</Text>
-                  <Text style={styles.approvedBadge}>✓ Approved</Text>
-                </View>
-                <Text style={styles.lessonTitle}>Daniel in the Lions' Den (విశ్వాసము / Faith)</Text>
-                <Text style={styles.lessonRef}>Daniel 6 · దానియేలు 6</Text>
-                <Text style={styles.lessonVerse}>
-                  "నా దేవుడు తన దూతను పంపి సింహముల నోళ్లు మూయించెను." — Dan 6:22
-                </Text>
+                )}
               </View>
-            </View>
-          )}
+            );
+          })()}
         </ScrollView>
       )}
 
-      {/* ── ENROLL CHILD MODAL ── */}
+      {/* ── ENROLL CHILD MODAL (WITH FATHER / PARENT CHURCH MEMBER SEARCH) ── */}
       {showEnrollModal && (
-        <EnrollChildModal
+        <TeacherEnrollChildModal
           visible={showEnrollModal}
           onClose={() => setShowEnrollModal(false)}
           churchId={churchId}
-          member={member}
+          actingMember={member}
+          allClasses={classes}
           onChildEnrolled={() => {
             // Realtime updates
           }}
@@ -1068,12 +1933,15 @@ export default function AdminKidsHub({ navigation }: any) {
         />
       )}
 
-      {/* ── 52-WEEK CURRICULUM SYLLABUS MODAL ── */}
+      {/* ── 52-WEEK & CUSTOM CURRICULUM SYLLABUS MODAL ── */}
       {showCurriculumModal && (
         <AdminCurriculumModal
           visible={showCurriculumModal}
           curriculum={curriculum}
           churchId={churchId}
+          stories={stories}
+          quizzes={quizzes}
+          songs={songs}
           onClose={() => setShowCurriculumModal(false)}
         />
       )}
@@ -1096,19 +1964,49 @@ export default function AdminKidsHub({ navigation }: any) {
           onClose={() => setShowVBSModal(false)}
           onOpenCertificateGenerator={() => {
             const sampleChild = children[0];
+            setShowVBSModal(false);
+            setResumeVBSOnCertClose(true);
             setSelectedCertData({
               childName: sampleChild?.fullName || 'Ethan Joshua Raj',
               childId: sampleChild?.childId || 'KID-2026-0001',
-              eventName: 'Kingdom Champions VBS 2026',
-              eventNameTelugu: 'పరలోక రాజ్య వీరులు VBS 2026',
-              tierOrHouse: 'Gold Lions (జయము)',
-              dateIssued: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+              eventName: vbsEvent?.title || 'Kingdom Champions VBS 2026',
+              eventNameTelugu: vbsEvent?.titleTelugu || 'పరలోక రాజ్య వీరులు VBS 2026',
+              tierOrHouse: sampleChild?.assignedClassName || 'Gold Lions (జయము)',
+              dateIssued: new Date().toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+              }),
               academicYear: '2026-2027',
-              directorName: 'Mrs. Sarah Jenkins',
-              pastorName: 'Rev. Dr. P. Johnson',
-              churchName: (member as any)?.churchName || 'Rhema Global Ministries',
+              directorName: certSettings?.directorName || 'Sunday School Director',
+              directorTitle: certSettings?.directorTitle || 'Sunday School Director',
+              pastorName: certSettings?.pastorName || 'Senior Pastor',
+              pastorTitle: certSettings?.pastorTitle || 'Senior Pastor',
+              churchName:
+                certSettings?.churchName ||
+                (member as any)?.churchName ||
+                'Rhema Global Ministries',
               verse: 'Be strong in the Lord and in his mighty power. — Ephesians 6:10',
               verseTelugu: 'ప్రభువు యొక్క మహాబలమునుబట్టి ఆయనయందు బలవంతులై యుండుడి. — ఎఫెసీ 6:10',
+            });
+          }}
+        />
+      )}
+
+      {/* ── CHILD PROFILE DETAIL MODAL ── */}
+      {selectedChildProfile && (
+        <ChildProfileDetailModal
+          visible={!!selectedChildProfile}
+          child={selectedChildProfile}
+          onClose={() => setSelectedChildProfile(null)}
+          onDeleteRequest={c => {
+            setSelectedChildProfile(null);
+            setChildToDelete({
+              id: c.id,
+              name: c.fullName,
+              childId: c.childId,
+              parentName: c.parentName,
+              assignedClassName: c.assignedClassName,
             });
           }}
         />
@@ -1119,7 +2017,20 @@ export default function AdminKidsHub({ navigation }: any) {
         <KidsCertificateModal
           visible={!!selectedCertData}
           data={selectedCertData}
-          onClose={() => setSelectedCertData(null)}
+          editable
+          childrenList={children}
+          onUpdateData={updated => setSelectedCertData(updated)}
+          onSaveDefaults={async settings => {
+            await KidsMinistryService.saveCertificateSettings(churchId, settings);
+            setCertSettings(settings);
+          }}
+          onClose={() => {
+            setSelectedCertData(null);
+            if (resumeVBSOnCertClose) {
+              setResumeVBSOnCertClose(false);
+              setShowVBSModal(true);
+            }
+          }}
         />
       )}
 
@@ -1133,32 +2044,32 @@ export default function AdminKidsHub({ navigation }: any) {
         }}
       >
         <View style={styles.confirmBackdrop}>
-          <View style={styles.confirmCard}>
+          <View style={[styles.confirmCard, { backgroundColor: cardSurface, borderColor }]}>
             <View style={styles.confirmIconBubble}>
               <Trash2 size={24} color="#EF4444" />
             </View>
 
-            <Text style={styles.confirmTitle}>Remove Registration?</Text>
-            <Text style={styles.confirmSubtitle}>
-              Are you sure you want to remove <Text style={{ color: '#FFFFFF', fontWeight: '800' }}>{childToDelete?.name}</Text> from Sunday School?
+            <Text style={[styles.confirmTitle, { color: primaryText }]}>Remove Registration?</Text>
+            <Text style={[styles.confirmSubtitle, { color: secondaryText }]}>
+              Are you sure you want to remove <Text style={{ color: primaryText, fontWeight: '800' }}>{childToDelete?.name}</Text> from Sunday School?
             </Text>
 
             {/* Information Summary Box */}
-            <View style={styles.confirmChildInfoBox}>
+            <View style={[styles.confirmChildInfoBox, { backgroundColor: secondarySurface, borderColor }]}>
               <View style={styles.confirmInfoRow}>
-                <Text style={styles.confirmInfoLabel}>Child ID</Text>
-                <Text style={styles.confirmInfoVal}>{childToDelete?.childId || 'N/A'}</Text>
+                <Text style={[styles.confirmInfoLabel, { color: secondaryText }]}>Child ID</Text>
+                <Text style={[styles.confirmInfoVal, { color: primaryText }]}>{childToDelete?.childId || 'N/A'}</Text>
               </View>
               {childToDelete?.assignedClassName && (
                 <View style={styles.confirmInfoRow}>
-                  <Text style={styles.confirmInfoLabel}>Classroom</Text>
-                  <Text style={styles.confirmInfoVal}>{childToDelete?.assignedClassName}</Text>
+                  <Text style={[styles.confirmInfoLabel, { color: secondaryText }]}>Classroom</Text>
+                  <Text style={[styles.confirmInfoVal, { color: primaryText }]}>{childToDelete?.assignedClassName}</Text>
                 </View>
               )}
               {childToDelete?.parentName && (
                 <View style={styles.confirmInfoRow}>
-                  <Text style={styles.confirmInfoLabel}>Parent</Text>
-                  <Text style={styles.confirmInfoVal}>{childToDelete?.parentName}</Text>
+                  <Text style={[styles.confirmInfoLabel, { color: secondaryText }]}>Parent</Text>
+                  <Text style={[styles.confirmInfoVal, { color: primaryText }]}>{childToDelete?.parentName}</Text>
                 </View>
               )}
             </View>
@@ -1172,12 +2083,12 @@ export default function AdminKidsHub({ navigation }: any) {
 
             <View style={styles.confirmActionsRow}>
               <TouchableOpacity
-                style={styles.confirmCancelBtn}
+                style={[styles.confirmCancelBtn, { backgroundColor: secondarySurface, borderColor }]}
                 onPress={() => setChildToDelete(null)}
                 disabled={deletingChild}
                 activeOpacity={0.8}
               >
-                <Text style={styles.confirmCancelText}>Cancel</Text>
+                <Text style={[styles.confirmCancelText, { color: primaryText }]}>Cancel</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -1210,6 +2121,23 @@ export default function AdminKidsHub({ navigation }: any) {
           teacherAttendance={todayTeacherAttendance}
           churchName={(member as any)?.churchName || 'Rhema Global Ministries'}
           onClose={() => setShowReportsModal(false)}
+        />
+      )}
+
+      {/* ── PROGRAM ATTENDANCE SESSION MANAGER MODAL ── */}
+      {showSessionManagerModal && (
+        <AdminSessionManagerModal
+          visible={showSessionManagerModal}
+          churchId={churchId}
+          teachers={teachers}
+          activeSession={selectedSession}
+          sessionToEdit={sessionToEdit}
+          initialTab={sessionManagerTab}
+          onSelectSession={sess => setSelectedSession(sess)}
+          onClose={() => {
+            setShowSessionManagerModal(false);
+            setSessionToEdit(null);
+          }}
         />
       )}
     </View>
@@ -1316,6 +2244,337 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 40,
     gap: 16,
+  },
+  sessionHeroCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  compactEmptySessionCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 14,
+    gap: 11,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  compactEmptyTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+  },
+  compactEmptyIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  compactEmptyTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  compactEmptySub: {
+    fontSize: 11.5,
+    lineHeight: 16,
+    marginTop: 1.5,
+  },
+  compactCreateSessionBtn: {
+    height: 36,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+  },
+  compactCreateSessionBtnText: {
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  programCardAccentBar: {
+    height: 4,
+    width: '100%',
+  },
+  sessionCardBody: {
+    padding: 16,
+    gap: 13,
+  },
+  sessionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  programEmojiBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryTagInline: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginBottom: 4,
+  },
+  categoryTagInlineText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  selectedSessionTitle: {
+    fontSize: 19,
+    fontWeight: '800',
+    letterSpacing: -0.35,
+    lineHeight: 24,
+  },
+  programSessionSub: {
+    fontSize: 12,
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  liveStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    flexShrink: 0,
+  },
+  livePulseDot: {
+    width: 6.5,
+    height: 6.5,
+    borderRadius: 3.5,
+  },
+  liveStatusText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  sessionMetaGrid: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  metaGridTile: {
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    gap: 4,
+  },
+  metaGridLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  metaGridEyebrow: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  metaGridValue: {
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  finalizeBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  finalizeLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  finalizeBarTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  finalizeBarSub: {
+    fontSize: 11,
+    marginTop: 1,
+  },
+  attendanceStatsPills: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  attStatChip: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  attStatChipText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  finalizeActionBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  finalizeActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  sessionActionsToolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  toolbarPrimaryBtn: {
+    flex: 1,
+    height: 36,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+  },
+  toolbarPrimaryBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  toolbarSecondaryBtn: {
+    flex: 1,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+  },
+  toolbarSecondaryBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  toolbarDeleteBtn: {
+    flex: 1,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  toolbarDeleteBtnText: {
+    color: '#EF4444',
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  sessionSwitcherTray: {
+    borderTopWidth: 1,
+    paddingTop: 13,
+    gap: 10,
+  },
+  trayHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  trayHeading: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  manageAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  trayCount: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  sessionTypeChipsRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  sessionTypeChip: {
+    paddingHorizontal: 11,
+    paddingVertical: 5.5,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  sessionTypeChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  sessionsCarousel: {
+    flexDirection: 'row',
+    gap: 9,
+    paddingTop: 2,
+  },
+  sessionCardPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 5,
+    width: 172,
+  },
+  sessionPillTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  sessionPillEmojiWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activeTagBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  activeTagText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+  },
+  sessionPillTitle: {
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  sessionPillDate: {
+    fontSize: 10.5,
+    fontWeight: '600',
   },
   kpiGrid: {
     flexDirection: 'row',

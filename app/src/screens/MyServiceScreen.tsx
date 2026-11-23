@@ -399,15 +399,24 @@ export default function MyServiceScreen({ navigation, route }: any) {
         setActiveTab('roster');
       }
 
-      // Fetch published church service plans for full service roster view
+      // Fetch active & upcoming church service plans (exclude completed/past/ended services)
       const allPlans = await ServiceRosterService.getServicePlans(churchId);
-      const today = new Date().toISOString().split('T')[0];
-      const allPublished = (allPlans || []).filter(p => p.status === 'published' || p.status === 'live');
-      const upcoming = allPublished.filter(p => p.date >= today).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-      const published = upcoming.length > 0 ? upcoming : allPublished.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      const published = (allPlans || [])
+        .filter(p => !ServiceRosterService.isServicePlanCompletedOrPast(p))
+        .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
       setPublishedPlans(published);
       if (published.length > 0) {
-        setSelectedPlanId(prev => prev && published.some(p => p.id === prev) ? prev : (route?.params?.serviceId || published[0].id));
+        const paramId = route?.params?.serviceId;
+        const paramValid = paramId && published.some(p => p.id === paramId);
+        setSelectedPlanId(prev =>
+          prev && published.some(p => p.id === prev)
+            ? prev
+            : paramValid
+            ? paramId
+            : published[0].id
+        );
+      } else {
+        setSelectedPlanId('');
       }
 
       // Also fetch blockout dates
@@ -431,12 +440,19 @@ export default function MyServiceScreen({ navigation, route }: any) {
   useEffect(() => {
     fetchDuties();
 
-    // Listen to real-time updates
+    // Listen to real-time updates (both member duties and upcoming/active service plans)
     const unsubscribe = ServiceRosterService.listenMemberUpcomingDuties(
       churchId,
       memberId,
-      (updatedList) => {
+      async (updatedList) => {
         setDuties(updatedList);
+        try {
+          const allPlans = await ServiceRosterService.getServicePlans(churchId);
+          const published = (allPlans || [])
+            .filter(p => !ServiceRosterService.isServicePlanCompletedOrPast(p))
+            .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+          setPublishedPlans(published);
+        } catch (_) {}
       }
     );
 
@@ -785,10 +801,10 @@ export default function MyServiceScreen({ navigation, route }: any) {
                 <View style={[styles.emptyCard, { backgroundColor: cardSurface, borderColor }]}>
                   <Smile size={38} color="#94A3B8" style={{ marginBottom: 10 }} />
                   <Text style={[styles.emptyTitle, { color: primaryText }]}>
-                    No Published Service Roster Yet
+                    No Upcoming Service Roster
                   </Text>
                   <Text style={[styles.emptySub, { color: secondaryText }]}>
-                    The church worship team and coordinators have not published the upcoming service roster yet. Check back soon!
+                    There are no active or upcoming church services scheduled right now. Completed services are no longer shown here.
                   </Text>
                 </View>
               ) : (
@@ -831,22 +847,61 @@ export default function MyServiceScreen({ navigation, route }: any) {
                       <View style={[styles.rosterServiceBanner, { backgroundColor: cardSurface, borderColor }]}>
                         {/* Status + Date Header Row */}
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                          <View style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            gap: 6,
-                            backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : '#ECFDF5',
-                            paddingHorizontal: 8,
-                            paddingVertical: 3.5,
-                            borderRadius: 12,
-                            borderWidth: 1,
-                            borderColor: isDark ? 'rgba(16, 185, 129, 0.25)' : '#A7F3D0'
-                          }}>
-                            <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#10B981' }} />
-                            <Text style={[styles.rosterBannerTag, { fontSize: 9.5 }]}>
-                              {selectedPlan.status === 'published' ? 'PUBLISHED CHURCH SERVICE' : 'DRAFT SERVICE'}
-                            </Text>
-                          </View>
+                          {(() => {
+                            const displayStatus = ServiceRosterService.getServicePlanDisplayStatus(selectedPlan);
+                            const badgeMeta =
+                              displayStatus === 'live'
+                                ? {
+                                    label: 'LIVE SERVICE NOW',
+                                    dot: '#10B981',
+                                    bg: isDark ? 'rgba(16, 185, 129, 0.16)' : '#ECFDF5',
+                                    border: isDark ? 'rgba(16, 185, 129, 0.35)' : '#A7F3D0',
+                                    text: isDark ? '#34D399' : '#047857',
+                                  }
+                                : displayStatus === 'today'
+                                ? {
+                                    label: 'TODAY’S SERVICE',
+                                    dot: '#3B82F6',
+                                    bg: isDark ? 'rgba(59, 130, 246, 0.16)' : '#EFF6FF',
+                                    border: isDark ? 'rgba(96, 165, 250, 0.35)' : '#BFDBFE',
+                                    text: isDark ? '#60A5FA' : '#1D4ED8',
+                                  }
+                                : displayStatus === 'completed'
+                                ? {
+                                    label: 'COMPLETED SERVICE',
+                                    dot: '#64748B',
+                                    bg: isDark ? 'rgba(148, 163, 184, 0.14)' : '#F1F5F9',
+                                    border: isDark ? 'rgba(148, 163, 184, 0.3)' : '#CBD5E1',
+                                    text: isDark ? '#94A3B8' : '#475569',
+                                  }
+                                : {
+                                    label: 'UPCOMING SERVICE',
+                                    dot: '#10B981',
+                                    bg: isDark ? 'rgba(16, 185, 129, 0.12)' : '#ECFDF5',
+                                    border: isDark ? 'rgba(16, 185, 129, 0.25)' : '#A7F3D0',
+                                    text: isDark ? '#34D399' : '#059669',
+                                  };
+                            return (
+                              <View
+                                style={{
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                  backgroundColor: badgeMeta.bg,
+                                  paddingHorizontal: 8,
+                                  paddingVertical: 3.5,
+                                  borderRadius: 12,
+                                  borderWidth: 1,
+                                  borderColor: badgeMeta.border,
+                                }}
+                              >
+                                <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: badgeMeta.dot }} />
+                                <Text style={[styles.rosterBannerTag, { fontSize: 9.5, color: badgeMeta.text }]}>
+                                  {badgeMeta.label}
+                                </Text>
+                              </View>
+                            );
+                          })()}
 
                           <View style={{
                             flexDirection: 'row',

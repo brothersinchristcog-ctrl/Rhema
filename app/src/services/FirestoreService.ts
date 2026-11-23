@@ -3866,42 +3866,55 @@ class FirestoreService {
   async getTodayEvents(): Promise<ScheduleEvent[]> {
     try {
       const col = await this.getCollection('events');
-      const today = new Date();
-      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-      const snapshot = await col.where('date', '==', todayStr).get();
-      let events = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ScheduleEvent));
-      
-      // Filter out events that have already ended based on time or status
-      events = events.filter(ev => {
-        if (String((ev as any).status || '').toLowerCase() === 'completed') {
-          return false;
-        }
-        const timeToCompare = ev.endTime || ev.time;
-        if (timeToCompare) {
-           try {
-              let hour = 0, min = 0;
-              if (timeToCompare.includes('T')) {
-                 const t = new Date(timeToCompare);
-                 hour = t.getHours();
-                 min = t.getMinutes();
-              } else {
-                 const parts = timeToCompare.split(':');
-                 hour = parseInt(parts[0], 10);
-                 min = parseInt(parts[1], 10);
-              }
-              const nowHour = today.getHours();
-              const nowMin = today.getMinutes();
-              
-              if (hour < nowHour || (hour === nowHour && min < nowMin)) {
-                return false; // Event has ended
-              }
-           } catch (e) {
-              // Ignore parse errors
-           }
-        }
-        return true;
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const todayMidnight = new Date(now);
+      todayMidnight.setHours(0, 0, 0, 0);
+
+      // Query both single-day events starting today AND multi-day events spanning today (startDate <= today <= endDate)
+      const [startTodaySnap, spanningEndSnap] = await Promise.all([
+        col.where('date', '==', todayStr).get(),
+        col.where('endDate', '>=', todayStr).limit(30).get().catch(() => null),
+      ]);
+
+      const mergedMap = new Map<string, ScheduleEvent>();
+      startTodaySnap.docs.forEach(doc => {
+        mergedMap.set(doc.id, { id: doc.id, ...doc.data() } as ScheduleEvent);
       });
-      
+      if (spanningEndSnap) {
+        spanningEndSnap.docs.forEach(doc => {
+          if (!mergedMap.has(doc.id)) {
+            mergedMap.set(doc.id, { id: doc.id, ...doc.data() } as ScheduleEvent);
+          }
+        });
+      }
+
+      const events = Array.from(mergedMap.values()).filter(ev => {
+        if (this.isScheduleEventPast(ev, now)) return false;
+
+        const rawStart = ev.date || (ev as any).startDate || (ev as any).eventDate;
+        const parsedStart = this.parseScheduleEventDate(rawStart);
+        if (!parsedStart) return false;
+        const startMidnight = new Date(parsedStart);
+        startMidnight.setHours(0, 0, 0, 0);
+
+        const rawEnd = ev.endDate || rawStart;
+        const parsedEnd = this.parseScheduleEventDate(rawEnd) || startMidnight;
+        const endMidnight = new Date(parsedEnd);
+        endMidnight.setHours(0, 0, 0, 0);
+
+        return (
+          todayMidnight.getTime() >= startMidnight.getTime() &&
+          todayMidnight.getTime() <= endMidnight.getTime()
+        );
+      });
+
+      events.sort((a, b) => {
+        const da = this.parseScheduleEventDate(a.date || (a as any).startDate)?.getTime() || 0;
+        const db = this.parseScheduleEventDate(b.date || (b as any).startDate)?.getTime() || 0;
+        return da - db;
+      });
+
       return events;
     } catch (e) {
       console.error('Error fetching today events:', e);
@@ -3951,7 +3964,8 @@ class FirestoreService {
   }
 
   private isScheduleEventPast(ev: ScheduleEvent, now: Date = new Date()): boolean {
-    if (String((ev as any).status || '').toLowerCase() === 'completed') {
+    const statusLower = String((ev as any).status || '').toLowerCase();
+    if (statusLower === 'completed' || statusLower === 'cancelled' || statusLower === 'ended') {
       return true;
     }
 
@@ -3968,7 +3982,12 @@ class FirestoreService {
     if (eventDayMidnight.getTime() < todayMidnight.getTime()) return true;
     if (eventDayMidnight.getTime() > todayMidnight.getTime()) return false;
 
-    const timeToCompare = ev.endTime || ev.time || ev.startTime;
+    // On the final day of the event, only mark past if an explicit end time (or end of a time range) has already passed
+    let timeToCompare = ev.endTime;
+    if (!timeToCompare && ev.time && /[-–]/.test(ev.time)) {
+      const rangeParts = ev.time.split(/[-–]/);
+      timeToCompare = rangeParts[rangeParts.length - 1]?.trim();
+    }
     if (!timeToCompare) return false;
 
     try {
@@ -3988,6 +4007,8 @@ class FirestoreService {
         min = parseInt(parts[1], 10) || 0;
         if (isPM && hour < 12) hour += 12;
         if (isAM && hour === 12) hour = 0;
+      } else {
+        return false;
       }
       if (hour < now.getHours() || (hour === now.getHours() && min < now.getMinutes())) {
         return true;
@@ -4001,22 +4022,35 @@ class FirestoreService {
   async getUpcomingEvents(limit: number = 3): Promise<ScheduleEvent[]> {
     try {
       const col = await this.getCollection('events');
-      const today = new Date();
-      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-      
-      // Bounded database query for events from today onwards
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
       const fetchLimit = Math.max(limit * 2, 30);
-      const snapshot = await col
-        .where('date', '>=', todayStr)
-        .orderBy('date', 'asc')
-        .limit(fetchLimit)
-        .get();
-      
-      let events = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ScheduleEvent));
-      
-      // Filter out events that have completed or from TODAY that have already ended based on time
-      events = events.filter(ev => !this.isScheduleEventPast(ev, today));
-      
+      const [upcomingStartSnap, activeMultiDaySnap] = await Promise.all([
+        col.where('date', '>=', todayStr).orderBy('date', 'asc').limit(fetchLimit).get(),
+        col.where('endDate', '>=', todayStr).orderBy('endDate', 'asc').limit(30).get().catch(() => null),
+      ]);
+
+      const mergedMap = new Map<string, ScheduleEvent>();
+      upcomingStartSnap.docs.forEach(doc => {
+        mergedMap.set(doc.id, { id: doc.id, ...doc.data() } as ScheduleEvent);
+      });
+      if (activeMultiDaySnap) {
+        activeMultiDaySnap.docs.forEach(doc => {
+          if (!mergedMap.has(doc.id)) {
+            mergedMap.set(doc.id, { id: doc.id, ...doc.data() } as ScheduleEvent);
+          }
+        });
+      }
+
+      const events = Array.from(mergedMap.values())
+        .filter(ev => !this.isScheduleEventPast(ev, now))
+        .sort((a, b) => {
+          const da = this.parseScheduleEventDate(a.date || (a as any).startDate)?.getTime() || 0;
+          const db = this.parseScheduleEventDate(b.date || (b as any).startDate)?.getTime() || 0;
+          return da - db;
+        });
+
       return events.slice(0, limit);
     } catch (e) {
       console.error('Error fetching upcoming events:', e);

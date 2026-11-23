@@ -5,13 +5,13 @@ import { formatDateMonthYear, formatTimeTo12Hour } from '../utils/DateUtils';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
-import { 
-  ServicePlan, 
-  ServiceStatus, 
+import {
+  ServicePlan,
+  ServiceStatus,
   ServiceType,
-  RunSheetItem, 
-  SetlistItem, 
-  ServiceTemplate, 
+  RunSheetItem,
+  SetlistItem,
+  ServiceTemplate,
   ServiceRecurrenceRule,
   ActivityCategory,
   ActivityCategoryDef,
@@ -442,11 +442,11 @@ class ServiceRosterService {
    * Fetch all service plans matching optional filters
    */
   async getServicePlans(
-    churchId: string, 
-    filter?: { 
-      status?: ServiceStatus; 
+    churchId: string,
+    filter?: {
+      status?: ServiceStatus;
       serviceType?: ServiceType;
-      startDate?: string; 
+      startDate?: string;
       endDate?: string;
       limitCount?: number;
     }
@@ -669,7 +669,7 @@ class ServiceRosterService {
    */
   async updateServicePlan(churchId: string, planId: string, updates: Partial<ServicePlan>): Promise<void> {
     const docRef = this.getServicePlansCol(churchId).doc(planId);
-    
+
     // If runSheet or startTime changed, keep times coherent
     let updatedRunSheet = updates.runSheet;
     let totalDuration = updates.totalDurationMinutes;
@@ -859,8 +859,8 @@ class ServiceRosterService {
    * Add a new activity item to the service plan
    */
   async addActivityItem(
-    churchId: string, 
-    planId: string, 
+    churchId: string,
+    planId: string,
     item: Omit<RunSheetItem, 'id' | 'order'>
   ): Promise<RunSheetItem> {
     const plan = await this.getServicePlanById(churchId, planId);
@@ -890,9 +890,9 @@ class ServiceRosterService {
    * Update an existing activity item inside runSheet
    */
   async updateActivityItem(
-    churchId: string, 
-    planId: string, 
-    itemId: string, 
+    churchId: string,
+    planId: string,
+    itemId: string,
     updates: Partial<RunSheetItem>
   ): Promise<void> {
     const plan = await this.getServicePlanById(churchId, planId);
@@ -1068,7 +1068,7 @@ class ServiceRosterService {
             });
           }
         }
-      } catch (_) {}
+      } catch (_) { }
 
       // Sort teams according to:
       // 1. Explicit document order
@@ -1220,7 +1220,7 @@ class ServiceRosterService {
     try {
       const orderMap = seeded.map((t, idx) => ({ id: t.id, name: t.name, order: idx }));
       await AsyncStorage.setItem(`@rhema_ministry_teams_order_${targetChurch}`, JSON.stringify(orderMap));
-    } catch (_) {}
+    } catch (_) { }
 
     return seeded;
   }
@@ -1233,8 +1233,8 @@ class ServiceRosterService {
    * Fetch skills for church, filterable by member or verification status
    */
   async getMemberSkills(
-    churchId: string, 
-    memberId?: string, 
+    churchId: string,
+    memberId?: string,
     status?: 'verified' | 'pending' | 'rejected'
   ): Promise<MemberSkillRecord[]> {
     try {
@@ -1291,9 +1291,9 @@ class ServiceRosterService {
    * Verify or reject submitted skill
    */
   async verifyMemberSkill(
-    churchId: string, 
-    skillId: string, 
-    status: 'verified' | 'rejected', 
+    churchId: string,
+    skillId: string,
+    status: 'verified' | 'rejected',
     verifiedBy: string,
     rejectionReason?: string
   ): Promise<void> {
@@ -1367,9 +1367,9 @@ class ServiceRosterService {
 
       const data = doc.data() as MemberAvailabilityRecord;
       if (data?.unavailableDates?.includes(date)) {
-        return { 
-          isAvailable: false, 
-          reason: data.notes || 'Marked as unavailable / blockout date' 
+        return {
+          isAvailable: false,
+          reason: data.notes || 'Marked as unavailable / blockout date'
         };
       }
 
@@ -1690,7 +1690,7 @@ class ServiceRosterService {
           .collection('notifications')
           .doc(`assign_${serviceId}_${safeRoleId}`)
           .set(notifDoc, { merge: true })
-          .catch(() => {});
+          .catch(() => { });
 
         // Also write targeted broadcast document so it appears in the Updates screen
         await firestore()
@@ -1699,9 +1699,9 @@ class ServiceRosterService {
           .collection('broadcasts')
           .doc(`assign_${serviceId}_${safeRoleId}_${activeCand.candidateId}`)
           .set(notifDoc, { merge: true })
-          .catch(() => {});
+          .catch(() => { });
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 
   /**
@@ -1878,7 +1878,7 @@ class ServiceRosterService {
             .collection('broadcasts')
             .doc(`fcfs_${serviceId}_${resp.roleId}_${m.memberId}`)
             .set(fcfsDoc, { merge: true })
-            .catch(() => {});
+            .catch(() => { });
 
           await firestore()
             .collection(RHEMA_ROOT_COLLECTION)
@@ -1888,8 +1888,8 @@ class ServiceRosterService {
             .collection('notifications')
             .doc(`fcfs_${serviceId}_${resp.roleId}`)
             .set(fcfsDoc, { merge: true })
-            .catch(() => {});
-        } catch (_) {}
+            .catch(() => { });
+        } catch (_) { }
       }
 
       dispatchedCount++;
@@ -2353,7 +2353,7 @@ class ServiceRosterService {
             }
           }
         }
-      } catch (_) {}
+      } catch (_) { }
     } catch (err) {
       console.error('[ServiceRosterService] cancelOrDeleteDutyAssignment error:', err);
       throw err;
@@ -2883,7 +2883,7 @@ class ServiceRosterService {
     const planRef = this.getServicePlansCol(churchId).doc(serviceId);
     await planRef.update({
       'liveState.status': pause ? 'paused' : 'running',
-      ...(pause 
+      ...(pause
         ? { 'liveState.itemPausedAt': firestore.FieldValue.serverTimestamp() }
         : { 'liveState.itemPausedAt': null }
       ),
@@ -2965,15 +2965,136 @@ class ServiceRosterService {
    * Fetch all upcoming service duties and invitations for a specific church member.
    * Scans published plans, runsheet assignments, setlist assignments, sequential queues, and rehearsals.
    */
+  /**
+   * Parses "YYYY-MM-DD" or "DD-MM-YYYY" into a local midnight Date.
+   */
+  private parsePlanLocalDate(dateStr?: string): Date | null {
+    if (!dateStr) return null;
+    const clean = String(dateStr).trim().split('T')[0];
+    const parts = clean.split(/[-/]/);
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+        return isNaN(d.getTime()) ? null : d;
+      }
+      if (parts[2].length >= 4) {
+        const d = new Date(Number(parts[2].slice(0, 4)), Number(parts[1]) - 1, Number(parts[0]));
+        return isNaN(d.getTime()) ? null : d;
+      }
+    }
+    const parsed = new Date(clean);
+    if (isNaN(parsed.getTime())) return null;
+    parsed.setHours(0, 0, 0, 0);
+    return parsed;
+  }
+
+  private parseTimeMinutes(timeStr?: string): number | null {
+    if (!timeStr) return null;
+    const upper = String(timeStr).toUpperCase().trim();
+    if (!upper.includes(':')) return null;
+    const isPM = upper.includes('PM');
+    const isAM = upper.includes('AM');
+    const numeric = upper.replace(/AM|PM|\s+/g, '');
+    const [hStr, mStr] = numeric.split(':');
+    let h = parseInt(hStr, 10);
+    const m = parseInt(mStr, 10) || 0;
+    if (isNaN(h)) return null;
+    if (isPM && h < 12) h += 12;
+    if (isAM && h === 12) h = 0;
+    return h * 60 + m;
+  }
+
+  /**
+   * Returns true if a ServicePlan is draft, completed, cancelled, liveState ended,
+   * scheduled before today (local), or finished today past its endTime.
+   */
+  isServicePlanCompletedOrPast(plan: ServicePlan, now: Date = new Date()): boolean {
+    const status = String(plan.status || '').toLowerCase();
+    if (status === 'completed' || status === 'cancelled' || status === 'draft') {
+      return true;
+    }
+    if (plan.liveState?.status === 'ended') {
+      return true;
+    }
+    if (status !== 'published' && status !== 'live') {
+      return true;
+    }
+
+    const planDate = this.parsePlanLocalDate(plan.date);
+    if (!planDate) return true;
+    planDate.setHours(0, 0, 0, 0);
+
+    const todayMid = new Date(now);
+    todayMid.setHours(0, 0, 0, 0);
+
+    if (planDate.getTime() < todayMid.getTime()) return true;
+    if (planDate.getTime() > todayMid.getTime()) return false;
+
+    if (
+      status === 'live' ||
+      plan.liveState?.isLive ||
+      plan.liveState?.status === 'running' ||
+      plan.liveState?.status === 'paused'
+    ) {
+      return false;
+    }
+
+    const endMins = this.parseTimeMinutes(plan.endTime);
+    if (endMins !== null) {
+      const nowMins = now.getHours() * 60 + now.getMinutes();
+      if (nowMins > endMins) return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Resolves accurate Member-facing display status for a ServicePlan.
+   */
+  getServicePlanDisplayStatus(
+    plan: ServicePlan,
+    now: Date = new Date()
+  ): 'live' | 'today' | 'upcoming' | 'completed' | 'cancelled' | 'draft' {
+    const status = String(plan.status || '').toLowerCase();
+    if (status === 'cancelled') return 'cancelled';
+    if (status === 'draft') return 'draft';
+    if (status === 'completed' || plan.liveState?.status === 'ended') return 'completed';
+    if (
+      status === 'live' ||
+      plan.liveState?.isLive ||
+      plan.liveState?.status === 'running' ||
+      plan.liveState?.status === 'paused'
+    ) {
+      return 'live';
+    }
+
+    const planDate = this.parsePlanLocalDate(plan.date);
+    if (!planDate) return 'upcoming';
+    planDate.setHours(0, 0, 0, 0);
+
+    const todayMid = new Date(now);
+    todayMid.setHours(0, 0, 0, 0);
+
+    if (planDate.getTime() < todayMid.getTime()) return 'completed';
+    if (planDate.getTime() === todayMid.getTime()) {
+      const endMins = this.parseTimeMinutes(plan.endTime);
+      if (endMins !== null && now.getHours() * 60 + now.getMinutes() > endMins) {
+        return 'completed';
+      }
+      return 'today';
+    }
+    return 'upcoming';
+  }
+
   async getMemberUpcomingDuties(churchId: string, memberId: string, memberName?: string): Promise<MemberServiceDuty[]> {
     if (!churchId || (!memberId && !memberName)) return [];
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const now = new Date();
       const plansSnap = await this.getServicePlansCol(churchId).get();
 
       const plans = plansSnap.docs
         .map((pDoc: any) => ({ id: pDoc.id, ...pDoc.data() } as ServicePlan))
-        .filter(plan => (plan.status === 'published' || plan.status === 'live') && (plan.date >= today))
+        .filter(plan => !this.isServicePlanCompletedOrPast(plan, now))
         .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 
       const duties: MemberServiceDuty[] = [];
@@ -2989,7 +3110,7 @@ class ServiceRosterService {
           rehearsals = rSnap.docs
             .map((doc: any) => ({ id: doc.id, ...doc.data() }))
             .filter((r: ServiceRehearsal) => (r.participantMemberIds || []).includes(memberId));
-        } catch (_) {}
+        } catch (_) { }
 
         // 1. Check direct runSheet assignments
         (plan.runSheet || []).forEach(item => {
@@ -3281,7 +3402,7 @@ class ServiceRosterService {
               }
             }
           }
-        } catch (_) {}
+        } catch (_) { }
       }
 
       return duties.sort((a, b) => {
@@ -3303,7 +3424,7 @@ class ServiceRosterService {
     memberId: string,
     onUpdate: (duties: MemberServiceDuty[]) => void
   ): () => void {
-    if (!churchId || !memberId) return () => {};
+    if (!churchId || !memberId) return () => { };
 
     return this.getServicePlansCol(churchId).onSnapshot(
       async () => {
@@ -3905,7 +4026,7 @@ class ServiceRosterService {
               totalPresent++;
             }
           });
-        } catch (_) {}
+        } catch (_) { }
       }
 
       const acceptanceRatePercent = totalInvites > 0 ? Math.round((totalAccepted / totalInvites) * 100) : 100;
@@ -4037,7 +4158,7 @@ class ServiceRosterService {
         );
       try {
         await AsyncStorage.setItem(cacheKey, JSON.stringify(categories));
-      } catch (_) {}
+      } catch (_) { }
       return categories;
     } catch (err) {
       console.error('[ServiceRosterService] getCustomActivityCategories error:', err);
@@ -4047,7 +4168,7 @@ class ServiceRosterService {
           const parsed = JSON.parse(cached);
           if (Array.isArray(parsed)) return parsed;
         }
-      } catch (_) {}
+      } catch (_) { }
       return [];
     }
   }
@@ -4096,7 +4217,7 @@ class ServiceRosterService {
       const existing = await this.getCustomActivityCategories(targetChurch);
       const updated = [record, ...existing.filter(c => c.id !== id)];
       await AsyncStorage.setItem(cacheKey, JSON.stringify(updated));
-    } catch (_) {}
+    } catch (_) { }
 
     return record;
   }
@@ -4119,7 +4240,7 @@ class ServiceRosterService {
           );
         }
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 }
 

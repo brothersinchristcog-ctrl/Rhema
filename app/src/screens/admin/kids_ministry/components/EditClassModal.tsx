@@ -11,8 +11,9 @@ import {
   Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
+  StatusBar,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView, initialWindowMetrics } from 'react-native-safe-area-context';
 import {
   X,
   Save,
@@ -30,6 +31,7 @@ import {
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import KidsMinistryService from '../../../../services/KidsMinistryService';
 import { KidsClassRecord, KidsClassTier } from '../../../../types/KidsMinistryTypes';
+import { useAdminTheme } from '../../../../utils/adminThemeHelper';
 
 interface EditClassModalProps {
   visible: boolean;
@@ -46,6 +48,7 @@ const TIER_OPTIONS: Array<{ id: KidsClassTier; label: string; min: number; max: 
   { id: 'primary', label: 'Primary (6–8)', min: 6, max: 8 },
   { id: 'junior', label: 'Junior (9–11)', min: 9, max: 11 },
   { id: 'teens', label: 'Teens (12–14)', min: 12, max: 14 },
+  { id: 'mixed', label: 'Mixed Age Group (All Ages)', min: 0, max: 18 },
 ];
 
 const DAY_OPTIONS = ['Sunday', 'Saturday', 'Wednesday', 'Friday'];
@@ -58,7 +61,20 @@ export default function EditClassModal({
   onClose,
   onSaved,
 }: EditClassModalProps) {
-  const insets = useSafeAreaInsets();
+  const {
+    isDark,
+    screenBg,
+    cardSurface,
+    secondarySurface,
+    primaryText,
+    secondaryText,
+    borderColor,
+    barStyle,
+  } = useAdminTheme();
+  const placeholderColor = isDark ? '#6B7280' : '#94A3B8';
+  const amberAccent = isDark ? '#FBBF24' : '#D97706';
+  const blueAccent = isDark ? '#60A5FA' : '#2563EB';
+  const emeraldAccent = isDark ? '#34D399' : '#059669';
   const isEditing = Boolean(classData);
 
   const [name, setName] = useState('');
@@ -170,7 +186,7 @@ export default function EditClassModal({
   const handleSelectTier = (selectedTier: KidsClassTier) => {
     setTier(selectedTier);
     const preset = TIER_OPTIONS.find(t => t.id === selectedTier);
-    if (preset && !isEditing) {
+    if (preset && (selectedTier === 'mixed' || !isEditing)) {
       setMinAge(String(preset.min));
       setMaxAge(String(preset.max));
     }
@@ -275,316 +291,365 @@ export default function EditClassModal({
 
   if (!visible) return null;
 
+  const themedInputStyle = [
+    styles.input,
+    { backgroundColor: cardSurface, borderColor, color: primaryText },
+  ];
+
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.headerTag}>SUNDAY SCHOOL SETTINGS</Text>
-            <Text style={styles.headerTitleSerif}>
-              {isEditing ? 'Edit Classroom' : 'Create New Classroom'}
-            </Text>
-          </View>
-          <View style={styles.headerActions}>
-            {isEditing && (
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+        <SafeAreaView style={[styles.container, { backgroundColor: screenBg }]} edges={['top', 'bottom']}>
+          <StatusBar barStyle={barStyle} backgroundColor={screenBg} />
+
+          {/* Header */}
+          <View style={[styles.header, { borderBottomColor: borderColor }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.headerTag, { color: amberAccent }]}>SUNDAY SCHOOL SETTINGS</Text>
+              <Text style={[styles.headerTitleSerif, { color: primaryText }]}>
+                {isEditing ? 'Edit Classroom' : 'Create New Classroom'}
+              </Text>
+            </View>
+            <View style={styles.headerActions}>
+              {isEditing && (
+                <TouchableOpacity
+                  onPress={handleDelete}
+                  style={styles.deleteHeaderBtn}
+                  disabled={saving || deleting}
+                  activeOpacity={0.8}
+                >
+                  {deleting ? (
+                    <ActivityIndicator size="small" color="#EF4444" />
+                  ) : (
+                    <Trash2 size={16} color="#EF4444" />
+                  )}
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
-                onPress={handleDelete}
-                style={styles.deleteHeaderBtn}
+                onPress={onClose}
+                style={[styles.closeBtn, { backgroundColor: secondarySurface }]}
                 disabled={saving || deleting}
-                activeOpacity={0.8}
               >
-                {deleting ? (
-                  <ActivityIndicator size="small" color="#EF4444" />
-                ) : (
-                  <Trash2 size={16} color="#EF4444" />
-                )}
+                <X size={18} color={primaryText} />
               </TouchableOpacity>
-            )}
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn} disabled={saving || deleting}>
-              <X size={18} color="#9CA3AF" />
-            </TouchableOpacity>
+            </View>
           </View>
-        </View>
 
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={{ flex: 1 }}
-        >
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.scroll}
-            keyboardShouldPersistTaps="handled"
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={{ flex: 1 }}
           >
-            {/* Class Name */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Classroom Name *</Text>
-              <TextInput
-                style={styles.input}
-                value={name}
-                onChangeText={setName}
-                placeholder="e.g. Primary Stars / Junior Warriors"
-                placeholderTextColor="#6B7280"
-              />
-            </View>
-
-            {/* Age Group Tier Selector */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Age Group Tier</Text>
-              <View style={styles.chipRow}>
-                {TIER_OPTIONS.map(t => {
-                  const active = tier === t.id;
-                  return (
-                    <TouchableOpacity
-                      key={t.id}
-                      style={[styles.tierChip, active && styles.tierChipActive]}
-                      onPress={() => handleSelectTier(t.id)}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={[styles.tierChipText, active && styles.tierChipTextActive]}>
-                        {t.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-
-            {/* Min Age & Max Age Row */}
-            <View style={styles.row}>
-              <View style={[styles.fieldGroup, { flex: 1 }]}>
-                <Text style={styles.label}>Min Age (Years)</Text>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.scroll}
+              keyboardShouldPersistTaps="handled"
+            >
+              {/* Class Name */}
+              <View style={styles.fieldGroup}>
+                <Text style={[styles.label, { color: secondaryText }]}>Classroom Name *</Text>
                 <TextInput
-                  style={styles.input}
-                  value={minAge}
-                  onChangeText={setMinAge}
-                  keyboardType="numeric"
-                  placeholder="6"
-                  placeholderTextColor="#6B7280"
+                  style={themedInputStyle}
+                  value={name}
+                  onChangeText={setName}
+                  placeholder="e.g. Primary Stars / Junior Warriors"
+                  placeholderTextColor={placeholderColor}
                 />
               </View>
 
-              <View style={[styles.fieldGroup, { flex: 1 }]}>
-                <Text style={styles.label}>Max Age (Years)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={maxAge}
-                  onChangeText={setMaxAge}
-                  keyboardType="numeric"
-                  placeholder="8"
-                  placeholderTextColor="#6B7280"
-                />
-              </View>
-            </View>
-
-            {/* Room Location & Max Capacity Row */}
-            <View style={styles.row}>
-              <View style={[styles.fieldGroup, { flex: 1.4 }]}>
-                <View style={styles.labelRow}>
-                  <DoorOpen size={12} color="#FBBF24" />
-                  <Text style={styles.label}>Room Location</Text>
+              {/* Age Group Tier Selector */}
+              <View style={styles.fieldGroup}>
+                <Text style={[styles.label, { color: secondaryText }]}>Age Group Tier</Text>
+                <View style={styles.chipRow}>
+                  {TIER_OPTIONS.map(t => {
+                    const active = tier === t.id;
+                    return (
+                      <TouchableOpacity
+                        key={t.id}
+                        style={[
+                          styles.tierChip,
+                          { backgroundColor: cardSurface, borderColor },
+                          active && styles.tierChipActive,
+                        ]}
+                        onPress={() => handleSelectTier(t.id)}
+                        activeOpacity={0.8}
+                      >
+                        <Text
+                          style={[
+                            styles.tierChipText,
+                            { color: secondaryText },
+                            active && { color: amberAccent, fontWeight: '800' },
+                          ]}
+                        >
+                          {t.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
-                <TextInput
-                  style={styles.input}
-                  value={roomNumber}
-                  onChangeText={setRoomNumber}
-                  placeholder="e.g. Room 201 · 2nd Floor"
-                  placeholderTextColor="#6B7280"
-                />
+                {tier === 'mixed' && (
+                  <Text style={{ fontSize: 12, color: amberAccent, marginTop: 6, fontWeight: '600' }}>
+                    All age groups (0–18 yrs) are eligible to join this Mixed Age Group classroom.
+                  </Text>
+                )}
               </View>
 
-              <View style={[styles.fieldGroup, { flex: 1 }]}>
-                <View style={styles.labelRow}>
-                  <Users size={12} color="#FBBF24" />
-                  <Text style={styles.label}>Max Capacity</Text>
+              {/* Min Age & Max Age Row */}
+              <View style={styles.row}>
+                <View style={[styles.fieldGroup, { flex: 1 }]}>
+                  <Text style={[styles.label, { color: secondaryText }]}>Min Age (Years)</Text>
+                  <TextInput
+                    style={themedInputStyle}
+                    value={minAge}
+                    onChangeText={setMinAge}
+                    keyboardType="numeric"
+                    placeholder="6"
+                    placeholderTextColor={placeholderColor}
+                  />
                 </View>
-                <TextInput
-                  style={styles.input}
-                  value={maxCapacity}
-                  onChangeText={setMaxCapacity}
-                  keyboardType="numeric"
-                  placeholder="25"
-                  placeholderTextColor="#6B7280"
-                />
-              </View>
-            </View>
 
-            {/* Lead Teacher Name & Phone with Church Member Lookup */}
-            <View style={styles.fieldGroup}>
-              <View style={styles.labelRow}>
-                <User size={12} color="#34D399" />
-                <Text style={styles.label}>Lead Teacher (Search Church Members)</Text>
-                {selectedMemberId && (
-                  <View style={styles.linkedMemberBadge}>
-                    <CheckCircle size={10} color="#34D399" />
-                    <Text style={styles.linkedMemberBadgeText}>Linked</Text>
+                <View style={[styles.fieldGroup, { flex: 1 }]}>
+                  <Text style={[styles.label, { color: secondaryText }]}>Max Age (Years)</Text>
+                  <TextInput
+                    style={themedInputStyle}
+                    value={maxAge}
+                    onChangeText={setMaxAge}
+                    keyboardType="numeric"
+                    placeholder="8"
+                    placeholderTextColor={placeholderColor}
+                  />
+                </View>
+              </View>
+
+              {/* Room Location & Max Capacity Row */}
+              <View style={styles.row}>
+                <View style={[styles.fieldGroup, { flex: 1.4 }]}>
+                  <View style={styles.labelRow}>
+                    <DoorOpen size={12} color={amberAccent} />
+                    <Text style={[styles.label, { color: secondaryText }]}>Room Location</Text>
+                  </View>
+                  <TextInput
+                    style={themedInputStyle}
+                    value={roomNumber}
+                    onChangeText={setRoomNumber}
+                    placeholder="e.g. Room 201 · 2nd Floor"
+                    placeholderTextColor={placeholderColor}
+                  />
+                </View>
+
+                <View style={[styles.fieldGroup, { flex: 1 }]}>
+                  <View style={styles.labelRow}>
+                    <Users size={12} color={amberAccent} />
+                    <Text style={[styles.label, { color: secondaryText }]}>Max Capacity</Text>
+                  </View>
+                  <TextInput
+                    style={themedInputStyle}
+                    value={maxCapacity}
+                    onChangeText={setMaxCapacity}
+                    keyboardType="numeric"
+                    placeholder="25"
+                    placeholderTextColor={placeholderColor}
+                  />
+                </View>
+              </View>
+
+              {/* Lead Teacher Name & Phone with Church Member Lookup */}
+              <View style={styles.fieldGroup}>
+                <View style={styles.labelRow}>
+                  <User size={12} color={emeraldAccent} />
+                  <Text style={[styles.label, { color: secondaryText }]}>Lead Teacher (Search Church Members)</Text>
+                  {selectedMemberId && (
+                    <View style={styles.linkedMemberBadge}>
+                      <CheckCircle size={10} color={emeraldAccent} />
+                      <Text style={[styles.linkedMemberBadgeText, { color: emeraldAccent }]}>Linked</Text>
+                    </View>
+                  )}
+                </View>
+
+                <View style={styles.teacherSearchInputWrap}>
+                  <TextInput
+                    style={[themedInputStyle, { paddingRight: 36 }]}
+                    value={leadTeacherName}
+                    onChangeText={handleSearchTeacher}
+                    placeholder="Type name to search existing church members..."
+                    placeholderTextColor={placeholderColor}
+                  />
+                  <View style={styles.searchIconSlot}>
+                    {searchingMembers ? (
+                      <ActivityIndicator size="small" color={amberAccent} />
+                    ) : (
+                      <Search size={14} color={secondaryText} />
+                    )}
+                  </View>
+                </View>
+
+                {/* Autocomplete Member Results Dropdown */}
+                {showMemberDropdown && (
+                  <View style={[styles.memberDropdown, { backgroundColor: cardSurface, borderColor }]}>
+                    {memberResults.length === 0 ? (
+                      <View style={styles.memberEmptyItem}>
+                        <Text style={[styles.memberEmptyText, { color: secondaryText }]}>
+                          {searchingMembers ? 'Searching members...' : 'No matching church members found'}
+                        </Text>
+                      </View>
+                    ) : (
+                      memberResults.map(m => {
+                        const mName = (m.name || `${m.firstName || ''} ${m.lastName || ''}`).trim();
+                        const mPhone = m.phone || m.mobileNumber || m.phoneNumber || 'No phone';
+                        return (
+                          <TouchableOpacity
+                            key={m.id}
+                            style={[styles.memberResultRow, { borderBottomColor: borderColor }]}
+                            onPress={() => handleSelectMember(m)}
+                            activeOpacity={0.7}
+                          >
+                            <View style={styles.memberAvatarMini}>
+                              <Text style={styles.memberAvatarMiniText}>
+                                {mName.charAt(0).toUpperCase()}
+                              </Text>
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={[styles.memberNameText, { color: primaryText }]} numberOfLines={1}>{mName}</Text>
+                              <Text style={[styles.memberPhoneText, { color: secondaryText }]}>{mPhone}</Text>
+                            </View>
+                            <View style={styles.selectMemberPill}>
+                              <Text style={[styles.selectMemberPillText, { color: amberAccent }]}>Select</Text>
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })
+                    )}
                   </View>
                 )}
               </View>
 
-              <View style={styles.teacherSearchInputWrap}>
+              <View style={styles.fieldGroup}>
+                <View style={styles.labelRow}>
+                  <Phone size={12} color={emeraldAccent} />
+                  <Text style={[styles.label, { color: secondaryText }]}>Teacher Phone / WhatsApp (Auto-filled)</Text>
+                </View>
                 <TextInput
-                  style={[styles.input, { paddingRight: 36 }]}
-                  value={leadTeacherName}
-                  onChangeText={handleSearchTeacher}
-                  placeholder="Type name to search existing church members..."
-                  placeholderTextColor="#6B7280"
+                  style={themedInputStyle}
+                  value={leadTeacherPhone}
+                  onChangeText={setLeadTeacherPhone}
+                  keyboardType="phone-pad"
+                  placeholder="e.g. +91 98765 43210"
+                  placeholderTextColor={placeholderColor}
                 />
-                <View style={styles.searchIconSlot}>
-                  {searchingMembers ? (
-                    <ActivityIndicator size="small" color="#FBBF24" />
-                  ) : (
-                    <Search size={14} color="#6B7280" />
-                  )}
-                </View>
               </View>
 
-              {/* Autocomplete Member Results Dropdown */}
-              {showMemberDropdown && (
-                <View style={styles.memberDropdown}>
-                  {memberResults.length === 0 ? (
-                    <View style={styles.memberEmptyItem}>
-                      <Text style={styles.memberEmptyText}>
-                        {searchingMembers ? 'Searching members...' : 'No matching church members found'}
-                      </Text>
-                    </View>
-                  ) : (
-                    memberResults.map(m => {
-                      const mName = (m.name || `${m.firstName || ''} ${m.lastName || ''}`).trim();
-                      const mPhone = m.phone || m.mobileNumber || m.phoneNumber || 'No phone';
-                      return (
-                        <TouchableOpacity
-                          key={m.id}
-                          style={styles.memberResultRow}
-                          onPress={() => handleSelectMember(m)}
-                          activeOpacity={0.7}
+              {/* Schedule Day Selector */}
+              <View style={styles.fieldGroup}>
+                <View style={styles.labelRow}>
+                  <Calendar size={12} color={blueAccent} />
+                  <Text style={[styles.label, { color: secondaryText }]}>Class Day</Text>
+                </View>
+                <View style={styles.chipRow}>
+                  {DAY_OPTIONS.map(d => {
+                    const active = dayOfWeek === d;
+                    return (
+                      <TouchableOpacity
+                        key={d}
+                        style={[
+                          styles.dayChip,
+                          { backgroundColor: cardSurface, borderColor },
+                          active && styles.dayChipActive,
+                        ]}
+                        onPress={() => setDayOfWeek(d)}
+                        activeOpacity={0.8}
+                      >
+                        <Text
+                          style={[
+                            styles.dayChipText,
+                            { color: secondaryText },
+                            active && { color: blueAccent, fontWeight: '800' },
+                          ]}
                         >
-                          <View style={styles.memberAvatarMini}>
-                            <Text style={styles.memberAvatarMiniText}>
-                              {mName.charAt(0).toUpperCase()}
-                            </Text>
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.memberNameText} numberOfLines={1}>{mName}</Text>
-                            <Text style={styles.memberPhoneText}>{mPhone}</Text>
-                          </View>
-                          <View style={styles.selectMemberPill}>
-                            <Text style={styles.selectMemberPillText}>Select</Text>
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })
-                  )}
+                          {d}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
-              )}
-            </View>
-
-            <View style={styles.fieldGroup}>
-              <View style={styles.labelRow}>
-                <Phone size={12} color="#34D399" />
-                <Text style={styles.label}>Teacher Phone / WhatsApp (Auto-filled)</Text>
-              </View>
-              <TextInput
-                style={styles.input}
-                value={leadTeacherPhone}
-                onChangeText={setLeadTeacherPhone}
-                keyboardType="phone-pad"
-                placeholder="e.g. +91 98765 43210"
-                placeholderTextColor="#6B7280"
-              />
-            </View>
-
-            {/* Schedule Day Selector */}
-            <View style={styles.fieldGroup}>
-              <View style={styles.labelRow}>
-                <Calendar size={12} color="#60A5FA" />
-                <Text style={styles.label}>Class Day</Text>
-              </View>
-              <View style={styles.chipRow}>
-                {DAY_OPTIONS.map(d => {
-                  const active = dayOfWeek === d;
-                  return (
-                    <TouchableOpacity
-                      key={d}
-                      style={[styles.dayChip, active && styles.dayChipActive]}
-                      onPress={() => setDayOfWeek(d)}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={[styles.dayChipText, active && styles.dayChipTextActive]}>{d}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-
-            {/* Schedule Times with Interactive Clock Pickers */}
-            <View style={styles.row}>
-              <View style={[styles.fieldGroup, { flex: 1 }]}>
-                <View style={styles.labelRow}>
-                  <Clock size={12} color="#60A5FA" />
-                  <Text style={styles.label}>Start Time</Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.timePickerButton}
-                  onPress={() => setTimePickerTarget('start')}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.timePickerButtonText}>{startTime}</Text>
-                  <Clock size={14} color="#FBBF24" />
-                </TouchableOpacity>
-              </View>
-
-              <View style={[styles.fieldGroup, { flex: 1 }]}>
-                <View style={styles.labelRow}>
-                  <Clock size={12} color="#60A5FA" />
-                  <Text style={styles.label}>End Time</Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.timePickerButton}
-                  onPress={() => setTimePickerTarget('end')}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.timePickerButtonText}>{endTime}</Text>
-                  <Clock size={14} color="#FBBF24" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </ScrollView>
-
-          {/* Time Picker Modal */}
-          <DateTimePickerModal
-            isVisible={!!timePickerTarget}
-            mode="time"
-            onConfirm={handleConfirmTime}
-            onCancel={() => setTimePickerTarget(null)}
-          />
-
-          {/* Action Row */}
-          <View style={styles.footerRow}>
-            <TouchableOpacity style={styles.cancelBtn} onPress={onClose} disabled={saving || deleting}>
-              <Text style={styles.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.saveBtn, (saving || deleting) && { opacity: 0.7 }]}
-              onPress={handleSave}
-              disabled={saving || deleting}
-              activeOpacity={0.88}
-            >
-              {saving ? (
-                <ActivityIndicator size="small" color="#000000" />
-              ) : (
-                <>
-                  {isEditing ? <Save size={16} color="#000000" /> : <Plus size={16} color="#000000" strokeWidth={2.8} />}
-                  <Text style={styles.saveBtnText}>
-                    {isEditing ? 'Save Classroom' : 'Create Classroom'}
+                {tier === 'mixed' && (
+                  <Text style={{ fontSize: 12, color: amberAccent, marginTop: 6, fontWeight: '600' }}>
+                    All age groups (0–18 yrs) are eligible to join this Mixed Age Group classroom.
                   </Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
-      </View>
+                )}
+              </View>
+
+              {/* Schedule Times with Interactive Clock Pickers */}
+              <View style={styles.row}>
+                <View style={[styles.fieldGroup, { flex: 1 }]}>
+                  <View style={styles.labelRow}>
+                    <Clock size={12} color={blueAccent} />
+                    <Text style={[styles.label, { color: secondaryText }]}>Start Time</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.timePickerButton, { backgroundColor: cardSurface, borderColor }]}
+                    onPress={() => setTimePickerTarget('start')}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.timePickerButtonText, { color: amberAccent }]}>{startTime}</Text>
+                    <Clock size={14} color={amberAccent} />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={[styles.fieldGroup, { flex: 1 }]}>
+                  <View style={styles.labelRow}>
+                    <Clock size={12} color={blueAccent} />
+                    <Text style={[styles.label, { color: secondaryText }]}>End Time</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.timePickerButton, { backgroundColor: cardSurface, borderColor }]}
+                    onPress={() => setTimePickerTarget('end')}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.timePickerButtonText, { color: amberAccent }]}>{endTime}</Text>
+                    <Clock size={14} color={amberAccent} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ScrollView>
+
+            {/* Time Picker Modal */}
+            <DateTimePickerModal
+              isVisible={!!timePickerTarget}
+              mode="time"
+              onConfirm={handleConfirmTime}
+              onCancel={() => setTimePickerTarget(null)}
+            />
+
+            {/* Action Row */}
+            <View style={[styles.footerRow, { backgroundColor: screenBg, borderTopColor: borderColor }]}>
+              <TouchableOpacity
+                style={[styles.cancelBtn, { backgroundColor: secondarySurface, borderColor, borderWidth: 1 }]}
+                onPress={onClose}
+                disabled={saving || deleting}
+              >
+                <Text style={[styles.cancelBtnText, { color: primaryText }]}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.saveBtn, (saving || deleting) && { opacity: 0.7 }]}
+                onPress={handleSave}
+                disabled={saving || deleting}
+                activeOpacity={0.88}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color="#000000" />
+                ) : (
+                  <>
+                    {isEditing ? <Save size={16} color="#000000" /> : <Plus size={16} color="#000000" strokeWidth={2.8} />}
+                    <Text style={styles.saveBtnText}>
+                      {isEditing ? 'Save Classroom' : 'Create Classroom'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </SafeAreaProvider>
     </Modal>
   );
 }

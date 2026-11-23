@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -10,17 +10,23 @@ import {
   Image,
   ActivityIndicator,
   Alert,
+  Switch,
   Platform,
+  StatusBar,
 } from 'react-native';
-import { X, Camera, AlertTriangle, ShieldCheck, UserCheck, Plus, Check, Calendar } from 'lucide-react-native';
+import { SafeAreaProvider, SafeAreaView, initialWindowMetrics } from 'react-native-safe-area-context';
+import { X, Camera, Image as ImageIcon, AlertTriangle, ShieldCheck, UserCheck, Plus, Check, Calendar } from 'lucide-react-native';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import * as ImagePicker from 'expo-image-picker';
 import storage from '@react-native-firebase/storage';
 import {
   calculateChildAge,
   getRecommendedClassTier,
+  isChildEligibleForClass,
   AuthorizedGuardian,
+  KidsClassRecord,
 } from '../../../types/KidsMinistryTypes';
+import { useAdminTheme } from '../../../utils/adminThemeHelper';
 import KidsMinistryService from '../../../services/KidsMinistryService';
 
 interface Props {
@@ -95,6 +101,19 @@ export default function EnrollChildModal({
   existingFamilyMembers = EMPTY_FAMILY_ARRAY,
   onChildEnrolled,
 }: Props) {
+  const {
+    isDark,
+    screenBg,
+    cardSurface,
+    secondarySurface,
+    primaryText,
+    secondaryText,
+    borderColor,
+    barStyle,
+  } = useAdminTheme();
+  const amberAccent = isDark ? '#FBBF24' : '#D97706';
+  const primaryActionBg = isDark ? '#FFFFFF' : '#0F172A';
+  const primaryActionText = isDark ? '#000000' : '#FFFFFF';
   const [submitting, setSubmitting] = useState(false);
   const [selectedPhotoUri, setSelectedPhotoUri] = useState<string | null>(null);
 
@@ -119,11 +138,33 @@ export default function EnrollChildModal({
   const [newGuardianPhone, setNewGuardianPhone] = useState('');
   const [showAddGuardian, setShowAddGuardian] = useState(false);
 
-  // Derived age & class recommendation
+  // Step 4: Release Consent State (default safe: false)
+  const [canLeaveClassIndependently, setCanLeaveClassIndependently] = useState(false);
+  const [canLeavePremisesIndependently, setCanLeavePremisesIndependently] = useState(false);
+  const [teacherInstructions, setTeacherInstructions] = useState('');
+
+  // Derived age & class recommendation + eligible classrooms (including Mixed Age Group)
+  const [availableClasses, setAvailableClasses] = useState<KidsClassRecord[]>([]);
+  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!visible || !churchId) return;
+    const unsub = KidsMinistryService.subscribeToClasses(churchId, list => {
+      setAvailableClasses(list);
+    });
+    return () => unsub();
+  }, [visible, churchId]);
+
   const calculatedAge = calculateChildAge(dob);
   const recommendedTier = getRecommendedClassTier(calculatedAge);
+  const eligibleClasses = availableClasses.filter(cls => isChildEligibleForClass(calculatedAge, cls));
+  const selectedClassObj =
+    eligibleClasses.find(c => c.id === selectedClassId) ||
+    eligibleClasses.find(c => c.tier === recommendedTier.tier) ||
+    eligibleClasses[0] ||
+    null;
 
-  // Photo Picker
+  // Photo Picker (Gallery & Camera)
   const handlePickPhoto = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -139,6 +180,36 @@ export default function EnrollChildModal({
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Could not select photo');
     }
+  };
+
+  const handleTakePhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Camera Permission', 'Please allow camera access to take a child photo.');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.6,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setSelectedPhotoUri(result.assets[0].uri);
+      }
+    } catch (e: any) {
+      Alert.alert('Camera Error', e.message || 'Could not capture photo');
+    }
+  };
+
+  const promptPhotoSource = () => {
+    Alert.alert('Child Profile Picture', 'Choose a photo source:', [
+      { text: 'Upload from Gallery', onPress: handlePickPhoto },
+      { text: 'Take Photo using Camera', onPress: handleTakePhoto },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   const toggleAllergy = (allergy: string) => {
@@ -190,16 +261,23 @@ export default function EnrollChildModal({
 
       let photoUrl = '';
       if (selectedPhotoUri) {
-        const ext = selectedPhotoUri.split('.').pop() || 'jpg';
-        const storageRef = storage().ref(
-          `churches/${churchId}/children/${Date.now()}_child.${ext}`
-        );
-        await storageRef.putFile(selectedPhotoUri);
-        photoUrl = await storageRef.getDownloadURL();
+        if (selectedPhotoUri.startsWith('http://') || selectedPhotoUri.startsWith('https://')) {
+          photoUrl = selectedPhotoUri;
+        } else {
+          const ext = selectedPhotoUri.split('.').pop() || 'jpg';
+          const storageRef = storage().ref(
+            `churches/${churchId}/children/${Date.now()}_child.${ext}`
+          );
+          await storageRef.putFile(selectedPhotoUri);
+          photoUrl = await storageRef.getDownloadURL();
+        }
       }
 
       const parentName =
         member.name || `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Parent';
+
+      const targetClassName = selectedClassObj?.name || recommendedTier.displayName;
+      const targetTier = selectedClassObj?.tier || recommendedTier.tier;
 
       await KidsMinistryService.registerChild(churchId, {
         familyId: member.accountId || member.id || 'default_family',
@@ -212,10 +290,25 @@ export default function EnrollChildModal({
         dob,
         gender,
         photoUrl,
+        assignedClassId: selectedClassObj?.id,
+        assignedClassName: targetClassName,
+        assignedTier: targetTier,
         allergiesList,
         medicalNotes,
         bloodGroup,
         guardians,
+        notes: teacherInstructions.trim(),
+        consentPermissions: {
+          canLeaveClassroomIndependently: canLeaveClassIndependently,
+          canLeavePremisesIndependently: canLeavePremisesIndependently,
+          teacherInstructions: teacherInstructions.trim(),
+          status: 'confirmed',
+          updatedAt: new Date().toISOString(),
+          updatedByMemberId: member.id || '',
+          updatedByName: parentName,
+        },
+        parentConsentStatus: 'confirmed',
+        parentConsentConfirmed: true,
         emergencyContact: {
           name: guardians[0]?.name || parentName,
           phone: guardians[0]?.phone || member.phone || '',
@@ -225,7 +318,7 @@ export default function EnrollChildModal({
 
       Alert.alert(
         'Child Enrolled! 🎉',
-        `${firstName} is registered for ${recommendedTier.displayName}! Sunday School custody pass is now active.`,
+        `${firstName} is registered for ${targetClassName}! Sunday School custody pass is now active.`,
         [
           {
             text: 'OK',
@@ -251,6 +344,8 @@ export default function EnrollChildModal({
     setFirstName(parts[0] || '');
     setLastName(parts.slice(1).join(' ') || '');
     if (contact.dob) setDob(contact.dob);
+    const existingPhoto = contact.profilePhoto || contact.photoUrl;
+    if (existingPhoto) setSelectedPhotoUri(existingPhoto);
     if (contact.gender) {
       const g = contact.gender.toLowerCase();
       if (g === 'female' || contact.relation === 'Daughter' || contact.Relation === 'Daughter') setGender('female');
@@ -261,295 +356,480 @@ export default function EnrollChildModal({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
-      <View style={styles.container}>
-        {/* Header */}
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <X size={20} color="#FFFFFF" />
-          </TouchableOpacity>
-          <View style={styles.headerTitles}>
-            <Text style={styles.titleSerif}>Enroll in Sunday School</Text>
-            <Text style={styles.subtitle}>Child Profile & Safeguarding Setup</Text>
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" transparent={false} onRequestClose={onClose}>
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+        <SafeAreaView style={[styles.container, { backgroundColor: screenBg, paddingTop: 0 }]} edges={['top', 'bottom']}>
+          <StatusBar barStyle={barStyle} backgroundColor={screenBg} />
+          {/* Header */}
+          <View style={[styles.headerRow, { backgroundColor: screenBg, borderBottomColor: borderColor }]}>
+            <TouchableOpacity
+              onPress={onClose}
+              style={[styles.closeBtn, { backgroundColor: secondarySurface, borderColor, borderWidth: isDark ? 0 : 1 }]}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <X size={20} color={primaryText} />
+            </TouchableOpacity>
+            <View style={styles.headerTitles}>
+              <Text style={[styles.titleSerif, { color: primaryText }]}>Enroll in Sunday School</Text>
+              <Text style={[styles.subtitle, { color: secondaryText }]}>Child Profile & Safeguarding Setup</Text>
+            </View>
+            <View style={{ width: 36 }} />
           </View>
-          <View style={{ width: 36 }} />
-        </View>
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-          {/* Quick Pre-fill from Existing Household if any exist */}
-          {existingFamilyMembers.length > 0 && (
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionLabel}>DETECTED IN YOUR HOUSEHOLD</Text>
-              <Text style={styles.helpText}>Tap a child to auto-fill details:</Text>
-              <View style={styles.pillRow}>
-                {existingFamilyMembers
-                  .filter((c: any) =>
-                    ['Son', 'Daughter', 'Child', 'Grandson', 'Granddaughter'].includes(
-                      c.relation || c.Relation || ''
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+            {/* Quick Pre-fill from Existing Household if any exist */}
+            {existingFamilyMembers.length > 0 && (
+              <View style={[styles.sectionCard, { backgroundColor: cardSurface, borderColor }]}>
+                <Text style={[styles.sectionLabel, { color: amberAccent }]}>DETECTED IN YOUR HOUSEHOLD</Text>
+                <Text style={[styles.helpText, { color: secondaryText }]}>Tap a child to auto-fill details:</Text>
+                <View style={styles.pillRow}>
+                  {existingFamilyMembers
+                    .filter((c: any) =>
+                      ['Son', 'Daughter', 'Child', 'Grandson', 'Granddaughter'].includes(
+                        c.relation || c.Relation || ''
+                      )
                     )
-                  )
-                  .map((c: any, idx: number) => {
-                    const cName = c.FirstName || c.firstName || c.Name || 'Child';
+                    .map((c: any, idx: number) => {
+                      const cName = c.FirstName || c.firstName || c.Name || 'Child';
+                      return (
+                        <TouchableOpacity
+                          key={idx}
+                          style={[styles.prefillChip, { backgroundColor: secondarySurface, borderColor }]}
+                          onPress={() => handleSelectExistingContact(c)}
+                        >
+                          <Text style={[styles.prefillChipText, { color: primaryText }]}>
+                            🧒 {cName} ({c.relation || c.Relation})
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                </View>
+              </View>
+            )}
+
+            {/* Photo Capture for Face Scan */}
+            <View style={styles.photoContainer}>
+              <TouchableOpacity
+                style={[styles.avatarCircle, { backgroundColor: cardSurface, borderColor: amberAccent }]}
+                onPress={promptPhotoSource}
+              >
+                {selectedPhotoUri ? (
+                  <Image source={{ uri: selectedPhotoUri }} style={styles.avatarImg} />
+                ) : (
+                  <View style={styles.avatarPlaceholder}>
+                    <Camera size={28} color={amberAccent} />
+                    <Text style={[styles.avatarText, { color: amberAccent }]}>Add Photo</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                <TouchableOpacity
+                  style={[styles.prefillChip, { backgroundColor: secondarySurface, borderColor }]}
+                  onPress={handlePickPhoto}
+                >
+                  <ImageIcon size={13} color="#2563EB" />
+                  <Text style={[styles.prefillChipText, { marginLeft: 5, color: primaryText }]}>Gallery</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.prefillChip, { backgroundColor: secondarySurface, borderColor }]}
+                  onPress={handleTakePhoto}
+                >
+                  <Camera size={13} color={amberAccent} />
+                  <Text style={[styles.prefillChipText, { marginLeft: 5, color: primaryText }]}>Camera</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={[styles.photoHint, { color: secondaryText }]}>
+                Synced with Household Card & Face Check-In
+              </Text>
+            </View>
+
+            {/* Child Identity Details */}
+            <View style={[styles.sectionCard, { backgroundColor: cardSurface, borderColor }]}>
+              <Text style={[styles.sectionLabel, { color: amberAccent }]}>1. CHILD IDENTITY</Text>
+
+              <View style={styles.rowTwo}>
+                <View style={styles.halfInput}>
+                  <Text style={[styles.inputLabel, { color: secondaryText }]}>First Name *</Text>
+                  <TextInput
+                    style={[styles.textInput, { backgroundColor: secondarySurface, borderColor, color: primaryText }]}
+                    value={firstName}
+                    onChangeText={setFirstName}
+                    placeholder="e.g. Samuel"
+                    placeholderTextColor={secondaryText}
+                  />
+                </View>
+                <View style={styles.halfInput}>
+                  <Text style={[styles.inputLabel, { color: secondaryText }]}>Last Name</Text>
+                  <TextInput
+                    style={[styles.textInput, { backgroundColor: secondarySurface, borderColor, color: primaryText }]}
+                    value={lastName}
+                    onChangeText={setLastName}
+                    placeholder="e.g. Raj"
+                    placeholderTextColor={secondaryText}
+                  />
+                </View>
+              </View>
+
+              {/* DOB & Gender */}
+              <View style={styles.rowTwo}>
+                <View style={styles.halfInput}>
+                  <Text style={[styles.inputLabel, { color: secondaryText }]}>Date of Birth (DD-MM-YYYY)</Text>
+                  <TouchableOpacity
+                    style={[styles.datePickerBtn, { backgroundColor: secondarySurface, borderColor }]}
+                    onPress={() => setShowDatePicker(true)}
+                    activeOpacity={0.8}
+                  >
+                    <Calendar size={16} color={amberAccent} style={{ marginRight: 8 }} />
+                    <Text style={[styles.datePickerText, { color: primaryText }]}>{formatDisplayDate(dob)}</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.halfInput}>
+                  <Text style={[styles.inputLabel, { color: secondaryText }]}>Gender</Text>
+                  <View style={styles.genderRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.genderBtn,
+                        { backgroundColor: secondarySurface, borderColor },
+                        gender === 'male' && styles.genderBtnActive,
+                      ]}
+                      onPress={() => setGender('male')}
+                    >
+                      <Text
+                        style={[
+                          styles.genderBtnText,
+                          { color: secondaryText },
+                          gender === 'male' && { color: amberAccent, fontWeight: '700' },
+                        ]}
+                      >
+                        Boy
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.genderBtn,
+                        { backgroundColor: secondarySurface, borderColor },
+                        gender === 'female' && styles.genderBtnActive,
+                      ]}
+                      onPress={() => setGender('female')}
+                    >
+                      <Text
+                        style={[
+                          styles.genderBtnText,
+                          { color: secondaryText },
+                          gender === 'female' && { color: amberAccent, fontWeight: '700' },
+                        ]}
+                      >
+                        Girl
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+
+              {/* Auto-Assigned Class Card + Eligible Classroom Selector (including Mixed Age Group) */}
+              <View style={styles.tierPreviewCard}>
+                <View style={styles.tierInfo}>
+                  <Text style={[styles.tierLabel, { color: isDark ? '#A7F3D0' : '#059669' }]}>
+                    {selectedClassObj ? 'Selected Sunday School Class:' : 'Recommended Sunday School Class:'}
+                  </Text>
+                  <Text style={[styles.tierName, { color: primaryText }]}>
+                    {selectedClassObj?.name || recommendedTier.displayName}
+                  </Text>
+                  <Text style={[styles.tierAge, { color: secondaryText }]}>
+                    Age: {calculatedAge} years ·{' '}
+                    {selectedClassObj
+                      ? selectedClassObj.tier === 'mixed'
+                        ? `Mixed Age Group (All Ages) · ${selectedClassObj.roomNumber}`
+                        : `Ages ${selectedClassObj.ageRange.min}–${selectedClassObj.ageRange.max} · ${selectedClassObj.roomNumber}`
+                      : `${recommendedTier.ageRange} · ${recommendedTier.roomDefault}`}
+                  </Text>
+                  <Text style={[styles.tierExplainer, { color: isDark ? '#6EE7B7' : '#047857' }]}>
+                    {eligibleClasses.length > 1
+                      ? 'Tap a classroom below to choose (Mixed Age Group accepts all ages).'
+                      : `Auto-grouped by age (${calculatedAge} yrs) so your child is in the right class & curriculum.`}
+                  </Text>
+                </View>
+                <ShieldCheck size={26} color="#10B981" />
+              </View>
+
+              {eligibleClasses.length > 0 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 8, paddingTop: 4 }}
+                >
+                  {eligibleClasses.map(cls => {
+                    const isSel = selectedClassObj?.id === cls.id;
                     return (
                       <TouchableOpacity
-                        key={idx}
-                        style={styles.prefillChip}
-                        onPress={() => handleSelectExistingContact(c)}
+                        key={cls.id}
+                        style={[
+                          styles.prefillChip,
+                          { backgroundColor: secondarySurface, borderColor },
+                          isSel && { backgroundColor: '#FBBF24', borderColor: '#FBBF24' },
+                        ]}
+                        onPress={() => setSelectedClassId(cls.id)}
                       >
-                        <Text style={styles.prefillChipText}>🧒 {cName} ({c.relation || c.Relation})</Text>
+                        <Text
+                          style={[
+                            styles.prefillChipText,
+                            { color: primaryText },
+                            isSel && { color: '#000000', fontWeight: '800' },
+                          ]}
+                        >
+                          {cls.name} {cls.tier === 'mixed' ? '· Mixed (All Ages)' : ''}
+                        </Text>
                       </TouchableOpacity>
                     );
                   })}
-              </View>
-            </View>
-          )}
-
-          {/* Photo Capture for Face Scan */}
-          <View style={styles.photoContainer}>
-            <TouchableOpacity style={styles.avatarCircle} onPress={handlePickPhoto}>
-              {selectedPhotoUri ? (
-                <Image source={{ uri: selectedPhotoUri }} style={styles.avatarImg} />
-              ) : (
-                <View style={styles.avatarPlaceholder}>
-                  <Camera size={28} color="#FBBF24" />
-                  <Text style={styles.avatarText}>Add Photo</Text>
-                </View>
+                </ScrollView>
               )}
-            </TouchableOpacity>
-            <Text style={styles.photoHint}>Required for Entrance Face Recognition Kiosk</Text>
-          </View>
-
-          {/* Child Identity Details */}
-          <View style={styles.sectionCard}>
-            <Text style={styles.sectionLabel}>1. CHILD IDENTITY</Text>
-
-            <View style={styles.rowTwo}>
-              <View style={styles.halfInput}>
-                <Text style={styles.inputLabel}>First Name *</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={firstName}
-                  onChangeText={setFirstName}
-                  placeholder="e.g. Samuel"
-                  placeholderTextColor="#64748B"
-                />
-              </View>
-              <View style={styles.halfInput}>
-                <Text style={styles.inputLabel}>Last Name</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={lastName}
-                  onChangeText={setLastName}
-                  placeholder="e.g. Raj"
-                  placeholderTextColor="#64748B"
-                />
-              </View>
             </View>
 
-            {/* DOB & Gender */}
-            <View style={styles.rowTwo}>
-              <View style={styles.halfInput}>
-                <Text style={styles.inputLabel}>Date of Birth (DD-MM-YYYY)</Text>
+            {/* Medical & Allergies */}
+            <View style={[styles.sectionCard, { backgroundColor: cardSurface, borderColor }]}>
+              <View style={styles.sectionLabelRow}>
+                <Text style={[styles.sectionLabel, { color: amberAccent }]}>2. MEDICAL & ALLERGY ALERTS (OPTIONAL)</Text>
+                <AlertTriangle size={14} color="#EF4444" />
+              </View>
+              <Text style={[styles.helpText, { color: secondaryText }]}>
+                Informs teachers to safeguard your child during snacks & playtime (e.g. food allergies, asthma inhaler). Leave blank if none.
+              </Text>
+
+              {/* Allergy Chips */}
+              <View style={styles.chipsWrap}>
+                {COMMON_ALLERGIES.map(allergy => {
+                  const isSelected = allergiesList.includes(allergy);
+                  return (
+                    <TouchableOpacity
+                      key={allergy}
+                      style={[
+                        styles.allergyChip,
+                        { backgroundColor: secondarySurface, borderColor },
+                        isSelected && styles.allergyChipActive,
+                      ]}
+                      onPress={() => toggleAllergy(allergy)}
+                    >
+                      <Text
+                        style={[
+                          styles.allergyChipText,
+                          { color: secondaryText },
+                          isSelected && { color: isDark ? '#FCA5A5' : '#DC2626', fontWeight: '700' },
+                        ]}
+                      >
+                        {isSelected ? '✓ ' : ''}{allergy}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* Custom Allergy input */}
+              <View style={styles.customAllergyRow}>
+                <TextInput
+                  style={[styles.textInput, { flex: 1, backgroundColor: secondarySurface, borderColor, color: primaryText }]}
+                  value={customAllergy}
+                  onChangeText={setCustomAllergy}
+                  placeholder="Other allergy / medication..."
+                  placeholderTextColor={secondaryText}
+                />
                 <TouchableOpacity
-                  style={styles.datePickerBtn}
-                  onPress={() => setShowDatePicker(true)}
-                  activeOpacity={0.8}
+                  style={[styles.addChipBtn, { backgroundColor: primaryActionBg }]}
+                  onPress={addCustomAllergy}
                 >
-                  <Calendar size={16} color="#FBBF24" style={{ marginRight: 8 }} />
-                  <Text style={styles.datePickerText}>{formatDisplayDate(dob)}</Text>
+                  <Plus size={16} color={primaryActionText} />
                 </TouchableOpacity>
               </View>
-              <View style={styles.halfInput}>
-                <Text style={styles.inputLabel}>Gender</Text>
-                <View style={styles.genderRow}>
-                  <TouchableOpacity
-                    style={[styles.genderBtn, gender === 'male' && styles.genderBtnActive]}
-                    onPress={() => setGender('male')}
-                  >
-                    <Text style={[styles.genderBtnText, gender === 'male' && styles.genderBtnTextActive]}>Boy</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.genderBtn, gender === 'female' && styles.genderBtnActive]}
-                    onPress={() => setGender('female')}
-                  >
-                    <Text style={[styles.genderBtnText, gender === 'female' && styles.genderBtnTextActive]}>Girl</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
 
-            {/* Auto-Assigned Class Card */}
-            <View style={styles.tierPreviewCard}>
-              <View style={styles.tierInfo}>
-                <Text style={styles.tierLabel}>Recommended Sunday School Class:</Text>
-                <Text style={styles.tierName}>{recommendedTier.displayName}</Text>
-                <Text style={styles.tierAge}>Age: {calculatedAge} years ({recommendedTier.ageRange}) · {recommendedTier.roomDefault}</Text>
-                <Text style={styles.tierExplainer}>
-                  Auto-grouped by age ({calculatedAge} yrs) so your child is in the right class & curriculum.
-                </Text>
-              </View>
-              <ShieldCheck size={26} color="#10B981" />
-            </View>
-          </View>
-
-          {/* Medical & Allergies */}
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionLabelRow}>
-              <Text style={styles.sectionLabel}>2. MEDICAL & ALLERGY ALERTS (OPTIONAL)</Text>
-              <AlertTriangle size={14} color="#EF4444" />
-            </View>
-            <Text style={styles.helpText}>
-              Informs teachers to safeguard your child during snacks & playtime (e.g. food allergies, asthma inhaler). Leave blank if none.
-            </Text>
-
-            {/* Allergy Chips */}
-            <View style={styles.chipsWrap}>
-              {COMMON_ALLERGIES.map(allergy => {
-                const isSelected = allergiesList.includes(allergy);
-                return (
-                  <TouchableOpacity
-                    key={allergy}
-                    style={[styles.allergyChip, isSelected && styles.allergyChipActive]}
-                    onPress={() => toggleAllergy(allergy)}
-                  >
-                    <Text style={[styles.allergyChipText, isSelected && styles.allergyChipTextActive]}>
-                      {isSelected ? '✓ ' : ''}{allergy}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {/* Custom Allergy input */}
-            <View style={styles.customAllergyRow}>
-              <TextInput
-                style={[styles.textInput, { flex: 1 }]}
-                value={customAllergy}
-                onChangeText={setCustomAllergy}
-                placeholder="Other allergy / medication..."
-                placeholderTextColor="#64748B"
-              />
-              <TouchableOpacity style={styles.addChipBtn} onPress={addCustomAllergy}>
-                <Plus size={16} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
-
-            <View style={{ marginTop: 10 }}>
-              <Text style={styles.inputLabel}>Medical Notes / Inhaler Details (Optional)</Text>
-              <TextInput
-                style={[styles.textInput, { height: 60 }]}
-                value={medicalNotes}
-                onChangeText={setMedicalNotes}
-                placeholder="e.g. Carries inhaler in bag / Asthmatic"
-                placeholderTextColor="#64748B"
-                multiline
-              />
-            </View>
-          </View>
-
-          {/* Authorized Pickup Persons */}
-          <View style={styles.sectionCard}>
-            <Text style={styles.sectionLabel}>3. AUTHORIZED PICKUP PERSONS</Text>
-            <Text style={styles.helpText}>Child will only be released to these verified individuals:</Text>
-
-            {guardians.map((g, idx) => (
-              <View key={idx} style={styles.guardianRow}>
-                <View style={styles.guardianAvatar}>
-                  <UserCheck size={18} color="#10B981" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.guardianName}>{g.name} ({g.relationship})</Text>
-                  <Text style={styles.guardianPhone}>{g.phone || 'Phone on file'}</Text>
-                </View>
-                <View style={styles.authorizedBadge}>
-                  <Text style={styles.authorizedBadgeText}>Authorized</Text>
-                </View>
-              </View>
-            ))}
-
-            {!showAddGuardian ? (
-              <TouchableOpacity style={styles.addGuardianBtn} onPress={() => setShowAddGuardian(true)}>
-                <Plus size={16} color="#FBBF24" />
-                <Text style={styles.addGuardianBtnText}>Add Another Pickup Relative (Grandparent, Uncle)</Text>
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.addGuardianBox}>
-                <Text style={styles.inputLabel}>Relative Name</Text>
+              <View style={{ marginTop: 10 }}>
+                <Text style={[styles.inputLabel, { color: secondaryText }]}>Medical Notes / Inhaler Details (Optional)</Text>
                 <TextInput
-                  style={styles.textInput}
-                  value={newGuardianName}
-                  onChangeText={setNewGuardianName}
-                  placeholder="e.g. Grandfather David"
-                  placeholderTextColor="#64748B"
+                  style={[styles.textInput, { height: 60, backgroundColor: secondarySurface, borderColor, color: primaryText }]}
+                  value={medicalNotes}
+                  onChangeText={setMedicalNotes}
+                  placeholder="e.g. Carries inhaler in bag / Asthmatic"
+                  placeholderTextColor={secondaryText}
+                  multiline
                 />
-                <View style={styles.rowTwo}>
-                  <View style={styles.halfInput}>
-                    <Text style={styles.inputLabel}>Relationship</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      value={newGuardianRelation}
-                      onChangeText={setNewGuardianRelation}
-                      placeholder="e.g. Grandfather"
-                      placeholderTextColor="#64748B"
-                    />
-                  </View>
-                  <View style={styles.halfInput}>
-                    <Text style={styles.inputLabel}>Phone Number</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      value={newGuardianPhone}
-                      onChangeText={setNewGuardianPhone}
-                      placeholder="+91..."
-                      placeholderTextColor="#64748B"
-                      keyboardType="phone-pad"
-                    />
-                  </View>
-                </View>
-                <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-                  <TouchableOpacity style={styles.saveGuardianBtn} onPress={handleAddGuardian}>
-                    <Text style={styles.saveGuardianBtnText}>Save Relative</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.cancelGuardianBtn} onPress={() => setShowAddGuardian(false)}>
-                    <Text style={styles.cancelGuardianBtnText}>Cancel</Text>
-                  </TouchableOpacity>
-                </View>
               </View>
-            )}
-          </View>
+            </View>
 
-          {/* Submit Action */}
-          <TouchableOpacity
-            style={[styles.submitBtn, submitting && { opacity: 0.7 }]}
-            onPress={handleSubmit}
-            disabled={submitting}
-            activeOpacity={0.88}
-          >
-            {submitting ? (
-              <ActivityIndicator size="small" color="#000000" />
-            ) : (
-              <>
-                <Text style={styles.submitBtnText}>Complete Registration & Activate Pass</Text>
-                <Check size={18} color="#000000" strokeWidth={3} />
-              </>
-            )}
-          </TouchableOpacity>
-        </ScrollView>
+            {/* Authorized Pickup Persons */}
+            <View style={[styles.sectionCard, { backgroundColor: cardSurface, borderColor }]}>
+              <Text style={[styles.sectionLabel, { color: amberAccent }]}>3. AUTHORIZED PICKUP PERSONS</Text>
+              <Text style={[styles.helpText, { color: secondaryText }]}>
+                Child will only be released to these verified individuals:
+              </Text>
 
-        <DateTimePickerModal
-          isVisible={showDatePicker}
-          mode="date"
-          maximumDate={new Date()}
-          date={dob && !isNaN(Date.parse(dob)) ? new Date(dob) : new Date(2018, 4, 15)}
-          onConfirm={(selectedDate) => {
-            setShowDatePicker(false);
-            const year = selectedDate.getFullYear();
-            const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
-            const day = String(selectedDate.getDate()).padStart(2, '0');
-            setDob(`${year}-${month}-${day}`);
-          }}
-          onCancel={() => setShowDatePicker(false)}
-        />
-      </View>
+              {guardians.map((g, idx) => (
+                <View key={idx} style={[styles.guardianRow, { backgroundColor: secondarySurface, borderColor }]}>
+                  <View style={styles.guardianAvatar}>
+                    <UserCheck size={18} color="#10B981" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.guardianName, { color: primaryText }]}>{g.name} ({g.relationship})</Text>
+                    <Text style={[styles.guardianPhone, { color: secondaryText }]}>{g.phone || 'Phone on file'}</Text>
+                  </View>
+                  <View style={styles.authorizedBadge}>
+                    <Text style={styles.authorizedBadgeText}>Authorized</Text>
+                  </View>
+                </View>
+              ))}
+
+              {!showAddGuardian ? (
+                <TouchableOpacity style={styles.addGuardianBtn} onPress={() => setShowAddGuardian(true)}>
+                  <Plus size={16} color={amberAccent} />
+                  <Text style={[styles.addGuardianBtnText, { color: amberAccent }]}>
+                    Add Another Pickup Relative (Grandparent, Uncle)
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={[styles.addGuardianBox, { backgroundColor: secondarySurface, borderColor }]}>
+                  <Text style={[styles.inputLabel, { color: secondaryText }]}>Relative Name</Text>
+                  <TextInput
+                    style={[styles.textInput, { backgroundColor: cardSurface, borderColor, color: primaryText }]}
+                    value={newGuardianName}
+                    onChangeText={setNewGuardianName}
+                    placeholder="e.g. Grandfather David"
+                    placeholderTextColor={secondaryText}
+                  />
+                  <View style={styles.rowTwo}>
+                    <View style={styles.halfInput}>
+                      <Text style={[styles.inputLabel, { color: secondaryText }]}>Relationship</Text>
+                      <TextInput
+                        style={[styles.textInput, { backgroundColor: cardSurface, borderColor, color: primaryText }]}
+                        value={newGuardianRelation}
+                        onChangeText={setNewGuardianRelation}
+                        placeholder="e.g. Grandfather"
+                        placeholderTextColor={secondaryText}
+                      />
+                    </View>
+                    <View style={styles.halfInput}>
+                      <Text style={[styles.inputLabel, { color: secondaryText }]}>Phone Number</Text>
+                      <TextInput
+                        style={[styles.textInput, { backgroundColor: cardSurface, borderColor, color: primaryText }]}
+                        value={newGuardianPhone}
+                        onChangeText={setNewGuardianPhone}
+                        placeholder="+91..."
+                        placeholderTextColor={secondaryText}
+                        keyboardType="phone-pad"
+                      />
+                    </View>
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                    <TouchableOpacity
+                      style={[styles.saveGuardianBtn, { backgroundColor: primaryActionBg }]}
+                      onPress={handleAddGuardian}
+                    >
+                      <Text style={[styles.saveGuardianBtnText, { color: primaryActionText }]}>Save Relative</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.cancelGuardianBtn, { backgroundColor: cardSurface, borderWidth: 1, borderColor }]}
+                      onPress={() => setShowAddGuardian(false)}
+                    >
+                      <Text style={[styles.cancelGuardianBtnText, { color: primaryText }]}>Cancel</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            </View>
+
+            {/* Step 4: Parent Consent & Release Permissions */}
+            <View style={[styles.sectionCard, { backgroundColor: cardSurface, borderColor }]}>
+              <Text style={[styles.sectionLabel, { color: amberAccent }]}>4. RELEASE CONSENT & TEACHER INSTRUCTIONS</Text>
+              <Text style={[styles.helpText, { color: secondaryText }]}>
+                Teachers follow these permissions before releasing your child:
+              </Text>
+
+              <View style={[styles.guardianRow, { backgroundColor: secondarySurface, borderColor }]}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={[styles.guardianName, { color: primaryText }]}>
+                    Leave classroom independently
+                  </Text>
+                  <Text style={[styles.guardianPhone, { color: secondaryText }]}>
+                    Keep OFF if pickup person must meet teacher
+                  </Text>
+                </View>
+                <Switch
+                  value={canLeaveClassIndependently}
+                  onValueChange={setCanLeaveClassIndependently}
+                  trackColor={{ false: '#CBD5E1', true: '#10B981' }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+
+              <View style={[styles.guardianRow, { backgroundColor: secondarySurface, borderColor }]}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={[styles.guardianName, { color: primaryText }]}>
+                    Leave church premises independently
+                  </Text>
+                  <Text style={[styles.guardianPhone, { color: secondaryText }]}>
+                    Keep OFF so only approved guardians can pick up
+                  </Text>
+                </View>
+                <Switch
+                  value={canLeavePremisesIndependently}
+                  onValueChange={setCanLeavePremisesIndependently}
+                  trackColor={{ false: '#CBD5E1', true: '#F59E0B' }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+
+              <View style={{ marginTop: 4 }}>
+                <Text style={[styles.inputLabel, { color: secondaryText }]}>
+                  Instructions for Teachers (Optional)
+                </Text>
+                <TextInput
+                  style={[styles.textInput, { height: 62, backgroundColor: secondarySurface, borderColor, color: primaryText }]}
+                  value={teacherInstructions}
+                  onChangeText={setTeacherInstructions}
+                  placeholder="e.g. Please hand over only to Father or Grandmother"
+                  placeholderTextColor={secondaryText}
+                  multiline
+                />
+              </View>
+            </View>
+
+            {/* Submit Action */}
+            <TouchableOpacity
+              style={[
+                styles.submitBtn,
+                { backgroundColor: primaryActionBg, shadowColor: '#000000' },
+                submitting && { opacity: 0.7 },
+              ]}
+              onPress={handleSubmit}
+              disabled={submitting}
+              activeOpacity={0.88}
+            >
+              {submitting ? (
+                <ActivityIndicator size="small" color={primaryActionText} />
+              ) : (
+                <>
+                  <Text style={[styles.submitBtnText, { color: primaryActionText }]}>
+                    Complete Registration & Activate Pass
+                  </Text>
+                  <Check size={18} color={primaryActionText} strokeWidth={3} />
+                </>
+              )}
+            </TouchableOpacity>
+          </ScrollView>
+
+          <DateTimePickerModal
+            isVisible={showDatePicker}
+            mode="date"
+            maximumDate={new Date()}
+            date={dob && !isNaN(Date.parse(dob)) ? new Date(dob) : new Date(2018, 4, 15)}
+            onConfirm={(selectedDate) => {
+              setShowDatePicker(false);
+              const year = selectedDate.getFullYear();
+              const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+              const day = String(selectedDate.getDate()).padStart(2, '0');
+              setDob(`${year}-${month}-${day}`);
+            }}
+            onCancel={() => setShowDatePicker(false)}
+          />
+        </SafeAreaView>
+      </SafeAreaProvider>
     </Modal>
   );
 }
@@ -659,6 +939,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   prefillChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#27272A',
     paddingHorizontal: 10,
     paddingVertical: 6,
