@@ -1,14 +1,3 @@
-import webCrypto, { polyfillWebCrypto } from 'expo-standard-web-crypto';
-if (typeof window !== 'undefined') {
-  polyfillWebCrypto();
-}
-if (typeof global !== 'undefined') {
-  if (typeof global.crypto !== 'object' || global.crypto === null) {
-    global.crypto = webCrypto;
-  } else if (typeof global.crypto.getRandomValues !== 'function') {
-    global.crypto.getRandomValues = (arr) => webCrypto.getRandomValues(arr);
-  }
-}
 import './src/utils/FontSizeManager';
 import { registerRootComponent } from 'expo';
 import messaging from '@react-native-firebase/messaging';

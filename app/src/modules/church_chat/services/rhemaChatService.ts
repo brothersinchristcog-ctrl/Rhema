@@ -28,6 +28,71 @@ import { getChatRtdb, setRtdb as set, updateRtdb as update } from './rtdbClient'
 
 let _presenceCleanup: (() => void) | null = null;
 let _presenceKey: string | null = null;
+const _inFlightDeliveryKeys = new Set<string>();
+
+function ackChurchInboxDeliveries(
+  cid: string,
+  db: ReturnType<typeof getChatRtdb>,
+  uid: string,
+  rawEntries: Array<{ roomId: string; r: Record<string, any> }>
+) {
+  const now = Date.now();
+  rawEntries.forEach(({ roomId: rKey, r }) => {
+    const resolvedId = String(r.roomId || rKey);
+    const msgId = String(r.lastMessageId || '');
+    if (
+      !r.lastMessageSenderUid ||
+      r.lastMessageSenderUid === uid ||
+      !msgId ||
+      r.lastMessageDelivered
+    ) {
+      return;
+    }
+
+    const dedupeKey = `${cid}:${uid}:${resolvedId}:${msgId}`;
+    if (_inFlightDeliveryKeys.has(dedupeKey)) return;
+    _inFlightDeliveryKeys.add(dedupeKey);
+
+    void (async () => {
+      try {
+        const [partSnap, msgSnap] = await Promise.all([
+          get(ref(db, `rhema_chat/${cid}/rooms/${resolvedId}/participants/${uid}`)).catch(
+            () => null
+          ),
+          get(ref(db, `rhema_chat/${cid}/rooms/${resolvedId}/messages/${msgId}/senderUid`)).catch(
+            () => null
+          ),
+        ]);
+
+        if (partSnap?.val() === true && msgSnap?.exists()) {
+          const perRoomUpdates: Record<string, any> = {
+            [`rhema_chat/${cid}/rooms/${resolvedId}/messages/${msgId}/deliveredTo/${uid}`]: now,
+            [`rhema_chat/${cid}/inbox/${uid}/${resolvedId}/lastMessageDelivered`]: true,
+          };
+          if (r.roomType === 'direct' && r.peerUid) {
+            perRoomUpdates[
+              `rhema_chat/${cid}/inbox/${r.peerUid}/${resolvedId}/lastMessageDelivered`
+            ] = true;
+          }
+          await update(ref(db), perRoomUpdates);
+          return;
+        }
+
+        // Room/message missing or user removed from group: clear locally on user's own inbox row
+        // so this stale entry never retries a multi-path root update that fails rules.
+        await update(ref(db, `rhema_chat/${cid}/inbox/${uid}/${resolvedId}`), {
+          lastMessageDelivered: true,
+        }).catch(() => {});
+      } catch {
+        await update(ref(db, `rhema_chat/${cid}/inbox/${uid}/${resolvedId}`), {
+          lastMessageDelivered: true,
+        }).catch(() => {});
+      } finally {
+        _inFlightDeliveryKeys.delete(dedupeKey);
+      }
+    })();
+  });
+}
 
 export function getDirectRoomId(uidA: string, uidB: string): string {
   return `dm_${[uidA, uidB].sort().join('_')}`;
@@ -54,6 +119,27 @@ export function buildMessagePreview(
       return clean || 'Group update';
     default:
       return clean;
+  }
+}
+
+async function ensureDirectParticipants(
+  db: ReturnType<typeof getChatRtdb>,
+  cid: string,
+  roomId: string,
+  participantUids: string[]
+): Promise<void> {
+  const partSnap = await get(
+    ref(db, `rhema_chat/${cid}/rooms/${roomId}/participants`)
+  ).catch(() => null);
+  const partVal = (partSnap?.val() || {}) as Record<string, any>;
+  const missingParts: Record<string, any> = {};
+  participantUids.forEach((u) => {
+    if (u && partVal[u] !== true) missingParts[u] = true;
+  });
+  if (Object.keys(missingParts).length > 0) {
+    await update(ref(db, `rhema_chat/${cid}/rooms/${roomId}/participants`), missingParts).catch(
+      () => {}
+    );
   }
 }
 
@@ -162,31 +248,8 @@ export const rhemaChatService = {
         .map((roomId) => ({ roomId, r: raw[roomId] || {} }))
         .filter(({ roomId, r }) => Boolean(r.roomId || roomId));
 
-      // Mark incoming messages delivered as soon as recipient client receives inbox snapshot
-      const now = Date.now();
-      const deliveryUpdates: Record<string, any> = {};
-      rawEntries.forEach(({ roomId: rKey, r }) => {
-        const resolvedId = String(r.roomId || rKey);
-        if (
-          r.lastMessageSenderUid &&
-          r.lastMessageSenderUid !== uid &&
-          r.lastMessageId &&
-          !r.lastMessageDelivered
-        ) {
-          deliveryUpdates[
-            `rhema_chat/${cid}/rooms/${resolvedId}/messages/${r.lastMessageId}/deliveredTo/${uid}`
-          ] = now;
-          deliveryUpdates[`rhema_chat/${cid}/inbox/${uid}/${resolvedId}/lastMessageDelivered`] = true;
-          if (r.roomType === 'direct' && r.peerUid) {
-            deliveryUpdates[
-              `rhema_chat/${cid}/inbox/${r.peerUid}/${resolvedId}/lastMessageDelivered`
-            ] = true;
-          }
-        }
-      });
-      if (Object.keys(deliveryUpdates).length > 0) {
-        update(ref(db), deliveryUpdates).catch(() => {});
-      }
+      // Mark incoming messages delivered safely per room without tripping root multi-path denials
+      ackChurchInboxDeliveries(cid, db, uid, rawEntries);
 
       const items: ChatInboxItem[] = await Promise.all(
         rawEntries.map(async ({ roomId: rKey, r }) => {
@@ -282,11 +345,8 @@ export const rhemaChatService = {
         [`rhema_chat/${cid}/rooms/${roomId}/participants/${peer.uid}`]: true,
       });
     } else {
-      // Ensure my participant key & inbox metadata stay up to date
-      await update(ref(db), {
-        [`rhema_chat/${cid}/rooms/${roomId}/participants/${me.uid}`]: true,
-        [`rhema_chat/${cid}/rooms/${roomId}/participants/${peer.uid}`]: true,
-      }).catch(() => {});
+      // Only write missing DM participant keys so existing rooms never hit rule denials
+      await ensureDirectParticipants(db, cid, roomId, [me.uid, peer.uid]);
     }
 
     await update(ref(db), {
@@ -582,11 +642,28 @@ export const rhemaChatService = {
     if (!roomId || !myUid) return;
     const cid = churchId || RHEMA_CHURCH_ID;
     const db = getChatRtdb();
+    const [partSnap, inboxSnap] = await Promise.all([
+      get(ref(db, `rhema_chat/${cid}/rooms/${roomId}/participants/${myUid}`)).catch(() => null),
+      get(ref(db, `rhema_chat/${cid}/inbox/${myUid}/${roomId}/unreadCount`)).catch(() => null),
+    ]);
+    const hasInboxUnread = inboxSnap?.exists() && Number(inboxSnap.val() || 0) > 0;
+
+    if (partSnap?.val() !== true) {
+      if (hasInboxUnread) {
+        await update(ref(db, `rhema_chat/${cid}/inbox/${myUid}/${roomId}`), {
+          unreadCount: 0,
+        }).catch(() => {});
+      }
+      return;
+    }
+
     const now = Date.now();
     const updates: Record<string, any> = {
-      [`rhema_chat/${cid}/inbox/${myUid}/${roomId}/unreadCount`]: 0,
       [`rhema_chat/${cid}/rooms/${roomId}/readWatermarks/${myUid}`]: now,
     };
+    if (hasInboxUnread) {
+      updates[`rhema_chat/${cid}/inbox/${myUid}/${roomId}/unreadCount`] = 0;
+    }
     unreadIncomingMsgIds.forEach((msgId) => {
       updates[`rhema_chat/${cid}/rooms/${roomId}/messages/${msgId}/deliveredTo/${myUid}`] = now;
       updates[`rhema_chat/${cid}/rooms/${roomId}/messages/${msgId}/readBy/${myUid}`] = now;
@@ -631,11 +708,7 @@ export const rhemaChatService = {
 
     const ctx = { scope: 'church' as const, rtdb: db, churchId: cid, roomId: params.roomId };
     if (params.roomType === 'direct') {
-      const partUpdates: Record<string, any> = {};
-      participants.forEach((u) => {
-        partUpdates[`rhema_chat/${cid}/rooms/${params.roomId}/participants/${u}`] = true;
-      });
-      await update(ref(db), partUpdates).catch(() => {});
+      await ensureDirectParticipants(db, cid, params.roomId, participants);
     }
 
     const roomKey = await roomKeyManager.getOrCreateRoomSendKey(ctx, params.senderUid, participants);
@@ -909,6 +982,21 @@ export const rhemaChatService = {
     if (!roomId || !myUid) return;
     const cid = churchId || RHEMA_CHURCH_ID;
     const db = getChatRtdb();
+    const partSnap =
+      messageIds.length > 0
+        ? await get(ref(db, `rhema_chat/${cid}/rooms/${roomId}/participants/${myUid}`)).catch(
+            () => null
+          )
+        : null;
+
+    if (partSnap?.val() !== true) {
+      await update(ref(db, `rhema_chat/${cid}/inbox/${myUid}/${roomId}`), {
+        lastMessageText: '',
+        unreadCount: 0,
+      });
+      return;
+    }
+
     const updates: Record<string, any> = {
       [`rhema_chat/${cid}/inbox/${myUid}/${roomId}/lastMessageText`]: '',
       [`rhema_chat/${cid}/inbox/${myUid}/${roomId}/unreadCount`]: 0,
@@ -927,11 +1015,14 @@ export const rhemaChatService = {
     const cid = churchId || RHEMA_CHURCH_ID;
     const db = getChatRtdb();
 
-    await update(ref(db), {
-      [`rhema_chat/${cid}/inbox/${myUid}/${roomId}`]: null,
-    });
+    await set(ref(db, `rhema_chat/${cid}/inbox/${myUid}/${roomId}`), null);
 
     try {
+      const partSnap = await get(
+        ref(db, `rhema_chat/${cid}/rooms/${roomId}/participants/${myUid}`)
+      ).catch(() => null);
+      if (partSnap?.val() !== true) return;
+
       let msgIds = knownMessageIds;
       if (!msgIds) {
         const snap = await get(

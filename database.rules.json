@@ -10,14 +10,14 @@
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
         "$roomId": {
-          ".write": "auth != null && (auth.uid === $uid || root.child('matrimony_chats').child($roomId).child('participants').child(auth.uid).val() === true)"
+          ".write": "auth != null && (auth.uid === $uid || root.child('matrimony_chats').child($roomId).child('participants').child(auth.uid).val() === true || $roomId === auth.uid + '_' + $uid || $roomId === $uid + '_' + auth.uid)"
         }
       }
     },
     "matrimony_chats": {
       "$roomId": {
-        ".read": "auth != null && data.child('participants').child(auth.uid).val() === true",
-        ".write": "auth != null && (data.child('participants').child(auth.uid).val() === true || (!data.exists() && $roomId.contains(auth.uid)))",
+        ".read": "auth != null && (data.child('participants').child(auth.uid).val() === true || $roomId.beginsWith(auth.uid + '_') || $roomId.endsWith('_' + auth.uid))",
+        ".write": "auth != null && (data.child('participants').child(auth.uid).val() === true || ((($roomId.beginsWith(auth.uid + '_') || $roomId.endsWith('_' + auth.uid)) && data.child('participants').child(auth.uid).val() !== false)))",
         "messages": {
           ".indexOn": ["createdAt"]
         }
@@ -35,19 +35,19 @@
           "$uid": {
             ".read": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid",
             "$roomId": {
-              ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && (auth.uid === $uid || ($roomId.beginsWith('dm_') && $roomId.contains(auth.uid)) || root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('participants').child(auth.uid).val() === true)"
+              ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && (auth.uid === $uid || $roomId === 'dm_' + auth.uid + '_' + $uid || $roomId === 'dm_' + $uid + '_' + auth.uid || root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('participants').child(auth.uid).val() === true)"
             }
           }
         },
         "rooms": {
           "$roomId": {
-            ".read": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && data.child('participants').child(auth.uid).val() === true",
+            ".read": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && (data.child('participants').child(auth.uid).val() === true || $roomId.beginsWith('dm_' + auth.uid + '_') || $roomId.endsWith('_' + auth.uid))",
             "meta": {
-              ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && ((!data.exists() && $roomId.beginsWith('dm_') && $roomId.contains(auth.uid)) || root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('admins').child(auth.uid).val() === true || (root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('meta').child('onlyAdminsCanEditInfo').val() === false && root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('participants').child(auth.uid).val() === true))"
+              ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && ((!data.exists() && ($roomId.beginsWith('dm_' + auth.uid + '_') || $roomId.endsWith('_' + auth.uid))) || root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('admins').child(auth.uid).val() === true || (root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('meta').child('onlyAdminsCanEditInfo').val() === false && root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('participants').child(auth.uid).val() === true))"
             },
             "participants": {
               "$memberUid": {
-                ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && (($memberUid === auth.uid && !newData.exists()) || root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('admins').child(auth.uid).val() === true || (!data.parent().exists() && $roomId.beginsWith('dm_') && $roomId.contains(auth.uid) && newData.val() === true) || (root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('meta').child('onlyAdminsCanAddMembers').val() === false && root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('participants').child(auth.uid).val() === true && newData.val() === true))"
+                ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && (($memberUid === auth.uid && !newData.exists()) || root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('admins').child(auth.uid).val() === true || ($roomId.beginsWith('dm_') && (($memberUid === auth.uid && ($roomId.beginsWith('dm_' + auth.uid + '_') || $roomId.endsWith('_' + auth.uid))) || $roomId === 'dm_' + auth.uid + '_' + $memberUid || $roomId === 'dm_' + $memberUid + '_' + auth.uid) && newData.val() === true) || (root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('meta').child('onlyAdminsCanAddMembers').val() === false && root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('participants').child(auth.uid).val() === true && newData.val() === true))"
               }
             },
             "admins": {
@@ -68,14 +68,14 @@
             "messages": {
               ".indexOn": ["createdAt"],
               "$msgId": {
-                ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && ((root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('participants').child(auth.uid).val() === true && (data.exists() || root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('meta').child('onlyAdminsCanSend').val() !== true || root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('admins').child(auth.uid).val() === true || newData.child('type').val() === 'system')) || (!data.parent().parent().exists() && $roomId.beginsWith('dm_') && $roomId.contains(auth.uid)))",
+                ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && ((root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('participants').child(auth.uid).val() === true && (data.exists() || root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('meta').child('onlyAdminsCanSend').val() !== true || root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('admins').child(auth.uid).val() === true || newData.child('type').val() === 'system')) || (($roomId.beginsWith('dm_' + auth.uid + '_') || $roomId.endsWith('_' + auth.uid)) && (data.exists() || newData.child('senderUid').val() === auth.uid)))",
                 "deletedForEveryone": {
                   ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && (data.parent().child('senderUid').val() === auth.uid || root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('admins').child(auth.uid).val() === true)"
                 }
               }
             },
             "e2ee": {
-              ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && (root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('participants').child(auth.uid).val() === true || (!data.parent().exists() && $roomId.beginsWith('dm_') && $roomId.contains(auth.uid)))"
+              ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && (root.child('rhema_chat').child($churchId).child('rooms').child($roomId).child('participants').child(auth.uid).val() === true || $roomId.beginsWith('dm_' + auth.uid + '_') || $roomId.endsWith('_' + auth.uid))"
             }
           }
         }

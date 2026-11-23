@@ -343,9 +343,9 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
       });
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
     } catch (err: any) {
+      setInputText(clean);
+      setReplyTo(currentReply);
       if (err?.message === 'PIN_UNLOCK_REQUIRED') {
-        setInputText(clean);
-        setReplyTo(currentReply);
         setE2eeModalMode('unlock_backup');
         return;
       }

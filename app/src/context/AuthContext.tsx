@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { InteractionManager } from 'react-native';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import messaging from '@react-native-firebase/messaging';
@@ -6,8 +7,6 @@ import firestore from '@react-native-firebase/firestore';
 
 import FirestoreService, { AppMember } from '../services/FirestoreService';
 import { RHEMA_CHURCH_ID } from '../constants/ChurchConfig';
-import { e2eeService } from '../services/e2eeService';
-import { roomKeyManager } from '../services/roomKeyManager';
 
 interface AuthContextType {
   user: FirebaseAuthTypes.User | null;
@@ -561,15 +560,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
+    if (loading) return;
     if (user?.uid && !user.isAnonymous) {
-      e2eeService.initializeForUser(user.uid).catch((err) => {
-        console.warn('⚠️ [Auth] E2EE init warning:', err);
-      });
-    } else {
-      roomKeyManager.clearCache();
-      e2eeService.clearSessionMemory();
+      let cancelled = false;
+      let interactionHandle: { cancel?: () => void } | null = null;
+      const timer = setTimeout(() => {
+        interactionHandle = InteractionManager.runAfterInteractions(() => {
+          if (cancelled) return;
+          const { e2eeService } = require('../services/e2eeService');
+          e2eeService.initializeForUser(user.uid).catch((err: any) => {
+            console.warn('⚠️ [Auth] E2EE init warning:', err);
+          });
+        });
+      }, 3500);
+      return () => {
+        cancelled = true;
+        clearTimeout(timer);
+        interactionHandle?.cancel?.();
+      };
     }
-  }, [user?.uid, user?.isAnonymous]);
+    const { roomKeyManager } = require('../services/roomKeyManager');
+    const { e2eeService } = require('../services/e2eeService');
+    roomKeyManager.clearCache();
+    e2eeService.clearSessionMemory();
+  }, [loading, user?.uid, user?.isAnonymous]);
 
   const signInAnonymously = async () => {
     try {
@@ -596,8 +610,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (auth().currentUser) {
         await auth().signOut().catch(() => {});
       }
-      roomKeyManager.clearCache();
-      e2eeService.clearSessionMemory();
+      require('../services/roomKeyManager').roomKeyManager.clearCache();
+      require('../services/e2eeService').e2eeService.clearSessionMemory();
       await AsyncStorage.multiRemove([
         '@cached_member', 
         '@cached_user', 

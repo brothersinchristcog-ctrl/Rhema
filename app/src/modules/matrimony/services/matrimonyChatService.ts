@@ -3,6 +3,7 @@ import type { Database } from 'firebase/database';
 import {
   endAt,
   equalTo,
+  get,
   increment,
   limitToLast,
   onDisconnect,
@@ -31,6 +32,67 @@ const RTDB_URL = 'https://rhema-global-ministries-default-rtdb.firebaseio.com';
 let _rtdbInstance: Database | null = null;
 let _presenceCleanup: (() => void) | null = null;
 let _presenceUid: string | null = null;
+const _inFlightMatrimonyDeliveryKeys = new Set<string>();
+
+function ackMatrimonyInboxDeliveries(
+  db: Database,
+  uid: string,
+  entries: Array<{ roomId: string; r: Record<string, any> }>
+) {
+  const now = Date.now();
+  entries.forEach(({ roomId: rKey, r }) => {
+    const resolvedRoomId = String(r.roomId || rKey);
+    const peerUid = String(r.peerUid || '');
+    const msgId = String(r.lastMessageId || '');
+    if (
+      !r.lastMessageSenderUid ||
+      r.lastMessageSenderUid === uid ||
+      !msgId ||
+      r.lastMessageDeliveredToPeer
+    ) {
+      return;
+    }
+
+    const dedupeKey = `${uid}:${resolvedRoomId}:${msgId}`;
+    if (_inFlightMatrimonyDeliveryKeys.has(dedupeKey)) return;
+    _inFlightMatrimonyDeliveryKeys.add(dedupeKey);
+
+    void (async () => {
+      try {
+        const [partSnap, msgSnap] = await Promise.all([
+          get(ref(db, `matrimony_chats/${resolvedRoomId}/participants/${uid}`)).catch(() => null),
+          get(ref(db, `matrimony_chats/${resolvedRoomId}/messages/${msgId}/senderUid`)).catch(
+            () => null
+          ),
+        ]);
+
+        if (partSnap?.val() === true && msgSnap?.exists()) {
+          const perRoomUpdates: Record<string, any> = {
+            [`matrimony_chats/${resolvedRoomId}/messages/${msgId}/deliveredBy/${uid}`]: now,
+            [`matrimony_inbox/${uid}/${resolvedRoomId}/lastMessageDeliveredToPeer`]: true,
+          };
+          if (peerUid) {
+            perRoomUpdates[
+              `matrimony_inbox/${peerUid}/${resolvedRoomId}/lastMessageDeliveredToPeer`
+            ] = true;
+          }
+          await update(ref(db), perRoomUpdates);
+          return;
+        }
+
+        await update(ref(db, `matrimony_inbox/${uid}/${resolvedRoomId}`), {
+          lastMessageDeliveredToPeer: true,
+        }).catch(() => {});
+      } catch {
+        await update(ref(db, `matrimony_inbox/${uid}/${resolvedRoomId}`), {
+          lastMessageDeliveredToPeer: true,
+        }).catch(() => {});
+      } finally {
+        _inFlightMatrimonyDeliveryKeys.delete(dedupeKey);
+      }
+    })();
+  });
+}
 
 function getMatrimonyRtdb(): Database {
   if (_rtdbInstance) return _rtdbInstance;
@@ -187,24 +249,8 @@ export const matrimonyChatService = {
         .map((roomId) => ({ roomId, r: raw[roomId] || {} }))
         .filter(({ r }) => Boolean(r.peerUid));
 
-      // Mark any incoming messages delivered now that this user's client is online and receiving updates
-      entries.forEach(({ roomId: rKey, r }) => {
-        const resolvedRoomId = String(r.roomId || rKey);
-        const peerUid = String(r.peerUid || '');
-        if (
-          r.lastMessageSenderUid &&
-          r.lastMessageSenderUid !== uid &&
-          r.lastMessageId &&
-          !r.lastMessageDeliveredToPeer
-        ) {
-          const now = Date.now();
-          update(ref(db), {
-            [`matrimony_chats/${resolvedRoomId}/messages/${r.lastMessageId}/deliveredBy/${uid}`]: now,
-            [`matrimony_inbox/${peerUid}/${resolvedRoomId}/lastMessageDeliveredToPeer`]: true,
-            [`matrimony_inbox/${uid}/${resolvedRoomId}/lastMessageDeliveredToPeer`]: true,
-          }).catch(() => {});
-        }
-      });
+      // Mark incoming messages delivered safely per room without tripping root multi-path denials
+      ackMatrimonyInboxDeliveries(db, uid, entries);
 
       const items: MatrimonyInboxItem[] = await Promise.all(
         entries.map(async ({ roomId: rKey, r }) => {
@@ -397,11 +443,28 @@ export const matrimonyChatService = {
   ): Promise<void> {
     if (!roomId || !myUid) return;
     const db = getMatrimonyRtdb();
+    const [partSnap, inboxSnap] = await Promise.all([
+      get(ref(db, `matrimony_chats/${roomId}/participants/${myUid}`)).catch(() => null),
+      get(ref(db, `matrimony_inbox/${myUid}/${roomId}/unreadCount`)).catch(() => null),
+    ]);
+    const hasInboxUnread = inboxSnap?.exists() && Number(inboxSnap.val() || 0) > 0;
+
+    if (partSnap?.val() !== true) {
+      if (hasInboxUnread) {
+        await update(ref(db, `matrimony_inbox/${myUid}/${roomId}`), {
+          unreadCount: 0,
+        }).catch(() => {});
+      }
+      return;
+    }
+
     const now = Date.now();
     const updates: Record<string, any> = {
-      [`matrimony_inbox/${myUid}/${roomId}/unreadCount`]: 0,
       [`matrimony_chats/${roomId}/readReceipts/${myUid}`]: now,
     };
+    if (hasInboxUnread) {
+      updates[`matrimony_inbox/${myUid}/${roomId}/unreadCount`] = 0;
+    }
     unreadIncomingMsgIds.forEach((msgId) => {
       updates[`matrimony_chats/${roomId}/messages/${msgId}/deliveredBy/${myUid}`] = now;
       updates[`matrimony_chats/${roomId}/messages/${msgId}/readBy/${myUid}`] = now;
@@ -436,10 +499,19 @@ export const matrimonyChatService = {
     const deliveredImmediately = Boolean(params.peerOnline);
 
     const ctx = { scope: 'matrimony' as const, rtdb: db, roomId: params.roomId };
-    await update(ref(db), {
-      [`matrimony_chats/${params.roomId}/participants/${params.myUid}`]: true,
-      [`matrimony_chats/${params.roomId}/participants/${params.peerUid}`]: true,
-    });
+    const partSnap = await get(
+      ref(db, `matrimony_chats/${params.roomId}/participants`)
+    ).catch(() => null);
+    const partVal = (partSnap?.val() || {}) as Record<string, any>;
+    const missingParts: Record<string, any> = {};
+    if (partVal[params.myUid] !== true) missingParts[params.myUid] = true;
+    if (partVal[params.peerUid] !== true) missingParts[params.peerUid] = true;
+    if (Object.keys(missingParts).length > 0) {
+      await update(
+        ref(db, `matrimony_chats/${params.roomId}/participants`),
+        missingParts
+      ).catch(() => {});
+    }
 
     const participants = [params.myUid, params.peerUid];
     const roomKey = await roomKeyManager.getOrCreateRoomSendKey(ctx, params.myUid, participants);
@@ -549,6 +621,19 @@ export const matrimonyChatService = {
   ): Promise<void> {
     if (!roomId || !myUid) return;
     const db = getMatrimonyRtdb();
+    const partSnap =
+      messageIds.length > 0
+        ? await get(ref(db, `matrimony_chats/${roomId}/participants/${myUid}`)).catch(() => null)
+        : null;
+
+    if (partSnap?.val() !== true) {
+      await update(ref(db, `matrimony_inbox/${myUid}/${roomId}`), {
+        lastMessageText: '',
+        unreadCount: 0,
+      });
+      return;
+    }
+
     const updates: Record<string, any> = {
       [`matrimony_inbox/${myUid}/${roomId}/lastMessageText`]: '',
       [`matrimony_inbox/${myUid}/${roomId}/unreadCount`]: 0,

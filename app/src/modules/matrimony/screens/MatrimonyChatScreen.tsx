@@ -304,9 +304,9 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
         peerOnline: presence?.online === true,
       });
     } catch (err: any) {
+      if (!overrideText) setInputText(textToSend);
+      setReplyTo(activeReply);
       if (err?.message === 'PIN_UNLOCK_REQUIRED') {
-        if (!overrideText) setInputText(textToSend);
-        setReplyTo(activeReply);
         setE2eeModalMode('unlock_backup');
         return;
       }

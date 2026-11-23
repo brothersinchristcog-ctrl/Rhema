@@ -1,7 +1,83 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Crypto from 'expo-crypto';
-import forge from 'node-forge';
+import type forgeType from 'node-forge';
 import { firestore, FieldValue } from './firebaseConfig';
+
+let _expoCryptoMod: typeof import('expo-crypto') | null | undefined;
+function getExpoCrypto() {
+  if (_expoCryptoMod !== undefined) return _expoCryptoMod;
+  try {
+    _expoCryptoMod = require('expo-crypto');
+  } catch {
+    _expoCryptoMod = null;
+  }
+  return _expoCryptoMod;
+}
+
+function getSafeRandomBytes(count: number): Uint8Array {
+  const out = new Uint8Array(count);
+  try {
+    const expoCrypto = getExpoCrypto();
+    if (expoCrypto?.getRandomBytes) {
+      let offset = 0;
+      while (offset < count) {
+        const chunkLen = Math.min(1024, count - offset);
+        const chunk = expoCrypto.getRandomBytes(chunkLen);
+        out.set(chunk, offset);
+        offset += chunkLen;
+      }
+      return out;
+    }
+  } catch {
+    // Fall through to WebCrypto / Math.random entropy mix
+  }
+  const gCrypto = (globalThis as any)?.crypto;
+  if (gCrypto && typeof gCrypto.getRandomValues === 'function') {
+    let offset = 0;
+    while (offset < count) {
+      const chunkLen = Math.min(65536, count - offset);
+      gCrypto.getRandomValues(out.subarray(offset, offset + chunkLen));
+      offset += chunkLen;
+    }
+    return out;
+  }
+  for (let i = 0; i < count; i++) {
+    out[i] = Math.floor(Math.random() * 256);
+  }
+  return out;
+}
+
+let _forgeMod: typeof forgeType | null = null;
+function getForge(): typeof forgeType {
+  if (!_forgeMod) {
+    _forgeMod = require('node-forge');
+    try {
+      const seedBytesFn = (needed: number) => {
+        const arr = getSafeRandomBytes(needed);
+        let s = '';
+        for (let i = 0; i < arr.length; i++) {
+          s += String.fromCharCode(arr[i]);
+        }
+        return s;
+      };
+      if (_forgeMod!.random) {
+        (_forgeMod!.random as any).seedFileSync = seedBytesFn;
+        (_forgeMod!.random as any).seedFile = (
+          needed: number,
+          cb: (err: any, bytes?: string) => void
+        ) => {
+          try {
+            cb(null, seedBytesFn(needed));
+          } catch (e) {
+            cb(e);
+          }
+        };
+      }
+    } catch {
+      // Non-fatal
+    }
+  }
+  return _forgeMod!;
+}
 
 export const E2EE_PREFIX = 'e2ee:v1:';
 const PBKDF2_ITERATIONS = 50000;
@@ -51,8 +127,8 @@ class E2EEService {
   private status: E2EEStatus = 'uninitialized';
   private privateKeyPem: string | null = null;
   private publicKeyPem: string | null = null;
-  private privateKeyObj: forge.pki.rsa.PrivateKey | null = null;
-  private publicKeyObj: forge.pki.rsa.PublicKey | null = null;
+  private privateKeyObj: forgeType.pki.rsa.PrivateKey | null = null;
+  private publicKeyObj: forgeType.pki.rsa.PublicKey | null = null;
   private hasBackup = false;
   private backupDismissedThisSession = false;
   private fingerprint = '';
@@ -60,7 +136,7 @@ class E2EEService {
   private listeners = new Set<(state: E2EEStateSnapshot) => void>();
   private publicKeyCache = new Map<
     string,
-    { pem: string; key: forge.pki.rsa.PublicKey; fetchedAt: number }
+    { pem: string; key: forgeType.pki.rsa.PublicKey; fetchedAt: number }
   >();
   private lastEntropySeedAt = 0;
 
@@ -68,21 +144,21 @@ class E2EEService {
     const now = Date.now();
     if (!force && now - this.lastEntropySeedAt < 30000) return;
     try {
-      const randomBytes = Crypto.getRandomBytes(32);
+      const randomBytes = getSafeRandomBytes(32);
       let binary = '';
       for (let i = 0; i < randomBytes.length; i++) {
         binary += String.fromCharCode(randomBytes[i]);
       }
-      forge.random.collect(binary);
+      getForge().random.collect(binary);
       this.lastEntropySeedAt = now;
     } catch {
-      // react-native-get-random-values polyfill still backs forge PRNG if expo-crypto throws
+      // ignore PRNG collect failure
     }
   }
 
   public randomBinaryBytes(length: number): string {
     this.seedPrngIfNeeded();
-    const arr = Crypto.getRandomBytes(length);
+    const arr = getSafeRandomBytes(length);
     let out = '';
     for (let i = 0; i < arr.length; i++) {
       out += String.fromCharCode(arr[i]);
@@ -91,7 +167,7 @@ class E2EEService {
   }
 
   public randomHex(byteLength = 6): string {
-    const arr = Crypto.getRandomBytes(byteLength);
+    const arr = getSafeRandomBytes(byteLength);
     let hex = '';
     for (let i = 0; i < arr.length; i++) {
       hex += arr[i].toString(16).padStart(2, '0');
@@ -101,6 +177,7 @@ class E2EEService {
 
   private computeFingerprint(pubPem: string): string {
     try {
+      const forge = getForge();
       const md = forge.md.sha256.create();
       md.update(pubPem.trim(), 'utf8');
       const hex = md.digest().toHex().toUpperCase();
@@ -218,6 +295,7 @@ class E2EEService {
 
       if (localPriv && localPub) {
         try {
+          const forge = getForge();
           const privObj = forge.pki.privateKeyFromPem(localPriv);
           const pubObj = forge.pki.publicKeyFromPem(localPub);
           this.privateKeyPem = localPriv;
@@ -305,11 +383,23 @@ class E2EEService {
 
   private async generateAndPersistFreshKeyPair(uid: string): Promise<void> {
     this.seedPrngIfNeeded(true);
-    const keypair = await new Promise<forge.pki.rsa.KeyPair>((resolve, reject) => {
-      forge.pki.rsa.generateKeyPair({ bits: 2048, workers: -1 }, (err, kp) => {
-        if (err || !kp) reject(err || new Error('RSA key generation failed'));
-        else resolve(kp);
-      });
+    const forge = getForge();
+    const yieldDelay =
+      typeof process === 'undefined' || !process?.versions?.node ? 12 : 0;
+    const keypair = await new Promise<forgeType.pki.rsa.KeyPair>((resolve, reject) => {
+      const origSetImmediate = forge.util.setImmediate;
+      forge.util.setImmediate = ((cb: (...args: any[]) => void, ...args: any[]) =>
+        setTimeout(() => cb(...args), yieldDelay)) as any;
+      try {
+        forge.pki.rsa.generateKeyPair({ bits: 2048 }, (err, kp) => {
+          forge.util.setImmediate = origSetImmediate;
+          if (err || !kp) reject(err || new Error('RSA key generation failed'));
+          else resolve(kp);
+        });
+      } catch (syncErr) {
+        forge.util.setImmediate = origSetImmediate;
+        reject(syncErr);
+      }
     });
 
     const pubPem = forge.pki.publicKeyToPem(keypair.publicKey);
@@ -372,6 +462,7 @@ class E2EEService {
 
     try {
       this.seedPrngIfNeeded(true);
+      const forge = getForge();
       const saltBytes = this.randomBinaryBytes(16);
       const ivBytes = this.randomBinaryBytes(12);
       const derivedKey = forge.pkcs5.pbkdf2(
@@ -457,6 +548,7 @@ class E2EEService {
         return { ok: false, error: 'No encrypted key backup was found for this account.' };
       }
 
+      const forge = getForge();
       const blob = backupSnap.data() as BackupBlob;
       const saltBytes = forge.util.decode64(blob.saltB64);
       const ivBytes = forge.util.decode64(blob.ivB64);
@@ -480,7 +572,7 @@ class E2EEService {
       const privPem = decipher.output.toString('utf8');
       const privObj = forge.pki.privateKeyFromPem(privPem);
       let pubPem = String(keySnap.data()?.publicKeyPem || '').trim();
-      let pubObj: forge.pki.rsa.PublicKey;
+      let pubObj: forgeType.pki.rsa.PublicKey;
       if (pubPem) {
         pubObj = forge.pki.publicKeyFromPem(pubPem);
       } else {
@@ -541,6 +633,7 @@ class E2EEService {
     const [keyId, ivB64, tagB64, ctB64] = parts;
     if (!keyId || !ivB64 || !tagB64 || ctB64 === undefined) return null;
     try {
+      const forge = getForge();
       return {
         version: 'v1',
         keyId,
@@ -563,6 +656,7 @@ class E2EEService {
     keyId: string,
     aadScope: string
   ): string {
+    const forge = getForge();
     const ivBytes = this.randomBinaryBytes(12);
     const cipher = forge.cipher.createCipher('AES-GCM', aesKeyBytes);
     cipher.start({
@@ -588,6 +682,7 @@ class E2EEService {
     const parsed = this.parseEncryptedPayload(envelope);
     if (!parsed) return null;
     try {
+      const forge = getForge();
       const decipher = forge.cipher.createDecipher('AES-GCM', aesKeyBytes);
       decipher.start({
         iv: parsed.ivBytes,
@@ -606,9 +701,10 @@ class E2EEService {
   public async fetchPublicKeys(
     uids: string[],
     forceRefresh = false
-  ): Promise<{ keys: Map<string, forge.pki.rsa.PublicKey>; missingUids: string[] }> {
+  ): Promise<{ keys: Map<string, forgeType.pki.rsa.PublicKey>; missingUids: string[] }> {
+    const forge = getForge();
     const unique = Array.from(new Set(uids.map((u) => String(u || '').trim()).filter(Boolean)));
-    const result = new Map<string, forge.pki.rsa.PublicKey>();
+    const result = new Map<string, forgeType.pki.rsa.PublicKey>();
     const toFetch: string[] = [];
     const now = Date.now();
 
@@ -652,6 +748,7 @@ class E2EEService {
     recipientUids: string[]
   ): Promise<{ wrapped: Record<string, string>; missingUids: string[] }> {
     this.seedPrngIfNeeded();
+    const forge = getForge();
     const { keys, missingUids } = await this.fetchPublicKeys(recipientUids);
     const wrapped: Record<string, string> = {};
 
@@ -669,6 +766,7 @@ class E2EEService {
   public unwrapAesKey(wrappedB64: string): string | null {
     if (!wrappedB64 || !this.privateKeyObj) return null;
     try {
+      const forge = getForge();
       const encryptedBytes = forge.util.decode64(wrappedB64);
       return this.privateKeyObj.decrypt(encryptedBytes, 'RSA-OAEP', {
         md: forge.md.sha256.create(),

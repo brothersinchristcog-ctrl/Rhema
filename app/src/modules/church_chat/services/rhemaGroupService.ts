@@ -458,9 +458,10 @@ export const rhemaGroupService = {
       [`rhema_chat/${cid}/inbox/${params.myUid}/${params.roomId}`]: null,
     };
 
-    // Promote next remaining participant if the last admin leaves
+    // Promote next remaining participant only if this departing user is currently an admin
     let successorUid: string | null = null;
-    if (nextAdmins.length === 0 && remainingParticipants.length > 0) {
+    const amIAdmin = params.existingAdminUids.includes(params.myUid);
+    if (amIAdmin && nextAdmins.length === 0 && remainingParticipants.length > 0) {
       successorUid = remainingParticipants[0];
       nextAdmins = [successorUid];
       updates[`rhema_chat/${cid}/rooms/${params.roomId}/admins/${successorUid}`] = true;
