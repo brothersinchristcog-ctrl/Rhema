@@ -333,7 +333,7 @@ async function mirrorCompletedChurchDonation(
  * Reads Razorpay Key ID & Key Secret from secure backend env vars only.
  */
 export const createRazorpayOrder = onCall(
-  { region: 'asia-south1', cors: true, invoker: 'public' },
+  { region: 'asia-south1', cors: true, invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 40, maxInstances: 3 },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {
@@ -432,7 +432,7 @@ export const createRazorpayOrder = onCall(
  * and mark church_donations + church-scoped donations completed atomically.
  */
 export const verifyRazorpayPayment = onCall(
-  { region: 'asia-south1', cors: true, invoker: 'public' },
+  { region: 'asia-south1', cors: true, invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 40, maxInstances: 3 },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {
@@ -552,7 +552,7 @@ export const verifyRazorpayPayment = onCall(
  * Legacy donation callable aliases in asia-south1 kept compatible with backend env credentials.
  */
 export const createRazorpayDonationOrderV6 = onCall(
-  { region: 'asia-south1', cors: true, invoker: 'public' },
+  { region: 'asia-south1', cors: true, invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 40, maxInstances: 3 },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {
@@ -593,7 +593,7 @@ export const createRazorpayDonationOrderV6 = onCall(
 );
 
 export const verifyRazorpayDonationV6 = onCall(
-  { region: 'asia-south1', cors: true, invoker: 'public' },
+  { region: 'asia-south1', cors: true, invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 40, maxInstances: 3 },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {
@@ -755,7 +755,7 @@ export const verifyRazorpaySubscriptionV3 = onCall(
  * Razorpay Webhook endpoint for asynchronous capture / failure reconciliation.
  */
 export const razorpayWebhookV1 = onRequest(
-  { invoker: 'public' },
+  { invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 40, maxInstances: 10 },
   async (req, res) => {
     const webhookSecret = (
       process.env.RAZORPAY_GIVING_WEBHOOK_SECRET ||
@@ -957,7 +957,7 @@ export const razorpayWebhookV1 = onRequest(
  * Member Recurring Giving: Create Razorpay Plan (cached) + Razorpay Subscription with explicit member consent.
  */
 export const createRazorpayRecurringDonation = onCall(
-  { region: 'asia-south1', cors: true, invoker: 'public' },
+  { region: 'asia-south1', cors: true, invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 40, maxInstances: 3 },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {
@@ -1116,7 +1116,7 @@ export const createRazorpayRecurringDonation = onCall(
  * (`razorpay_payment_id | razorpay_subscription_id`) and record Cycle #1 receipt.
  */
 export const verifyRazorpaySubscriptionDonation = onCall(
-  { region: 'asia-south1', cors: true, invoker: 'public' },
+  { region: 'asia-south1', cors: true, invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 40, maxInstances: 3 },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {
@@ -1221,7 +1221,7 @@ export const verifyRazorpaySubscriptionDonation = onCall(
  * Member / Admin Recurring Control: Pause, Resume, or Cancel an authorized Razorpay Subscription mandate.
  */
 export const manageRazorpayRecurringDonation = onCall(
-  { region: 'asia-south1', cors: true, invoker: 'public' },
+  { region: 'asia-south1', cors: true, invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 40, maxInstances: 3 },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {

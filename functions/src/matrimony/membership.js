@@ -31,7 +31,7 @@ function parsePlanId(raw) {
  * 0. getMatrimonyPlans
  * Returns active Silver / Gold / Platinum plans from matrimony_plans (auto-seeding defaults if empty).
  */
-export const getMatrimonyPlans = onCall({ invoker: 'public' }, async (request) => {
+export const getMatrimonyPlans = onCall({ invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 40, maxInstances: 10 }, async (request) => {
     requireAuthUid(request);
     const db = getFirestore();
     const plans = await ensureDefaultPlansSeeded(db);
@@ -41,7 +41,7 @@ export const getMatrimonyPlans = onCall({ invoker: 'public' }, async (request) =
  * 0b. getMemberEntitlements
  * Returns active membership tier, usage counters, and remaining monthly interest / contact / shortlist quotas.
  */
-export const getMemberEntitlements = onCall({ invoker: 'public' }, async (request) => {
+export const getMemberEntitlements = onCall({ invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 40, maxInstances: 10 }, async (request) => {
     const uid = requireAuthUid(request);
     const db = getFirestore();
     const entitlements = await resolveMemberEntitlements(db, uid);
@@ -51,7 +51,7 @@ export const getMemberEntitlements = onCall({ invoker: 'public' }, async (reques
  * 1. createMatrimonyUpgradeOrder
  * Creates a server-priced Razorpay order using the authoritative plan price from matrimony_plans.
  */
-export const createMatrimonyUpgradeOrder = onCall({ invoker: 'public', cpu: 'gcf_gen1', concurrency: 1, maxInstances: 10 }, async (request) => {
+export const createMatrimonyUpgradeOrder = onCall({ invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 40, maxInstances: 10 }, async (request) => {
     const uid = requireAuthUid(request);
     const planId = parsePlanId(request.data?.plan || request.data?.planId);
     const db = getFirestore();
@@ -96,7 +96,7 @@ export const createMatrimonyUpgradeOrder = onCall({ invoker: 'public', cpu: 'gcf
  * 2. verifyMatrimonyUpgradePayment
  * Verifies Razorpay HMAC signature, prevents duplicate replay, and activates subscription + entitlements + usage cycle.
  */
-export const verifyMatrimonyUpgradePayment = onCall({ invoker: 'public', cpu: 'gcf_gen1', concurrency: 1, maxInstances: 10 }, async (request) => {
+export const verifyMatrimonyUpgradePayment = onCall({ invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 40, maxInstances: 10 }, async (request) => {
     const uid = requireAuthUid(request);
     const planId = parsePlanId(request.data?.plan || request.data?.planId);
     const razorpayPaymentId = String(request.data?.razorpay_payment_id || '').trim();

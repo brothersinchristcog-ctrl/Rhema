@@ -19,13 +19,10 @@ import { QuizLanguageProvider } from '../context/QuizLanguageContext';
 import { ProfileDrawerProvider, useProfileDrawer } from '../context/ProfileDrawerContext';
 import ProfileDrawerOverlay from '../components/ProfileDrawerOverlay';
 import Theme from '../theme/Theme';
-import AdminNavigator from './AdminNavigator';
-import AdminBaptism from '../screens/admin/AdminBaptism';
 import NotificationService from '../services/NotificationService';
 import SecurityService from '../services/SecurityService';
 import ChurchService from '../services/ChurchService';
 import * as Notifications from 'expo-notifications';
-import VerseOfTheDayScreen from '../screens/VerseOfTheDayScreen';
 import VerseNotificationService from '../services/VerseNotificationService';
 import DailyQuizNotificationService from '../services/DailyQuizNotificationService';
 import FirestoreService from '../services/FirestoreService';
@@ -41,75 +38,8 @@ import ApprovalPendingScreen from '../screens/auth/ApprovalPendingScreen';
 import LoginScreen from '../screens/auth/LoginScreen';
 import SignUpScreen from '../screens/auth/SignUpScreen';
 
-// Member Screens
-import CelebrationScreen from '../screens/CelebrationScreen';
-import LiveCelebrationsChat from '../screens/LiveCelebrationsChat';
+// Initial Tab Screen (loaded eagerly for fastest startup; secondary screens load on demand via getComponent)
 import HomeScreen from '../screens/HomeScreen';
-import ProfileScreen from '../screens/ProfileScreen';
-import PromiseArchiveScreen from '../screens/PromiseArchiveScreen';
-import DailyVideoScreen from '../screens/DailyVideoScreen';
-import SermonVideoScreen from '../screens/SermonVideoScreen';
-import EventsScreen from '../screens/EventsScreen';
-import PrayerWallScreen from '../screens/PrayerWallScreen';
-import GivingScreen from '../screens/GivingScreen';
-import GivingHistoryScreen from '../screens/GivingHistoryScreen';
-import BaptismRequestScreen from '../screens/BaptismRequestScreen';
-import VolunteerScreen from '../screens/VolunteerScreen';
-import JobCircleScreen from '../screens/job_circle/JobCircleScreen';
-import OpportunityDetailScreen from '../screens/job_circle/OpportunityDetailScreen';
-import AdminJobCircleDashboard from '../screens/admin/job_circle/AdminJobCircleDashboard';
-import AdminOpportunityEditor from '../screens/admin/job_circle/AdminOpportunityEditor';
-import AdminMinistryTeamsScreen from '../screens/admin/job_circle/AdminMinistryTeamsScreen';
-import SermonsScreen from '../screens/SermonsScreen';
-import SongsScreen from '../screens/SongsScreen';
-import EventDetailsScreen from '../screens/EventDetailsScreen';
-import UpdatesScreen from '../screens/UpdatesScreen';
-import BibleScreen from '../screens/BibleScreen';
-import BibleChaptersScreen from '../screens/BibleChaptersScreen';
-import BibleReaderScreen from '../screens/BibleReaderScreen';
-import BiblePlansScreen from '../screens/BiblePlansScreen';
-import MemberNotesScreen from '../screens/MemberNotesScreen';
-import MembersScreen from '../screens/MembersScreen';
-import SubscriptionScreen from '../screens/SubscriptionScreen';
-import BibleSearchScreen from '../screens/BibleSearchScreen';
-import AboutUsScreen from '../screens/AboutUsScreen';
-import AppearanceScreen from '../screens/AppearanceScreen';
-import ContactUsScreen from '../screens/ContactUsScreen';
-import AttendanceScreen from '../screens/AttendanceScreen';
-import CareCellScreen from '../screens/care_cells/CareCellScreen';
-import KidsMinistryScreen from '../screens/kids_ministry/KidsMinistryScreen';
-import KidsFaceScanKiosk from '../screens/kids_ministry/KidsFaceScanKiosk';
-import KidsCheckOutScanner from '../screens/kids_ministry/KidsCheckOutScanner';
-import KidsTeacherKiosk from '../screens/kids_ministry/KidsTeacherKiosk';
-import EventAttendeesScreen from '../screens/admin/EventAttendeesScreen';
-import AdminRegistrationApprovals from '../screens/admin/AdminRegistrationApprovals';
-import AdminMatrimonyProfileDetailScreen from '../screens/admin/AdminMatrimonyProfileDetailScreen';
-import PastorEventDetail from '../screens/admin/pastor_events/PastorEventDetail';
-import CreatePastorEvent from '../screens/admin/pastor_events/CreatePastorEvent';
-import PastorEventRoutePlanner from '../screens/admin/pastor_events/PastorEventRoutePlanner';
-import PastorEventMap from '../screens/admin/pastor_events/PastorEventMap';
-import AIAssistantModal from '../screens/admin/pastor_events/AIAssistantModal';
-import OnlineMeetingsScreen from '../screens/OnlineMeetingsScreen';
-import OnlineMeetingDetailScreen from '../screens/OnlineMeetingDetailScreen';
-import YouTubeLiveScreen from '../screens/YouTubeLiveScreen';
-import LiveStageHUD from '../screens/LiveStageHUD';
-import MyServiceScreen from '../screens/MyServiceScreen';
-import MemberGalleryNavigator from '../screens/gallery/MemberGalleryNavigator';
-import TestimoniesScreen from '../screens/TestimoniesScreen';
-import TestimonyDetailScreen from '../screens/TestimonyDetailScreen';
-import MatrimonyNavigator from '../modules/matrimony/navigation/MatrimonyNavigator';
-import { ChurchChatNavigator } from '../modules/church_chat';
-
-// Bible Quiz Screens
-import BibleQuizHomeScreen from '../screens/quiz/BibleQuizHomeScreen';
-import ChurchQuizzesScreen from '../screens/quiz/ChurchQuizzesScreen';
-import BibleQuizLevelsScreen from '../screens/quiz/BibleQuizLevelsScreen';
-import BibleQuizStagesScreen from '../screens/quiz/BibleQuizStagesScreen';
-import BibleQuizDetailScreen from '../screens/quiz/BibleQuizDetailScreen';
-import BibleQuizPlayerScreen from '../screens/quiz/BibleQuizPlayerScreen';
-import BibleQuizResultScreen from '../screens/quiz/BibleQuizResultScreen';
-import BibleQuizReviewScreen from '../screens/quiz/BibleQuizReviewScreen';
-import BibleQuizLeaderboardScreen from '../screens/quiz/BibleQuizLeaderboardScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -775,22 +705,22 @@ function TabNavigatorContent() {
         />
         <Tab.Screen
           name="Promise"
-          component={PromiseArchiveScreen}
+          getComponent={() => require('../screens/PromiseArchiveScreen').default}
           listeners={{ tabPress: handleFeatureInteraction }}
         />
         <Tab.Screen
           name="Bible"
-          component={BibleScreen}
+          getComponent={() => require('../screens/BibleScreen').default}
           listeners={{ tabPress: handleFeatureInteraction }}
         />
         <Tab.Screen
           name="Prayer"
-          component={PrayerWallScreen}
+          getComponent={() => require('../screens/PrayerWallScreen').default}
           listeners={{ tabPress: handleFeatureInteraction }}
         />
         <Tab.Screen
           name="Matrimony"
-          component={MatrimonyNavigator}
+          getComponent={() => require('../modules/matrimony/navigation/MatrimonyNavigator').default}
           listeners={{
             tabPress: (e: any) => {
               handleFeatureInteraction(e);
@@ -1566,10 +1496,6 @@ function Navigation() {
   // ── Church Expiration Logic ──
   const isChurchExpired = ChurchService.isSubscriptionExpired(activeChurch);
 
-  const renderPremium = (Component: any) => {
-    return isChurchExpired ? LockedFeatureScreen : Component;
-  };
-
   // ── Approval Pending Check: If user is awaiting admin approval, block access to all auth & member screens ──
   const isApprovedMember = Boolean(
     user?.isAnonymous ||
@@ -1630,81 +1556,85 @@ function Navigation() {
           <>
             <Stack.Screen name="Tabs" component={TabNavigator} options={{ gestureEnabled: false, headerBackButtonMenuEnabled: false }} />
             {isAdmin && (
-              <Stack.Screen name="AdminRoot" component={AdminNavigator} options={{ gestureEnabled: false, headerBackButtonMenuEnabled: false }} />
+              <Stack.Screen
+                name="AdminRoot"
+                getComponent={() => require('./AdminNavigator').default}
+                options={{ gestureEnabled: false, headerBackButtonMenuEnabled: false }}
+              />
             )}
             <Stack.Screen name="LockedFeature" component={LockedFeatureScreen} />
-            <Stack.Screen name="Subscription" component={SubscriptionScreen} />
-            <Stack.Screen name="Celebration" component={renderPremium(CelebrationScreen)} />
-            <Stack.Screen name="Attendance" component={renderPremium(AttendanceScreen)} />
-            <Stack.Screen name="AttendanceScreen" component={renderPremium(AttendanceScreen)} />
-            <Stack.Screen name="CareCell" component={renderPremium(CareCellScreen)} />
-            <Stack.Screen name="CareCellScreen" component={renderPremium(CareCellScreen)} />
-            <Stack.Screen name="KidsMinistry" component={renderPremium(KidsMinistryScreen)} />
-            <Stack.Screen name="RhemaKids" component={renderPremium(KidsMinistryScreen)} />
-            <Stack.Screen name="KidsFaceScanKiosk" component={renderPremium(KidsFaceScanKiosk)} />
-            <Stack.Screen name="KidsCheckOutScanner" component={renderPremium(KidsCheckOutScanner)} />
-            <Stack.Screen name="KidsTeacherKiosk" component={renderPremium(KidsTeacherKiosk)} />
-            <Stack.Screen name="DailyVideo" component={renderPremium(DailyVideoScreen)} />
-            <Stack.Screen name="SermonVideo" component={renderPremium(SermonVideoScreen)} />
-            <Stack.Screen name="Events" component={renderPremium(EventsScreen)} />
-            <Stack.Screen name="Give" component={renderPremium(GivingScreen)} />
-            <Stack.Screen name="GivingHistory" component={renderPremium(GivingHistoryScreen)} />
-            <Stack.Screen name="BaptismRequest" component={renderPremium(BaptismRequestScreen)} />
-            <Stack.Screen name="Volunteer" component={renderPremium(VolunteerScreen)} />
-            <Stack.Screen name="VolunteerScreen" component={renderPremium(VolunteerScreen)} />
-            <Stack.Screen name="JobCircle" component={renderPremium(JobCircleScreen)} />
-            <Stack.Screen name="JobCircleScreen" component={renderPremium(JobCircleScreen)} />
-            <Stack.Screen name="OpportunityDetailScreen" component={renderPremium(OpportunityDetailScreen)} />
-            <Stack.Screen name="AdminJobCircleDashboard" component={renderPremium(AdminJobCircleDashboard)} />
-            <Stack.Screen name="AdminOpportunityEditor" component={renderPremium(AdminOpportunityEditor)} />
-            <Stack.Screen name="AdminMinistryTeamsScreen" component={renderPremium(AdminMinistryTeamsScreen)} />
-            <Stack.Screen name="Sermons" component={renderPremium(SermonsScreen)} />
-            <Stack.Screen name="Songs" component={renderPremium(SongsScreen)} />
-            <Stack.Screen name="EventDetails" component={renderPremium(EventDetailsScreen)} />
-            <Stack.Screen name="Updates" component={renderPremium(UpdatesScreen)} />
-            <Stack.Screen name="PrayerWall" component={renderPremium(PrayerWallScreen)} />
-            <Stack.Screen name="Bible" component={renderPremium(BibleScreen)} />
-            <Stack.Screen name="BibleChapters" component={renderPremium(BibleChaptersScreen)} />
-            <Stack.Screen name="BibleReader" component={renderPremium(BibleReaderScreen)} />
-            <Stack.Screen name="BiblePlans" component={renderPremium(BiblePlansScreen)} />
-            <Stack.Screen name="BibleSearch" component={renderPremium(BibleSearchScreen)} />
-            <Stack.Screen name="MemberNotes" component={renderPremium(MemberNotesScreen)} />
-            <Stack.Screen name="Members" component={renderPremium(MembersScreen)} />
-            <Stack.Screen name="Appearance" component={renderPremium(AppearanceScreen)} />
-            <Stack.Screen name="AboutUs" component={AboutUsScreen} />
-            <Stack.Screen name="ContactUs" component={ContactUsScreen} />
-            <Stack.Screen name="OnlineMeetings" component={renderPremium(OnlineMeetingsScreen)} />
-            <Stack.Screen name="OnlineMeetingDetail" component={renderPremium(OnlineMeetingDetailScreen)} />
-            <Stack.Screen name="YouTubeLive" component={renderPremium(YouTubeLiveScreen)} />
-            <Stack.Screen name="LiveStageHUD" component={renderPremium(LiveStageHUD)} />
-            <Stack.Screen name="MyService" component={renderPremium(MyServiceScreen)} />
-            <Stack.Screen name="MyServiceDuties" component={renderPremium(MyServiceScreen)} />
-            <Stack.Screen name="LiveCelebrationsChat" component={renderPremium(LiveCelebrationsChat)} />
-            <Stack.Screen name="Gallery" component={renderPremium(MemberGalleryNavigator)} />
-            <Stack.Screen name="Testimonies" component={renderPremium(TestimoniesScreen)} />
-            <Stack.Screen name="TestimonyDetail" component={renderPremium(TestimonyDetailScreen)} />
-            <Stack.Screen name="Matrimony" component={renderPremium(MatrimonyNavigator)} />
-            <Stack.Screen name="ChurchChat" component={renderPremium(ChurchChatNavigator)} />
-            <Stack.Screen name="Profile" component={renderPremium(ProfileScreen)} />
-            <Stack.Screen name="VerseOfTheDay" component={renderPremium(VerseOfTheDayScreen)} />
-            <Stack.Screen name="BibleQuizHome" component={BibleQuizHomeScreen} />
-            <Stack.Screen name="ChurchQuizzes" component={ChurchQuizzesScreen} />
-            <Stack.Screen name="BibleQuizLevels" component={BibleQuizLevelsScreen} />
-            <Stack.Screen name="BibleQuizStages" component={BibleQuizStagesScreen} />
-            <Stack.Screen name="BibleQuizDetail" component={BibleQuizDetailScreen} />
-            <Stack.Screen name="BibleQuizPlayer" component={BibleQuizPlayerScreen} />
-            <Stack.Screen name="BibleQuizResult" component={BibleQuizResultScreen} />
-            <Stack.Screen name="BibleQuizReview" component={BibleQuizReviewScreen} />
-            <Stack.Screen name="BibleQuizLeaderboard" component={BibleQuizLeaderboardScreen} />
+            <Stack.Screen name="Subscription" getComponent={() => require('../screens/SubscriptionScreen').default} />
+            <Stack.Screen name="Celebration" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/CelebrationScreen').default)} />
+            <Stack.Screen name="Attendance" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/AttendanceScreen').default)} />
+            <Stack.Screen name="AttendanceScreen" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/AttendanceScreen').default)} />
+            <Stack.Screen name="CareCell" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/care_cells/CareCellScreen').default)} />
+            <Stack.Screen name="CareCellScreen" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/care_cells/CareCellScreen').default)} />
+            <Stack.Screen name="KidsMinistry" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/kids_ministry/KidsMinistryScreen').default)} />
+            <Stack.Screen name="RhemaKids" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/kids_ministry/KidsMinistryScreen').default)} />
+            <Stack.Screen name="KidsFaceScanKiosk" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/kids_ministry/KidsFaceScanKiosk').default)} />
+            <Stack.Screen name="KidsCheckOutScanner" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/kids_ministry/KidsCheckOutScanner').default)} />
+            <Stack.Screen name="KidsTeacherKiosk" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/kids_ministry/KidsTeacherKiosk').default)} />
+            <Stack.Screen name="DailyVideo" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/DailyVideoScreen').default)} />
+            <Stack.Screen name="SermonVideo" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/SermonVideoScreen').default)} />
+            <Stack.Screen name="Events" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/EventsScreen').default)} />
+            <Stack.Screen name="Give" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/GivingScreen').default)} />
+            <Stack.Screen name="GivingHistory" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/GivingHistoryScreen').default)} />
+            <Stack.Screen name="BaptismRequest" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/BaptismRequestScreen').default)} />
+            <Stack.Screen name="Volunteer" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/VolunteerScreen').default)} />
+            <Stack.Screen name="VolunteerScreen" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/VolunteerScreen').default)} />
+            <Stack.Screen name="JobCircle" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/job_circle/JobCircleScreen').default)} />
+            <Stack.Screen name="JobCircleScreen" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/job_circle/JobCircleScreen').default)} />
+            <Stack.Screen name="OpportunityDetailScreen" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/job_circle/OpportunityDetailScreen').default)} />
+            <Stack.Screen name="AdminJobCircleDashboard" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/admin/job_circle/AdminJobCircleDashboard').default)} />
+            <Stack.Screen name="AdminOpportunityEditor" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/admin/job_circle/AdminOpportunityEditor').default)} />
+            <Stack.Screen name="AdminMinistryTeamsScreen" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/admin/job_circle/AdminMinistryTeamsScreen').default)} />
+            <Stack.Screen name="Sermons" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/SermonsScreen').default)} />
+            <Stack.Screen name="Songs" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/SongsScreen').default)} />
+            <Stack.Screen name="EventDetails" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/EventDetailsScreen').default)} />
+            <Stack.Screen name="Updates" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/UpdatesScreen').default)} />
+            <Stack.Screen name="PrayerWall" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/PrayerWallScreen').default)} />
+            <Stack.Screen name="Bible" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/BibleScreen').default)} />
+            <Stack.Screen name="BibleChapters" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/BibleChaptersScreen').default)} />
+            <Stack.Screen name="BibleReader" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/BibleReaderScreen').default)} />
+            <Stack.Screen name="BiblePlans" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/BiblePlansScreen').default)} />
+            <Stack.Screen name="BibleSearch" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/BibleSearchScreen').default)} />
+            <Stack.Screen name="MemberNotes" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/MemberNotesScreen').default)} />
+            <Stack.Screen name="Members" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/MembersScreen').default)} />
+            <Stack.Screen name="Appearance" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/AppearanceScreen').default)} />
+            <Stack.Screen name="AboutUs" getComponent={() => require('../screens/AboutUsScreen').default} />
+            <Stack.Screen name="ContactUs" getComponent={() => require('../screens/ContactUsScreen').default} />
+            <Stack.Screen name="OnlineMeetings" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/OnlineMeetingsScreen').default)} />
+            <Stack.Screen name="OnlineMeetingDetail" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/OnlineMeetingDetailScreen').default)} />
+            <Stack.Screen name="YouTubeLive" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/YouTubeLiveScreen').default)} />
+            <Stack.Screen name="LiveStageHUD" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/LiveStageHUD').default)} />
+            <Stack.Screen name="MyService" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/MyServiceScreen').default)} />
+            <Stack.Screen name="MyServiceDuties" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/MyServiceScreen').default)} />
+            <Stack.Screen name="LiveCelebrationsChat" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/LiveCelebrationsChat').default)} />
+            <Stack.Screen name="Gallery" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/gallery/MemberGalleryNavigator').default)} />
+            <Stack.Screen name="Testimonies" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/TestimoniesScreen').default)} />
+            <Stack.Screen name="TestimonyDetail" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/TestimonyDetailScreen').default)} />
+            <Stack.Screen name="Matrimony" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../modules/matrimony/navigation/MatrimonyNavigator').default)} />
+            <Stack.Screen name="ChurchChat" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../modules/church_chat').ChurchChatNavigator)} />
+            <Stack.Screen name="Profile" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/ProfileScreen').default)} />
+            <Stack.Screen name="VerseOfTheDay" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/VerseOfTheDayScreen').default)} />
+            <Stack.Screen name="BibleQuizHome" getComponent={() => require('../screens/quiz/BibleQuizHomeScreen').default} />
+            <Stack.Screen name="ChurchQuizzes" getComponent={() => require('../screens/quiz/ChurchQuizzesScreen').default} />
+            <Stack.Screen name="BibleQuizLevels" getComponent={() => require('../screens/quiz/BibleQuizLevelsScreen').default} />
+            <Stack.Screen name="BibleQuizStages" getComponent={() => require('../screens/quiz/BibleQuizStagesScreen').default} />
+            <Stack.Screen name="BibleQuizDetail" getComponent={() => require('../screens/quiz/BibleQuizDetailScreen').default} />
+            <Stack.Screen name="BibleQuizPlayer" getComponent={() => require('../screens/quiz/BibleQuizPlayerScreen').default} />
+            <Stack.Screen name="BibleQuizResult" getComponent={() => require('../screens/quiz/BibleQuizResultScreen').default} />
+            <Stack.Screen name="BibleQuizReview" getComponent={() => require('../screens/quiz/BibleQuizReviewScreen').default} />
+            <Stack.Screen name="BibleQuizLeaderboard" getComponent={() => require('../screens/quiz/BibleQuizLeaderboardScreen').default} />
             {/* Pastor / Admin Specific Screens */}
-            <Stack.Screen name="EventDetail" component={renderPremium(PastorEventDetail)} />
-            <Stack.Screen name="CreateEvent" component={renderPremium(CreatePastorEvent)} />
-            <Stack.Screen name="RoutePlanner" component={renderPremium(PastorEventRoutePlanner)} />
-            <Stack.Screen name="EventMap" component={renderPremium(PastorEventMap)} />
-            <Stack.Screen name="AIAssistant" component={renderPremium(AIAssistantModal)} options={{ presentation: 'modal' }} />
-            <Stack.Screen name="EventAttendees" component={EventAttendeesScreen} />
-            <Stack.Screen name="AdminRegistrationApprovals" component={AdminRegistrationApprovals} />
-            <Stack.Screen name="AdminMatrimonyProfileDetail" component={AdminMatrimonyProfileDetailScreen} />
+            <Stack.Screen name="EventDetail" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/admin/pastor_events/PastorEventDetail').default)} />
+            <Stack.Screen name="CreateEvent" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/admin/pastor_events/CreatePastorEvent').default)} />
+            <Stack.Screen name="RoutePlanner" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/admin/pastor_events/PastorEventRoutePlanner').default)} />
+            <Stack.Screen name="EventMap" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/admin/pastor_events/PastorEventMap').default)} />
+            <Stack.Screen name="AIAssistant" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/admin/pastor_events/AIAssistantModal').default)} options={{ presentation: 'modal' }} />
+            <Stack.Screen name="EventAttendees" getComponent={() => require('../screens/admin/EventAttendeesScreen').default} />
+            <Stack.Screen name="AdminRegistrationApprovals" getComponent={() => require('../screens/admin/AdminRegistrationApprovals').default} />
+            <Stack.Screen name="AdminMatrimonyProfileDetail" getComponent={() => require('../screens/admin/AdminMatrimonyProfileDetailScreen').default} />
           </>
         ) : (
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />

@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Calendar, Check, CheckSquare, Square, X, HeartHandshake } from 'lucide-react-native';
 import firestore from '@react-native-firebase/firestore';
 import { useAuth } from '../context/AuthContext';
@@ -18,6 +19,7 @@ import { useChurch } from '../context/ChurchContext';
 import { useTheme } from '../context/ThemeContext';
 import FirestoreService, { ScheduleEvent } from '../services/FirestoreService';
 import { RHEMA_CHURCH_ID, RHEMA_CHURCH_NAME, RHEMA_ROOT_COLLECTION } from '../constants/ChurchConfig';
+import { formatDateDisplay, parseLocalDate, toStandardDateString } from '../utils/DateUtils';
 
 export type PledgeFrequency = 'weekly' | 'monthly' | 'yearly' | 'event_wise';
 
@@ -48,7 +50,10 @@ const FREQUENCIES: { id: PledgeFrequency; label: string }[] = [
   { id: 'event_wise', label: 'Event-wise' },
 ];
 
-const toYmd = (d: Date) => d.toISOString().slice(0, 10);
+const toYmd = (d: Date) => toStandardDateString(d);
+
+const isValidYmd = (val: string) =>
+  /^\d{4}-\d{2}-\d{2}$/.test(val.trim()) && !isNaN(new Date(`${val.trim()}T00:00:00Z`).getTime());
 
 const addDaysYmd = (days: number) => {
   const d = new Date();
@@ -56,13 +61,11 @@ const addDaysYmd = (days: number) => {
   return toYmd(d);
 };
 
-const addMonthsYmd = (months: number) => {
-  const d = new Date();
+const addMonthsFromYmd = (baseYmd: string, months: number) => {
+  const d = isValidYmd(baseYmd) ? parseLocalDate(baseYmd) : new Date();
   d.setMonth(d.getMonth() + months);
   return toYmd(d);
 };
-
-const isValidYmd = (val: string) => /^\d{4}-\d{2}-\d{2}$/.test(val.trim()) && !isNaN(new Date(`${val.trim()}T00:00:00Z`).getTime());
 
 export default function PledgeFormModal({
   visible,
@@ -84,8 +87,10 @@ export default function PledgeFormModal({
   );
   const [customPurpose, setCustomPurpose] = useState('');
   const [frequency, setFrequency] = useState<PledgeFrequency>('monthly');
-  const [startDate, setStartDate] = useState(toYmd(new Date()));
+  const [startDate, setStartDate] = useState(() => toYmd(new Date()));
   const [endDate, setEndDate] = useState('');
+  const [activeDateField, setActiveDateField] = useState<'start' | 'end' | null>(null);
+  const [iosPickerDate, setIosPickerDate] = useState<Date>(() => new Date());
   const [consentConfirmed, setConsentConfirmed] = useState(false);
   const [reminderEnabled, setReminderEnabled] = useState(true);
 
@@ -103,13 +108,18 @@ export default function PledgeFormModal({
   const memberEmail = member?.email || user?.email || '';
 
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      setActiveDateField(null);
+      return;
+    }
     setAmount(initialAmount || '1000');
     if (PLEDGE_CATEGORIES.includes(initialCategory)) {
       setCategory(initialCategory);
     }
     setConsentConfirmed(false);
     setStartDate(toYmd(new Date()));
+    setEndDate('');
+    setActiveDateField(null);
   }, [visible, initialAmount, initialCategory]);
 
   useEffect(() => {
@@ -143,6 +153,57 @@ export default function PledgeFormModal({
 
   const selectedEvent = events.find((e) => e.id === selectedEventId) || null;
 
+  const setStartDateWithGuard = (ymd: string) => {
+    setStartDate(ymd);
+    if (endDate.trim() && endDate.trim() < ymd) {
+      setEndDate('');
+    }
+  };
+
+  const getInitialPickerDate = (field: 'start' | 'end'): Date => {
+    if (field === 'start') {
+      return isValidYmd(startDate) ? parseLocalDate(startDate) : new Date();
+    }
+    if (isValidYmd(endDate)) return parseLocalDate(endDate);
+    return isValidYmd(startDate) ? parseLocalDate(startDate) : new Date();
+  };
+
+  const openDatePicker = (field: 'start' | 'end') => {
+    const initial = getInitialPickerDate(field);
+    setIosPickerDate(initial);
+    setActiveDateField(field);
+  };
+
+  const applyPickedDate = (field: 'start' | 'end', date: Date) => {
+    const ymd = toYmd(date);
+    if (field === 'start') {
+      setStartDateWithGuard(ymd);
+    } else {
+      setEndDate(ymd);
+    }
+  };
+
+  const handleNativeDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      const targetField = activeDateField;
+      setActiveDateField(null);
+      if (event.type === 'set' && selectedDate && targetField) {
+        applyPickedDate(targetField, selectedDate);
+      }
+      return;
+    }
+    if (selectedDate) {
+      setIosPickerDate(selectedDate);
+    }
+  };
+
+  const handleConfirmIosDate = () => {
+    if (activeDateField) {
+      applyPickedDate(activeDateField, iosPickerDate);
+    }
+    setActiveDateField(null);
+  };
+
   const handleSubmit = async () => {
     if (!user?.uid) {
       Alert.alert('Sign In Required', 'Please sign in to submit a pledge.');
@@ -156,12 +217,12 @@ export default function PledgeFormModal({
     }
 
     if (!isValidYmd(startDate)) {
-      Alert.alert('Invalid Start Date', 'Please enter Start Date in YYYY-MM-DD format.');
+      Alert.alert('Invalid Start Date', 'Please select a Start Date using the calendar picker.');
       return;
     }
 
     if (endDate.trim() && !isValidYmd(endDate)) {
-      Alert.alert('Invalid End Date', 'Please enter End Date in YYYY-MM-DD format or leave blank.');
+      Alert.alert('Invalid End Date', 'Please select a valid End Date or clear it.');
       return;
     }
 
@@ -421,21 +482,27 @@ export default function PledgeFormModal({
             <View style={styles.dateRow}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.label, { color: textSecondary }]}>START DATE</Text>
-                <View style={[styles.dateInputWrap, { backgroundColor: cardBg, borderColor: borderCol }]}>
-                  <Calendar size={14} color={textSecondary} />
-                  <TextInput
-                    style={[styles.dateInput, { color: textPrimary }]}
-                    value={startDate}
-                    onChangeText={setStartDate}
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor={textSecondary}
-                  />
-                </View>
+                <TouchableOpacity
+                  style={[
+                    styles.dateInputWrap,
+                    {
+                      backgroundColor: cardBg,
+                      borderColor: activeDateField === 'start' ? accent : borderCol,
+                    },
+                  ]}
+                  onPress={() => openDatePicker('start')}
+                  activeOpacity={0.75}
+                >
+                  <Calendar size={15} color={accent} />
+                  <Text style={[styles.dateInput, { color: startDate ? textPrimary : textSecondary }]} numberOfLines={1}>
+                    {startDate ? formatDateDisplay(startDate) : 'Select date'}
+                  </Text>
+                </TouchableOpacity>
                 <View style={styles.quickDateRow}>
-                  <TouchableOpacity onPress={() => setStartDate(toYmd(new Date()))}>
+                  <TouchableOpacity onPress={() => setStartDateWithGuard(toYmd(new Date()))}>
                     <Text style={[styles.quickDateLink, { color: accent }]}>Today</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setStartDate(addDaysYmd(7))}>
+                  <TouchableOpacity onPress={() => setStartDateWithGuard(addDaysYmd(7))}>
                     <Text style={[styles.quickDateLink, { color: accent }]}>+7d</Text>
                   </TouchableOpacity>
                 </View>
@@ -443,21 +510,42 @@ export default function PledgeFormModal({
 
               <View style={{ flex: 1 }}>
                 <Text style={[styles.label, { color: textSecondary }]}>END DATE (OPTIONAL)</Text>
-                <View style={[styles.dateInputWrap, { backgroundColor: cardBg, borderColor: borderCol }]}>
-                  <Calendar size={14} color={textSecondary} />
-                  <TextInput
-                    style={[styles.dateInput, { color: textPrimary }]}
-                    value={endDate}
-                    onChangeText={setEndDate}
-                    placeholder="Optional"
-                    placeholderTextColor={textSecondary}
-                  />
+                <View
+                  style={[
+                    styles.dateInputWrap,
+                    {
+                      backgroundColor: cardBg,
+                      borderColor: activeDateField === 'end' ? accent : borderCol,
+                    },
+                  ]}
+                >
+                  <TouchableOpacity
+                    style={styles.datePickTrigger}
+                    onPress={() => openDatePicker('end')}
+                    activeOpacity={0.75}
+                  >
+                    <Calendar size={15} color={endDate ? accent : textSecondary} />
+                    <Text
+                      style={[styles.dateInput, { color: endDate ? textPrimary : textSecondary }]}
+                      numberOfLines={1}
+                    >
+                      {endDate ? formatDateDisplay(endDate) : 'Optional'}
+                    </Text>
+                  </TouchableOpacity>
+                  {!!endDate && (
+                    <TouchableOpacity
+                      onPress={() => setEndDate('')}
+                      hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                    >
+                      <X size={14} color={textSecondary} />
+                    </TouchableOpacity>
+                  )}
                 </View>
                 <View style={styles.quickDateRow}>
-                  <TouchableOpacity onPress={() => setEndDate(addMonthsYmd(3))}>
+                  <TouchableOpacity onPress={() => setEndDate(addMonthsFromYmd(startDate, 3))}>
                     <Text style={[styles.quickDateLink, { color: accent }]}>+3M</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setEndDate(addMonthsYmd(12))}>
+                  <TouchableOpacity onPress={() => setEndDate(addMonthsFromYmd(startDate, 12))}>
                     <Text style={[styles.quickDateLink, { color: accent }]}>+1Yr</Text>
                   </TouchableOpacity>
                   {!!endDate && (
@@ -540,6 +628,56 @@ export default function PledgeFormModal({
             </TouchableOpacity>
           </ScrollView>
         </View>
+
+        {activeDateField !== null && Platform.OS === 'android' && (
+          <DateTimePicker
+            value={getInitialPickerDate(activeDateField)}
+            mode="date"
+            display="default"
+            minimumDate={
+              activeDateField === 'end' && isValidYmd(startDate)
+                ? parseLocalDate(startDate)
+                : undefined
+            }
+            onChange={handleNativeDateChange}
+          />
+        )}
+
+        {activeDateField !== null && Platform.OS === 'ios' && (
+          <View style={styles.iosPickerBackdrop}>
+            <TouchableOpacity
+              style={{ flex: 1 }}
+              activeOpacity={1}
+              onPress={() => setActiveDateField(null)}
+            />
+            <View style={[styles.iosPickerCard, { backgroundColor: cardBg, borderTopColor: borderCol }]}>
+              <View style={[styles.iosPickerHeader, { borderBottomColor: borderCol }]}>
+                <TouchableOpacity onPress={() => setActiveDateField(null)}>
+                  <Text style={[styles.iosPickerAction, { color: textSecondary }]}>Cancel</Text>
+                </TouchableOpacity>
+                <Text style={[styles.iosPickerTitle, { color: textPrimary }]}>
+                  {activeDateField === 'start' ? 'Select Start Date' : 'Select End Date'}
+                </Text>
+                <TouchableOpacity onPress={handleConfirmIosDate}>
+                  <Text style={[styles.iosPickerAction, { color: accent }]}>Done</Text>
+                </TouchableOpacity>
+              </View>
+              <DateTimePicker
+                value={iosPickerDate}
+                mode="date"
+                display="spinner"
+                minimumDate={
+                  activeDateField === 'end' && isValidYmd(startDate)
+                    ? parseLocalDate(startDate)
+                    : undefined
+                }
+                themeVariant={isDark ? 'dark' : 'light'}
+                accentColor={accent}
+                onChange={handleNativeDateChange}
+              />
+            </View>
+          </View>
+        )}
       </View>
     </Modal>
   );
@@ -599,9 +737,38 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     height: 44,
   },
+  datePickTrigger: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    height: '100%',
+  },
   dateInput: { flex: 1, fontSize: 13, fontWeight: '600' },
   quickDateRow: { flexDirection: 'row', gap: 12, marginTop: 5, paddingLeft: 2 },
   quickDateLink: { fontSize: 11, fontWeight: '700' },
+  iosPickerBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+    zIndex: 50,
+  },
+  iosPickerCard: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderTopWidth: 1,
+    paddingBottom: 24,
+  },
+  iosPickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+  },
+  iosPickerTitle: { fontSize: 14, fontWeight: '700' },
+  iosPickerAction: { fontSize: 15, fontWeight: '700' },
   memberSummaryBox: { borderWidth: 1, borderRadius: 14, padding: 12, marginBottom: 12 },
   memberTxt: { fontSize: 14, fontWeight: '700' },
   checkRow: {

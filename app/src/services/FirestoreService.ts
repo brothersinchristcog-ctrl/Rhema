@@ -1482,59 +1482,72 @@ class FirestoreService {
     try {
       const targetChurchId = (await this.getChurchId()) || RHEMA_CHURCH_ID;
 
-      // 1. Direct check in target church member profile (instant, zero index required)
+      // 1 & 2. Direct checks in target church and default church concurrently
       try {
-        const directDoc = await firestore()
-          .collection('Rhema Church')
-          .doc(targetChurchId)
-          .collection('members')
-          .doc(uid)
-          .get();
-        if (directDoc.exists()) {
-          const data = directDoc.data();
-          if (!data?.status || data?.status === 'Active') {
-            return { uid: directDoc.id, primaryChurchId: targetChurchId, ...data } as GlobalUser;
+        const directQueries: Promise<{ churchId: string; snap: any } | null>[] = [
+          firestore()
+            .collection('Rhema Church')
+            .doc(targetChurchId)
+            .collection('members')
+            .doc(uid)
+            .get()
+            .then((snap) => ({ churchId: targetChurchId, snap }))
+            .catch(() => null),
+        ];
+
+        if (targetChurchId !== RHEMA_CHURCH_ID) {
+          directQueries.push(
+            firestore()
+              .collection('Rhema Church')
+              .doc(RHEMA_CHURCH_ID)
+              .collection('members')
+              .doc(uid)
+              .get()
+              .then((snap) => ({ churchId: RHEMA_CHURCH_ID, snap }))
+              .catch(() => null)
+          );
+        }
+
+        const directResults = await Promise.all(directQueries);
+        for (const res of directResults) {
+          if (res?.snap?.exists()) {
+            const data = res.snap.data();
+            if (!data?.status || data?.status === 'Active') {
+              return { uid: res.snap.id, primaryChurchId: res.churchId, ...data } as GlobalUser;
+            }
           }
         }
       } catch (err) {
         // Continue to fallback checks
       }
 
-      // 2. Direct check in default church if target was different
-      if (targetChurchId !== RHEMA_CHURCH_ID) {
-        try {
-          const defaultDoc = await firestore()
-            .collection('Rhema Church')
-            .doc(RHEMA_CHURCH_ID)
-            .collection('members')
-            .doc(uid)
-            .get();
-          if (defaultDoc.exists()) {
-            const data = defaultDoc.data();
-            if (!data?.status || data?.status === 'Active') {
-              return { uid: defaultDoc.id, primaryChurchId: RHEMA_CHURCH_ID, ...data } as GlobalUser;
-            }
-          }
-        } catch (err) {
-          // Continue
-        }
-      }
-
-      // 3. Direct check across all churches in 'Rhema Church' collection (no composite/collectionGroup index required)
+      // 3. Direct parallel check across remaining churches in 'Rhema Church' collection
       try {
         const churchesSnap = await firestore().collection('Rhema Church').get();
-        for (const cDoc of churchesSnap.docs) {
-          if (cDoc.id === targetChurchId || cDoc.id === RHEMA_CHURCH_ID) continue;
-          const mDoc = await firestore()
-            .collection('Rhema Church')
-            .doc(cDoc.id)
-            .collection('members')
-            .doc(uid)
-            .get();
-          if (mDoc.exists()) {
-            const data = mDoc.data();
-            if (!data?.status || data?.status === 'Active') {
-              return { uid: mDoc.id, primaryChurchId: cDoc.id, ...data } as GlobalUser;
+        const remainingChurchIds = churchesSnap.docs
+          .map((d) => d.id)
+          .filter((id) => id !== targetChurchId && id !== RHEMA_CHURCH_ID);
+
+        if (remainingChurchIds.length > 0) {
+          const churchResults = await Promise.all(
+            remainingChurchIds.map((cId) =>
+              firestore()
+                .collection('Rhema Church')
+                .doc(cId)
+                .collection('members')
+                .doc(uid)
+                .get()
+                .then((mDoc) => ({ cId, mDoc }))
+                .catch(() => null)
+            )
+          );
+
+          for (const res of churchResults) {
+            if (res?.mDoc?.exists()) {
+              const data = res.mDoc.data();
+              if (!data?.status || data?.status === 'Active') {
+                return { uid: res.mDoc.id, primaryChurchId: res.cId, ...data } as GlobalUser;
+              }
             }
           }
         }
@@ -1596,6 +1609,8 @@ class FirestoreService {
     }
   }
 
+  private contactExistsCache = new Map<string, { ts: number; result: any }>();
+
   async checkContactExists(phone: string, churchId?: string, strictChurch?: boolean): Promise<any> {
     const rawDigits = (phone || '').replace(/\D/g, '');
     const last10 = rawDigits.slice(-10);
@@ -1612,10 +1627,15 @@ class FirestoreService {
     
     // Array of possible formats that might be in Firestore (including integers), filter out invalid values
     const formats = [last10, plus91, format91, zero10, phone, spaced1, spaced2, intFormat, intFormat91];
-    const possibleFormats = Array.from(new Set(formats.filter(v => v !== undefined && v !== null && !Number.isNaN(v))));
+    const possibleFormats = Array.from(new Set(formats.filter(v => v !== undefined && v !== null && !Number.isNaN(v)))).slice(0, 10);
     
     try {
       const targetChurchId = churchId || await this.getChurchId() || RHEMA_CHURCH_ID;
+      const cacheKey = `${targetChurchId}:${last10}:${Boolean(strictChurch)}`;
+      const cachedHit = this.contactExistsCache.get(cacheKey);
+      if (cachedHit && Date.now() - cachedHit.ts < 30_000) {
+        return cachedHit.result;
+      }
       
       const auth = require('@react-native-firebase/auth').default;
       if (!auth().currentUser) {
@@ -1623,50 +1643,62 @@ class FirestoreService {
       }
 
       let bestMember: any = null;
+      const membersRef = firestore()
+        .collection(RHEMA_ROOT_COLLECTION)
+        .doc(targetChurchId)
+        .collection('members');
 
-      // ── Strategy 1: Targeted subcollection queries in Rhema Global Ministries ──
-      // Check multiple phone field variants (phone, phoneNumber, mobile, contactNumber)
-      try {
-        console.log(`Checking specific church: ${targetChurchId}`);
-        const phoneFields = ['phone', 'phoneNumber', 'mobile', 'contactNumber'];
-        
-        const matchProcessor = (doc: any) => {
-          const data = doc.data();
-          const hasName = Boolean((data.name || data.firstName || data.displayName || '').trim());
-          const bestHasName = Boolean((bestMember?.name || bestMember?.firstName || bestMember?.displayName || '').trim());
-          const isElevated = String(data.userType || '').toUpperCase().includes('ADMIN') || 
-                             String(data.userType || '').toUpperCase().includes('SUPER') || 
-                             String(data.userType || '').toUpperCase().includes('PASTOR');
+      const matchProcessor = (doc: any) => {
+        const data = doc.data();
+        const hasName = Boolean((data.name || data.firstName || data.displayName || '').trim());
+        const bestHasName = Boolean((bestMember?.name || bestMember?.firstName || bestMember?.displayName || '').trim());
+        const isElevated = String(data.userType || '').toUpperCase().includes('ADMIN') || 
+                           String(data.userType || '').toUpperCase().includes('SUPER') || 
+                           String(data.userType || '').toUpperCase().includes('PASTOR');
 
-          if (!bestMember) {
-            bestMember = { id: doc.id, churchId: targetChurchId, ...data };
+        if (!bestMember) {
+          bestMember = { id: doc.id, churchId: targetChurchId, ...data };
+        } else {
+          if (!bestHasName && hasName) {
+            bestMember = { id: doc.id, churchId: targetChurchId, ...data, ...bestMember, name: data.name || data.displayName, firstName: data.firstName || '', lastName: data.lastName || '' };
           } else {
-            // If the existing bestMember has no name, but this doc has a name, swap to this doc!
-            if (!bestHasName && hasName) {
-              bestMember = { id: doc.id, churchId: targetChurchId, ...data, ...bestMember, name: data.name || data.displayName, firstName: data.firstName || '', lastName: data.lastName || '' };
-            } else {
-              // Merge missing name fields
-              if (!bestMember.name && data.name) bestMember.name = data.name;
-              if (!bestMember.firstName && data.firstName) bestMember.firstName = data.firstName;
-              if (!bestMember.lastName && data.lastName) bestMember.lastName = data.lastName;
-              if (!bestMember.userType && data.userType) bestMember.userType = data.userType;
-            }
-            if (isElevated) {
-              bestMember.userType = data.userType;
-            }
+            if (!bestMember.name && data.name) bestMember.name = data.name;
+            if (!bestMember.firstName && data.firstName) bestMember.firstName = data.firstName;
+            if (!bestMember.lastName && data.lastName) bestMember.lastName = data.lastName;
+            if (!bestMember.userType && data.userType) bestMember.userType = data.userType;
           }
-        };
+          if (isElevated) {
+            bestMember.userType = data.userType;
+          }
+        }
+      };
 
-        for (const field of phoneFields) {
-          const queries = possibleFormats.map(format => 
-            firestore()
-              .collection(RHEMA_ROOT_COLLECTION)
-              .doc(targetChurchId)
-              .collection('members')
-              .where(field, '==', format)
-              .get()
+      // ── Strategy 1a: O(1) phone index lookup ──
+      try {
+        const indexDoc = await firestore()
+          .collection(RHEMA_ROOT_COLLECTION)
+          .doc(targetChurchId)
+          .collection('memberPhoneIndex')
+          .doc(last10)
+          .get()
+          .catch(() => null);
+        const indexedId = indexDoc?.exists() ? indexDoc.data()?.memberId : null;
+        if (indexedId) {
+          const mDoc = await membersRef.doc(indexedId).get().catch(() => null);
+          if (mDoc?.exists()) {
+            matchProcessor(mDoc);
+          }
+        }
+      } catch {}
+
+      // ── Strategy 1b: Parallel 'in' queries across all phone fields (4 parallel queries instead of 36 sequential) ──
+      if (!bestMember && possibleFormats.length > 0) {
+        try {
+          console.log(`Checking specific church: ${targetChurchId}`);
+          const phoneFields = ['phone', 'phoneNumber', 'mobile', 'contactNumber'];
+          const settledResults = await Promise.allSettled(
+            phoneFields.map((field) => membersRef.where(field, 'in', possibleFormats).get())
           );
-          const settledResults = await Promise.allSettled(queries);
           for (const res of settledResults) {
             if (res.status === 'fulfilled') {
               for (const doc of res.value.docs) {
@@ -1674,71 +1706,48 @@ class FirestoreService {
               }
             }
           }
+        } catch (err: any) {
+          console.log("Specific church query notice:", err?.message);
         }
-      } catch (err: any) {
-        console.log("Specific church query notice:", err?.message);
       }
 
-      // ── Strategy 2: Direct in-memory scan of church members ──
-      // Bypasses any missing composite/single-field index preconditions completely.
-      // Reads church members and matches normalized 10-digit digits.
-      try {
-        console.log(`Fallback direct scan in church: ${targetChurchId}`);
-        const membersSnap = await firestore()
-          .collection(RHEMA_ROOT_COLLECTION)
-          .doc(targetChurchId)
-          .collection('members')
-          .limit(500)
-          .get();
+      // ── Strategy 2: Bounded fallback scan ONLY if Strategy 1 missed ──
+      if (!bestMember) {
+        try {
+          console.log(`Fallback direct scan in church: ${targetChurchId}`);
+          const membersSnap = await membersRef.limit(500).get();
 
-        for (const doc of membersSnap.docs) {
-          const data = doc.data();
-          const docPhoneCandidates = [
-            data.phone,
-            data.phoneNumber,
-            data.mobile,
-            data.contactNumber,
-            data.whatsappNumber,
-            data.whatsapp,
-            data.MobilePhone,
-            data.contact
-          ];
-          for (const cand of docPhoneCandidates) {
-            if (!cand) continue;
-            const cleanCand = String(cand).replace(/\D/g, '').slice(-10);
-            if (cleanCand === last10) {
-              const hasName = Boolean((data.name || data.firstName || data.displayName || '').trim());
-              const bestHasName = Boolean((bestMember?.name || bestMember?.firstName || bestMember?.displayName || '').trim());
-              const isElevated = String(data.userType || '').toUpperCase().includes('ADMIN') || 
-                                 String(data.userType || '').toUpperCase().includes('SUPER') || 
-                                 String(data.userType || '').toUpperCase().includes('PASTOR');
-
-              if (!bestMember) {
-                bestMember = { id: doc.id, churchId: targetChurchId, ...data };
-              } else {
-                if (!bestHasName && hasName) {
-                  bestMember = { id: doc.id, churchId: targetChurchId, ...data, ...bestMember, name: data.name || data.displayName, firstName: data.firstName || '', lastName: data.lastName || '' };
-                } else {
-                  if (!bestMember.name && data.name) bestMember.name = data.name;
-                  if (!bestMember.firstName && data.firstName) bestMember.firstName = data.firstName;
-                  if (!bestMember.lastName && data.lastName) bestMember.lastName = data.lastName;
-                  if (!bestMember.userType && data.userType) bestMember.userType = data.userType;
-                }
-                if (isElevated) {
-                  bestMember.userType = data.userType;
-                }
+          for (const doc of membersSnap.docs) {
+            const data = doc.data();
+            const docPhoneCandidates = [
+              data.phone,
+              data.phoneNumber,
+              data.mobile,
+              data.contactNumber,
+              data.whatsappNumber,
+              data.whatsapp,
+              data.MobilePhone,
+              data.contact
+            ];
+            for (const cand of docPhoneCandidates) {
+              if (!cand) continue;
+              const cleanCand = String(cand).replace(/\D/g, '').slice(-10);
+              if (cleanCand === last10) {
+                matchProcessor(doc);
+                break;
               }
-              break;
             }
           }
+        } catch (scanErr: any) {
+          console.log("Direct scan notice:", scanErr?.message);
         }
-      } catch (scanErr: any) {
-        console.log("Direct scan notice:", scanErr?.message);
       }
 
       if (strictChurch) {
         if (bestMember) {
-          return { exists: true, member: bestMember };
+          const result = { exists: true, member: bestMember };
+          this.contactExistsCache.set(cacheKey, { ts: Date.now(), result });
+          return result;
         }
         // Before returning false in strictChurch mode, check registration_requests in targetChurchId
         try {
@@ -1764,15 +1773,16 @@ class FirestoreService {
         return { exists: false };
       }
 
-      // ── Strategy 3: Global collectionGroup search ──
-      try {
-        console.log("Trying collectionGroup('members') search...");
-        const cgFields = ['phone', 'phoneNumber'];
-        for (const field of cgFields) {
-          const globalQueries = possibleFormats.map(format => 
-            firestore().collectionGroup('members').where(field, '==', format).get()
+      // ── Strategy 3: Global collectionGroup search ONLY if Strategy 1 & 2 missed ──
+      if (!bestMember && possibleFormats.length > 0) {
+        try {
+          console.log("Trying collectionGroup('members') search...");
+          const cgFields = ['phone', 'phoneNumber'];
+          const globalResults = await Promise.allSettled(
+            cgFields.map((field) =>
+              firestore().collectionGroup('members').where(field, 'in', possibleFormats).get()
+            )
           );
-          const globalResults = await Promise.allSettled(globalQueries);
           for (const res of globalResults) {
             if (res.status === 'fulfilled') {
               for (const doc of res.value.docs) {
@@ -1790,9 +1800,9 @@ class FirestoreService {
               }
             }
           }
+        } catch (cgError: any) {
+          console.log("Global collection group query notice:", cgError?.message);
         }
-      } catch (cgError: any) {
-        console.log("Global collection group query notice:", cgError?.message);
       }
 
       if (bestMember) {
@@ -1806,7 +1816,9 @@ class FirestoreService {
         if (bestMember.firstName && !bestMember.name) {
           bestMember.name = `${bestMember.firstName} ${bestMember.lastName || ''}`.trim();
         }
-        return { exists: true, member: bestMember as AppMember };
+        const result = { exists: true, member: bestMember as AppMember };
+        this.contactExistsCache.set(cacheKey, { ts: Date.now(), result });
+        return result;
       }
 
       // Check registration_requests in target church
@@ -3361,44 +3373,53 @@ class FirestoreService {
   async getPrayerRequests(filters: any = {}) {
     try {
       const col = await this.getCollection('prayerRequests');
-      let query: any = col;
+      const limitCount = Number(filters.limit) > 0 ? Number(filters.limit) : filters.isAdmin ? 120 : 40;
 
       let rawItems: any[] = [];
       if (filters.isAdmin) {
-        // Admin sees all requests
-        const snapshot = await query.orderBy('createdAt', 'desc').get();
+        // Admin sees bounded latest requests
+        const snapshot = await col.orderBy('createdAt', 'desc').limit(limitCount).get();
         rawItems = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
       } else {
-        // Members see their own requests AND public approved requests
+        // Members see their own requests AND public approved requests (or ownOnly for Home summary)
         const userIdentifier = filters.contactId || filters.phone;
-        
-        let list: any[] = [];
-        
-        // 1. Fetch Public Approved Requests
-        try {
-          let publicQuery = query.where('isPublic', '==', true).where('isAnswered', '==', true);
-          const publicSnapshot = await publicQuery.get();
-          const publicList = publicSnapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
-          list.push(...publicList);
-        } catch (pubErr) {
-          console.warn('Could not fetch public prayers:', pubErr);
+        const fetchPromises: Promise<any[]>[] = [];
+
+        if (!filters.ownOnly) {
+          fetchPromises.push(
+            col
+              .where('isPublic', '==', true)
+              .where('isAnswered', '==', true)
+              .limit(limitCount)
+              .get()
+              .then((snap: any) => snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() })))
+              .catch((pubErr: any) => {
+                console.warn('Could not fetch public prayers:', pubErr);
+                return [];
+              })
+          );
         }
-        
-        // 2. Fetch User's Own Requests (Public or Private, Pending or Approved)
+
         if (userIdentifier) {
-          let ownQuery = query;
-          if (filters.contactId) {
-            ownQuery = ownQuery.where('contactId', '==', filters.contactId);
-          } else {
-            ownQuery = ownQuery.where('phone', '==', filters.phone);
-          }
-          const ownSnapshot = await ownQuery.get();
-          const ownList = ownSnapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
-          
-          // Merge lists and prevent duplicates
-          const seen = new Set(list.map((p: any) => p.id));
-          for (const p of ownList) {
+          const ownQuery = filters.contactId
+            ? col.where('contactId', '==', filters.contactId).limit(limitCount)
+            : col.where('phone', '==', filters.phone).limit(limitCount);
+
+          fetchPromises.push(
+            ownQuery
+              .get()
+              .then((snap: any) => snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() })))
+              .catch(() => [])
+          );
+        }
+
+        const settledLists = await Promise.all(fetchPromises);
+        const list: any[] = [];
+        const seen = new Set<string>();
+        for (const sub of settledLists) {
+          for (const p of sub) {
             if (!seen.has(p.id)) {
+              seen.add(p.id);
               list.push(p);
             }
           }
@@ -3414,8 +3435,25 @@ class FirestoreService {
         rawItems = list;
       }
 
-      // Fetch comments for each request document in parallel
+      if (filters.skipComments) {
+        return rawItems.map((item: any) => ({
+          ...item,
+          createdAt: item.createdAt ? (item.createdAt.toDate ? item.createdAt.toDate().toISOString() : new Date(item.createdAt).toISOString()) : new Date().toISOString(),
+          replies: [],
+        }));
+      }
+
+      // Fetch comments ONLY for answered items or items known to have comments (avoids N+1 subcollection scans on unanswered prayers)
       const itemsWithComments = await Promise.all(rawItems.map(async (item: any) => {
+        const createdAtStr = item.createdAt
+          ? (item.createdAt.toDate ? item.createdAt.toDate().toISOString() : new Date(item.createdAt).toISOString())
+          : new Date().toISOString();
+
+        const shouldFetchReplies = Boolean(filters.isAdmin || item.isAnswered || Number(item.commentCount || 0) > 0);
+        if (!shouldFetchReplies) {
+          return { ...item, createdAt: createdAtStr, replies: [] };
+        }
+
         try {
           const commentsSnapshot = await col.doc(item.id).collection('comments').orderBy('createdAt', 'asc').get();
           const replies = commentsSnapshot.docs.map((cDoc: any) => {
@@ -3427,11 +3465,10 @@ class FirestoreService {
               date: cData.createdAt ? (cData.createdAt.toDate ? cData.createdAt.toDate().toISOString() : new Date(cData.createdAt).toISOString()) : new Date().toISOString()
             };
           });
-          const createdAtStr = item.createdAt ? (item.createdAt.toDate ? item.createdAt.toDate().toISOString() : new Date(item.createdAt).toISOString()) : new Date().toISOString();
           return { ...item, createdAt: createdAtStr, replies };
         } catch (commentErr) {
           console.warn(`Error fetching comments for request ${item.id}:`, commentErr);
-          return { ...item, replies: [] };
+          return { ...item, createdAt: createdAtStr, replies: [] };
         }
       }));
 
@@ -3692,13 +3729,16 @@ class FirestoreService {
   async addPrayerComment(requestId: string, comment: string, authorName: string) {
     try {
       const col = await this.getCollection('prayerRequests');
-      await col.doc(requestId).collection('comments').add({
+      const docRef = col.doc(requestId);
+      await docRef.collection('comments').add({
         comment,
         body: comment,
         authorName,
         author: authorName,
         createdAt: FieldValue.serverTimestamp()
       });
+      // Keep parent commentCount synced so list loads can skip querying 0-comment subcollections
+      docRef.update({ commentCount: FieldValue.increment(1) }).catch(() => {});
       return true;
     } catch (e) {
       throw e;
@@ -3764,7 +3804,7 @@ class FirestoreService {
     }
   }
 
-  async getMemberDonations(phone?: string | null, uid?: string | null): Promise<any[]> {
+  async getMemberDonations(phone?: string | null, uid?: string | null, limitPerQuery: number = 100): Promise<any[]> {
     try {
       const col = await this.getCollection('donations');
 
@@ -3785,20 +3825,21 @@ class FirestoreService {
         }
       }
       const phoneVariants = Array.from(phoneVariantsSet).slice(0, 10);
+      const boundedLimit = Math.max(10, limitPerQuery);
 
       const queries: Promise<any>[] = [];
 
       if (uid) {
-        queries.push(col.where('userId', '==', uid).get());
-        queries.push(firestore().collection('church_donations').where('userId', '==', uid).get());
+        queries.push(col.where('userId', '==', uid).limit(boundedLimit).get());
+        queries.push(firestore().collection('church_donations').where('userId', '==', uid).limit(boundedLimit).get());
       }
 
       if (phoneVariants.length > 0) {
-        queries.push(col.where('phone', 'in', phoneVariants).get());
-        queries.push(col.where('donorPhone', 'in', phoneVariants).get());
-        queries.push(firestore().collection('church_donations').where('phone', 'in', phoneVariants).get());
-        queries.push(firestore().collection('ledger_donations').where('phone', 'in', phoneVariants).get());
-        queries.push(firestore().collection('ledger_donations').where('donorPhone', 'in', phoneVariants).get());
+        queries.push(col.where('phone', 'in', phoneVariants).limit(boundedLimit).get());
+        queries.push(col.where('donorPhone', 'in', phoneVariants).limit(boundedLimit).get());
+        queries.push(firestore().collection('church_donations').where('phone', 'in', phoneVariants).limit(boundedLimit).get());
+        queries.push(firestore().collection('ledger_donations').where('phone', 'in', phoneVariants).limit(boundedLimit).get());
+        queries.push(firestore().collection('ledger_donations').where('donorPhone', 'in', phoneVariants).limit(boundedLimit).get());
       }
 
       if (queries.length === 0) {

@@ -43,6 +43,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { RHEMA_CHURCH_ID, RHEMA_ROOT_COLLECTION } from '../constants/ChurchConfig';
 import FirestoreService from '../services/FirestoreService';
 import { formatDateDisplay } from '../utils/DateUtils';
+import { getInstantMemory, readInstantCache, writeInstantCache } from '../utils/instantCache';
 import ViewShot from 'react-native-view-shot';
 import * as MediaLibrary from 'expo-media-library';
 
@@ -66,14 +67,21 @@ export default function GivingHistoryScreen({ navigation, route }: any) {
   const { t, language } = useLanguage();
   const effectiveChurchId = churchId || activeChurch?.id || RHEMA_CHURCH_ID;
 
+  const historyCacheKey = `giving_history_${effectiveChurchId}_${user?.uid || member?.phone || 'anon'}_v1`;
+  const initialCachedHistory = getInstantMemory<{
+    donations: any[];
+    pledges: any[];
+    mandates: any[];
+  }>(historyCacheKey);
+
   const initialTabParam = route?.params?.initialTab;
   const [activeSection, setActiveSection] = useState<'donations' | 'pledges' | 'mandates'>(
     initialTabParam === 'pledges' || initialTabParam === 'mandates' ? initialTabParam : 'donations'
   );
-  const [donations, setDonations] = useState<any[]>([]);
-  const [pledges, setPledges] = useState<any[]>([]);
-  const [mandates, setMandates] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [donations, setDonations] = useState<any[]>(() => initialCachedHistory?.donations || []);
+  const [pledges, setPledges] = useState<any[]>(() => initialCachedHistory?.pledges || []);
+  const [mandates, setMandates] = useState<any[]>(() => initialCachedHistory?.mandates || []);
+  const [loading, setLoading] = useState(() => !initialCachedHistory);
   const [refreshing, setRefreshing] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [managingId, setManagingId] = useState<string | null>(null);
@@ -97,7 +105,7 @@ export default function GivingHistoryScreen({ navigation, route }: any) {
     }
   }, [route?.params?.initialTab]);
 
-  const fetchHistory = useCallback(async (isRefresh = false) => {
+  const fetchHistory = useCallback(async (isRefresh = false, silent = false) => {
     const memberPhone = member?.phone || user?.phoneNumber || null;
     const memberUid = user?.uid || null;
 
@@ -107,9 +115,25 @@ export default function GivingHistoryScreen({ navigation, route }: any) {
       return;
     }
 
-    if (isRefresh) {
+    let hasCached = Boolean(getInstantMemory(historyCacheKey));
+    if (!isRefresh && !hasCached) {
+      const diskHistory = await readInstantCache<{
+        donations: any[];
+        pledges: any[];
+        mandates: any[];
+      }>(historyCacheKey);
+      if (diskHistory?.data) {
+        setDonations(diskHistory.data.donations || []);
+        setPledges(diskHistory.data.pledges || []);
+        setMandates(diskHistory.data.mandates || []);
+        setLoading(false);
+        hasCached = true;
+      }
+    }
+
+    if (isRefresh && !silent) {
       setRefreshing(true);
-    } else {
+    } else if (!hasCached && !silent) {
       setLoading(true);
     }
 
@@ -134,8 +158,12 @@ export default function GivingHistoryScreen({ navigation, route }: any) {
           : Promise.resolve(null),
       ]);
 
+      let nextDonations: any[] | null = null;
+      let nextPledges: any[] | null = null;
+      let nextMandates: any[] | null = null;
+
       if (historyResult.status === 'fulfilled') {
-        const successful = historyResult.value.filter(d => {
+        nextDonations = historyResult.value.filter(d => {
           const st = (d.status || '').toLowerCase();
           return (
             st === 'completed' ||
@@ -146,30 +174,39 @@ export default function GivingHistoryScreen({ navigation, route }: any) {
             !d.status
           );
         });
-        setDonations(successful);
+        setDonations(nextDonations);
       }
 
       if (pledgesResult.status === 'fulfilled' && pledgesResult.value) {
-        const pledgeList = pledgesResult.value.docs
+        nextPledges = pledgesResult.value.docs
           .map((d: any) => ({ id: d.id, ...d.data() }))
           .sort((a: any, b: any) => String(b.startDate || '').localeCompare(String(a.startDate || '')));
-        setPledges(pledgeList);
+        setPledges(nextPledges);
       }
 
       if (mandatesResult.status === 'fulfilled' && mandatesResult.value) {
-        const mandateList = mandatesResult.value.docs
+        nextMandates = mandatesResult.value.docs
           .map((d: any) => ({ id: d.id, ...d.data() }))
           .sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-        setMandates(mandateList);
+        setMandates(nextMandates);
       }
+
+      const prevMem = getInstantMemory<{ donations: any[]; pledges: any[]; mandates: any[] }>(historyCacheKey);
+      writeInstantCache(historyCacheKey, {
+        donations: nextDonations ?? prevMem?.donations ?? [],
+        pledges: nextPledges ?? prevMem?.pledges ?? [],
+        mandates: nextMandates ?? prevMem?.mandates ?? [],
+      }).catch(() => {});
     } catch (error) {
       console.error('Error fetching giving history:', error);
-      Alert.alert(t('common.error') || 'Error', t('giving.loadError'));
+      if (!hasCached && !silent) {
+        Alert.alert(t('common.error') || 'Error', t('giving.loadError'));
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [member?.phone, user?.phoneNumber, user?.uid, effectiveChurchId, t]);
+  }, [member?.phone, user?.phoneNumber, user?.uid, effectiveChurchId, historyCacheKey, t]);
 
   const handleManageMandate = (mandate: any, action: 'pause' | 'resume' | 'cancel') => {
     const actionLabel = action === 'cancel' ? 'Cancel Mandate' : action === 'pause' ? 'Pause Auto-Pay' : 'Resume Auto-Pay';
@@ -238,9 +275,9 @@ export default function GivingHistoryScreen({ navigation, route }: any) {
   };
 
   useEffect(() => {
-    fetchHistory();
+    fetchHistory(false, false);
     const unsubFocus = navigation?.addListener?.('focus', () => {
-      fetchHistory(true);
+      fetchHistory(true, true);
     });
     return () => {
       if (typeof unsubFocus === 'function') unsubFocus();

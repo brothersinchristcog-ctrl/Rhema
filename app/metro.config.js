@@ -2,6 +2,17 @@ const { getDefaultConfig } = require('expo/metro-config');
 
 const config = getDefaultConfig(__dirname);
 
+// Defer parsing non-startup JS modules until the screen/feature is actually opened.
+config.transformer = {
+  ...(config.transformer || {}),
+  getTransformOptions: async () => ({
+    transform: {
+      experimentalImportSupport: false,
+      inlineRequires: true,
+    },
+  }),
+};
+
 // Exclude Gradle Kotlin compiler build and caching directories from the Metro file watcher
 config.resolver.blockList = [
   /node_modules\/.*\/build\/kotlin\/.*/,

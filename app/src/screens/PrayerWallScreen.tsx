@@ -32,6 +32,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import FirestoreService, { AppMember } from '../services/FirestoreService';
 import { PrayerRequest } from '../types/schema';
+import { getInstantMemory, readInstantCache, writeInstantCache } from '../utils/instantCache';
 
 interface PrayerFormProps {
   prayerInput: string;
@@ -175,8 +176,11 @@ export default function PrayerWallScreen({ navigation, route }: any) {
   const { user, member: authMember } = useAuth();
   const { isDark, toggleTheme, colors } = useTheme();
   const { t } = useLanguage();
+  const prayerCacheKey = `prayers_list_${user?.uid || 'guest'}_v1`;
   const [member, setMember] = useState<AppMember | null>(null);
-  const [prayers, setPrayers] = useState<PrayerRequest[]>([]);
+  const [prayers, setPrayers] = useState<PrayerRequest[]>(
+    () => getInstantMemory<PrayerRequest[]>(prayerCacheKey) || []
+  );
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [prayedSet, setPrayedSet] = useState(new Set<string>());
@@ -206,25 +210,36 @@ export default function PrayerWallScreen({ navigation, route }: any) {
     { label: 'Other (if necessary)', icon: '✨' }
   ];
 
+  const syncPrayedSetFromList = (list: PrayerRequest[]) => {
+    const uid = user?.uid;
+    const phone = user?.phoneNumber;
+    if (!uid && !phone) return;
+    const alreadyPrayed = new Set<string>();
+    list.forEach((p: any) => {
+      if (
+        (uid && p.prayedBy?.includes(uid)) ||
+        (phone && p.prayedBy?.includes(phone))
+      ) {
+        alreadyPrayed.add(p.id);
+      }
+    });
+    setPrayedSet(alreadyPrayed);
+  };
+
   const fetchPrayers = async (contactId?: string, isRefreshing = false) => {
     try {
-      const uid = user?.uid;
-      const phone = user?.phoneNumber;
+      if (!isRefreshing && !getInstantMemory<PrayerRequest[]>(prayerCacheKey)) {
+        const diskCached = await readInstantCache<PrayerRequest[]>(prayerCacheKey);
+        if (diskCached?.data?.length) {
+          setPrayers(diskCached.data);
+          syncPrayedSetFromList(diskCached.data);
+          setLoading(false);
+        }
+      }
       const data = await FirestoreService.getPrayerRequests({ contactId });
       setPrayers(data);
-      // Restore prayedSet from Firestore prayedBy array
-      if (uid || phone) {
-        const alreadyPrayed = new Set<string>();
-        data.forEach((p: any) => {
-          if (
-            (uid && p.prayedBy?.includes(uid)) ||
-            (phone && p.prayedBy?.includes(phone))
-          ) {
-            alreadyPrayed.add(p.id);
-          }
-        });
-        setPrayedSet(alreadyPrayed);
-      }
+      syncPrayedSetFromList(data);
+      writeInstantCache(prayerCacheKey, data).catch(() => {});
     } catch (error) {
       console.error('Error fetching prayers:', error);
     } finally {
@@ -235,18 +250,22 @@ export default function PrayerWallScreen({ navigation, route }: any) {
 
   useEffect(() => {
     const init = async () => {
-      let contactId = undefined;
-      if (user?.phoneNumber) {
+      const knownMemberId = authMember?.id || member?.id;
+      if (authMember && !member) {
+        setMember(authMember as AppMember);
+      }
+      // Render cached prayers from disk/RAM immediately and query with known member id
+      fetchPrayers(knownMemberId || undefined, false);
+      if (!knownMemberId && user?.phoneNumber) {
         const result = await FirestoreService.checkContactExists(user.phoneNumber);
         if (result?.exists && result.member) {
           setMember(result.member);
-          contactId = result.member.id;
+          fetchPrayers(result.member.id, false);
         }
       }
-      fetchPrayers(contactId, false);
     };
     init();
-  }, [user]);
+  }, [user, authMember?.id]);
 
   const onRefresh = () => {
     setRefreshing(true);

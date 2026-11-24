@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   ScrollView,
+  FlatList,
   Pressable,
   Image,
   Modal,
@@ -25,6 +26,9 @@ import FirestoreService, { Sermon } from '../services/FirestoreService';
 import { formatSermonDuration, isSermonVisibleToMembers } from '../utils/DateUtils';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { getInstantMemory, readInstantCache, writeInstantCache } from '../utils/instantCache';
+
+const SERMONS_CACHE_KEY = 'sermons_screen_v1';
 
 /* ───────────── Category Definitions & Colors ───────────── */
 const ALL_CATEGORIES = [
@@ -765,10 +769,19 @@ export default function SermonsScreen({ navigation }: any) {
   const { colors, isDark, appearance } = useTheme();
   const { t } = useLanguage();
 
-  const [sermons, setSermons] = useState<SermonItemData[]>([]);
-  const [categoryList, setCategoryList] = useState<string[]>(ALL_CATEGORIES);
+  const initialSermonsCache = getInstantMemory<{
+    sermons: SermonItemData[];
+    categoryList: string[];
+  }>(SERMONS_CACHE_KEY);
+
+  const [sermons, setSermons] = useState<SermonItemData[]>(
+    () => initialSermonsCache?.sermons || []
+  );
+  const [categoryList, setCategoryList] = useState<string[]>(
+    () => initialSermonsCache?.categoryList || ALL_CATEGORIES
+  );
   const [activeCategory, setActiveCategory] = useState('All');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !initialSermonsCache);
   const [refreshing, setRefreshing] = useState(false);
 
   // Month & Year state: By default, show current month and year
@@ -866,9 +879,28 @@ export default function SermonsScreen({ navigation }: any) {
     };
   };
 
-  const fetchSermons = async () => {
-    try {
+  const fetchSermons = async (isRefresh = false) => {
+    let hasCached = Boolean(getInstantMemory(SERMONS_CACHE_KEY));
+    if (!isRefresh && !hasCached) {
+      const diskCached = await readInstantCache<{
+        sermons: SermonItemData[];
+        categoryList: string[];
+      }>(SERMONS_CACHE_KEY);
+      if (diskCached?.data?.sermons?.length) {
+        setSermons(diskCached.data.sermons);
+        if (diskCached.data.categoryList?.length) {
+          setCategoryList(diskCached.data.categoryList);
+        }
+        setLoading(false);
+        hasCached = true;
+      }
+    }
+
+    if (!hasCached && !isRefresh) {
       setLoading(true);
+    }
+
+    try {
       const [data, serverCats] = await Promise.all([
         FirestoreService.getSermons(250),
         FirestoreService.getSermonCategories().catch(() => [])
@@ -908,9 +940,13 @@ export default function SermonsScreen({ navigation }: any) {
       merged.push('Uncategorized');
 
       setCategoryList(merged);
+      writeInstantCache(SERMONS_CACHE_KEY, {
+        sermons: mapped,
+        categoryList: merged,
+      }).catch(() => {});
     } catch (err) {
       console.warn('Error fetching sermons from Firestore:', err);
-      setSermons([]);
+      if (!hasCached) setSermons([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -918,12 +954,12 @@ export default function SermonsScreen({ navigation }: any) {
   };
 
   useEffect(() => {
-    fetchSermons();
+    fetchSermons(false);
   }, []);
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchSermons();
+    fetchSermons(true);
   };
 
   const catOK = (s: SermonItemData) => {
@@ -1113,10 +1149,16 @@ export default function SermonsScreen({ navigation }: any) {
         </TouchableOpacity>
       </View>
 
-      <ScrollView
+      <FlatList
+        data={loading ? [] : list}
+        keyExtractor={(item) => String(item.id)}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ flexGrow: 1 }}
-        style={{ backgroundColor: 'transparent' }}
+        style={{ backgroundColor: 'transparent', flex: 1 }}
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: 60 }}
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -1125,168 +1167,174 @@ export default function SermonsScreen({ navigation }: any) {
             colors={['#FA6203', '#FB923C']}
           />
         }
-      >
-        {/* ── Month & Year Selector ── */}
-        <Pressable style={styles.mon} onPress={() => setSheet(true)}>
-          <Text style={[styles.monTxt, { color: '#0F172A' }]}>
-            {MON[m]} {y}
-          </Text>
-          <Icon
-            name="down"
-            size={22}
-            color="#FA6203"
-          />
-        </Pressable>
-
-        {/* ── Horizontal Date Strip ── */}
-        <ScrollView
-          ref={dateRef}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ flexGrow: 0, backgroundColor: 'transparent' }}
-          contentContainerStyle={styles.dates}
-        >
-          <DatePill
-            label="All"
-            sub="days"
-            on={day === null}
-            dot={false}
-            onPress={() => setDay(null)}
-            colors={colors}
-            isDark={isDark}
-            isAshTop={isAshTop}
-          />
-          {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((d) => (
-            <DatePill
-              key={d}
-              label={String(d)}
-              sub={WK[new Date(y, m, d).getDay()]}
-              on={day === d}
-              dot={!!withSermon[d]}
-              onPress={() => setDay(d)}
-              colors={colors}
-              isDark={isDark}
-              isAshTop={isAshTop}
-            />
-          ))}
-        </ScrollView>
-
-        {/* ── Top Convex Curve Transition (Smooth prominent curve above category badges) ── */}
-        <View style={{ width: '100%', height: 72, overflow: 'hidden', marginTop: 2 }}>
-          <Svg
-            width={width}
-            height={72}
-            viewBox={`0 0 ${width} 72`}
-            style={{ position: 'absolute', bottom: 0 }}
-          >
-            <Path
-              d={`M 0,72 Q ${width / 2},-16 ${width},72 L ${width},72 L 0,72 Z`}
-              fill={panelBg}
-            />
-          </Svg>
-        </View>
-
-        {/* ── Lower Panel in colors.surface ── */}
-        <View style={[styles.panel, { backgroundColor: panelBg, marginTop: -1, flex: 1 }]}>
-          {/* Fully Rounded Category Badges Strip (Capsule Badge - Fixed Height, No Ballooning) */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={{ flexGrow: 0 }}
-            contentContainerStyle={{ gap: 8, paddingVertical: 4, alignItems: 'center' }}
-          >
-            {dynamicCategories.map((cat) => {
-              const isSelected = activeCategory === cat;
-              return (
-                <TouchableOpacity
-                  key={cat}
-                  onPress={() => setActiveCategory(cat)}
-                  style={[
-                    styles.chip,
-                    isSelected
-                      ? {
-                          backgroundColor: isDark ? '#FFFFFF' : '#1E293B',
-                          borderColor: isDark ? '#FFFFFF' : '#1E293B',
-                          borderWidth: 1.5,
-                        }
-                      : {
-                          backgroundColor: isDark
-                            ? 'rgba(255,255,255,0.08)'
-                            : isWarmWhite
-                            ? '#FAF6F0'
-                            : '#FFFFFF',
-                          borderColor: isDark
-                            ? 'rgba(255,255,255,0.28)'
-                            : isWarmWhite
-                            ? '#DCD3C5'
-                            : '#94A3B8',
-                          borderWidth: 1.5,
-                        },
-                  ]}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      styles.chipTxt,
-                      {
-                        color: isSelected
-                          ? (isDark ? '#111827' : '#FFFFFF')
-                          : (isDark ? 'rgba(255,255,255,0.85)' : '#1E293B'),
-                      },
-                      isSelected && { fontWeight: '800' },
-                    ]}
-                  >
-                    {getCategoryLabel(cat)}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-
-          {/* Summary Counter Row */}
-          <View style={styles.sum}>
-            <Text style={[styles.sumT, { color: colors.text }]}>
-              {list.length} {list.length === 1 ? 'sermon' : 'sermons'}
-            </Text>
-            <Text style={[styles.sumD, { color: colors.textSecondary }]}>
-              {day === null ? `${MON[m]} ${y}` : `${day} ${MON[m].slice(0, 3)} ${y}`}
-            </Text>
-          </View>
-
-          {/* Real Sermons List / Loading / Empty State */}
-          {loading ? (
-            <View style={styles.empty}>
-              <ActivityIndicator size="large" color={isDark ? C.lime : (colors.accent || '#15803d')} />
-              <Text style={[styles.emptyS, { color: colors.textSecondary, marginTop: 14 }]}>
-                Loading sermons...
+        ListHeaderComponent={
+          <>
+            {/* ── Month & Year Selector ── */}
+            <Pressable style={styles.mon} onPress={() => setSheet(true)}>
+              <Text style={[styles.monTxt, { color: '#0F172A' }]}>
+                {MON[m]} {y}
               </Text>
-            </View>
-          ) : list.length === 0 ? (
-            <View style={styles.empty}>
-              <Icon name="video" size={52} color={colors.textSecondary} />
-              <Text style={[styles.emptyT, { color: colors.text }]}>No sermons found</Text>
-              <Text style={[styles.emptyS, { color: colors.textSecondary }]}>
-                {activeCategory !== 'All'
-                  ? `No ${getCategoryLabel(activeCategory)} sermons found for ${MON[m]} ${y}.`
-                  : `No sermons found for ${MON[m]} ${y}. Try selecting another month.`}
-              </Text>
-            </View>
-          ) : (
-            list.map((s, i) => (
-              <SermonItem
-                key={String(s.id)}
-                s={s}
-                index={i}
-                onOpen={handleOpenSermon}
-                onDotsPress={(item) => setActionSermon(item)}
+              <Icon
+                name="down"
+                size={22}
+                color="#FA6203"
+              />
+            </Pressable>
+
+            {/* ── Horizontal Date Strip ── */}
+            <ScrollView
+              ref={dateRef}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ flexGrow: 0, backgroundColor: 'transparent' }}
+              contentContainerStyle={styles.dates}
+            >
+              <DatePill
+                label="All"
+                sub="days"
+                on={day === null}
+                dot={false}
+                onPress={() => setDay(null)}
                 colors={colors}
                 isDark={isDark}
-                activeCategory={activeCategory}
+                isAshTop={isAshTop}
               />
-            ))
-          )}
-        </View>
-      </ScrollView>
+              {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((d) => (
+                <DatePill
+                  key={d}
+                  label={String(d)}
+                  sub={WK[new Date(y, m, d).getDay()]}
+                  on={day === d}
+                  dot={!!withSermon[d]}
+                  onPress={() => setDay(d)}
+                  colors={colors}
+                  isDark={isDark}
+                  isAshTop={isAshTop}
+                />
+              ))}
+            </ScrollView>
+
+            {/* ── Top Convex Curve Transition (Smooth prominent curve above category badges) ── */}
+            <View style={{ width: '100%', height: 72, overflow: 'hidden', marginTop: 2 }}>
+              <Svg
+                width={width}
+                height={72}
+                viewBox={`0 0 ${width} 72`}
+                style={{ position: 'absolute', bottom: 0 }}
+              >
+                <Path
+                  d={`M 0,72 Q ${width / 2},-16 ${width},72 L ${width},72 L 0,72 Z`}
+                  fill={panelBg}
+                />
+              </Svg>
+            </View>
+
+            {/* ── Lower Panel Header (Category Chips + Summary) ── */}
+            <View style={{ paddingHorizontal: 16, backgroundColor: panelBg, marginTop: -1 }}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ flexGrow: 0 }}
+                contentContainerStyle={{ gap: 8, paddingVertical: 4, alignItems: 'center' }}
+              >
+                {dynamicCategories.map((cat) => {
+                  const isSelected = activeCategory === cat;
+                  return (
+                    <TouchableOpacity
+                      key={cat}
+                      onPress={() => setActiveCategory(cat)}
+                      style={[
+                        styles.chip,
+                        isSelected
+                          ? {
+                              backgroundColor: isDark ? '#FFFFFF' : '#1E293B',
+                              borderColor: isDark ? '#FFFFFF' : '#1E293B',
+                              borderWidth: 1.5,
+                            }
+                          : {
+                              backgroundColor: isDark
+                                ? 'rgba(255,255,255,0.08)'
+                                : isWarmWhite
+                                ? '#FAF6F0'
+                                : '#FFFFFF',
+                              borderColor: isDark
+                                ? 'rgba(255,255,255,0.28)'
+                                : isWarmWhite
+                                ? '#DCD3C5'
+                                : '#94A3B8',
+                              borderWidth: 1.5,
+                            },
+                      ]}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={[
+                          styles.chipTxt,
+                          {
+                            color: isSelected
+                              ? (isDark ? '#111827' : '#FFFFFF')
+                              : (isDark ? 'rgba(255,255,255,0.85)' : '#1E293B'),
+                          },
+                          isSelected && { fontWeight: '800' },
+                        ]}
+                      >
+                        {getCategoryLabel(cat)}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              {/* Summary Counter Row */}
+              <View style={styles.sum}>
+                <Text style={[styles.sumT, { color: colors.text }]}>
+                  {list.length} {list.length === 1 ? 'sermon' : 'sermons'}
+                </Text>
+                <Text style={[styles.sumD, { color: colors.textSecondary }]}>
+                  {day === null ? `${MON[m]} ${y}` : `${day} ${MON[m].slice(0, 3)} ${y}`}
+                </Text>
+              </View>
+            </View>
+          </>
+        }
+        renderItem={({ item, index }) => (
+          <View style={{ paddingHorizontal: 16, backgroundColor: panelBg }}>
+            <SermonItem
+              s={item}
+              index={index}
+              onOpen={handleOpenSermon}
+              onDotsPress={(sItem) => setActionSermon(sItem)}
+              colors={colors}
+              isDark={isDark}
+              activeCategory={activeCategory}
+            />
+          </View>
+        )}
+        ListEmptyComponent={
+          loading ? (
+            <View style={[styles.panel, { backgroundColor: panelBg }]}>
+              <View style={styles.empty}>
+                <ActivityIndicator size="large" color={isDark ? C.lime : (colors.accent || '#15803d')} />
+                <Text style={[styles.emptyS, { color: colors.textSecondary, marginTop: 14 }]}>
+                  Loading sermons...
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <View style={[styles.panel, { backgroundColor: panelBg }]}>
+              <View style={styles.empty}>
+                <Icon name="video" size={52} color={colors.textSecondary} />
+                <Text style={[styles.emptyT, { color: colors.text }]}>No sermons found</Text>
+                <Text style={[styles.emptyS, { color: colors.textSecondary }]}>
+                  {activeCategory !== 'All'
+                    ? `No ${getCategoryLabel(activeCategory)} sermons found for ${MON[m]} ${y}.`
+                    : `No sermons found for ${MON[m]} ${y}. Try selecting another month.`}
+                </Text>
+              </View>
+            </View>
+          )
+        }
+      />
 
       {/* ── Month & Year Picker Sheet Modal ── */}
       <MonthSheet
