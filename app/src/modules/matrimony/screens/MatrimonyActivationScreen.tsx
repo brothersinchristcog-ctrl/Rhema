@@ -18,7 +18,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { useTheme, FONT_STYLE_OPTIONS } from '../../../context/ThemeContext';
 import MatrimonyProgressBar from '../components/MatrimonyProgressBar';
 import { matrimonyApi } from '../services/matrimonyApi';
-import { StartRegistrationResponse } from '../types/matrimony';
+import { MatrimonyPhotoVisibility, StartRegistrationResponse } from '../types/matrimony';
 
 const ORANGE = '#EA580C';
 
@@ -53,7 +53,7 @@ export default function MatrimonyActivationScreen({ navigation, route }: any) {
   const [maxAge, setMaxAge] = useState('32');
   const [openToRelocation, setOpenToRelocation] = useState(true);
   const [partnerExpectations, setPartnerExpectations] = useState('');
-  const [photoVisibility, setPhotoVisibility] = useState<'approved_members' | 'matches_only'>('approved_members');
+  const [photoVisibility, setPhotoVisibility] = useState<MatrimonyPhotoVisibility>('approved_members');
   const [photoPreviewUri, setPhotoPreviewUri] = useState<string | null>(null);
   const [photoStoragePath, setPhotoStoragePath] = useState<string | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);

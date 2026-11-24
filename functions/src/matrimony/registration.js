@@ -4,6 +4,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import { COLLECTIONS, CONSENT_VERSION, DEFAULT_CHURCH_ID, MATRIMONY_BUCKET, } from './constants.js';
 import { verifyRhemaMemberEligibility } from './eligibility.js';
+import { resolveMemberEntitlements } from './entitlements.js';
 import { assertMatrimonyNotBanned, getAdminProfileRef, getPrefsRef, getPrivateRef, getProfileRef, getVerificationRef, isMatrimonyProfileInactiveStatus, purgeMatrimonyUserData, readPrefsSnap, readPrivateSnap, readVerificationSnap, } from './store.js';
 import { assertNonEmptyString, optionalBoolean, optionalEditableString, optionalNumber, optionalString, optionalStringArray, sanitizePhotoStoragePath, validateDraftSection, } from './validation.js';
 function requireAuthUid(request) {
@@ -161,7 +162,20 @@ export const startMatrimonyRegistration = onCall({ invoker: 'public' }, async (r
     ]);
     // Do NOT create Firestore matrimony documents yet; return prefilled data in-memory
     // until the member explicitly clicks "Complete Profile" on Privacy & Consent.
-    if (!profileSnap.exists) {
+    const isLegacyDeleted = profileSnap.exists && String(profileSnap.data()?.profileStatus || '') === 'deleted';
+    if (isLegacyDeleted) {
+        await Promise.all([
+            profileRef.set({ selfReset: true }, { merge: true }).catch(() => undefined),
+            getAdminProfileRef(db, uid).set({ selfReset: true }, { merge: true }).catch(() => undefined),
+        ]);
+        await purgeMatrimonyUserData(db, uid, {
+            banOnDelete: false,
+            actorUid: uid,
+            source: 'self_reset',
+            auditAction: 'MATRIMONY_LEGACY_DELETED_PROFILE_PURGED',
+        });
+    }
+    if (!profileSnap.exists || isLegacyDeleted) {
         const defaultPreferences = {
             uid,
             age: {
@@ -215,7 +229,9 @@ export const startMatrimonyRegistration = onCall({ invoker: 'public' }, async (r
                 gallery: [],
                 signedProfilePhoto: null,
                 signedGallery: [],
+                mobilePrivacy: 'show_all',
                 photoVisibility: 'approved_members',
+                protectedPhotoAllowedUids: [],
                 profileStatus: 'not_started',
                 onboardingStage: 'not_started',
                 verificationStatus: 'unverified',
@@ -279,6 +295,7 @@ export const startMatrimonyRegistration = onCall({ invoker: 'public' }, async (r
             signedGallery,
         },
         consent: privateData.consent || null,
+        profileManager: privateData.profileManager || null,
         familyDetails: privateData.familyDetails || null,
         incomeDetails: privateData.incomeDetails || null,
         preferences: prefsData,
@@ -382,7 +399,10 @@ export const saveMatrimonyDraft = onCall({ invoker: 'public' }, async (request) 
         const incomeRange = optionalString(professionalData.incomeRange, 80);
         const familyStatus = optionalString(additionalData.familyStatus, 60);
         const aboutMe = optionalString(additionalData.aboutMe, 1000);
-        const managedBy = consentData.managedBy === 'guardian' ? 'guardian' : 'self';
+        const managedBy = consentData.managedBy === 'guardian' || welcomeData.managedBy === 'guardian'
+            ? 'guardian'
+            : 'self';
+        const createdFor = optionalString(welcomeData.createdFor || consentData.createdFor, 40);
         const hasExistingPhoto = Boolean(existingProfile.profilePhoto);
         const currentStatus = existingProfile.profileStatus && existingProfile.profileStatus !== 'not_started'
             ? existingProfile.profileStatus
@@ -488,7 +508,11 @@ export const saveMatrimonyDraft = onCall({ invoker: 'public' }, async (request) 
                 country: country || 'India',
                 ...(pincode !== undefined ? { zip: pincode } : {}),
             },
-            profileManager: { type: managedBy, guardianUid: null },
+            profileManager: {
+                type: managedBy,
+                ...(createdFor ? { createdFor } : {}),
+                guardianUid: null,
+            },
             consent: {
                 profilePublication,
                 matchmaking,
@@ -779,8 +803,13 @@ export const saveMatrimonyDraft = onCall({ invoker: 'public' }, async (request) 
         const matchmaking = Boolean(data.matchmaking);
         const communication = Boolean(data.communication);
         const managedBy = data.managedBy === 'guardian' ? 'guardian' : 'self';
+        const createdFor = optionalString(data.createdFor, 40);
         await privateRef.set({
-            profileManager: { type: managedBy, guardianUid: null },
+            profileManager: {
+                type: managedBy,
+                ...(createdFor ? { createdFor } : {}),
+                guardianUid: null,
+            },
             consent: {
                 profilePublication,
                 matchmaking,
@@ -979,7 +1008,12 @@ export const saveMatrimonyDraft = onCall({ invoker: 'public' }, async (request) 
         const gallery = galleryInput
             .map((item) => sanitizePhotoStoragePath(item, uid))
             .filter((x) => Boolean(x));
-        const photoVisibility = data.photoVisibility === 'matches_only' ? 'matches_only' : 'approved_members';
+        const rawVis = data.photoVisibility ?? existingProfile.photoVisibility;
+        const photoVisibility = rawVis === 'matches_only' ||
+            rawVis === 'contacted_and_paid' ||
+            rawVis === 'protect_photo'
+            ? rawVis
+            : 'approved_members';
         const profileUpdate = {
             profilePhoto: profilePhoto || null,
             gallery,
@@ -997,6 +1031,87 @@ export const saveMatrimonyDraft = onCall({ invoker: 'public' }, async (request) 
             profileUpdate.onboardingStage = 'photos_pending';
         }
         await profileRef.set(profileUpdate, { merge: true });
+    }
+    else if (section === 'privacy') {
+        const entitlements = await resolveMemberEntitlements(db, uid, existingProfile);
+        const isPaid = entitlements.tier !== 'free';
+        const privacyPatch = { updatedAt: now };
+        if (data.mobilePrivacy !== undefined) {
+            const mobilePrivacy = data.mobilePrivacy === 'messages_only' ? 'messages_only' : 'show_all';
+            if (mobilePrivacy === 'messages_only' && !isPaid) {
+                throw new HttpsError('permission-denied', 'Upgrade to Silver, Gold, or Platinum to enable Messages only privacy.', { reasonCode: 'UPGRADE_REQUIRED_PRIVACY' });
+            }
+            privacyPatch.mobilePrivacy = mobilePrivacy;
+        }
+        if (data.photoVisibility !== undefined) {
+            const rawVis = String(data.photoVisibility || '');
+            const photoVisibility = rawVis === 'contacted_and_paid' ||
+                rawVis === 'protect_photo' ||
+                rawVis === 'matches_only'
+                ? rawVis
+                : 'approved_members';
+            privacyPatch.photoVisibility = photoVisibility;
+        }
+        if (data.protectedPhotoAllowedUids !== undefined) {
+            const nextAllowedUids = optionalStringArray(data.protectedPhotoAllowedUids, 2000, 128);
+            privacyPatch.protectedPhotoAllowedUids = nextAllowedUids;
+            // Revoke any previously approved photo requests that are no longer in Allowed Members
+            const nextAllowedSet = new Set(nextAllowedUids);
+            try {
+                const existingReqsSnap = await profileRef
+                    .collection('photo_requests')
+                    .where('status', '==', 'approved')
+                    .get();
+                if (!existingReqsSnap.empty) {
+                    const revokeBatch = db.batch();
+                    let revokeCount = 0;
+                    existingReqsSnap.docs.forEach((reqDoc) => {
+                        const reqUid = String(reqDoc.data()?.requesterUid || reqDoc.id);
+                        if (!nextAllowedSet.has(reqUid)) {
+                            revokeBatch.set(reqDoc.ref, { status: 'declined', updatedAt: now }, { merge: true });
+                            revokeBatch.set(getProfileRef(db, reqUid).collection('photo_requests_sent').doc(uid), { status: 'declined', updatedAt: now }, { merge: true });
+                            revokeCount += 1;
+                        }
+                    });
+                    if (revokeCount > 0) {
+                        await revokeBatch.commit();
+                    }
+                }
+            }
+            catch (revokeErr) {
+                console.warn(`Unable to sync revoked photo requests for ${uid}:`, revokeErr);
+            }
+        }
+        await profileRef.set(privacyPatch, { merge: true });
+    }
+    else if (section === 'notifications') {
+        const allowedKeys = [
+            'request',
+            'shortlist',
+            'profileViews',
+            'interestAcceptance',
+            'recentlyJoined',
+            'dailyMatches',
+            'cityMatches',
+            'photoMatches',
+            'similarMatches',
+            'newMatches',
+            'dailyRecommendations',
+            'basedOnActivity',
+            'membershipOffers',
+        ];
+        const nextPrefs = {
+            ...(existingProfile.notificationPreferences || {}),
+        };
+        allowedKeys.forEach((k) => {
+            if (data[k] !== undefined) {
+                nextPrefs[k] = Boolean(data[k]);
+            }
+        });
+        await profileRef.set({
+            notificationPreferences: nextPrefs,
+            updatedAt: now,
+        }, { merge: true });
     }
     if (existingProfile.profileStatus &&
         existingProfile.profileStatus !== 'draft' &&
@@ -1124,6 +1239,97 @@ export const resetMatrimonyProfile = onCall({ invoker: 'public' }, async (reques
     };
 });
 /**
+ * 3c. deactivateMyMatrimonyAccount
+ * Temporarily hides the member's profile from matches and disables outbound contact
+ * while allowing them to browse matches and reactivate anytime.
+ */
+export const deactivateMyMatrimonyAccount = onCall({ invoker: 'public' }, async (request) => {
+    const uid = requireAuthUid(request);
+    const active = Boolean(request.data?.active);
+    const db = getFirestore();
+    await assertMatrimonyNotBanned(db, uid);
+    const profileRef = getProfileRef(db, uid);
+    const snap = await profileRef.get();
+    if (!snap.exists) {
+        throw new HttpsError('not-found', 'Matrimony profile not found.');
+    }
+    const existing = snap.data() || {};
+    if (isMatrimonyProfileInactiveStatus(existing.profileStatus) || existing.profileStatus === 'deleted') {
+        throw new HttpsError('failed-precondition', existing.inactiveReason || 'Your Matrimony profile cannot be updated in its current state.');
+    }
+    const now = FieldValue.serverTimestamp();
+    const selfDeactivated = !active;
+    const visibility = selfDeactivated
+        ? 'hidden'
+        : existing.profileStatus === 'approved'
+            ? 'visible'
+            : existing.visibility || 'hidden';
+    await profileRef.set({
+        selfDeactivated,
+        visibility,
+        ...(selfDeactivated ? { selfDeactivatedAt: now } : { reactivatedAt: now }),
+        updatedAt: now,
+    }, { merge: true });
+    await syncConsolidatedAdminProfile(uid).catch(() => undefined);
+    return {
+        success: true,
+        selfDeactivated,
+        visibility,
+    };
+});
+/**
+ * 3d. deleteMyMatrimonyAccount
+ * Saves the member's deletion reason on their Church member record and audit log,
+ * then completely deletes their Firebase Matrimony profile & associated data
+ * (without banning them) so they can immediately create a new profile for themselves or family.
+ */
+export const deleteMyMatrimonyAccount = onCall({ invoker: 'public' }, async (request) => {
+    const uid = requireAuthUid(request);
+    const rawReason = assertNonEmptyString(request.data?.reason, 'reason', 160);
+    const details = optionalString(request.data?.details, 500) || '';
+    const fullReason = details ? `${rawReason}: ${details}` : rawReason;
+    const db = getFirestore();
+    await assertMatrimonyNotBanned(db, uid);
+    const profileRef = getProfileRef(db, uid);
+    const adminProfileRef = getAdminProfileRef(db, uid);
+    const [snap, adminSnap] = await Promise.all([profileRef.get(), adminProfileRef.get()]);
+    if (!snap.exists && !adminSnap.exists) {
+        throw new HttpsError('not-found', 'Matrimony profile not found.');
+    }
+    const now = FieldValue.serverTimestamp();
+    const nowMs = Date.now();
+    await db
+        .collection('Rhema Church')
+        .doc(DEFAULT_CHURCH_ID)
+        .collection('members')
+        .doc(uid)
+        .set({
+        matrimonyDeletionReason: fullReason,
+        matrimonyDeletionCategory: rawReason,
+        matrimonyDeletionDetails: details || null,
+        matrimonyDeletedAt: now,
+        matrimonyDeletedAtMs: nowMs,
+        updatedAt: now,
+    }, { merge: true });
+    // Mark selfReset before deleting so onDocumentDeleted triggers do not treat this as a console ban.
+    await Promise.all([
+        profileRef.set({ selfReset: true }, { merge: true }).catch(() => undefined),
+        adminProfileRef.set({ selfReset: true }, { merge: true }).catch(() => undefined),
+    ]);
+    await purgeMatrimonyUserData(db, uid, {
+        banOnDelete: false,
+        banReason: fullReason,
+        actorUid: uid,
+        source: 'self_reset',
+        auditAction: 'MATRIMONY_ACCOUNT_DELETED_BY_MEMBER',
+    });
+    return {
+        success: true,
+        deleted: true,
+        deletionReason: fullReason,
+    };
+});
+/**
  * 4. getMatrimonyStatus
  * Returns current approval, verification, and signed photo URLs for the signed-in member.
  */
@@ -1137,7 +1343,20 @@ export const getMatrimonyStatus = onCall({ invoker: 'public', cpu: 'gcf_gen1', c
         readPrivateSnap(db, uid),
         readPrefsSnap(db, uid),
     ]);
-    if (!profileSnap.exists) {
+    const isLegacyDeleted = profileSnap.exists && String(profileSnap.data()?.profileStatus || '') === 'deleted';
+    if (isLegacyDeleted) {
+        await Promise.all([
+            getProfileRef(db, uid).set({ selfReset: true }, { merge: true }).catch(() => undefined),
+            getAdminProfileRef(db, uid).set({ selfReset: true }, { merge: true }).catch(() => undefined),
+        ]);
+        await purgeMatrimonyUserData(db, uid, {
+            banOnDelete: false,
+            actorUid: uid,
+            source: 'self_reset',
+            auditAction: 'MATRIMONY_LEGACY_DELETED_PROFILE_PURGED',
+        });
+    }
+    if (!profileSnap.exists || isLegacyDeleted) {
         return {
             success: true,
             registered: false,

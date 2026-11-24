@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
-  Animated,
   Dimensions,
   FlatList,
   Image,
@@ -104,7 +103,6 @@ export default function AdminMatrimonyProfileDetailScreen({ navigation, route }:
   const { colors, isDark, fontStyle, scaleFont } = useTheme();
   const fontFamily = FONT_STYLE_OPTIONS.find((f) => f.id === fontStyle)?.family;
 
-  const scrollY = useRef(new Animated.Value(0)).current;
   const [loading, setLoading] = useState(true);
   const [processingAction, setProcessingAction] = useState<
     'approve' | 'reject' | 'inactivate' | 'activate' | 'delete' | null
@@ -175,8 +173,10 @@ export default function AdminMatrimonyProfileDetailScreen({ navigation, route }:
   const status = profile?.profileStatus || 'pending';
   const isApproved = status === 'approved';
   const isRejected = status === 'rejected';
+  const isDeleted = status === 'deleted';
   const isInactive = status === 'inactive' || status === 'suspended';
   const inactiveReason = data?.inactiveReason || profile?.inactiveReason || null;
+  const deletionReason = data?.deletionReason || profile?.deletionReason || null;
   const reports: MatrimonyProfileReport[] = data?.reports || [];
   const openReportsCount = reports.filter((r) => r.status === 'open').length;
 
@@ -192,7 +192,25 @@ export default function AdminMatrimonyProfileDetailScreen({ navigation, route }:
             setProcessingAction('approve');
             try {
               await matrimonyApi.approveAdminProfile(targetUid);
-              await loadDetail();
+              setData((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      inactiveReason: null,
+                      rejectionReason: null,
+                      profile: prev.profile
+                        ? {
+                            ...prev.profile,
+                            profileStatus: 'approved',
+                            verificationStatus: 'verified',
+                            visibility: 'discoverable',
+                            inactiveReason: null,
+                          }
+                        : prev.profile,
+                    }
+                  : prev
+              );
+              loadDetail().catch(() => {});
               Alert.alert('Verified', `${displayName}'s profile is now approved and active.`);
             } catch (err: any) {
               Alert.alert('Approval Failed', err?.message || 'Unable to approve profile.');
@@ -213,8 +231,24 @@ export default function AdminMatrimonyProfileDetailScreen({ navigation, route }:
       await matrimonyApi.rejectAdminProfile(targetUid, cleanReason);
       setRejectModalVisible(false);
       setRejectionReason('');
-      await loadDetail();
-      Alert.alert('Profile Rejected', `${displayName} has been notified to update their profile.`);
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              rejectionReason: cleanReason,
+              profile: prev.profile
+                ? {
+                    ...prev.profile,
+                    profileStatus: 'rejected',
+                    verificationStatus: 'rejected',
+                    visibility: 'hidden',
+                  }
+                : prev.profile,
+            }
+          : prev
+      );
+      loadDetail().catch(() => {});
+      Alert.alert('Profile Revoked', `${displayName}'s verification has been revoked immediately.`);
     } catch (err: any) {
       Alert.alert('Rejection Failed', err?.message || 'Unable to reject profile.');
     } finally {
@@ -245,7 +279,23 @@ export default function AdminMatrimonyProfileDetailScreen({ navigation, route }:
       await matrimonyApi.inactivateAdminProfile(targetUid, cleanReason);
       setInactivateModalVisible(false);
       setInactivateReason('');
-      await loadDetail();
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              inactiveReason: cleanReason,
+              profile: prev.profile
+                ? {
+                    ...prev.profile,
+                    profileStatus: 'inactive',
+                    visibility: 'hidden',
+                    inactiveReason: cleanReason,
+                  }
+                : prev.profile,
+            }
+          : prev
+      );
+      loadDetail().catch(() => {});
       Alert.alert(
         'Profile Marked Inactive',
         `${displayName}'s Matrimony profile is now inactive and hidden from matches until you activate it again.`
@@ -279,7 +329,24 @@ export default function AdminMatrimonyProfileDetailScreen({ navigation, route }:
                 );
                 return;
               }
-              await loadDetail();
+              setData((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      inactiveReason: null,
+                      rejectionReason: null,
+                      profile: prev.profile
+                        ? {
+                            ...prev.profile,
+                            profileStatus: 'approved',
+                            visibility: 'discoverable',
+                            inactiveReason: null,
+                          }
+                        : prev.profile,
+                    }
+                  : prev
+              );
+              loadDetail().catch(() => {});
               Alert.alert(
                 'Profile Activated',
                 `${displayName}'s Rhema Matrimony profile is now active.`
@@ -339,12 +406,6 @@ export default function AdminMatrimonyProfileDetailScreen({ navigation, route }:
     );
   };
 
-  const stickyHeaderOpacity = scrollY.interpolate({
-    inputRange: [210, 270],
-    outputRange: [0, 1],
-    extrapolate: 'clamp',
-  });
-
   const dividerColor = isDark ? 'rgba(255, 255, 255, 0.1)' : '#E5E7EB';
   const surfaceBg = isDark ? colors.bg : '#FFFFFF';
   const cardBg = colors.surface;
@@ -377,45 +438,69 @@ export default function AdminMatrimonyProfileDetailScreen({ navigation, route }:
     ...(profile?.interests?.languages || []),
   ];
 
+  const headerTextColor = isDark ? '#FFFFFF' : '#1E293B';
+
   return (
     <View style={[styles.container, { backgroundColor: surfaceBg }]}>
       <StatusBar
-        barStyle="light-content"
+        barStyle={colors.barStyle}
         backgroundColor="transparent"
         translucent
       />
 
-      {/* Collapsing Sticky Header matching MatrimonyEditProfileScreen */}
-      <Animated.View
+      {/* Orange Gradient Header Card with Back (left) & Delete (right) */}
+      <LinearGradient
+        colors={
+          isDark
+            ? ['rgba(251, 146, 60, 0.34)', 'rgba(234, 88, 12, 0.18)', '#1E293B']
+            : ['#FFD4B3', '#FFE8D6', '#FFF5ED']
+        }
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
         style={[
-          styles.stickyHeader,
+          styles.gradientHeaderCard,
           {
-            paddingTop: insets.top + 8,
-            opacity: stickyHeaderOpacity,
+            paddingTop: insets.top + 10,
+            borderBottomColor: isDark ? 'rgba(251, 146, 60, 0.35)' : '#FED7AA',
           },
         ]}
-        pointerEvents="box-none"
       >
         <TouchableOpacity
           onPress={() => navigation.goBack()}
-          style={styles.stickyBackBtn}
+          style={styles.headerBackBtn}
+          activeOpacity={0.7}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <ArrowLeft size={22} color="#FFFFFF" />
+          <ArrowLeft size={22} color={headerTextColor} />
         </TouchableOpacity>
 
-        {photoUri ? (
-          <Image source={{ uri: photoUri }} style={styles.stickyAvatar} />
-        ) : (
-          <View style={[styles.stickyAvatar, styles.stickyAvatarPlaceholder]}>
-            <User size={18} color={CORAL} />
-          </View>
-        )}
-
-        <Text style={[styles.stickyName, { fontFamily }]} numberOfLines={1}>
+        <Text
+          style={[
+            styles.headerNameText,
+            { color: headerTextColor, fontFamily, fontSize: scaleFont(17.5) },
+          ]}
+          numberOfLines={1}
+        >
           {displayName}
         </Text>
-      </Animated.View>
+
+        <TouchableOpacity
+          style={[
+            styles.headerDeleteBtn,
+            processingAction !== null && { opacity: 0.6 },
+          ]}
+          onPress={handleDeleteProfile}
+          disabled={processingAction !== null}
+          activeOpacity={0.75}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          {processingAction === 'delete' ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Trash2 size={18} color="#FFFFFF" />
+          )}
+        </TouchableOpacity>
+      </LinearGradient>
 
       {loading && !data ? (
         <View style={styles.loaderWrap}>
@@ -423,16 +508,12 @@ export default function AdminMatrimonyProfileDetailScreen({ navigation, route }:
         </View>
       ) : (
         <>
-          <Animated.ScrollView
+          <ScrollView
             style={{ flex: 1 }}
             contentContainerStyle={{ paddingBottom: Math.max(insets.bottom + 110, 120) }}
             showsVerticalScrollIndicator={false}
-            scrollEventThrottle={16}
-            onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
-              useNativeDriver: true,
-            })}
           >
-            {/* Hero Photo Banner (Exact MatrimonyEditProfileScreen style) */}
+            {/* Hero Photo Banner */}
             <TouchableOpacity
               style={styles.heroWrap}
               activeOpacity={0.95}
@@ -453,32 +534,11 @@ export default function AdminMatrimonyProfileDetailScreen({ navigation, route }:
               )}
 
               <LinearGradient
-                colors={['rgba(0,0,0,0.42)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.55)']}
+                colors={['rgba(0,0,0,0.08)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.52)']}
                 locations={[0, 0.45, 1]}
                 style={StyleSheet.absoluteFill}
                 pointerEvents="none"
               />
-
-              <TouchableOpacity
-                style={[styles.heroBackBtn, { top: insets.top + 10 }]}
-                onPress={() => navigation.goBack()}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <ArrowLeft size={23} color="#FFFFFF" />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.heroDeleteBtn, { top: insets.top + 10 }]}
-                onPress={handleDeleteProfile}
-                disabled={processingAction !== null}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                {processingAction === 'delete' ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Trash2 size={20} color="#FFFFFF" />
-                )}
-              </TouchableOpacity>
 
               <View style={styles.heroBottomRow}>
                 <View
@@ -488,7 +548,7 @@ export default function AdminMatrimonyProfileDetailScreen({ navigation, route }:
                       ? { backgroundColor: '#DCFCE7', borderColor: '#16A34A' }
                       : isInactive
                       ? { backgroundColor: '#FEF3C7', borderColor: '#D97706' }
-                      : isRejected
+                      : isDeleted || isRejected
                       ? { backgroundColor: '#FEE2E2', borderColor: '#DC2626' }
                       : undefined,
                   ]}
@@ -500,7 +560,7 @@ export default function AdminMatrimonyProfileDetailScreen({ navigation, route }:
                         ? { color: '#166534' }
                         : isInactive
                         ? { color: '#92400E' }
-                        : isRejected
+                        : isDeleted || isRejected
                         ? { color: '#991B1B' }
                         : undefined,
                     ]}
@@ -509,6 +569,8 @@ export default function AdminMatrimonyProfileDetailScreen({ navigation, route }:
                       ? 'VERIFIED'
                       : isInactive
                       ? 'INACTIVE'
+                      : isDeleted
+                      ? 'DELETED'
                       : isRejected
                       ? 'REJECTED'
                       : 'PENDING REVIEW'}
@@ -609,6 +671,16 @@ export default function AdminMatrimonyProfileDetailScreen({ navigation, route }:
                 <ShieldAlert size={18} color="#991B1B" />
                 <Text style={styles.rejectionBannerText}>
                   Rejection Reason: {data.rejectionReason}
+                </Text>
+              </View>
+            ) : null}
+
+            {/* Self-deletion reason banner if deleted */}
+            {isDeleted ? (
+              <View style={styles.rejectionBanner}>
+                <ShieldAlert size={18} color="#991B1B" />
+                <Text style={styles.rejectionBannerText}>
+                  Profile Deleted by Member{deletionReason ? ` • Reason: ${deletionReason}` : ''}
                 </Text>
               </View>
             ) : null}
@@ -981,7 +1053,7 @@ export default function AdminMatrimonyProfileDetailScreen({ navigation, route }:
                 </View>
               </View>
             </View>
-          </Animated.ScrollView>
+          </ScrollView>
 
           {/* Bottom Sticky Admin Action Bar */}
           <View
@@ -1308,39 +1380,38 @@ export default function AdminMatrimonyProfileDetailScreen({ navigation, route }:
 const styles = StyleSheet.create({
   container: { flex: 1 },
   loaderWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  stickyHeader: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 20,
-    backgroundColor: CORAL,
-    paddingBottom: 10,
-    paddingHorizontal: 14,
+  gradientHeaderCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    gap: 10,
   },
-  stickyBackBtn: { padding: 4 },
-  stickyAvatar: {
+  headerBackBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#FFFFFF',
-  },
-  stickyAvatarPlaceholder: {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stickyName: {
+  headerNameText: {
     flex: 1,
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '700',
+    textAlign: 'center',
+    fontWeight: '800',
+  },
+  headerDeleteBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#DC2626',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   heroWrap: {
     width: '100%',
-    height: 310,
+    height: 290,
     backgroundColor: '#64748B',
     position: 'relative',
   },
@@ -1358,21 +1429,6 @@ const styles = StyleSheet.create({
     color: '#E2E8F0',
     fontSize: 13,
     fontWeight: '600',
-  },
-  heroBackBtn: {
-    position: 'absolute',
-    left: 16,
-    padding: 4,
-  },
-  heroDeleteBtn: {
-    position: 'absolute',
-    right: 16,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(185, 28, 28, 0.78)',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   heroBottomRow: {
     position: 'absolute',

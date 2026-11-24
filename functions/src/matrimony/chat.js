@@ -89,6 +89,12 @@ async function verifyMutualChatEligibility(db, uid, targetUid) {
     if (viewerData.profileStatus !== 'approved' || targetData.profileStatus !== 'approved') {
         throw new HttpsError('failed-precondition', 'Both profiles must be verified to chat.');
     }
+    if (viewerData.selfDeactivated === true) {
+        throw new HttpsError('failed-precondition', 'Your profile is currently deactivated. Reactivate it in Account Settings to message members.');
+    }
+    if (targetData.selfDeactivated === true) {
+        throw new HttpsError('failed-precondition', 'This profile is currently deactivated.');
+    }
     const viewerBlocked = viewerBlocks.some((d) => d.id === targetUid);
     const targetBlocked = targetBlocks.some((d) => d.id === uid);
     if (viewerBlocked || targetBlocked) {
@@ -106,6 +112,13 @@ async function verifyMutualChatEligibility(db, uid, targetUid) {
         targetPrivate: targetPrivSnap.exists ? targetPrivSnap.data() || {} : {},
     };
 }
+function resolveOccupationLabel(data) {
+    return String(data?.career?.profession ||
+        data?.career?.occupationCategory ||
+        data?.career?.employmentType ||
+        data?.education?.qualification ||
+        '').trim();
+}
 async function seedChatParticipantsInRtdb(params) {
     const rtdb = getRtdb();
     const updates = {
@@ -118,12 +131,18 @@ async function seedChatParticipantsInRtdb(params) {
         [`matrimony_inbox/${params.uid}/${params.roomId}/peerCode`]: params.targetCode,
         [`matrimony_inbox/${params.uid}/${params.roomId}/peerAge`]: params.targetAge ?? null,
         [`matrimony_inbox/${params.uid}/${params.roomId}/peerCity`]: params.targetCity || null,
+        [`matrimony_inbox/${params.uid}/${params.roomId}/peerHeightCm`]: params.targetHeightCm ?? null,
+        [`matrimony_inbox/${params.uid}/${params.roomId}/peerOccupation`]: params.targetOccupation || null,
+        [`matrimony_inbox/${params.uid}/${params.roomId}/peerGender`]: params.targetGender || null,
         [`matrimony_inbox/${params.uid}/${params.roomId}/contactPhone`]: params.targetPhone || null,
         [`matrimony_inbox/${params.targetUid}/${params.roomId}/roomId`]: params.roomId,
         [`matrimony_inbox/${params.targetUid}/${params.roomId}/peerUid`]: params.uid,
         [`matrimony_inbox/${params.targetUid}/${params.roomId}/peerName`]: params.viewerName,
         [`matrimony_inbox/${params.targetUid}/${params.roomId}/peerPhoto`]: params.viewerPhoto || null,
         [`matrimony_inbox/${params.targetUid}/${params.roomId}/peerCode`]: params.viewerCode,
+        [`matrimony_inbox/${params.targetUid}/${params.roomId}/peerHeightCm`]: params.viewerHeightCm ?? null,
+        [`matrimony_inbox/${params.targetUid}/${params.roomId}/peerOccupation`]: params.viewerOccupation || null,
+        [`matrimony_inbox/${params.targetUid}/${params.roomId}/peerGender`]: params.viewerGender || null,
     };
     await rtdb.ref().update(updates);
 }
@@ -144,17 +163,27 @@ export const ensureMatrimonyChatRoom = onCall({ invoker: 'public' }, async (requ
         canMessage: entitlements.messageAccess,
         validUntilMs: entitlements.expiryDateMs,
     });
-    const canSeePhone = entitlements.tier !== 'free' &&
+    const canSeePhone = targetData.mobilePrivacy !== 'messages_only' &&
+        entitlements.tier !== 'free' &&
         (entitlements.contactNumberLimit < 0 || entitlements.unlockedContactUids.includes(targetUid));
+    const targetPhotoAllowed = targetData.photoVisibility !== 'protect_photo' ||
+        (Array.isArray(targetData.protectedPhotoAllowedUids) &&
+            targetData.protectedPhotoAllowedUids.includes(uid));
     const [viewerPhoto, targetPhoto] = await Promise.all([
         resolveSinglePhotoUrl(viewerData.profilePhoto),
-        resolveSinglePhotoUrl(targetData.profilePhoto),
+        targetPhotoAllowed ? resolveSinglePhotoUrl(targetData.profilePhoto) : Promise.resolve(null),
     ]);
     const roomId = getRoomId(uid, targetUid);
     const targetCity = targetData.location?.village || targetData.location?.city || targetData.location?.state || '';
     const targetCode = targetData.matrimonyId || `RM${targetUid.slice(0, 7).toUpperCase()}`;
     const viewerCode = viewerData.matrimonyId || `RM${uid.slice(0, 7).toUpperCase()}`;
     const exposedPhone = canSeePhone ? targetPrivate.phoneNumber || null : null;
+    const targetHeightCm = typeof targetData.heightCm === 'number' ? targetData.heightCm : null;
+    const targetOccupation = resolveOccupationLabel(targetData);
+    const targetGender = String(targetData.gender || '').trim();
+    const viewerHeightCm = typeof viewerData.heightCm === 'number' ? viewerData.heightCm : null;
+    const viewerOccupation = resolveOccupationLabel(viewerData);
+    const viewerGender = String(viewerData.gender || '').trim();
     await seedChatParticipantsInRtdb({
         roomId,
         uid,
@@ -162,12 +191,18 @@ export const ensureMatrimonyChatRoom = onCall({ invoker: 'public' }, async (requ
         viewerName: viewerData.displayName || 'Rhema Member',
         viewerPhoto,
         viewerCode,
+        viewerHeightCm,
+        viewerOccupation,
+        viewerGender,
         targetName: targetData.displayName || 'Rhema Member',
         targetPhoto,
         targetCode,
         targetAge: typeof targetData.age === 'number' ? targetData.age : null,
         targetCity,
         targetPhone: exposedPhone,
+        targetHeightCm,
+        targetOccupation,
+        targetGender,
     });
     return {
         success: true,
@@ -180,6 +215,10 @@ export const ensureMatrimonyChatRoom = onCall({ invoker: 'public' }, async (requ
             profileCode: targetCode,
             signedProfilePhoto: targetPhoto,
             age: typeof targetData.age === 'number' ? targetData.age : null,
+            heightCm: targetHeightCm,
+            occupation: targetOccupation,
+            gender: targetGender,
+            isVerified: targetData.profileStatus === 'approved',
             city: targetCity,
             contactPhone: exposedPhone,
         },
@@ -249,6 +288,9 @@ export const getMatrimonyChatContacts = onCall({ invoker: 'public', cpu: 'gcf_ge
             peerUids.add(s);
     });
     const contacts = [];
+    const viewerHeightCm = typeof viewerData.heightCm === 'number' ? viewerData.heightCm : null;
+    const viewerOccupation = resolveOccupationLabel(viewerData);
+    const viewerGender = String(viewerData.gender || '').trim();
     await Promise.all(Array.from(peerUids).map(async (targetUid) => {
         const [tSnap, tPrivSnap, tBlocks] = await Promise.all([
             getProfileRef(db, targetUid).get(),
@@ -263,12 +305,19 @@ export const getMatrimonyChatContacts = onCall({ invoker: 'public', cpu: 'gcf_ge
         if (tData.profileStatus !== 'approved')
             return;
         const tPriv = tPrivSnap.exists ? tPrivSnap.data() || {} : {};
-        const tPhoto = await resolveSinglePhotoUrl(tData.profilePhoto);
+        const tPhotoAllowed = tData.photoVisibility !== 'protect_photo' ||
+            (Array.isArray(tData.protectedPhotoAllowedUids) &&
+                tData.protectedPhotoAllowedUids.includes(uid));
+        const tPhoto = tPhotoAllowed ? await resolveSinglePhotoUrl(tData.profilePhoto) : null;
         const tCode = tData.matrimonyId || `RM${targetUid.slice(0, 7).toUpperCase()}`;
         const tCity = tData.location?.village || tData.location?.city || tData.location?.state || '';
         const tAge = typeof tData.age === 'number' ? tData.age : null;
+        const tHeightCm = typeof tData.heightCm === 'number' ? tData.heightCm : null;
+        const tOccupation = resolveOccupationLabel(tData);
+        const tGender = String(tData.gender || '').trim();
         const roomId = getRoomId(uid, targetUid);
-        const canSeePhone = entitlements.tier !== 'free' &&
+        const canSeePhone = tData.mobilePrivacy !== 'messages_only' &&
+            entitlements.tier !== 'free' &&
             (entitlements.contactNumberLimit < 0 || unlockedSet.has(targetUid));
         const exposedPhone = canSeePhone ? tPriv.phoneNumber || null : null;
         await seedChatParticipantsInRtdb({
@@ -278,12 +327,18 @@ export const getMatrimonyChatContacts = onCall({ invoker: 'public', cpu: 'gcf_ge
             viewerName: viewerData.displayName || 'Rhema Member',
             viewerPhoto,
             viewerCode,
+            viewerHeightCm,
+            viewerOccupation,
+            viewerGender,
             targetName: tData.displayName || 'Rhema Member',
             targetPhoto: tPhoto,
             targetCode: tCode,
             targetAge: tAge,
             targetCity: tCity,
             targetPhone: exposedPhone,
+            targetHeightCm: tHeightCm,
+            targetOccupation: tOccupation,
+            targetGender: tGender,
         }).catch(() => undefined);
         contacts.push({
             roomId,
@@ -292,6 +347,10 @@ export const getMatrimonyChatContacts = onCall({ invoker: 'public', cpu: 'gcf_ge
             profileCode: tCode,
             signedProfilePhoto: tPhoto,
             age: tAge,
+            heightCm: tHeightCm,
+            occupation: tOccupation,
+            gender: tGender,
+            isVerified: tData.profileStatus === 'approved',
             city: tCity,
             contactPhone: exposedPhone,
             matchTierEligible: Boolean(tPhoto),
@@ -441,6 +500,9 @@ export async function seedMutualMatchChatOnAccept(db, uidA, uidB) {
             [`matrimony_inbox/${uidA}/${roomId}/peerPhoto`]: bPhoto || null,
             [`matrimony_inbox/${uidA}/${roomId}/peerCode`]: b.matrimonyId || `RM${uidB.slice(0, 7).toUpperCase()}`,
             [`matrimony_inbox/${uidA}/${roomId}/peerAge`]: typeof b.age === 'number' ? b.age : null,
+            [`matrimony_inbox/${uidA}/${roomId}/peerHeightCm`]: typeof b.heightCm === 'number' ? b.heightCm : null,
+            [`matrimony_inbox/${uidA}/${roomId}/peerOccupation`]: resolveOccupationLabel(b) || null,
+            [`matrimony_inbox/${uidA}/${roomId}/peerGender`]: b.gender || null,
             [`matrimony_inbox/${uidA}/${roomId}/peerCity`]: b.location?.village || b.location?.city || b.location?.state || null,
             [`matrimony_inbox/${uidB}/${roomId}/roomId`]: roomId,
             [`matrimony_inbox/${uidB}/${roomId}/peerUid`]: uidA,
@@ -448,6 +510,9 @@ export async function seedMutualMatchChatOnAccept(db, uidA, uidB) {
             [`matrimony_inbox/${uidB}/${roomId}/peerPhoto`]: aPhoto || null,
             [`matrimony_inbox/${uidB}/${roomId}/peerCode`]: a.matrimonyId || `RM${uidA.slice(0, 7).toUpperCase()}`,
             [`matrimony_inbox/${uidB}/${roomId}/peerAge`]: typeof a.age === 'number' ? a.age : null,
+            [`matrimony_inbox/${uidB}/${roomId}/peerHeightCm`]: typeof a.heightCm === 'number' ? a.heightCm : null,
+            [`matrimony_inbox/${uidB}/${roomId}/peerOccupation`]: resolveOccupationLabel(a) || null,
+            [`matrimony_inbox/${uidB}/${roomId}/peerGender`]: a.gender || null,
             [`matrimony_inbox/${uidB}/${roomId}/peerCity`]: a.location?.village || a.location?.city || a.location?.state || null,
         });
     }

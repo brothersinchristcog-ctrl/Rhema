@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
-import { getMessaging } from 'firebase-admin/messaging';
 import { COLLECTIONS, DEFAULT_CHURCH_ID, MATRIMONY_BUCKET } from './constants.js';
+import { sendMatrimonyNotification } from './notifications.js';
 import { getAdminProfileRef, getBanRef, getProfileRef, getVerificationRef, isMatrimonyProfileInactiveStatus, purgeMatrimonyUserData, readPrefsSnap, readPrivateSnap, readVerificationSnap, } from './store.js';
 import { assertNonEmptyString, optionalString } from './validation.js';
 function buildFirebaseTokenUrl(bucketName, objectPath, token) {
@@ -52,6 +52,48 @@ async function resolveAdminPhotoUrls(paths) {
         }
     }
     return urls;
+}
+async function resolveAdminPhotoUrlsFast(paths) {
+    if (!paths.length)
+        return [];
+    const bucket = getStorage().bucket(MATRIMONY_BUCKET);
+    return Promise.all(paths.map(async (p) => {
+        if (!p)
+            return '';
+        if (p.startsWith('https://'))
+            return p;
+        try {
+            const file = bucket.file(p);
+            const [meta] = await file.getMetadata();
+            const existingTokens = String(meta?.metadata?.firebaseStorageDownloadTokens || '')
+                .split(',')
+                .map((t) => t.trim())
+                .filter(Boolean);
+            let token = existingTokens[0];
+            if (!token) {
+                token = randomUUID();
+                await file.setMetadata({
+                    metadata: {
+                        ...(meta?.metadata || {}),
+                        firebaseStorageDownloadTokens: token,
+                    },
+                });
+            }
+            return buildFirebaseTokenUrl(MATRIMONY_BUCKET, p, token);
+        }
+        catch {
+            return '';
+        }
+    }));
+}
+async function signPhotoForAdminFast(photoPath) {
+    if (typeof photoPath !== 'string' || !photoPath.trim())
+        return null;
+    const trimmed = photoPath.trim();
+    if (trimmed.startsWith('https://'))
+        return trimmed;
+    const resolved = await resolveAdminPhotoUrlsFast([trimmed]);
+    return resolved[0] || null;
 }
 async function signPhotoForAdmin(photoPath) {
     if (typeof photoPath !== 'string' || !photoPath.trim())
@@ -108,35 +150,15 @@ export async function requireMatrimonyAdmin(request) {
     throw new HttpsError('permission-denied', 'Matrimony admin privileges are required.');
 }
 async function sendMatrimonyPush(targetUid, title, body, type) {
-    try {
-        const db = getFirestore();
-        const memberSnap = await db
-            .collection('Rhema Church')
-            .doc(DEFAULT_CHURCH_ID)
-            .collection('members')
-            .doc(targetUid)
-            .get();
-        const fcmToken = memberSnap.data()?.fcmToken;
-        const now = FieldValue.serverTimestamp();
-        await db.collection(COLLECTIONS.NOTIFICATIONS).add({
-            recipientUid: targetUid,
-            type,
-            title,
-            body,
-            read: false,
-            createdAt: now,
-        });
-        if (fcmToken) {
-            await getMessaging().send({
-                token: fcmToken,
-                notification: { title, body },
-                data: { type, module: 'matrimony' },
-            });
-        }
-    }
-    catch (err) {
-        console.warn('sendMatrimonyPush warning:', err);
-    }
+    await sendMatrimonyNotification({
+        recipientUid: targetUid,
+        type,
+        title,
+        body,
+        tag: `matrimony_${type.toLowerCase()}`,
+        writeInAppDoc: true,
+        allowNonApprovedRecipient: true,
+    });
 }
 function toMs(val) {
     if (!val)
@@ -267,9 +289,10 @@ export const getMatrimonyAdminDashboard = onCall({ invoker: 'public' }, async (r
  * 2. getMatrimonyPendingProfiles
  * Lists matrimony profiles filtered by status ('pending', 'approved', 'rejected', 'inactive', 'reported', 'draft', or 'all') + counts.
  */
-export const getMatrimonyPendingProfiles = onCall({ invoker: 'public', cpu: 'gcf_gen1', concurrency: 1, maxInstances: 10 }, async (request) => {
+export const getMatrimonyPendingProfiles = onCall({ invoker: 'public', cpu: 1, memory: '512MiB', concurrency: 20, maxInstances: 10 }, async (request) => {
     await requireMatrimonyAdmin(request);
     const statusFilter = optionalString(request.data?.status, 40) || 'pending';
+    const searchTerm = (optionalString(request.data?.search, 120) || '').trim().toLowerCase();
     const db = getFirestore();
     const [snap, reportsSnap] = await Promise.all([
         db.collection(COLLECTIONS.PROFILES).where('churchId', '==', DEFAULT_CHURCH_ID).get(),
@@ -277,15 +300,50 @@ export const getMatrimonyPendingProfiles = onCall({ invoker: 'public', cpu: 'gcf
     ]);
     const reportMap = buildReportSummaryMap(reportsSnap.docs);
     const counts = buildCountsFromDocs(snap.docs, reportMap);
-    const filteredDocs = snap.docs
+    const matchingDocs = snap.docs
         .filter((doc) => {
-        const s = String(doc.data()?.profileStatus || 'draft');
+        const data = doc.data() || {};
+        const s = String(data.profileStatus || 'draft');
         if (s === 'not_started' || s === 'deleted')
             return false;
-        if (statusFilter !== 'draft' && s === 'draft')
-            return false;
+        if (searchTerm) {
+            if (statusFilter !== 'all' &&
+                statusFilter !== 'draft' &&
+                statusFilter !== 'reported' &&
+                statusFilter !== 'inactive') {
+                if (s !== statusFilter)
+                    return false;
+            }
+            else if (statusFilter === 'draft' && s !== 'draft') {
+                return false;
+            }
+            else if (statusFilter === 'inactive' && !isMatrimonyProfileInactiveStatus(s)) {
+                return false;
+            }
+            else if (statusFilter === 'reported' &&
+                (reportMap.get(doc.id)?.totalReportCount || 0) <= 0) {
+                return false;
+            }
+            const haystack = [
+                doc.id,
+                data.profileCode,
+                data.displayName,
+                data.location?.city,
+                data.location?.village,
+                data.location?.state,
+                data.faithSummary?.denomination,
+                data.career?.profession,
+                data.motherTongue,
+            ]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase();
+            return haystack.includes(searchTerm);
+        }
         if (statusFilter === 'all')
             return true;
+        if (s === 'draft')
+            return statusFilter === 'draft';
         if (statusFilter === 'inactive')
             return isMatrimonyProfileInactiveStatus(s);
         if (statusFilter === 'reported') {
@@ -294,6 +352,10 @@ export const getMatrimonyPendingProfiles = onCall({ invoker: 'public', cpu: 'gcf
         return s === statusFilter;
     })
         .sort((a, b) => {
+        const aTest = a.data()?.isTestUser === true ? 1 : 0;
+        const bTest = b.data()?.isTestUser === true ? 1 : 0;
+        if (aTest !== bTest)
+            return aTest - bTest;
         if (statusFilter === 'reported') {
             const aRep = reportMap.get(a.id);
             const bRep = reportMap.get(b.id);
@@ -315,21 +377,21 @@ export const getMatrimonyPendingProfiles = onCall({ invoker: 'public', cpu: 'gcf
             b.data()?.updatedAt?.toMillis?.() ||
             0;
         return bMs - aMs;
-    })
-        .slice(0, 100);
+    });
+    // Always retain all real church members; cap seeded test profiles cleanly so list & photos load fast
+    const realDocs = matchingDocs.filter((doc) => doc.data()?.isTestUser !== true);
+    const testDocs = matchingDocs.filter((doc) => doc.data()?.isTestUser === true);
+    const remainingCap = Math.max(0, 60 - realDocs.length);
+    const filteredDocs = [...realDocs, ...testDocs.slice(0, remainingCap)];
     const profiles = await Promise.all(filteredDocs.map(async (doc) => {
         const data = doc.data();
-        const [verSnap, signedPhoto] = await Promise.all([
-            readVerificationSnap(db, doc.id),
-            signPhotoForAdmin(data.profilePhoto),
-        ]);
+        const signedPhoto = await signPhotoForAdminFast(data.profilePhoto);
         const rep = reportMap.get(doc.id);
         return {
             uid: doc.id,
             ...data,
             signedPhoto,
             signedProfilePhoto: signedPhoto,
-            verification: verSnap.exists ? verSnap.data() : null,
             openReportCount: rep?.openReportCount || 0,
             totalReportCount: rep?.totalReportCount || 0,
             latestReport: rep?.reports?.[0] || null,
@@ -430,6 +492,8 @@ export const getMatrimonyAdminProfileDetail = onCall({ invoker: 'public' }, asyn
         registrationId: targetUid,
         isLegacyBan: false,
         inactiveReason: profileData.inactiveReason || null,
+        deletionReason: profileData.deletionReason || null,
+        deletedAtMs: profileData.deletedAtMs || null,
         contactInfo: {
             fullName: privateData.fullLegalName || profileData.displayName || '',
             email: privateData.personalEmail || '',
@@ -484,6 +548,7 @@ export const approveMatrimonyProfile = onCall({ invoker: 'public' }, async (requ
             inactiveReason: null,
             inactivatedBy: null,
             inactivatedAt: null,
+            rejectionReason: null,
             approvedAt: now,
             updatedAt: now,
         }, { merge: true });
@@ -541,6 +606,9 @@ export const rejectMatrimonyProfile = onCall({ invoker: 'public' }, async (reque
         profileStatus: 'rejected',
         verificationStatus: 'rejected',
         visibility: 'hidden',
+        rejectionReason: reason,
+        rejectedBy: adminUid,
+        rejectedAt: now,
         updatedAt: now,
     }, { merge: true });
     const approvalPayload = {
@@ -679,12 +747,16 @@ export const removeMatrimonyProfileForAbuse = onCall({ invoker: 'public', cpu: '
  * Deletes a member's Matrimony profile, subcollections, and photos in Firebase
  * WITHOUT restricting them, so they can set up a fresh profile and go through approval again.
  */
-export const deleteMatrimonyProfile = onCall({ invoker: 'public', cpu: 'gcf_gen1', concurrency: 1, maxInstances: 10 }, async (request) => {
+export const deleteMatrimonyProfile = onCall({ invoker: 'public', cpu: 1, memory: '512MiB', concurrency: 10, maxInstances: 10 }, async (request) => {
     const adminUid = await requireMatrimonyAdmin(request);
     const targetUid = assertNonEmptyString(request.data?.targetUid, 'targetUid', 128);
     const reason = optionalString(request.data?.reason, 500) ||
         'Profile deleted by Church Administration. You may create a new profile for review.';
     const db = getFirestore();
+    await Promise.all([
+        getProfileRef(db, targetUid).set({ selfReset: true }, { merge: true }).catch(() => undefined),
+        getAdminProfileRef(db, targetUid).set({ selfReset: true }, { merge: true }).catch(() => undefined),
+    ]);
     await purgeMatrimonyUserData(db, targetUid, {
         banOnDelete: false,
         banReason: reason,

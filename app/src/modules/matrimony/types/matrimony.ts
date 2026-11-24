@@ -17,6 +17,14 @@ export type PreferenceImportance = 'essential' | 'preferred' | 'flexible';
 
 export type MatrimonyMembershipTier = 'free' | 'silver' | 'gold' | 'platinum';
 
+export type MatrimonyMobilePrivacy = 'show_all' | 'messages_only';
+
+export type MatrimonyPhotoVisibility =
+  | 'approved_members'
+  | 'contacted_and_paid'
+  | 'protect_photo'
+  | 'matches_only';
+
 export interface MatrimonyMembershipInfo {
   tier: MatrimonyMembershipTier;
   planId?: string;
@@ -163,7 +171,12 @@ export interface MatrimonyProfile {
   signedProfilePhoto?: string | null;
   gallery?: string[];
   signedGallery?: string[];
-  photoVisibility?: 'approved_members' | 'matches_only';
+  photoVisibility?: MatrimonyPhotoVisibility;
+  mobilePrivacy?: MatrimonyMobilePrivacy;
+  protectedPhotoAllowedUids?: string[];
+  selfDeactivated?: boolean;
+  deletionReason?: string | null;
+  notificationPreferences?: Partial<MatrimonyNotificationPreferences>;
   profileStatus: MatrimonyProfileStatus;
   onboardingStage?: 'not_started' | 'photos_pending' | 'completed' | string;
   verificationStatus: string;
@@ -202,6 +215,8 @@ export interface MatrimonyPendingRegistrationDraft {
   welcome?: {
     motherTongue?: string;
     baptized?: boolean;
+    managedBy?: 'self' | 'guardian';
+    createdFor?: string;
   };
   basic?: {
     fullName?: string;
@@ -245,6 +260,7 @@ export interface MatrimonyPendingRegistrationDraft {
     matchmaking: boolean;
     communication: boolean;
     managedBy?: 'self' | 'guardian';
+    createdFor?: string;
   };
 }
 
@@ -270,6 +286,11 @@ export interface StartRegistrationResponse {
     state?: string;
   };
   profile?: MatrimonyProfile;
+  profileManager?: {
+    type?: 'self' | 'guardian';
+    createdFor?: string;
+    guardianUid?: string | null;
+  } | null;
   consent?: MatrimonyConsent | null;
   familyDetails?: {
     familyIntro?: string;
@@ -339,6 +360,7 @@ export interface AdminMatrimonyProfileSummary extends MatrimonyProfile {
   submittedAt?: any;
   updatedAt?: any;
   createdAt?: any;
+  deletedAtMs?: number | null;
   openReportCount?: number;
   totalReportCount?: number;
   latestReport?: MatrimonyProfileReport | null;
@@ -358,6 +380,8 @@ export interface AdminMatrimonyProfileDetail extends StartRegistrationResponse {
   verification?: Record<string, any> | null;
   rejectionReason?: string | null;
   inactiveReason?: string | null;
+  deletionReason?: string | null;
+  deletedAtMs?: number | null;
   isLegacyBan?: boolean;
   reports?: MatrimonyProfileReport[];
 }
@@ -503,6 +527,10 @@ export interface MatrimonyMatchCandidate {
   contactPhone?: string | null;
   isContactUnlocked?: boolean;
   canUnlockContact?: boolean;
+  mobilePrivacy?: MatrimonyMobilePrivacy;
+  isPhotoProtected?: boolean;
+  photoRequestStatus?: 'pending' | 'approved' | 'declined' | null;
+  photoVisibility?: MatrimonyPhotoVisibility;
   candidateTier?: MatrimonyMembershipTier;
   isHighlighted?: 'none' | 'gold' | 'platinum';
   visibilityPriority?: number;
@@ -619,6 +647,10 @@ export interface MatrimonyChatPeer {
   profileCode: string;
   signedProfilePhoto: string | null;
   age: number | null;
+  heightCm?: number | null;
+  occupation?: string | null;
+  gender?: string | null;
+  isVerified?: boolean;
   city: string;
   contactPhone: string | null;
 }
@@ -635,6 +667,9 @@ export interface MatrimonyInboxItem {
   peerPhoto: string | null;
   peerCode: string;
   peerAge: number | null;
+  peerHeightCm?: number | null;
+  peerOccupation?: string | null;
+  peerGender?: string | null;
   peerCity: string | null;
   contactPhone: string | null;
   lastMessageText: string;
@@ -668,8 +703,79 @@ export interface MatrimonyChatMessage {
   deletedFor?: Record<string, boolean>;
 }
 
+export interface MatrimonyNotificationPreferences {
+  request: boolean;
+  shortlist: boolean;
+  profileViews: boolean;
+  interestAcceptance: boolean;
+  recentlyJoined: boolean;
+  dailyMatches: boolean;
+  cityMatches: boolean;
+  photoMatches: boolean;
+  similarMatches: boolean;
+  newMatches: boolean;
+  dailyRecommendations: boolean;
+  basedOnActivity: boolean;
+  membershipOffers: boolean;
+}
+
+export interface MatrimonyHiddenProfileItem {
+  uid: string;
+  displayName: string;
+  profileCode: string;
+  age: number | null;
+  heightCm: number | null;
+  occupation: string;
+  city: string;
+  signedProfilePhoto: string | null;
+  hiddenAtMs: number;
+}
+
+export interface MatrimonyPhotoRequestItem {
+  uid: string;
+  displayName: string;
+  profileCode: string;
+  age: number | null;
+  heightCm: number | null;
+  occupation: string;
+  city: string;
+  signedProfilePhoto: string | null;
+  status: 'pending' | 'approved' | 'declined';
+  createdAtMs: number;
+  updatedAtMs: number;
+  candidate?: MatrimonyMatchCandidate | null;
+}
+
 export interface MatrimonyPresenceState {
   online: boolean;
   lastSeen: number;
   activeChatId?: string | null;
+}
+
+export type MatrimonyNotificationActionType =
+  | 'view_profile'
+  | 'view_matches'
+  | 'view_photo_requests'
+  | 'view_interests'
+  | 'view_offers'
+  | 'view_status';
+
+export interface MatrimonyNotificationFeedItem {
+  id: string;
+  type: string;
+  prefKey?: string | null;
+  category: 'interactions' | 'alerts';
+  isUrgent: boolean;
+  senderUid?: string | null;
+  senderName?: string | null;
+  senderGender?: string | null;
+  senderPhoto?: string | null;
+  title: string;
+  body: string;
+  read: boolean;
+  createdAtMs: number;
+  actionType: MatrimonyNotificationActionType;
+  actionLabel: string;
+  incomingPhotoRequestStatus?: 'pending' | 'approved' | 'declined' | null;
+  candidate?: MatrimonyMatchCandidate | null;
 }

@@ -25,6 +25,7 @@ import {
   SidebarOptionItem,
 } from '../constants/professionalOptions';
 import { MatrimonyPendingRegistrationDraft, StartRegistrationResponse } from '../types/matrimony';
+import { getProfileSubjectFromContext } from '../utils/profileSubject';
 
 const ORANGE = '#EA580C';
 
@@ -36,6 +37,7 @@ export default function MatrimonyProfessionalDetailsScreen({ navigation, route }
   const fontFamily = FONT_STYLE_OPTIONS.find((f) => f.id === fontStyle)?.family;
 
   const initialData: StartRegistrationResponse | undefined = route?.params?.initialData;
+  const subjectCopy = getProfileSubjectFromContext(route?.params?.draftData, initialData);
   const edu = initialData?.profile?.education;
   const career = initialData?.profile?.career as any;
 
@@ -52,7 +54,7 @@ export default function MatrimonyProfessionalDetailsScreen({ navigation, route }
   const sidebarConfig = (() => {
     if (activeSidebar === 'education') {
       return {
-        title: 'Select your education details',
+        title: subjectCopy.educationPlaceholder,
         searchPlaceholder: 'Search education details',
         searchable: true,
         options: EDUCATION_OPTIONS,
@@ -62,7 +64,7 @@ export default function MatrimonyProfessionalDetailsScreen({ navigation, route }
     }
     if (activeSidebar === 'employment') {
       return {
-        title: 'Select your employment type',
+        title: subjectCopy.employmentPlaceholder,
         searchPlaceholder: '',
         searchable: false,
         options: EMPLOYMENT_TYPE_OPTIONS,
@@ -72,7 +74,7 @@ export default function MatrimonyProfessionalDetailsScreen({ navigation, route }
     }
     if (activeSidebar === 'occupation') {
       return {
-        title: 'Select your occupation',
+        title: subjectCopy.occupationPlaceholder,
         searchPlaceholder: 'Search occupation',
         searchable: true,
         options: OCCUPATION_OPTIONS,
@@ -95,7 +97,7 @@ export default function MatrimonyProfessionalDetailsScreen({ navigation, route }
     }
     if (activeSidebar === 'income') {
       return {
-        title: 'Select your annual income',
+        title: subjectCopy.incomePlaceholder,
         searchPlaceholder: '',
         searchable: false,
         options: currency.startsWith('INR') ? INCOME_OPTIONS_INR : INCOME_OPTIONS_GLOBAL,
@@ -120,15 +122,15 @@ export default function MatrimonyProfessionalDetailsScreen({ navigation, route }
 
   const handleNext = () => {
     if (!education) {
-      Alert.alert('Required', 'Please select your education details.');
+      Alert.alert('Required', subjectCopy.educationRequiredMsg);
       return;
     }
     if (!employmentType) {
-      Alert.alert('Required', 'Please select your employment type.');
+      Alert.alert('Required', subjectCopy.employmentRequiredMsg);
       return;
     }
     if (!occupation) {
-      Alert.alert('Required', 'Please select your occupation.');
+      Alert.alert('Required', subjectCopy.occupationRequiredMsg);
       return;
     }
 
@@ -224,26 +226,26 @@ export default function MatrimonyProfessionalDetailsScreen({ navigation, route }
         showsVerticalScrollIndicator={false}
       >
         {renderFloatingField(
-          'Your education details',
+          subjectCopy.educationLabel,
           education,
-          'Select your education details',
+          subjectCopy.educationPlaceholder,
           () => openSidebar('education')
         )}
 
         {Boolean(education) &&
           renderFloatingField(
-            'Your employment type',
+            subjectCopy.employmentLabel,
             employmentType,
-            'Select your employment type',
+            subjectCopy.employmentPlaceholder,
             () => openSidebar('employment')
           )}
 
         {Boolean(education) &&
           Boolean(employmentType) &&
           renderFloatingField(
-            'Your occupation',
+            subjectCopy.occupationLabel,
             occupation,
-            'Select your occupation',
+            subjectCopy.occupationPlaceholder,
             () => openSidebar('occupation')
           )}
 
@@ -251,7 +253,7 @@ export default function MatrimonyProfessionalDetailsScreen({ navigation, route }
           <>
             <View style={styles.orgSection}>
               <Text style={[styles.orgLabel, { color: colors.text, fontFamily, fontSize: scaleFont(14) }]}>
-                Organization where you work{' '}
+                {subjectCopy.orgWorkPhrase}{' '}
                 <Text style={{ color: '#0D9488', fontWeight: '700' }}>{occupation}</Text>{' '}
                 <Text style={{ color: colors.textSecondary, fontWeight: '500', fontSize: scaleFont(12) }}>
                   (Optional)
@@ -280,7 +282,7 @@ export default function MatrimonyProfessionalDetailsScreen({ navigation, route }
             </Text>
 
             {renderFloatingField(
-              'Your annual income currency',
+              subjectCopy.currencyLabel,
               currency,
               'Select currency',
               () => openSidebar('currency')
@@ -288,9 +290,9 @@ export default function MatrimonyProfessionalDetailsScreen({ navigation, route }
 
             {Boolean(currency) &&
               renderFloatingField(
-                'Your annual income',
+                subjectCopy.incomeLabel,
                 annualIncome,
-                'Select your annual income',
+                subjectCopy.incomePlaceholder,
                 () => openSidebar('income')
               )}
           </>

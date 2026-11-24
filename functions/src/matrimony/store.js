@@ -38,6 +38,12 @@ export function getBlocksCol(db, uid) {
 export function getUnlockedContactsCol(db, uid) {
     return getProfileRef(db, uid).collection(SUBCOLLECTIONS.UNLOCKED_CONTACTS);
 }
+export function getPhotoRequestsCol(db, uid) {
+    return getProfileRef(db, uid).collection(SUBCOLLECTIONS.PHOTO_REQUESTS);
+}
+export function getSentPhotoRequestsCol(db, uid) {
+    return getProfileRef(db, uid).collection(SUBCOLLECTIONS.PHOTO_REQUESTS_SENT);
+}
 export function getSubscriptionRef(db, uid) {
     return db.collection(COLLECTIONS.SUBSCRIPTIONS).doc(uid);
 }

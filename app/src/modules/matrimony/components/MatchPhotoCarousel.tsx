@@ -25,6 +25,7 @@ interface MatchPhotoCarouselProps {
   emptyBackgroundColor?: string;
   emptyTextColor?: string;
   emptyLabel?: string;
+  customEmptyContent?: React.ReactNode;
   children?: React.ReactNode;
 }
 
@@ -39,6 +40,7 @@ export default function MatchPhotoCarousel({
   emptyBackgroundColor = '#EEF2F6',
   emptyTextColor = '#64748B',
   emptyLabel = 'No Photo Uploaded',
+  customEmptyContent,
   children,
 }: MatchPhotoCarouselProps) {
   const [containerWidth, setContainerWidth] = useState<number>(SCREEN_WIDTH);
@@ -100,6 +102,8 @@ export default function MatchPhotoCarousel({
             </TouchableOpacity>
           ))}
         </ScrollView>
+      ) : customEmptyContent ? (
+        <View style={{ width: '100%', height }}>{customEmptyContent}</View>
       ) : (
         <TouchableOpacity
           activeOpacity={0.95}

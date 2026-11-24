@@ -16,6 +16,7 @@ import { ChevronLeft, ChevronDown, Check, X, Search } from 'lucide-react-native'
 import { useTheme, FONT_STYLE_OPTIONS } from '../../../context/ThemeContext';
 import MatrimonyProgressBar from '../components/MatrimonyProgressBar';
 import { MatrimonyPendingRegistrationDraft, StartRegistrationResponse } from '../types/matrimony';
+import { getProfileSubjectFromContext } from '../utils/profileSubject';
 
 const ORANGE = '#EA580C';
 
@@ -132,6 +133,7 @@ export default function MatrimonyReligiousDetailsScreen({ navigation, route }: a
   const fontFamily = FONT_STYLE_OPTIONS.find((f) => f.id === fontStyle)?.family;
 
   const initialData: StartRegistrationResponse | undefined = route?.params?.initialData;
+  const subjectCopy = getProfileSubjectFromContext(route?.params?.draftData, initialData);
   const faith = (initialData?.profile?.faithSummary as any) || {};
 
   const [religion, setReligion] = useState<string>(faith.religion || '');
@@ -147,7 +149,7 @@ export default function MatrimonyReligiousDetailsScreen({ navigation, route }: a
   const sidebarConfig = (() => {
     if (activeSidebar === 'religion') {
       return {
-        title: 'Select religion',
+        title: subjectCopy.religionPlaceholder,
         searchPlaceholder: 'Search religion',
         options: RELIGION_OPTIONS,
         selected: religion,
@@ -156,7 +158,7 @@ export default function MatrimonyReligiousDetailsScreen({ navigation, route }: a
     }
     if (activeSidebar === 'denomination') {
       return {
-        title: 'Select denomination',
+        title: subjectCopy.denominationPlaceholder,
         searchPlaceholder: 'Search denomination',
         options: DENOMINATION_OPTIONS,
         selected: denomination,
@@ -165,7 +167,7 @@ export default function MatrimonyReligiousDetailsScreen({ navigation, route }: a
     }
     if (activeSidebar === 'division') {
       return {
-        title: 'Select division',
+        title: subjectCopy.divisionPlaceholder,
         searchPlaceholder: 'Search division',
         options: DIVISION_OPTIONS,
         selected: division,
@@ -189,11 +191,11 @@ export default function MatrimonyReligiousDetailsScreen({ navigation, route }: a
 
   const handleNext = () => {
     if (!religion) {
-      Alert.alert('Required', 'Please select your religion.');
+      Alert.alert('Required', subjectCopy.religionRequiredMsg);
       return;
     }
     if (!denomination) {
-      Alert.alert('Required', 'Please select your denomination.');
+      Alert.alert('Required', subjectCopy.denominationRequiredMsg);
       return;
     }
 
@@ -237,7 +239,7 @@ export default function MatrimonyReligiousDetailsScreen({ navigation, route }: a
         {/* Religion */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text, fontFamily, fontSize: scaleFont(15) }]}>
-            Religion
+            {subjectCopy.religionQuestion}
           </Text>
           <TouchableOpacity
             style={[styles.dropdownBtn, { backgroundColor: colors.surface, borderColor }]}
@@ -254,7 +256,7 @@ export default function MatrimonyReligiousDetailsScreen({ navigation, route }: a
                 },
               ]}
             >
-              {religion || 'Select religion'}
+              {religion || subjectCopy.religionPlaceholder}
             </Text>
             <ChevronDown size={19} color={ORANGE} />
           </TouchableOpacity>
@@ -264,7 +266,7 @@ export default function MatrimonyReligiousDetailsScreen({ navigation, route }: a
         {Boolean(religion) && (
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.text, fontFamily, fontSize: scaleFont(15) }]}>
-              Denomination
+              {subjectCopy.denominationQuestion}
             </Text>
             <TouchableOpacity
               style={[styles.dropdownBtn, { backgroundColor: colors.surface, borderColor }]}
@@ -281,7 +283,7 @@ export default function MatrimonyReligiousDetailsScreen({ navigation, route }: a
                   },
                 ]}
               >
-                {denomination || 'Select denomination'}
+                {denomination || subjectCopy.denominationPlaceholder}
               </Text>
               <ChevronDown size={19} color={ORANGE} />
             </TouchableOpacity>
@@ -292,7 +294,7 @@ export default function MatrimonyReligiousDetailsScreen({ navigation, route }: a
         {Boolean(religion) && Boolean(denomination) && (
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.text, fontFamily, fontSize: scaleFont(15) }]}>
-              Division
+              {subjectCopy.divisionQuestion}
             </Text>
             <TouchableOpacity
               style={[styles.dropdownBtn, { backgroundColor: colors.surface, borderColor }]}
@@ -309,7 +311,7 @@ export default function MatrimonyReligiousDetailsScreen({ navigation, route }: a
                   },
                 ]}
               >
-                {division || 'Select division'}
+                {division || subjectCopy.divisionPlaceholder}
               </Text>
               <ChevronDown size={19} color={ORANGE} />
             </TouchableOpacity>

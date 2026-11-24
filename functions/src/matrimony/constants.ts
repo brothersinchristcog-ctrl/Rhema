@@ -13,6 +13,8 @@ export const SUBCOLLECTIONS = {
   VIEWED_BY: 'viewed_by',
   BLOCKS: 'blocks',
   UNLOCKED_CONTACTS: 'unlocked_contacts',
+  PHOTO_REQUESTS: 'photo_requests',
+  PHOTO_REQUESTS_SENT: 'photo_requests_sent',
 } as const;
 
 export const SUBDOC_IDS = {

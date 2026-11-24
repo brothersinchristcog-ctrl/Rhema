@@ -9,6 +9,8 @@ export declare function getViewsCol(db: Firestore, uid: string): FirebaseFiresto
 export declare function getViewedByCol(db: Firestore, uid: string): FirebaseFirestore.CollectionReference<FirebaseFirestore.DocumentData, FirebaseFirestore.DocumentData>;
 export declare function getBlocksCol(db: Firestore, uid: string): FirebaseFirestore.CollectionReference<FirebaseFirestore.DocumentData, FirebaseFirestore.DocumentData>;
 export declare function getUnlockedContactsCol(db: Firestore, uid: string): FirebaseFirestore.CollectionReference<FirebaseFirestore.DocumentData, FirebaseFirestore.DocumentData>;
+export declare function getPhotoRequestsCol(db: Firestore, uid: string): FirebaseFirestore.CollectionReference<FirebaseFirestore.DocumentData, FirebaseFirestore.DocumentData>;
+export declare function getSentPhotoRequestsCol(db: Firestore, uid: string): FirebaseFirestore.CollectionReference<FirebaseFirestore.DocumentData, FirebaseFirestore.DocumentData>;
 export declare function getSubscriptionRef(db: Firestore, uid: string): FirebaseFirestore.DocumentReference<FirebaseFirestore.DocumentData, FirebaseFirestore.DocumentData>;
 export declare function getEntitlementRef(db: Firestore, uid: string): FirebaseFirestore.DocumentReference<FirebaseFirestore.DocumentData, FirebaseFirestore.DocumentData>;
 export declare function getUsageRef(db: Firestore, uid: string): FirebaseFirestore.DocumentReference<FirebaseFirestore.DocumentData, FirebaseFirestore.DocumentData>;

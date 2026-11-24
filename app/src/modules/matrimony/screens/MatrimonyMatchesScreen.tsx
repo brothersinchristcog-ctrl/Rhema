@@ -18,6 +18,8 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import auth from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   ArrowLeft,
@@ -43,6 +45,7 @@ import {
 import { useAuth } from '../../../context/AuthContext';
 import { FONT_STYLE_OPTIONS, useTheme } from '../../../context/ThemeContext';
 import MatrimonyTierToggle from '../components/MatrimonyTierToggle';
+import ProtectedPhotoPlaceholder from '../components/ProtectedPhotoPlaceholder';
 import VerifiedRibbonBadge from '../components/VerifiedRibbonBadge';
 import MatrimonyMatchesFilterModal, {
   countActiveMatrimonyFilters,
@@ -233,7 +236,12 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
   const [hiddenCount, setHiddenCount] = useState<number>(
     () => initialMatchesSnapshot?.hiddenCount ?? 0
   );
-  const [undoHidden, setUndoHidden] = useState<{ uid: string; name: string } | null>(null);
+  const [undoHidden, setUndoHidden] = useState<{
+    uid: string;
+    name: string;
+    candidate?: MatrimonyMatchCandidate;
+    index?: number;
+  } | null>(null);
   const [viewerPhoto, setViewerPhoto] = useState<string | null>(
     () => initialMatchesSnapshot?.viewerPhoto || null
   );
@@ -474,10 +482,10 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
       }
       setErrorMsg(null);
       try {
-        // Fast initial page: fetch top 10 match cards immediately (Amazon/Flipkart progressive pattern)
+        // Fast initial page: fetch top 10 match cards immediately from server so photo/privacy updates stay fresh
         const res = await matrimonyApi.getMatches(
           { tab, matchBasis, matchTier, sortBy, filters, offset: 0, limit: 10 },
-          { force }
+          { force: true }
         );
         if (loadSeqRef.current !== seq || !mountedRef.current) return;
 
@@ -561,8 +569,8 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
   useEffect(() => {
     const unsub = navigation.addListener('focus', () => {
       if (!prefsHydrated) return;
-      if (Date.now() - lastLoadTriggerAtRef.current < 4000) return;
-      loadMatches(true, false);
+      if (Date.now() - lastLoadTriggerAtRef.current < 1500) return;
+      loadMatches(true, true);
     });
     return unsub;
   }, [navigation, prefsHydrated, loadMatches]);
@@ -634,34 +642,222 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
     return () => clearTimeout(t);
   }, [undoHidden]);
 
-  const handleDismiss = async (targetUid: string) => {
-    const targetCandidate = matches.find((m) => m.uid === targetUid);
-    setActionBusyUid(targetUid);
-    try {
-      await matrimonyApi.dismissMatch(targetUid);
-      setMatches((prev) => prev.filter((m) => m.uid !== targetUid));
-      setHiddenCount((c) => c + 1);
-      setUndoHidden({
-        uid: targetUid,
-        name: targetCandidate?.displayName || 'Profile',
-      });
-    } catch (err: any) {
+  const handleDismiss = (targetUid: string) => {
+    const targetIdx = matches.findIndex((m) => m.uid === targetUid);
+    const targetCandidate = targetIdx >= 0 ? matches[targetIdx] : undefined;
+    const prevMatches = matches;
+    setMatches((prev) => prev.filter((m) => m.uid !== targetUid));
+    setHiddenCount((c) => c + 1);
+    setInterestToast(null);
+    setUndoHidden({
+      uid: targetUid,
+      name: targetCandidate?.displayName || 'Profile',
+      candidate: targetCandidate,
+      index: targetIdx >= 0 ? targetIdx : 0,
+    });
+    const preview = targetCandidate
+      ? {
+          uid: targetUid,
+          displayName: targetCandidate.displayName,
+          profileCode: targetCandidate.profileCode,
+          age: targetCandidate.age ?? null,
+          heightCm: targetCandidate.heightCm ?? null,
+          occupation: String(
+            targetCandidate.career?.profession ||
+              targetCandidate.career?.occupationCategory ||
+              targetCandidate.education?.qualification ||
+              ''
+          ).trim(),
+          city: String(
+            targetCandidate.location?.village ||
+              targetCandidate.location?.city ||
+              targetCandidate.location?.state ||
+              ''
+          ).trim(),
+          signedProfilePhoto: targetCandidate.signedProfilePhoto || null,
+        }
+      : undefined;
+    matrimonyApi.dismissMatch(targetUid, 'dont_show', preview).catch((err: any) => {
+      setMatches(prevMatches);
+      setHiddenCount((c) => Math.max(0, c - 1));
+      setUndoHidden(null);
       Alert.alert('Error', err?.message || 'Could not hide this profile.');
-    } finally {
-      setActionBusyUid(null);
-    }
+    });
   };
 
   const handleRestoreHidden = async (targetUid?: string) => {
+    const restoredMeta =
+      targetUid && undoHidden?.uid === targetUid ? undoHidden : null;
     setUndoHidden(null);
     setMoreMenuOpen(false);
+    if (restoredMeta?.candidate) {
+      const cand = restoredMeta.candidate;
+      const insertAt = restoredMeta.index ?? 0;
+      setMatches((prev) => {
+        if (prev.some((m) => m.uid === cand.uid)) return prev;
+        const next = [...prev];
+        next.splice(Math.max(0, Math.min(insertAt, next.length)), 0, cand);
+        return next;
+      });
+      setHiddenCount((c) => Math.max(0, c - 1));
+    }
     try {
       await matrimonyApi.restoreDismissedMatches(targetUid);
-      await loadMatches(true);
+      if (!restoredMeta?.candidate) {
+        await loadMatches(true);
+      }
     } catch (err: any) {
       Alert.alert('Error', err?.message || 'Could not restore hidden profile.');
     }
   };
+
+  const handleRequestPhotoAccess = async (targetUid: string) => {
+    setMatches((prev) =>
+      prev.map((m) =>
+        m.uid === targetUid ? { ...m, photoRequestStatus: 'pending' } : m
+      )
+    );
+    try {
+      const res = await matrimonyApi.requestPhotoAccess(targetUid);
+      setMatches((prev) =>
+        prev.map((m) =>
+          m.uid === targetUid
+            ? {
+                ...m,
+                photoRequestStatus: res?.status === 'approved' ? 'approved' : 'pending',
+              }
+            : m
+        )
+      );
+    } catch (err: any) {
+      setMatches((prev) =>
+        prev.map((m) => (m.uid === targetUid ? { ...m, photoRequestStatus: null } : m))
+      );
+      Alert.alert('Request Failed', err?.message || 'Unable to send photo request.');
+    }
+  };
+
+  const watchedProtectedUidsKey = useMemo(
+    () =>
+      matches
+        .slice(0, 25)
+        .map((m) => m.uid)
+        .filter(Boolean)
+        .sort()
+        .join(','),
+    [matches]
+  );
+
+  useEffect(() => {
+    const myUid = auth().currentUser?.uid || '';
+    if (!myUid || !watchedProtectedUidsKey) return;
+    const targetUids = watchedProtectedUidsKey.split(',').filter(Boolean);
+    let active = true;
+    const unsubs = targetUids.map((targetUid) =>
+      firestore()
+        .collection('matrimony_profiles')
+        .doc(targetUid)
+        .onSnapshot(
+          (snap) => {
+            if (!snap.exists || !active) return;
+            const d = snap.data() || {};
+            const vis = String(d.photoVisibility || 'approved_members');
+            const allowedUids: string[] = Array.isArray(d.protectedPhotoAllowedUids)
+              ? d.protectedPhotoAllowedUids
+              : [];
+            const hasStoredPhoto = Boolean(
+              d.profilePhoto || (Array.isArray(d.gallery) && d.gallery.length > 0)
+            );
+            const canSee =
+              vis === 'approved_members' ||
+              (vis === 'protect_photo' && allowedUids.includes(myUid)) ||
+              (vis !== 'protect_photo' && allowedUids.includes(myUid));
+
+            if (!canSee && vis === 'protect_photo') {
+              setMatches((prev) =>
+                prev.map((m) =>
+                  m.uid === targetUid
+                    ? {
+                        ...m,
+                        signedProfilePhoto: null,
+                        signedGallery: [],
+                        photoCount: 0,
+                        isPhotoProtected: hasStoredPhoto,
+                        photoRequestStatus:
+                          m.photoRequestStatus === 'approved' ? 'declined' : m.photoRequestStatus,
+                        photoVisibility: 'protect_photo',
+                      }
+                    : m
+                )
+              );
+              matrimonyApi.patchCandidatePhotosInCache(targetUid, {
+                signedProfilePhoto: null,
+                signedGallery: [],
+                photoCount: 0,
+                isPhotoProtected: hasStoredPhoto,
+                photoVisibility: 'protect_photo',
+              });
+            } else if (canSee && d.profilePhoto) {
+              const rawPaths = [
+                typeof d.profilePhoto === 'string' ? d.profilePhoto : null,
+                ...(Array.isArray(d.gallery) ? d.gallery : []),
+              ].filter((x): x is string => Boolean(x));
+              if (rawPaths.length === 0) return;
+              (async () => {
+                const clientUrls = await Promise.all(
+                  rawPaths.map((p) => matrimonyApi.resolvePhotoUrl(p))
+                ).catch(() => [] as (string | null)[]);
+                if (!active) return;
+
+                let clean = clientUrls.filter((u): u is string => Boolean(u));
+                if (clean.length === 0) {
+                  const serverRes = await matrimonyApi
+                    .getCandidatePhotos(targetUid)
+                    .catch(() => null);
+                  if (!active) return;
+                  if (serverRes?.canSeePhotos && serverRes.signedProfilePhoto) {
+                    clean = [
+                      serverRes.signedProfilePhoto,
+                      ...(Array.isArray(serverRes.signedGallery) ? serverRes.signedGallery : []),
+                    ];
+                  }
+                }
+                if (clean.length === 0) return;
+                const nextReqStatus = vis === 'protect_photo' ? 'approved' : undefined;
+                setMatches((prev) =>
+                  prev.map((m) =>
+                    m.uid === targetUid
+                      ? {
+                          ...m,
+                          signedProfilePhoto: clean[0],
+                          signedGallery: clean.slice(1),
+                          photoCount: clean.length,
+                          isPhotoProtected: false,
+                          ...(nextReqStatus ? { photoRequestStatus: nextReqStatus } : {}),
+                          photoVisibility: vis as any,
+                        }
+                      : m
+                  )
+                );
+                matrimonyApi.patchCandidatePhotosInCache(targetUid, {
+                  signedProfilePhoto: clean[0],
+                  signedGallery: clean.slice(1),
+                  photoCount: clean.length,
+                  isPhotoProtected: false,
+                  photoVisibility: vis,
+                  ...(nextReqStatus ? { photoRequestStatus: nextReqStatus } : {}),
+                });
+              })().catch(() => undefined);
+            }
+          },
+          () => {}
+        )
+    );
+    return () => {
+      active = false;
+      unsubs.forEach((u) => u());
+    };
+  }, [watchedProtectedUidsKey]);
 
   const showInterestToast = useCallback(
     (
@@ -778,6 +974,13 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
   };
 
   const handleCallCard = (candidate: MatrimonyMatchCandidate) => {
+    if (candidate.mobilePrivacy === 'messages_only') {
+      Alert.alert(
+        'Messages Only',
+        `${candidate.displayName} has restricted phone calls to Messages only.`
+      );
+      return;
+    }
     if (!entitlements || entitlements.tier === 'free' || !entitlements.callAccess) {
       Alert.alert(
         'Upgrade to Call',
@@ -863,6 +1066,15 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
           profileCode: candidate.profileCode,
           signedProfilePhoto: candidate.signedProfilePhoto || null,
           age: candidate.age ?? null,
+          heightCm: candidate.heightCm ?? null,
+          occupation:
+            candidate.career?.profession ||
+            candidate.career?.occupationCategory ||
+            candidate.career?.employmentType ||
+            candidate.education?.qualification ||
+            null,
+          gender: candidate.gender || null,
+          isVerified: true,
           city:
             candidate.location?.village ||
             candidate.location?.city ||
@@ -1019,6 +1231,13 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
                   style={styles.cardPhoto}
                   resizeMode="cover"
                 />
+              ) : item.isPhotoProtected ? (
+                <ProtectedPhotoPlaceholder
+                  gender={item.gender}
+                  compact
+                  requestStatus={item.photoRequestStatus}
+                  fontFamily={fontFamily}
+                />
               ) : (
                 <View
                   style={[
@@ -1142,6 +1361,13 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
               source={{ uri: item.signedProfilePhoto }}
               style={styles.cardPhoto}
               resizeMode="cover"
+            />
+          ) : item.isPhotoProtected ? (
+            <ProtectedPhotoPlaceholder
+              gender={item.gender}
+              requestStatus={item.photoRequestStatus}
+              onRequestPhoto={() => handleRequestPhotoAccess(item.uid)}
+              fontFamily={fontFamily}
             />
           ) : (
             <View
@@ -1814,12 +2040,18 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
       )}
 
       {undoHidden ? (
-        <View style={styles.undoToast}>
-          <Text style={[styles.undoToastText, { fontFamily }]} numberOfLines={1}>
+        <View style={styles.interestUndoToast}>
+          <Text style={[styles.interestToastText, { fontFamily }]} numberOfLines={1}>
             {undoHidden.name} hidden from matches
           </Text>
-          <TouchableOpacity onPress={() => handleRestoreHidden(undoHidden.uid)} activeOpacity={0.8}>
-            <Text style={[styles.undoToastAction, { fontFamily }]}>Undo</Text>
+          <View style={styles.interestToastDivider} />
+          <TouchableOpacity
+            style={styles.interestToastUndoBtn}
+            onPress={() => handleRestoreHidden(undoHidden.uid)}
+            activeOpacity={0.8}
+          >
+            <Undo2 size={15} color="#FFFFFF" strokeWidth={2.2} />
+            <Text style={[styles.interestToastUndoText, { fontFamily }]}>Undo</Text>
           </TouchableOpacity>
         </View>
       ) : null}
@@ -2967,36 +3199,6 @@ const styles = StyleSheet.create({
   applyCoralText: {
     color: '#FFFFFF',
     fontSize: 15,
-    fontWeight: '800',
-  },
-  undoToast: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    bottom: 14,
-    backgroundColor: '#0F172A',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  undoToastText: {
-    color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '600',
-    flex: 1,
-    marginRight: 12,
-  },
-  undoToastAction: {
-    color: '#FCA5A5',
-    fontSize: 14,
     fontWeight: '800',
   },
   sentStatusHint: {

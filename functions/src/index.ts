@@ -1887,6 +1887,8 @@ export {
   saveMatrimonyDraft,
   submitMatrimonyProfile,
   resetMatrimonyProfile,
+  deactivateMyMatrimonyAccount,
+  deleteMyMatrimonyAccount,
   getMatrimonyStatus,
   uploadMatrimonyPhoto,
 } from './matrimony/registration.js';
@@ -1917,12 +1919,24 @@ export {
   recordMatrimonyProfileView,
   dismissMatrimonyMatch,
   restoreMatrimonyMatches,
+  getMatrimonyHiddenProfiles,
   sendMatrimonyInterest,
   unlockMatrimonyContact,
   getMatrimonyInterestsHub,
   respondMatrimonyInterest,
   reportMatrimonyProfile,
+  requestMatrimonyPhotoAccess,
+  getMatrimonyPhotoRequests,
+  respondMatrimonyPhotoRequest,
+  getMatrimonyNotificationsFeed,
+  manageMatrimonyNotification,
+  getMatrimonyCandidatePhotos,
 } from './matrimony/matches.js';
+
+export {
+  sendDailyMatrimonyMatchNotifications,
+  sendWeeklyMatrimonyDigestNotifications,
+} from './matrimony/digests.js';
 
 export {
   ensureMatrimonyChatRoom,

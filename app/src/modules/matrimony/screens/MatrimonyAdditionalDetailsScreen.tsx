@@ -14,6 +14,7 @@ import { ChevronLeft } from 'lucide-react-native';
 import { useTheme, FONT_STYLE_OPTIONS } from '../../../context/ThemeContext';
 import MatrimonyProgressBar from '../components/MatrimonyProgressBar';
 import { MatrimonyPendingRegistrationDraft, StartRegistrationResponse } from '../types/matrimony';
+import { getProfileSubjectFromContext } from '../utils/profileSubject';
 
 const ORANGE = '#EA580C';
 const ORANGE_BORDER = '#FDBA74';
@@ -30,6 +31,7 @@ export default function MatrimonyAdditionalDetailsScreen({ navigation, route }: 
   const fontFamily = FONT_STYLE_OPTIONS.find((f) => f.id === fontStyle)?.family;
 
   const initialData: StartRegistrationResponse | undefined = route?.params?.initialData;
+  const subjectCopy = getProfileSubjectFromContext(route?.params?.draftData, initialData);
   const fam = (initialData?.profile?.familySummary as any) || {};
 
   const [familyStatus, setFamilyStatus] = useState<string>(fam.familyStatus || '');
@@ -37,7 +39,7 @@ export default function MatrimonyAdditionalDetailsScreen({ navigation, route }: 
 
   const handleNext = () => {
     if (!familyStatus) {
-      Alert.alert('Required', 'Please select your family status.');
+      Alert.alert('Required', subjectCopy.familyStatusRequiredMsg);
       return;
     }
 
@@ -93,7 +95,7 @@ export default function MatrimonyAdditionalDetailsScreen({ navigation, route }: 
         {/* Family Status */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text, fontFamily, fontSize: scaleFont(15) }]}>
-            Select family status
+            {subjectCopy.familyStatusQuestion}
           </Text>
           <View style={styles.pillRow}>
             {FAMILY_STATUS_OPTIONS.map((opt) => {
@@ -133,11 +135,11 @@ export default function MatrimonyAdditionalDetailsScreen({ navigation, route }: 
           </View>
         </View>
 
-        {/* A few words about myself */}
+        {/* A few words about profile subject */}
         {Boolean(familyStatus) && (
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.text, fontFamily, fontSize: scaleFont(15) }]}>
-              A few words about myself
+              {subjectCopy.aboutTitle}
             </Text>
             <TextInput
               style={[
@@ -152,7 +154,7 @@ export default function MatrimonyAdditionalDetailsScreen({ navigation, route }: 
               ]}
               multiline
               maxLength={1000}
-              placeholder="Write a few words about your faith, family values, hobbies, and expectations..."
+              placeholder={subjectCopy.aboutPlaceholder}
               placeholderTextColor={colors.textSecondary}
               value={aboutMe}
               onChangeText={setAboutMe}

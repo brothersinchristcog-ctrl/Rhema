@@ -59,6 +59,8 @@ export function validateDraftSection(section) {
         section === 'details' ||
         section === 'preferences' ||
         section === 'photos' ||
+        section === 'privacy' ||
+        section === 'notifications' ||
         section === 'complete') {
         return section;
     }

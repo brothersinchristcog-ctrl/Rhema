@@ -16,9 +16,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, Path, Pattern, Rect } from 'react-native-svg';
 import {
   ArrowLeft,
+  Bell,
   Camera,
   FilePenLine,
   IdCard,
+  Settings,
+  ShieldCheck,
   UserPen,
 } from 'lucide-react-native';
 
@@ -42,6 +45,9 @@ interface MatrimonyMenuDrawerProps {
   onEditProfile: () => void;
   onEditPreferences: () => void;
   onVerifyProfile: () => void;
+  onPrivacySettings: () => void;
+  onAccountSettings: () => void;
+  onNotifications: () => void;
   onUploadPhotos: () => void;
 }
 
@@ -61,6 +67,9 @@ export default function MatrimonyMenuDrawer({
   onEditProfile,
   onEditPreferences,
   onVerifyProfile,
+  onPrivacySettings,
+  onAccountSettings,
+  onNotifications,
   onUploadPhotos,
 }: MatrimonyMenuDrawerProps) {
   const insets = useSafeAreaInsets();
@@ -140,6 +149,24 @@ export default function MatrimonyMenuDrawer({
       label: 'Verify your profile',
       Icon: IdCard,
       onPress: () => handleAction(onVerifyProfile),
+    },
+    {
+      key: 'privacy-settings',
+      label: 'Privacy settings',
+      Icon: ShieldCheck,
+      onPress: () => handleAction(onPrivacySettings),
+    },
+    {
+      key: 'account-settings',
+      label: 'Account settings',
+      Icon: Settings,
+      onPress: () => handleAction(onAccountSettings),
+    },
+    {
+      key: 'notifications',
+      label: 'Notifications',
+      Icon: Bell,
+      onPress: () => handleAction(onNotifications),
     },
   ];
 

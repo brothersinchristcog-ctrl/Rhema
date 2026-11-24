@@ -44,12 +44,13 @@ const GREEN = '#16A34A';
 const AMBER = '#D97706';
 const RED = '#DC2626';
 
-type FilterTab = 'pending' | 'approved' | 'reported' | 'inactive' | 'all' | 'rejected';
+type FilterTab = 'pending' | 'approved' | 'reported' | 'inactive' | 'draft' | 'all' | 'rejected';
 
 const FILTER_TABS: { key: FilterTab; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'pending', label: 'Pending' },
   { key: 'approved', label: 'Verified' },
+  { key: 'draft', label: 'Draft' },
   { key: 'reported', label: 'Reported' },
   { key: 'inactive', label: 'Inactive' },
   { key: 'rejected', label: 'Rejected' },
@@ -91,33 +92,35 @@ export default function AdminMatrimonyScreen({ navigation }: any) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [plansModalVisible, setPlansModalVisible] = useState(false);
 
-  const fetchProfiles = useCallback(async (targetFilter: FilterTab, silent = false) => {
-    if (!silent) setLoading(true);
-    setErrorMsg(null);
-    try {
-      const res = await matrimonyApi.getAdminProfiles(targetFilter);
-      if (res.counts) {
-        setCounts(res.counts);
+  const fetchProfiles = useCallback(
+    async (targetFilter: FilterTab, silent = false, search?: string) => {
+      if (!silent) setLoading(true);
+      setErrorMsg(null);
+      try {
+        const res = await matrimonyApi.getAdminProfiles(targetFilter, search);
+        if (res.counts) {
+          setCounts(res.counts);
+        }
+        setProfiles(res.profiles || []);
+      } catch (err: any) {
+        console.warn('AdminMatrimony fetch error:', err);
+        setErrorMsg(err?.message || 'Unable to load Rhema Matrimony profiles.');
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
       }
-      setProfiles(res.profiles || []);
-    } catch (err: any) {
-      console.warn('AdminMatrimony fetch error:', err);
-      setErrorMsg(err?.message || 'Unable to load Rhema Matrimony profiles.');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+    },
+    []
+  );
 
   useEffect(() => {
-    fetchProfiles(filter);
-  }, [filter, fetchProfiles]);
-
-  useEffect(() => {
-    if (isFocused) {
-      fetchProfiles(filter, true);
-    }
-  }, [isFocused, filter, fetchProfiles]);
+    if (!isFocused) return;
+    const trimmed = searchQuery.trim();
+    const timer = setTimeout(() => {
+      fetchProfiles(filter, Boolean(trimmed), trimmed || undefined);
+    }, trimmed ? 280 : 0);
+    return () => clearTimeout(timer);
+  }, [isFocused, filter, searchQuery, fetchProfiles]);
 
   const handleBackPress = () => {
     if (goBack) {
@@ -132,10 +135,13 @@ export default function AdminMatrimonyScreen({ navigation }: any) {
   const filteredProfiles = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return profiles;
-    return profiles.filter((p) => {
+    return profiles.filter((p: any) => {
       const haystack = [
+        p.uid,
+        p.profileCode,
         p.displayName,
         p.location?.city,
+        p.location?.village,
         p.location?.state,
         p.faithSummary?.denomination,
         p.career?.profession,
@@ -161,6 +167,13 @@ export default function AdminMatrimonyScreen({ navigation }: any) {
         label: 'Inactive',
         color: '#B45309',
         bg: isDark ? 'rgba(217, 119, 6, 0.22)' : '#FEF3C7',
+      };
+    }
+    if (status === 'deleted') {
+      return {
+        label: 'Deleted',
+        color: RED,
+        bg: isDark ? 'rgba(220, 38, 38, 0.2)' : '#FEE2E2',
       };
     }
     if (status === 'rejected') {
@@ -323,6 +336,13 @@ export default function AdminMatrimonyScreen({ navigation }: any) {
               >
                 Inactive: {item.inactiveReason}
               </Text>
+            ) : item.profileStatus === 'deleted' && item.deletionReason ? (
+              <Text
+                style={[styles.reportPreviewText, { fontFamily: appFontFamily }]}
+                numberOfLines={1}
+              >
+                Deleted Reason: {item.deletionReason}
+              </Text>
             ) : null}
           </View>
 
@@ -449,9 +469,11 @@ export default function AdminMatrimonyScreen({ navigation }: any) {
                 ? counts.reported
                 : tab.key === 'inactive'
                 ? counts.inactive
+                : tab.key === 'draft'
+                ? counts.draft
                 : tab.key === 'rejected'
                 ? counts.rejected
-                : counts.total;
+                : counts.total + (counts.draft || 0);
             return (
               <TouchableOpacity
                 key={tab.key}

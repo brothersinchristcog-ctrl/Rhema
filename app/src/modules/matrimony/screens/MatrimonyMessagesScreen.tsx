@@ -4,6 +4,7 @@ import {
   Alert,
   FlatList,
   Image,
+  Modal,
   Platform,
   RefreshControl,
   StatusBar,
@@ -22,6 +23,7 @@ import {
   Home,
   MessageCircle,
   Search,
+  SlidersHorizontal,
   Sparkles,
   User,
   Users,
@@ -41,6 +43,27 @@ const ORANGE = '#EA580C';
 const WHATSAPP_GREEN = '#00A884';
 const CORAL_RED = '#E04B5A';
 const TICK_BLUE = '#38BDF8';
+const MESSAGES_EMPTY_IMG = require('../../../../assets/matrimony_messages_empty.png');
+
+type MessageFilterKey = 'unread' | 'pending' | 'replied';
+
+const MESSAGE_FILTER_OPTIONS: { key: MessageFilterKey; title: string; subtitle: string }[] = [
+  {
+    key: 'unread',
+    title: 'Unread',
+    subtitle: "Messages you haven't read yet",
+  },
+  {
+    key: 'pending',
+    title: 'Pending',
+    subtitle: "Matches whose messages you haven't responded to",
+  },
+  {
+    key: 'replied',
+    title: 'Replied',
+    subtitle: 'Matches whose messages you replied to / who replied to your message',
+  },
+];
 
 function formatInboxTimestamp(ms: number): string {
   if (!ms) return '';
@@ -74,6 +97,9 @@ interface ConversationRow {
   peerPhoto: string | null;
   peerCode: string;
   peerAge: number | null;
+  peerHeightCm?: number | null;
+  peerOccupation?: string | null;
+  peerGender?: string | null;
   peerCity: string | null;
   contactPhone: string | null;
   lastMessageText: string;
@@ -92,7 +118,9 @@ export default function MatrimonyMessagesScreen({ navigation }: any) {
 
   const myUid = user?.uid || '';
 
-  const [filterMode, setFilterMode] = useState<'all' | 'unread'>('all');
+  const [activeFilters, setActiveFilters] = useState<MessageFilterKey[]>([]);
+  const [filterModalOpen, setFilterModalOpen] = useState(false);
+  const [draftFilters, setDraftFilters] = useState<MessageFilterKey[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
 
   const initialChatContacts = matrimonyApi.getCachedChatContacts();
@@ -189,9 +217,12 @@ export default function MatrimonyMessagesScreen({ navigation }: any) {
         roomId: c.roomId,
         peerUid: c.uid,
         peerName: c.displayName,
-        peerPhoto: c.signedProfilePhoto || ib?.peerPhoto || null,
+        peerPhoto: c.signedProfilePhoto ?? null,
         peerCode: c.profileCode || ib?.peerCode || '',
         peerAge: c.age ?? ib?.peerAge ?? null,
+        peerHeightCm: c.heightCm ?? ib?.peerHeightCm ?? null,
+        peerOccupation: c.occupation || ib?.peerOccupation || null,
+        peerGender: c.gender || ib?.peerGender || null,
         peerCity: c.city || ib?.peerCity || null,
         contactPhone: c.contactPhone || ib?.contactPhone || null,
         lastMessageText: ib?.lastMessageText || '',
@@ -212,6 +243,9 @@ export default function MatrimonyMessagesScreen({ navigation }: any) {
           peerPhoto: ib.peerPhoto,
           peerCode: ib.peerCode,
           peerAge: ib.peerAge,
+          peerHeightCm: ib.peerHeightCm ?? null,
+          peerOccupation: ib.peerOccupation || null,
+          peerGender: ib.peerGender || null,
           peerCity: ib.peerCity,
           contactPhone: ib.contactPhone,
           lastMessageText: ib.lastMessageText,
@@ -262,7 +296,20 @@ export default function MatrimonyMessagesScreen({ navigation }: any) {
   const displayedRows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return mergedRows.filter((r) => {
-      if (filterMode === 'unread' && r.unreadCount === 0) return false;
+      if (activeFilters.length > 0) {
+        const hasActivity = Boolean(r.lastMessageAt || r.lastMessageText);
+        const matchesAny = activeFilters.some((key) => {
+          if (key === 'unread') return r.unreadCount > 0;
+          if (key === 'pending') {
+            return hasActivity && Boolean(r.lastMessageSenderUid) && r.lastMessageSenderUid !== myUid;
+          }
+          if (key === 'replied') {
+            return hasActivity && r.lastMessageSenderUid === myUid;
+          }
+          return false;
+        });
+        if (!matchesAny) return false;
+      }
       if (q) {
         const hay = [r.peerName, r.peerCity, r.peerCode, r.lastMessageText]
           .filter(Boolean)
@@ -272,7 +319,18 @@ export default function MatrimonyMessagesScreen({ navigation }: any) {
       }
       return true;
     });
-  }, [mergedRows, filterMode, searchQuery]);
+  }, [mergedRows, activeFilters, myUid, searchQuery]);
+
+  const toggleDraftFilter = (key: MessageFilterKey) => {
+    setDraftFilters((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  };
+
+  const hasFilterChanges = useMemo(() => {
+    if (draftFilters.length !== activeFilters.length) return true;
+    return draftFilters.some((k) => !activeFilters.includes(k));
+  }, [draftFilters, activeFilters]);
 
   const openChat = (row: ConversationRow) => {
     navigation.navigate('MatrimonyChat', {
@@ -283,6 +341,10 @@ export default function MatrimonyMessagesScreen({ navigation }: any) {
         profileCode: row.peerCode,
         signedProfilePhoto: row.peerPhoto,
         age: row.peerAge,
+        heightCm: row.peerHeightCm ?? null,
+        occupation: row.peerOccupation || null,
+        gender: row.peerGender || null,
+        isVerified: true,
         city: row.peerCity || '',
         contactPhone: row.contactPhone,
       },
@@ -449,49 +511,39 @@ export default function MatrimonyMessagesScreen({ navigation }: any) {
         <View style={styles.filterPills}>
           <TouchableOpacity
             style={[
-              styles.chipBtn,
+              styles.filterTriggerBtn,
               {
                 backgroundColor:
-                  filterMode === 'all' ? 'rgba(0,168,132,0.12)' : 'transparent',
-                borderColor: filterMode === 'all' ? WHATSAPP_GREEN : colors.border,
+                  activeFilters.length > 0
+                    ? isDark
+                      ? 'rgba(224,75,90,0.16)'
+                      : '#FFF1F2'
+                    : isDark
+                    ? colors.surface
+                    : '#FFFFFF',
+                borderColor: activeFilters.length > 0 ? CORAL_RED : colors.border,
               },
             ]}
-            onPress={() => setFilterMode('all')}
+            activeOpacity={0.8}
+            onPress={() => {
+              setDraftFilters(activeFilters);
+              setFilterModalOpen(true);
+            }}
           >
+            <SlidersHorizontal
+              size={15}
+              color={activeFilters.length > 0 ? CORAL_RED : colors.text}
+            />
             <Text
               style={[
                 styles.chipText,
                 {
-                  color: filterMode === 'all' ? WHATSAPP_GREEN : colors.textSecondary,
+                  color: activeFilters.length > 0 ? CORAL_RED : colors.text,
                   fontFamily,
                 },
               ]}
             >
-              All
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.chipBtn,
-              {
-                backgroundColor:
-                  filterMode === 'unread' ? 'rgba(0,168,132,0.12)' : 'transparent',
-                borderColor: filterMode === 'unread' ? WHATSAPP_GREEN : colors.border,
-              },
-            ]}
-            onPress={() => setFilterMode('unread')}
-          >
-            <Text
-              style={[
-                styles.chipText,
-                {
-                  color: filterMode === 'unread' ? WHATSAPP_GREEN : colors.textSecondary,
-                  fontFamily,
-                },
-              ]}
-            >
-              Unread{totalUnreadCount > 0 ? ` (${totalUnreadCount})` : ''}
+              {activeFilters.length > 0 ? `Filters (${activeFilters.length})` : 'Filters'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -530,40 +582,43 @@ export default function MatrimonyMessagesScreen({ navigation }: any) {
             }
             ListEmptyComponent={
               <View style={styles.emptyBox}>
-                <View
-                  style={[
-                    styles.emptyIconCircle,
-                    { backgroundColor: isDark ? '#1E293B' : '#E6F7F3' },
-                  ]}
-                >
-                  <MessageCircle size={34} color={WHATSAPP_GREEN} />
-                </View>
+                <Image
+                  source={MESSAGES_EMPTY_IMG}
+                  style={styles.emptyIllustrationImg}
+                  resizeMode="contain"
+                />
                 <Text style={[styles.emptyTitle, { color: colors.text, fontFamily }]}>
-                  {filterMode === 'unread'
-                    ? 'No Unread Messages'
+                  {activeFilters.length > 0
+                    ? 'No Matching Conversations'
                     : 'No Conversations Unlocked Yet'}
                 </Text>
-                <Text style={[styles.emptySub, { color: colors.textSecondary, fontFamily }]}>
-                  {filterMode === 'unread'
-                    ? 'You have read all incoming messages.'
-                    : 'Real-time WhatsApp-style chat opens automatically when an interest is accepted (Mutual Match).'}
-                </Text>
-                <View style={styles.emptyActionsRow}>
-                  <TouchableOpacity
-                    style={styles.primaryCtaBtn}
-                    onPress={() => navigation.navigate('MatrimonyMatches')}
-                  >
-                    <Text style={[styles.primaryCtaText, { fontFamily }]}>Explore Matches</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.secondaryCtaBtn, { borderColor: colors.border }]}
-                    onPress={() => navigation.navigate('MatrimonyInterestsHub')}
-                  >
-                    <Text style={[styles.secondaryCtaText, { color: colors.text, fontFamily }]}>
-                      View Interests
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                {activeFilters.length > 0 ? (
+                  <View style={styles.emptyActionsRow}>
+                    <TouchableOpacity
+                      style={styles.primaryCtaBtn}
+                      onPress={() => setActiveFilters([])}
+                    >
+                      <Text style={[styles.primaryCtaText, { fontFamily }]}>Clear Filters</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={styles.emptyActionsRow}>
+                    <TouchableOpacity
+                      style={styles.primaryCtaBtn}
+                      onPress={() => navigation.navigate('MatrimonyMatches')}
+                    >
+                      <Text style={[styles.primaryCtaText, { fontFamily }]}>Explore Matches</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.secondaryCtaBtn, { borderColor: colors.border }]}
+                      onPress={() => navigation.navigate('MatrimonyInterestsHub')}
+                    >
+                      <Text style={[styles.secondaryCtaText, { color: colors.text, fontFamily }]}>
+                        View Interests
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
             }
           />
@@ -647,6 +702,181 @@ export default function MatrimonyMessagesScreen({ navigation }: any) {
           </TouchableOpacity>
         ))}
       </View>
+
+      {/* Filter Bottom Sheet Modal */}
+      <Modal
+        visible={filterModalOpen}
+        transparent
+        statusBarTranslucent
+        animationType="slide"
+        onRequestClose={() => setFilterModalOpen(false)}
+      >
+        <View style={styles.filterModalBackdrop}>
+          <TouchableOpacity
+            style={{ flex: 1 }}
+            activeOpacity={1}
+            onPress={() => setFilterModalOpen(false)}
+          />
+          <View
+            style={[
+              styles.filterSheet,
+              {
+                backgroundColor: cardSurface,
+                borderTopColor: dividerColor,
+                paddingBottom: Math.max(insets.bottom + 18, 28),
+              },
+            ]}
+          >
+            <View style={styles.filterSheetHeader}>
+              <Text
+                style={[
+                  styles.filterSheetTitle,
+                  { color: colors.text, fontFamily, fontSize: scaleFont(19) },
+                ]}
+              >
+                Filter
+              </Text>
+              <TouchableOpacity
+                onPress={() => setFilterModalOpen(false)}
+                style={styles.filterCloseBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <X size={22} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={[styles.filterSheetDivider, { backgroundColor: dividerColor }]} />
+
+            <View style={styles.filterOptionsList}>
+              {MESSAGE_FILTER_OPTIONS.map((opt) => {
+                const checked = draftFilters.includes(opt.key);
+                return (
+                  <TouchableOpacity
+                    key={opt.key}
+                    style={styles.filterOptionRow}
+                    activeOpacity={0.75}
+                    onPress={() => toggleDraftFilter(opt.key)}
+                  >
+                    <View style={styles.filterOptionTextCol}>
+                      <Text
+                        style={[
+                          styles.filterOptionTitle,
+                          { color: colors.text, fontFamily, fontSize: scaleFont(16) },
+                        ]}
+                      >
+                        {opt.title}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.filterOptionSub,
+                          { color: colors.textSecondary, fontFamily, fontSize: scaleFont(13) },
+                        ]}
+                      >
+                        {opt.subtitle}
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.filterCheckbox,
+                        {
+                          borderColor: checked
+                            ? CORAL_RED
+                            : isDark
+                            ? '#64748B'
+                            : '#9CA3AF',
+                          backgroundColor: checked ? CORAL_RED : 'transparent',
+                        },
+                      ]}
+                    >
+                      {checked ? <Check size={14} color="#FFFFFF" strokeWidth={3} /> : null}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <View style={[styles.filterSheetDivider, { backgroundColor: dividerColor }]} />
+
+            <View style={styles.filterActionsRow}>
+              <TouchableOpacity
+                style={[
+                  styles.filterActionBtn,
+                  draftFilters.length > 0 || activeFilters.length > 0
+                    ? {
+                        backgroundColor: 'transparent',
+                        borderWidth: 1.2,
+                        borderColor: colors.border,
+                      }
+                    : {
+                        backgroundColor: isDark ? '#334155' : '#E5E7EB',
+                      },
+                ]}
+                activeOpacity={0.8}
+                disabled={draftFilters.length === 0 && activeFilters.length === 0}
+                onPress={() => {
+                  setDraftFilters([]);
+                  setActiveFilters([]);
+                  setFilterModalOpen(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.filterActionBtnText,
+                    {
+                      color:
+                        draftFilters.length > 0 || activeFilters.length > 0
+                          ? colors.text
+                          : isDark
+                          ? '#64748B'
+                          : '#9CA3AF',
+                      fontFamily,
+                    },
+                  ]}
+                >
+                  Clear
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.filterActionBtn,
+                  {
+                    backgroundColor:
+                      draftFilters.length > 0 || hasFilterChanges
+                        ? CORAL_RED
+                        : isDark
+                        ? '#334155'
+                        : '#E5E7EB',
+                  },
+                ]}
+                activeOpacity={0.85}
+                disabled={draftFilters.length === 0 && !hasFilterChanges}
+                onPress={() => {
+                  setActiveFilters(draftFilters);
+                  setFilterModalOpen(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.filterActionBtnText,
+                    {
+                      color:
+                        draftFilters.length > 0 || hasFilterChanges
+                          ? '#FFFFFF'
+                          : isDark
+                          ? '#64748B'
+                          : '#9CA3AF',
+                      fontFamily,
+                    },
+                  ]}
+                >
+                  Apply
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -672,9 +902,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     gap: 8,
   },
-  chipBtn: {
+  filterTriggerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     paddingHorizontal: 14,
-    paddingVertical: 6,
+    paddingVertical: 7,
     borderRadius: 18,
     borderWidth: 1,
   },
@@ -808,12 +1041,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
     gap: 12,
   },
-  emptyIconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
+  emptyIllustrationImg: {
+    width: 140,
+    height: 170,
   },
   emptyTitle: {
     fontSize: 17,
@@ -881,5 +1111,83 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 9.5,
     fontWeight: '800',
+  },
+  filterModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'transparent',
+    justifyContent: 'flex-end',
+  },
+  filterSheet: {
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: 18,
+    paddingHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.14,
+    shadowRadius: 12,
+    elevation: 14,
+  },
+  filterSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 16,
+  },
+  filterSheetTitle: {
+    fontWeight: '800',
+  },
+  filterCloseBtn: {
+    padding: 4,
+  },
+  filterSheetDivider: {
+    height: StyleSheet.hairlineWidth,
+  },
+  filterOptionsList: {
+    paddingVertical: 10,
+    gap: 18,
+    marginVertical: 8,
+  },
+  filterOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 16,
+  },
+  filterOptionTextCol: {
+    flex: 1,
+    gap: 3,
+  },
+  filterOptionTitle: {
+    fontWeight: '800',
+  },
+  filterOptionSub: {
+    fontWeight: '400',
+    lineHeight: 18,
+  },
+  filterCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+    borderWidth: 1.6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterActionsRow: {
+    flexDirection: 'row',
+    gap: 14,
+    paddingTop: 18,
+  },
+  filterActionBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterActionBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -22,6 +22,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import {
   ArrowLeft,
+  BadgeCheck,
   Camera,
   Check,
   CheckCheck,
@@ -50,6 +51,33 @@ import {
 
 const WHATSAPP_GREEN = '#00A884';
 const TICK_BLUE = '#38BDF8';
+const CORAL_RED = '#E04B5A';
+const CHAT_EMPTY_MEN_IMG = require('../../../../assets/matrimony_chat_empty_men.png');
+const CHAT_EMPTY_WOMEN_IMG = require('../../../../assets/matrimony_chat_empty_women.png');
+
+function isPeerMaleGender(peerGender?: string | null, viewerGender?: string | null): boolean {
+  const pg = String(peerGender || '').trim().toLowerCase();
+  if (pg === 'male' || pg === 'm' || pg.includes('groom') || pg.includes('man')) return true;
+  if (pg === 'female' || pg === 'f' || pg.includes('bride') || pg.includes('woman')) return false;
+  const vg = String(viewerGender || '').trim().toLowerCase();
+  if (vg === 'female' || vg === 'f') return true;
+  return false;
+}
+
+function formatCompactHeight(cm?: number | null): string | null {
+  if (!cm || cm <= 0) return null;
+  const totalInches = Math.round(cm / 2.54);
+  const feet = Math.floor(totalInches / 12);
+  const inches = totalInches % 12;
+  return `${feet}'${inches}"`;
+}
+
+function resolvePeerPronoun(gender?: string | null): string {
+  const g = String(gender || '').trim().toLowerCase();
+  if (g === 'female' || g === 'f' || g.includes('bride') || g.includes('woman')) return 'her';
+  if (g === 'male' || g === 'm' || g.includes('groom') || g.includes('man')) return 'him';
+  return 'them';
+}
 
 function formatTime12h(ms: number): string {
   if (!ms) return '';
@@ -136,6 +164,9 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
   );
 
   const [roomReady, setRoomReady] = useState(Boolean(initialRoomId && initialPeer));
+  const [isMutualMatch, setIsMutualMatch] = useState<boolean>(
+    route?.params?.isMutualMatch !== false
+  );
   const [canMessage, setCanMessage] = useState<boolean>(() => {
     const cachedMem =
       matrimonyApi.getCachedRegistration()?.profile?.membership ||
@@ -160,6 +191,7 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [showPaywallCard, setShowPaywallCard] = useState(false);
   const [iosKbVisible, setIosKbVisible] = useState(false);
   const [composerHeight, setComposerHeight] = useState(() => Math.max(insets.bottom + 8, 12) + 54);
 
@@ -183,35 +215,58 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
     };
   }, []);
 
-  useEffect(() => {
+  const syncChatRoom = useCallback(async () => {
     if (!myUid || !targetUid) return;
-    let mounted = true;
-    matrimonyApi
-      .ensureChatRoom(targetUid)
-      .then((res) => {
-        if (!mounted) return;
-        setRoomId(res.roomId);
-        setPeer(res.peer);
-        if (res.self) setSelfInfo(res.self);
-        setCanMessage(res.canMessage !== false);
+    try {
+      const res = await matrimonyApi.ensureChatRoom(targetUid);
+      setRoomId(res.roomId);
+      setPeer((prev) => ({
+        ...(prev || {}),
+        ...res.peer,
+        heightCm: res.peer?.heightCm ?? prev?.heightCm ?? null,
+        occupation: res.peer?.occupation || prev?.occupation || null,
+        gender: res.peer?.gender || prev?.gender || null,
+        isVerified: res.peer?.isVerified ?? prev?.isVerified ?? true,
+      }));
+      if (res.self) setSelfInfo(res.self);
+      const nextCanMessage = res.canMessage !== false;
+      setCanMessage(nextCanMessage);
+      setIsMutualMatch(true);
+      if (nextCanMessage) setShowPaywallCard(false);
+      setRoomReady(true);
+      setRoomError(null);
+    } catch (err: any) {
+      if (isMatrimonyInactiveError(err)) {
+        navigation.reset({ index: 0, routes: [{ name: 'MatrimonyStatus' }] });
+        return;
+      }
+      const msg = String(err?.message || '');
+      if (
+        err?.code === 'failed-precondition' ||
+        msg.toLowerCase().includes('mutual interest')
+      ) {
+        setIsMutualMatch(false);
         setRoomReady(true);
         setRoomError(null);
-      })
-      .catch((err: any) => {
-        if (!mounted) return;
-        if (isMatrimonyInactiveError(err)) {
-          navigation.reset({ index: 0, routes: [{ name: 'MatrimonyStatus' }] });
-          return;
-        }
-        setRoomError(err?.message || 'Unable to open chat room.');
-      });
-    return () => {
-      mounted = false;
-    };
-  }, [myUid, targetUid]);
+        return;
+      }
+      setRoomError(msg || 'Unable to open chat room.');
+    }
+  }, [myUid, targetUid, navigation]);
 
   useEffect(() => {
-    if (!myUid || !roomId || !targetUid || !roomReady) return;
+    syncChatRoom();
+  }, [syncChatRoom]);
+
+  useEffect(() => {
+    const unsub = navigation.addListener('focus', () => {
+      syncChatRoom();
+    });
+    return unsub;
+  }, [navigation, syncChatRoom]);
+
+  useEffect(() => {
+    if (!myUid || !roomId || !targetUid || !roomReady || !isMutualMatch) return;
     matrimonyChatService.startPresenceTracking(myUid, roomId);
     matrimonyChatService.setActiveChatRoom(myUid, roomId);
 
@@ -255,7 +310,19 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
     }
   }, [timeline.length]);
 
+  const revealPaywallCard = useCallback(() => {
+    setInputText('');
+    Keyboard.dismiss();
+    setShowPaywallCard(true);
+  }, []);
+
   const handleTextChange = (txt: string) => {
+    if (!canMessage) {
+      if (txt.length > 0) {
+        revealPaywallCard();
+      }
+      return;
+    }
     setInputText(txt);
     if (!roomId || !myUid) return;
     const active = txt.trim().length > 0;
@@ -270,7 +337,7 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
 
   const handleSendText = async (overrideText?: string) => {
     if (!canMessage) {
-      navigation.navigate('MatrimonyUpgrade');
+      revealPaywallCard();
       return;
     }
     const textToSend = (overrideText ?? inputText).trim();
@@ -302,7 +369,7 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
 
   const handlePickAndSendImage = async () => {
     if (!canMessage) {
-      navigation.navigate('MatrimonyUpgrade');
+      revealPaywallCard();
       return;
     }
     if (!roomId || !myUid || !peer || uploadingImage) return;
@@ -388,14 +455,39 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
       });
       return;
     }
-    Alert.alert('Phone Unavailable', 'Phone number is not listed on this profile.');
+    if (!canMessage) {
+      Alert.alert(
+        'Paid Membership Required',
+        'Become a paid member to unlock verified phone calling and direct messaging.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Pay Now', onPress: () => navigation.navigate('MatrimonyUpgrade') },
+        ]
+      );
+      return;
+    }
+    Alert.alert('Phone Unavailable', 'Phone number is not listed or unlocked on this profile.');
   };
 
-  const canvasBg = isDark ? '#0B141A' : '#EFEAE2';
+  const isLockedEmptyState = !canMessage && timeline.length === 0;
+  const canvasBg = isDark ? '#0B141A' : isLockedEmptyState ? '#FFFFFF' : '#EFEAE2';
   const myBubbleBg = isDark ? '#005C4B' : '#DCF8C6';
   const peerBubbleBg = isDark ? '#202C33' : '#FFFFFF';
   const headerSurface = isDark ? '#1F2C34' : '#FFFFFF';
   const dividerColor = isDark ? 'rgba(255,255,255,0.08)' : '#E5E7EB';
+
+  const peerSummaryLine = useMemo(() => {
+    if (!peer) return '';
+    return [
+      peer.age ? `${peer.age} Yrs` : null,
+      formatCompactHeight(peer.heightCm),
+      peer.occupation || null,
+      peer.city || null,
+    ]
+      .filter(Boolean)
+      .join('  •  ');
+  }, [peer]);
+  const peerPronoun = resolvePeerPronoun(peer?.gender);
 
   const statusSubtitle = peerTyping ? 'typing...' : formatLastSeen(presence);
   const closedBottomPadding = Math.max(insets.bottom + 8, 12);
@@ -617,6 +709,12 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
             >
               {statusSubtitle}
             </Text>
+            {peer?.isVerified !== false && peer ? (
+              <View style={styles.headerVerifiedRow}>
+                <BadgeCheck size={13} color="#2563EB" />
+                <Text style={[styles.headerVerifiedText, { fontFamily }]}>ID Verified</Text>
+              </View>
+            ) : null}
           </View>
         </TouchableOpacity>
 
@@ -626,14 +724,28 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
             style={styles.headerIconBtn}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Phone size={19} color={colors.text} />
+            <Phone
+              size={19}
+              color={
+                peer?.contactPhone
+                  ? colors.text
+                  : !canMessage
+                  ? isDark
+                    ? '#475569'
+                    : '#CBD5E1'
+                  : colors.text
+              }
+            />
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => setHeaderMenuOpen(true)}
             style={styles.headerIconBtn}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <MoreVertical size={20} color={colors.text} />
+            <MoreVertical
+              size={20}
+              color={!canMessage ? (isDark ? '#94A3B8' : '#9CA3AF') : colors.text}
+            />
           </TouchableOpacity>
         </View>
       </View>
@@ -667,54 +779,127 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             ListHeaderComponent={
-              <View style={styles.privacyBannerWrap}>
-                <View
-                  style={[
-                    styles.privacyBanner,
-                    { backgroundColor: isDark ? '#182229' : '#FFF3CD' },
-                  ]}
-                >
-                  <Lock size={12} color={isDark ? '#FBBF24' : '#856404'} />
-                  <Text
+              canMessage ? (
+                <View style={styles.privacyBannerWrap}>
+                  <View
                     style={[
-                      styles.privacyBannerText,
-                      { color: isDark ? '#FDE68A' : '#856404', fontFamily },
+                      styles.privacyBanner,
+                      { backgroundColor: isDark ? '#182229' : '#FFF3CD' },
                     ]}
                   >
-                    Private real-time chat unlocked through your Rhema Matrimony mutual match.
-                  </Text>
+                    <Lock size={12} color={isDark ? '#FBBF24' : '#856404'} />
+                    <Text
+                      style={[
+                        styles.privacyBannerText,
+                        { color: isDark ? '#FDE68A' : '#856404', fontFamily },
+                      ]}
+                    >
+                      Private real-time chat unlocked through your Rhema Matrimony mutual match.
+                    </Text>
+                  </View>
                 </View>
-              </View>
+              ) : timeline.length > 0 ? (
+                <View style={styles.privacyBannerWrap}>
+                  <View
+                    style={[
+                      styles.privacyBanner,
+                      { backgroundColor: isDark ? '#182229' : '#FFF3CD' },
+                    ]}
+                  >
+                    <Lock size={12} color={isDark ? '#FBBF24' : '#856404'} />
+                    <Text
+                      style={[
+                        styles.privacyBannerText,
+                        { color: isDark ? '#FDE68A' : '#856404', fontFamily },
+                      ]}
+                    >
+                      Read-only chat history · Pay now to continue this conversation.
+                    </Text>
+                  </View>
+                </View>
+              ) : null
             }
             ListEmptyComponent={
-              <View style={styles.emptyChatBox}>
-                <Text style={[styles.emptyChatTitle, { color: colors.text, fontFamily }]}>
-                  Start a respectful conversation 🙏
-                </Text>
-                <Text style={[styles.emptyChatSub, { color: colors.textSecondary, fontFamily }]}>
-                  Tap a greeting below or type your own message.
-                </Text>
-                <View style={styles.starterChipsWrap}>
-                  {[
-                    'Praise the Lord! 🙏',
-                    'Hi! Happy to connect with you 😊',
-                    'Would love to know more about your family & faith.',
-                  ].map((phrase) => (
-                    <TouchableOpacity
-                      key={phrase}
-                      style={[
-                        styles.starterChip,
-                        { backgroundColor: isDark ? '#202C33' : '#FFFFFF' },
-                      ]}
-                      onPress={() => handleSendText(phrase)}
-                    >
-                      <Text style={[styles.starterChipText, { color: colors.text, fontFamily }]}>
-                        {phrase}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+              !canMessage || !isMutualMatch ? (
+                <View style={styles.lockedEmptyBox}>
+                  <View
+                    style={
+                      isDark
+                        ? {
+                            backgroundColor: '#FFFFFF',
+                            borderRadius: 20,
+                            padding: 10,
+                            marginBottom: 6,
+                          }
+                        : undefined
+                    }
+                  >
+                    <Image
+                      source={
+                        isPeerMaleGender(
+                          peer?.gender,
+                          matrimonyApi.getCachedRegistration()?.profile?.gender ||
+                            matrimonyApi.getCachedStatus()?.profile?.gender ||
+                            matrimonyApi.getCachedMatches()?.viewerGender
+                        )
+                          ? CHAT_EMPTY_MEN_IMG
+                          : CHAT_EMPTY_WOMEN_IMG
+                      }
+                      style={styles.lockedEmptyIllustrationImg}
+                      resizeMode="contain"
+                    />
+                  </View>
+                  <Text
+                    style={[
+                      styles.lockedEmptySub,
+                      { color: colors.textSecondary, fontFamily, fontSize: scaleFont(14.5) },
+                    ]}
+                  >
+                    {!canMessage
+                      ? 'There is no chat between you two'
+                      : `Mutual interest pending with ${peer?.displayName || 'this member'}`}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.lockedEmptyTitle,
+                      { color: colors.text, fontFamily, fontSize: scaleFont(16.5) },
+                    ]}
+                  >
+                    {!canMessage
+                      ? `Initiate conversation to know more\nabout ${peerPronoun}`
+                      : 'Personalised messaging opens once\nyour interest is accepted'}
+                  </Text>
                 </View>
-              </View>
+              ) : (
+                <View style={styles.emptyChatBox}>
+                  <Text style={[styles.emptyChatTitle, { color: colors.text, fontFamily }]}>
+                    Start a respectful conversation 🙏
+                  </Text>
+                  <Text style={[styles.emptyChatSub, { color: colors.textSecondary, fontFamily }]}>
+                    Tap a greeting below or type your own message.
+                  </Text>
+                  <View style={styles.starterChipsWrap}>
+                    {[
+                      'Praise the Lord! 🙏',
+                      'Hi! Happy to connect with you 😊',
+                      'Would love to know more about your family & faith.',
+                    ].map((phrase) => (
+                      <TouchableOpacity
+                        key={phrase}
+                        style={[
+                          styles.starterChip,
+                          { backgroundColor: isDark ? '#202C33' : '#FFFFFF' },
+                        ]}
+                        onPress={() => handleSendText(phrase)}
+                      >
+                        <Text style={[styles.starterChipText, { color: colors.text, fontFamily }]}>
+                          {phrase}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )
             }
           />
         )}
@@ -776,55 +961,95 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
           </View>
         )}
 
-        {/* Sticky WhatsApp Input Composer (or Read-Only Lock Banner for Free / Expired members) */}
-        {!canMessage && roomReady ? (
+        {/* Sticky Input Composer (or Paid Member Paywall Card once a free/expired member tries to message) */}
+        {!canMessage && roomReady && showPaywallCard ? (
           <View
             style={[
-              styles.composerRow,
+              styles.paywallCard,
               {
-                paddingBottom: closedBottomPadding,
-                backgroundColor: isDark ? '#182229' : '#FFF7ED',
-                borderTopWidth: StyleSheet.hairlineWidth,
-                borderTopColor: isDark ? 'rgba(255,255,255,0.1)' : '#FDBA74',
-                paddingHorizontal: 14,
-                paddingTop: 10,
-                gap: 10,
+                backgroundColor: headerSurface,
+                borderTopColor: dividerColor,
+                paddingBottom: Math.max(insets.bottom + 12, 18),
               },
             ]}
           >
-            <View style={{ flex: 1 }}>
-              <Text
-                style={{
-                  color: isDark ? '#FDE68A' : '#9A3412',
-                  fontSize: 12.5,
-                  fontWeight: '700',
-                  fontFamily,
-                }}
+            <Text
+              style={[
+                styles.paywallHeading,
+                { color: colors.text, fontFamily, fontSize: scaleFont(16) },
+              ]}
+            >
+              Become a paid member to communicate further
+            </Text>
+
+            <View style={styles.paywallProfileRow}>
+              <View
+                style={[
+                  styles.paywallAvatarRing,
+                  { borderColor: isDark ? '#22C55E' : '#16A34A' },
+                ]}
               >
-                Read-only chat history
-              </Text>
-              <Text
-                style={{
-                  color: isDark ? '#CBD5E1' : '#7C2D12',
-                  fontSize: 11.5,
-                  fontFamily,
-                }}
-              >
-                Upgrade to Silver, Gold, or Platinum to send personalised messages.
-              </Text>
+                {peer?.signedProfilePhoto ? (
+                  <Image
+                    source={{ uri: peer.signedProfilePhoto }}
+                    style={styles.paywallAvatarImg}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View
+                    style={[
+                      styles.paywallAvatarPlaceholder,
+                      { backgroundColor: isDark ? '#334155' : '#E2E8F0' },
+                    ]}
+                  >
+                    <User size={24} color="#94A3B8" />
+                  </View>
+                )}
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={[
+                    styles.paywallPeerName,
+                    { color: colors.text, fontFamily, fontSize: scaleFont(15.5) },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {peer?.displayName || 'Rhema Match'}
+                </Text>
+                {peerSummaryLine ? (
+                  <Text
+                    style={[
+                      styles.paywallPeerMeta,
+                      { color: colors.textSecondary, fontFamily, fontSize: scaleFont(12.5) },
+                    ]}
+                    numberOfLines={2}
+                  >
+                    {peerSummaryLine}
+                  </Text>
+                ) : peer?.profileCode ? (
+                  <Text
+                    style={[
+                      styles.paywallPeerMeta,
+                      { color: colors.textSecondary, fontFamily, fontSize: scaleFont(12.5) },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {peer.profileCode}
+                  </Text>
+                ) : null}
+              </View>
             </View>
+
+            <View style={[styles.paywallDivider, { backgroundColor: dividerColor }]} />
+
             <TouchableOpacity
               onPress={() => navigation.navigate('MatrimonyUpgrade')}
-              activeOpacity={0.85}
-              style={{
-                backgroundColor: '#D97706',
-                paddingHorizontal: 14,
-                paddingVertical: 9,
-                borderRadius: 20,
-              }}
+              activeOpacity={0.88}
+              style={styles.payNowBtn}
             >
-              <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 12.5, fontFamily }}>
-                Upgrade
+              <Text style={[styles.payNowBtnText, { fontFamily, fontSize: scaleFont(14) }]}>
+                Pay Now
               </Text>
             </TouchableOpacity>
           </View>
@@ -832,6 +1057,12 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
         <View
           style={[
             styles.composerRow,
+            !canMessage && {
+              backgroundColor: headerSurface,
+              borderTopWidth: StyleSheet.hairlineWidth,
+              borderTopColor: dividerColor,
+              paddingTop: 10,
+            },
             {
               paddingBottom:
                 Platform.OS === 'ios'
@@ -844,8 +1075,11 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
         >
           <View
             style={[
-              styles.inputPill,
-              { backgroundColor: isDark ? '#1F2C34' : '#FFFFFF' },
+              canMessage ? styles.inputPill : styles.lockedInputBox,
+              {
+                backgroundColor: isDark ? '#1F2C34' : '#FFFFFF',
+                borderColor: isDark ? 'rgba(255,255,255,0.14)' : '#CBD5E1',
+              },
             ]}
           >
             <TextInput
@@ -853,33 +1087,40 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
               onChangeText={handleTextChange}
               placeholder="Message"
               placeholderTextColor={colors.textSecondary}
-              multiline
+              multiline={canMessage}
               maxLength={1500}
               style={[styles.textInput, { color: colors.text, fontFamily }]}
             />
-            <TouchableOpacity
-              onPress={handlePickAndSendImage}
-              disabled={uploadingImage}
-              style={styles.attachBtn}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              {uploadingImage ? (
-                <ActivityIndicator size="small" color={WHATSAPP_GREEN} />
-              ) : (
-                <Camera size={20} color={colors.textSecondary} />
-              )}
-            </TouchableOpacity>
+            {canMessage ? (
+              <TouchableOpacity
+                onPress={handlePickAndSendImage}
+                disabled={uploadingImage}
+                style={styles.attachBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                {uploadingImage ? (
+                  <ActivityIndicator size="small" color={WHATSAPP_GREEN} />
+                ) : (
+                  <Camera size={20} color={colors.textSecondary} />
+                )}
+              </TouchableOpacity>
+            ) : null}
           </View>
 
           <TouchableOpacity
             style={[
               styles.sendCircleBtn,
               {
-                backgroundColor:
-                  inputText.trim().length > 0 ? WHATSAPP_GREEN : isDark ? '#334155' : '#94A3B8',
+                backgroundColor: !canMessage
+                  ? CORAL_RED
+                  : inputText.trim().length > 0
+                  ? WHATSAPP_GREEN
+                  : isDark
+                  ? '#334155'
+                  : '#94A3B8',
               },
             ]}
-            disabled={!inputText.trim() || sending || !roomReady}
+            disabled={canMessage ? !inputText.trim() || sending || !roomReady : !roomReady}
             activeOpacity={0.85}
             onPress={() => handleSendText()}
           >
@@ -1160,6 +1401,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 1,
   },
+  headerVerifiedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  headerVerifiedText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1310,6 +1562,110 @@ const styles = StyleSheet.create({
   starterChipText: {
     fontSize: 13.5,
     fontWeight: '600',
+  },
+  lockedEmptyBox: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+    paddingHorizontal: 28,
+    gap: 10,
+  },
+  lockedEmptyIllustrationImg: {
+    width: 196,
+    height: 196,
+    marginBottom: 6,
+  },
+  lockedEmptySub: {
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  lockedEmptyTitle: {
+    fontWeight: '800',
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  paywallCard: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  paywallHeading: {
+    fontWeight: '800',
+    lineHeight: 22,
+    marginBottom: 14,
+  },
+  paywallProfileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  paywallAvatarRing: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    borderWidth: 2,
+    padding: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  paywallAvatarImg: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 29,
+  },
+  paywallAvatarPlaceholder: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 29,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  paywallPeerName: {
+    fontWeight: '800',
+    marginBottom: 3,
+  },
+  paywallPeerMeta: {
+    fontWeight: '500',
+    lineHeight: 18,
+  },
+  paywallDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginVertical: 14,
+  },
+  payNowBtn: {
+    backgroundColor: CORAL_RED,
+    borderRadius: 22,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    alignSelf: 'flex-start',
+    minWidth: 148,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: CORAL_RED,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  payNowBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  lockedInputBox: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    minHeight: 46,
   },
   replyPreviewBar: {
     flexDirection: 'row',

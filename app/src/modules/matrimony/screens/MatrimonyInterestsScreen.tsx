@@ -17,6 +17,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react-native';
 import { useTheme, FONT_STYLE_OPTIONS } from '../../../context/ThemeContext';
 import { INTEREST_CATEGORIES, InterestCategoryConfig } from '../constants/interestsOptions';
 import { matrimonyApi } from '../services/matrimonyApi';
+import { getProfileSubjectFromContext } from '../utils/profileSubject';
 
 const ORANGE = '#EA580C';
 const INITIAL_VISIBLE_COUNT = 14;
@@ -24,6 +25,10 @@ const INITIAL_VISIBLE_COUNT = 14;
 export default function MatrimonyInterestsScreen({ navigation, route }: any) {
   const fromEditProfile = Boolean(route?.params?.fromEditProfile);
   const initialInterests: Record<string, string[]> = route?.params?.initialInterests || {};
+  const subjectCopy = getProfileSubjectFromContext(
+    route?.params?.draftData,
+    route?.params?.initialData
+  );
   const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
   const { colors, isDark, fontStyle, scaleFont } = useTheme();
@@ -100,10 +105,7 @@ export default function MatrimonyInterestsScreen({ navigation, route }: any) {
 
   const handleFinish = async (skipInterests: boolean) => {
     if (!fromEditProfile && !skipInterests && totalSelected === 0) {
-      Alert.alert(
-        'Select Interests',
-        'Please select at least one hobby or interest before submitting your profile for verification.'
-      );
+      Alert.alert('Select Interests', subjectCopy.interestsEmptyAlert);
       return;
     }
 
@@ -156,8 +158,21 @@ export default function MatrimonyInterestsScreen({ navigation, route }: any) {
 
       <View style={styles.header}>
         <Text style={[styles.headerTitle, { color: colors.text, fontFamily, fontSize: scaleFont(20) }]}>
-          Select your interests
+          {fromEditProfile ? 'Select your interests' : subjectCopy.interestsTitle}
         </Text>
+        {!fromEditProfile && subjectCopy.forBadgeText ? (
+          <Text
+            style={{
+              color: ORANGE,
+              fontSize: scaleFont(12.5),
+              fontWeight: '700',
+              marginTop: 2,
+              fontFamily,
+            }}
+          >
+            {subjectCopy.forBadgeText}
+          </Text>
+        ) : null}
       </View>
 
       {/* Scrollable Top Tabs */}

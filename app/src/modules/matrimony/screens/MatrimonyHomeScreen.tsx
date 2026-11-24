@@ -1,4 +1,6 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import auth from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
 import {
   View,
   Text,
@@ -15,6 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, G } from 'react-native-svg';
 import CrackerFirework from '../components/CrackerFirework';
 import MatrimonyMenuDrawer from '../components/MatrimonyMenuDrawer';
+import ProtectedPhotoPlaceholder from '../components/ProtectedPhotoPlaceholder';
 import {
   Bell,
   Menu,
@@ -132,6 +135,9 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
   const [viewedByYouData, setViewedByYouData] = useState<GetMatrimonyMatchesResponse | null>(() =>
     matrimonyApi.getCachedMatches(HOME_VIEWED_BY_YOU_PARAMS)
   );
+  const [unreadNotifCount, setUnreadNotifCount] = useState<number>(() =>
+    matrimonyApi.getCachedNotificationsFeed()?.unreadCount || 0
+  );
   const [loadedOnce, setLoadedOnce] = useState(() =>
     Boolean(matrimonyApi.getCachedStatus() || matrimonyApi.getCachedRegistration())
   );
@@ -157,22 +163,23 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
     async (force = false) => {
       try {
         await matrimonyApi.hydrateCacheFromStorage();
-        const [statusRes, regRes, matchesRes, newMatchesRes, viewedYouRes, viewedByYouRes] =
+        const [statusRes, regRes, matchesRes, newMatchesRes, viewedYouRes, viewedByYouRes, notifFeedRes] =
           await Promise.all([
             matrimonyApi.getStatus({ force }).catch(() => null),
             matrimonyApi.startRegistration({ force }).catch(() => null),
             matrimonyApi
-              .getMatches(HOME_MATCHES_PARAMS, { force, maxAgeMs: 25_000 })
+              .getMatches(HOME_MATCHES_PARAMS, { force: true })
               .catch(() => null),
             matrimonyApi
-              .getMatches(HOME_NEW_MATCHES_PARAMS, { force, maxAgeMs: 25_000 })
+              .getMatches(HOME_NEW_MATCHES_PARAMS, { force: true })
               .catch(() => null),
             matrimonyApi
-              .getMatches(HOME_VIEWED_YOU_PARAMS, { force, maxAgeMs: 25_000 })
+              .getMatches(HOME_VIEWED_YOU_PARAMS, { force: true })
               .catch(() => null),
             matrimonyApi
-              .getMatches(HOME_VIEWED_BY_YOU_PARAMS, { force, maxAgeMs: 25_000 })
+              .getMatches(HOME_VIEWED_BY_YOU_PARAMS, { force: true })
               .catch(() => null),
+            matrimonyApi.getNotificationsFeed({ force }).catch(() => null),
           ]);
         if (regRes) {
           const nextRoute = resolveMatrimonyEntryRoute(regRes);
@@ -198,6 +205,9 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
         if (newMatchesRes) setNewMatchesData(newMatchesRes);
         if (viewedYouRes) setViewedYouData(viewedYouRes);
         if (viewedByYouRes) setViewedByYouData(viewedByYouRes);
+        if (notifFeedRes && typeof notifFeedRes.unreadCount === 'number') {
+          setUnreadNotifCount(notifFeedRes.unreadCount);
+        }
       } catch (err) {
         console.warn('MatrimonyHome loadStatus error:', err);
       } finally {
@@ -218,16 +228,132 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
       const cachedNewMatches = matrimonyApi.getCachedMatches(HOME_NEW_MATCHES_PARAMS);
       const cachedViewedYou = matrimonyApi.getCachedMatches(HOME_VIEWED_YOU_PARAMS);
       const cachedViewedByYou = matrimonyApi.getCachedMatches(HOME_VIEWED_BY_YOU_PARAMS);
+      const cachedNotifs = matrimonyApi.getCachedNotificationsFeed();
       if (cachedStatus) setStatusData(cachedStatus);
       if (cachedReg) setRegData(cachedReg);
       if (cachedMatches) setMatchesData(cachedMatches);
       if (cachedNewMatches) setNewMatchesData(cachedNewMatches);
       if (cachedViewedYou) setViewedYouData(cachedViewedYou);
       if (cachedViewedByYou) setViewedByYouData(cachedViewedByYou);
+      if (cachedNotifs) setUnreadNotifCount(cachedNotifs.unreadCount);
       loadHomeData(true);
     });
     return unsub;
   }, [loadHomeData, navigation]);
+
+  const homeWatchedProtectedKey = useMemo(() => {
+    const lists = [
+      ...(matchesData?.matches || []),
+      ...(newMatchesData?.matches || []),
+      ...(viewedYouData?.matches || []),
+      ...(viewedByYouData?.matches || []),
+    ];
+    return Array.from(
+      new Set(lists.map((m) => m?.uid).filter((id): id is string => Boolean(id)))
+    )
+      .slice(0, 25)
+      .sort()
+      .join(',');
+  }, [matchesData, newMatchesData, viewedYouData, viewedByYouData]);
+
+  useEffect(() => {
+    const myUid = auth().currentUser?.uid || '';
+    if (!myUid || !homeWatchedProtectedKey) return;
+    const targetUids = homeWatchedProtectedKey.split(',').filter(Boolean);
+    let active = true;
+
+    const patchAllHomeLists = (
+      targetUid: string,
+      updater: (m: MatrimonyMatchCandidate) => MatrimonyMatchCandidate
+    ) => {
+      const apply = (prev: GetMatrimonyMatchesResponse | null) =>
+        prev?.matches
+          ? { ...prev, matches: prev.matches.map((m) => (m.uid === targetUid ? updater(m) : m)) }
+          : prev;
+      setMatchesData(apply);
+      setNewMatchesData(apply);
+      setViewedYouData(apply);
+      setViewedByYouData(apply);
+    };
+
+    const unsubs = targetUids.map((targetUid) =>
+      firestore()
+        .collection('matrimony_profiles')
+        .doc(targetUid)
+        .onSnapshot(
+          (snap) => {
+            if (!snap.exists || !active) return;
+            const d = snap.data() || {};
+            const vis = String(d.photoVisibility || 'approved_members');
+            const allowedUids: string[] = Array.isArray(d.protectedPhotoAllowedUids)
+              ? d.protectedPhotoAllowedUids
+              : [];
+            const hasStoredPhoto = Boolean(
+              d.profilePhoto || (Array.isArray(d.gallery) && d.gallery.length > 0)
+            );
+            const canSee =
+              vis === 'approved_members' ||
+              (vis === 'protect_photo' && allowedUids.includes(myUid)) ||
+              (vis !== 'protect_photo' && allowedUids.includes(myUid));
+
+            if (!canSee && vis === 'protect_photo') {
+              patchAllHomeLists(targetUid, (m) => ({
+                ...m,
+                signedProfilePhoto: null,
+                signedGallery: [],
+                photoCount: 0,
+                isPhotoProtected: hasStoredPhoto,
+                photoRequestStatus:
+                  m.photoRequestStatus === 'approved' ? 'declined' : m.photoRequestStatus,
+                photoVisibility: 'protect_photo',
+              }));
+            } else if (canSee && d.profilePhoto) {
+              const rawPaths = [
+                typeof d.profilePhoto === 'string' ? d.profilePhoto : null,
+                ...(Array.isArray(d.gallery) ? d.gallery : []),
+              ].filter((x): x is string => Boolean(x));
+              if (rawPaths.length === 0) return;
+
+              (async () => {
+                const clientUrls = await Promise.all(
+                  rawPaths.map((p) => matrimonyApi.resolvePhotoUrl(p))
+                ).catch(() => [] as (string | null)[]);
+                if (!active) return;
+                let clean = clientUrls.filter((u): u is string => Boolean(u));
+                if (clean.length === 0) {
+                  const serverRes = await matrimonyApi
+                    .getCandidatePhotos(targetUid)
+                    .catch(() => null);
+                  if (!active) return;
+                  if (serverRes?.canSeePhotos && serverRes.signedProfilePhoto) {
+                    clean = [
+                      serverRes.signedProfilePhoto,
+                      ...(Array.isArray(serverRes.signedGallery) ? serverRes.signedGallery : []),
+                    ];
+                  }
+                }
+                if (clean.length === 0) return;
+                const nextReqStatus = vis === 'protect_photo' ? 'approved' : undefined;
+                patchAllHomeLists(targetUid, (m) => ({
+                  ...m,
+                  signedProfilePhoto: clean[0],
+                  signedGallery: clean.slice(1),
+                  photoCount: clean.length,
+                  isPhotoProtected: false,
+                  ...(nextReqStatus ? { photoRequestStatus: nextReqStatus } : {}),
+                  photoVisibility: vis as any,
+                }));
+              })().catch(() => undefined);
+            }
+          },
+          () => {}
+        )
+    );
+    return () => {
+      active = false;
+      unsubs.forEach((u) => u());
+    };
+  }, [homeWatchedProtectedKey]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -352,10 +478,32 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
                 <Search size={21} color={colors.text} />
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.iconBtn}
-                onPress={() => handleComingSoon('Notifications')}
+                style={[styles.iconBtn, { position: 'relative' }]}
+                onPress={() => navigation.navigate('MatrimonyNotificationsFeed')}
               >
                 <Bell size={21} color={colors.text} />
+                {unreadNotifCount > 0 && (
+                  <View
+                    style={{
+                      position: 'absolute',
+                      top: -1,
+                      right: -2,
+                      minWidth: 16,
+                      height: 16,
+                      borderRadius: 8,
+                      backgroundColor: ORANGE,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      paddingHorizontal: 3,
+                      borderWidth: 1.5,
+                      borderColor: '#FFFFFF',
+                    }}
+                  >
+                    <Text style={{ color: '#FFFFFF', fontSize: 9.5, fontWeight: '800' }}>
+                      {unreadNotifCount > 99 ? '99+' : unreadNotifCount}
+                    </Text>
+                  </View>
+                )}
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.iconBtn}
@@ -849,6 +997,13 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
                               style={styles.matchPreviewImg}
                               resizeMode="cover"
                             />
+                          ) : candidate.isPhotoProtected ? (
+                            <ProtectedPhotoPlaceholder
+                              gender={candidate.gender}
+                              compact
+                              requestStatus={candidate.photoRequestStatus}
+                              fontFamily={fontFamily}
+                            />
                           ) : (
                             <View style={styles.matchPreviewPlaceholder}>
                               <User size={40} color={isDark ? '#64748B' : '#94A3B8'} />
@@ -1057,6 +1212,9 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
           navigation.navigate('MatrimonyEditProfile', { focusSection: 'partnerPreference' })
         }
         onVerifyProfile={() => navigation.navigate('MatrimonyStatus')}
+        onPrivacySettings={() => navigation.navigate('MatrimonyPrivacySettings')}
+        onAccountSettings={() => navigation.navigate('MatrimonyAccountSettings')}
+        onNotifications={() => navigation.navigate('MatrimonyNotifications')}
         onUploadPhotos={() => navigation.navigate('MatrimonyMyPhotos')}
       />
     </View>

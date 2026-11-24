@@ -124,7 +124,12 @@ export default function MatrimonyWelcomeScreen({ navigation, route }: any) {
     const existingDraft: MatrimonyPendingRegistrationDraft = route?.params?.draftData || {};
     const draftData: MatrimonyPendingRegistrationDraft = {
       ...existingDraft,
-      welcome: { motherTongue: trimmedMt, baptized: Boolean(baptized) },
+      welcome: {
+        motherTongue: trimmedMt,
+        baptized: Boolean(baptized),
+        managedBy: 'self',
+        createdFor: 'Myself',
+      },
     };
 
     const patchedData: StartRegistrationResponse = {

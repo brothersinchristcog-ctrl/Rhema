@@ -55,6 +55,14 @@ export function getUnlockedContactsCol(db: Firestore, uid: string) {
   return getProfileRef(db, uid).collection(SUBCOLLECTIONS.UNLOCKED_CONTACTS);
 }
 
+export function getPhotoRequestsCol(db: Firestore, uid: string) {
+  return getProfileRef(db, uid).collection(SUBCOLLECTIONS.PHOTO_REQUESTS);
+}
+
+export function getSentPhotoRequestsCol(db: Firestore, uid: string) {
+  return getProfileRef(db, uid).collection(SUBCOLLECTIONS.PHOTO_REQUESTS_SENT);
+}
+
 export function getSubscriptionRef(db: Firestore, uid: string) {
   return db.collection(COLLECTIONS.SUBSCRIPTIONS).doc(uid);
 }

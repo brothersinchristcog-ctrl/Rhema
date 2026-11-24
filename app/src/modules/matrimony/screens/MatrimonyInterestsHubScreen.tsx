@@ -43,6 +43,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { FONT_STYLE_OPTIONS, useTheme } from '../../../context/ThemeContext';
 import InterestsEmptyIllustration from '../components/InterestsEmptyIllustration';
 import MatrimonyTierToggle from '../components/MatrimonyTierToggle';
+import ProtectedPhotoPlaceholder from '../components/ProtectedPhotoPlaceholder';
 import VerifiedRibbonBadge from '../components/VerifiedRibbonBadge';
 import { isMatrimonyInactiveError, matrimonyApi } from '../services/matrimonyApi';
 import { matrimonyChatService } from '../services/matrimonyChatService';
@@ -193,7 +194,7 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
       setLoading(true);
     }
     try {
-      const res = await matrimonyApi.getInterestsHub({ force });
+      const res = await matrimonyApi.getInterestsHub({ force: true });
       setReceivedList(res.received || []);
       setSentList(res.sent || []);
       hasHubDataRef.current = true;
@@ -422,6 +423,13 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
 
   const handleCallCandidate = (entry: MatrimonyInterestEntry) => {
     const c = entry.candidate;
+    if (c.mobilePrivacy === 'messages_only') {
+      Alert.alert(
+        'Messages Only',
+        `${c.displayName} has restricted phone calls to Messages only.`
+      );
+      return;
+    }
     if (c.contactPhone) {
       Linking.openURL(`tel:${c.contactPhone}`).catch(() => {
         Alert.alert('Call Failed', 'Could not open phone dialer.');
@@ -447,6 +455,15 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
           profileCode: c.profileCode,
           signedProfilePhoto: c.signedProfilePhoto || null,
           age: c.age ?? null,
+          heightCm: c.heightCm ?? null,
+          occupation:
+            c.career?.profession ||
+            c.career?.occupationCategory ||
+            c.career?.employmentType ||
+            c.education?.qualification ||
+            null,
+          gender: c.gender || null,
+          isVerified: true,
           city: c.location?.village || c.location?.city || c.location?.state || '',
           contactPhone: c.contactPhone || null,
         },
@@ -526,6 +543,13 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
                     source={{ uri: c.signedProfilePhoto }}
                     style={styles.thumbImg}
                     resizeMode="cover"
+                  />
+                ) : c.isPhotoProtected ? (
+                  <ProtectedPhotoPlaceholder
+                    gender={c.gender}
+                    compact
+                    requestStatus={c.photoRequestStatus}
+                    fontFamily={fontFamily}
                   />
                 ) : (
                   <View
@@ -649,6 +673,13 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
                 source={{ uri: c.signedProfilePhoto }}
                 style={styles.thumbImg}
                 resizeMode="cover"
+              />
+            ) : c.isPhotoProtected ? (
+              <ProtectedPhotoPlaceholder
+                gender={c.gender}
+                compact
+                requestStatus={c.photoRequestStatus}
+                fontFamily={fontFamily}
               />
             ) : (
               <View
@@ -1268,6 +1299,13 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
                             source={{ uri: c.signedProfilePhoto }}
                             style={styles.thumbImg}
                             resizeMode="cover"
+                          />
+                        ) : c.isPhotoProtected ? (
+                          <ProtectedPhotoPlaceholder
+                            gender={c.gender}
+                            compact
+                            requestStatus={c.photoRequestStatus}
+                            fontFamily={fontFamily}
                           />
                         ) : (
                           <View

@@ -54,6 +54,17 @@ export default function MatrimonySplashScreen({ navigation }: any) {
         const cachedRoute = resolveMatrimonyEntryRoute(cached);
         if (cachedRoute.screen === 'MatrimonyHome') {
           navigation.replace(cachedRoute.screen, cachedRoute.params);
+          registrationReq.then((liveRes) => {
+            if (!liveRes) return;
+            const liveRoute = resolveMatrimonyEntryRoute(liveRes);
+            if (liveRoute.screen !== 'MatrimonyHome') {
+              matrimonyApi.clearAllCaches();
+              navigation.reset({
+                index: 0,
+                routes: [{ name: liveRoute.screen, params: liveRoute.params }],
+              });
+            }
+          });
           return;
         }
       }
