@@ -7,21 +7,20 @@ import {
   ScrollView,
   TextInput,
   Dimensions,
-  Linking,
   ActivityIndicator,
   Alert,
   StatusBar,
   Platform,
-  Share,
   Animated,
   Modal,
   Easing
 } from 'react-native';
-import { 
-  Lock, 
+import {
+  Lock,
   Coins,
   CreditCard,
-  Share2,
+  Copy,
+  Check,
   Heart,
   ShieldCheck,
   DollarSign,
@@ -29,19 +28,37 @@ import {
   CheckCircle,
   Wallet,
   Landmark,
-  ArrowLeft
+  ArrowLeft,
+  Building2,
+  Trash2,
+  FileText,
+  XCircle,
+  Clock,
+  Repeat,
+  HeartHandshake,
+  CheckSquare,
+  Square,
+  X
 } from 'lucide-react-native';
+import * as Clipboard from 'expo-clipboard';
 import { useAuth } from '../context/AuthContext';
+import { useChurch } from '../context/ChurchContext';
 import { useTheme, FONT_STYLE_OPTIONS } from '../context/ThemeContext';
+import { RHEMA_CHURCH_ID, RHEMA_CHURCH_NAME, RHEMA_ROOT_COLLECTION } from '../constants/ChurchConfig';
 import { LinearGradient } from 'expo-linear-gradient';
 import firestore from '@react-native-firebase/firestore';
 import functions from '@react-native-firebase/functions';
 
 let RazorpayCheckout: any = null;
-if (Platform.OS !== 'ios') {
-  RazorpayCheckout = require('react-native-razorpay').default;
+try {
+  if (Platform.OS !== 'web') {
+    RazorpayCheckout = require('react-native-razorpay').default;
+  }
+} catch {
+  RazorpayCheckout = null;
 }
 import ReceiptModal, { DonationRecord } from '../components/ReceiptModal';
+import PledgeFormModal from '../components/PledgeFormModal';
 
 const { width } = Dimensions.get('window');
 
@@ -244,22 +261,62 @@ const AnimatedTitle = ({
 };
 
 
-export default function GivingScreen({ navigation }: any) {
-  const { user } = useAuth();
+interface ResolvedUpiAccount {
+  id: string;
+  name?: string;
+  phonepeNumber?: string;
+  upiId?: string;
+}
+
+interface ResolvedBankAccount {
+  id: string;
+  name?: string;
+  accountName?: string;
+  bankName?: string;
+  accountNumber?: string;
+  ifscCode?: string;
+}
+
+const isPlaceholderValue = (val: string) => {
+  const normalized = val.trim();
+  return !normalized || normalized === '+1234567890' || normalized === '8000504070' || normalized === '8000504070@ybl';
+};
+
+export default function GivingScreen({ navigation, route }: any) {
+  const { user, member } = useAuth();
+  const { activeChurch, churchId } = useChurch();
   const { isDark, colors, fontStyle, scaleFont } = useTheme();
-  
+  const effectiveChurchId = churchId || activeChurch?.id || RHEMA_CHURCH_ID;
+
   const [activeCat, setActiveCat] = useState('Tithe');
   const [amount, setAmount] = useState('500');
   const [loading, setLoading] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const [otherPurpose, setOtherPurpose] = useState('');
   const [showOtherModal, setShowOtherModal] = useState(false);
-  
+
+  // Recurring & Pledge state (One-Time remains the default)
+  const [paymentMode, setPaymentMode] = useState<'one_time' | 'recurring'>('one_time');
+  const [recurringFrequency, setRecurringFrequency] = useState<'weekly' | 'monthly' | 'yearly'>('monthly');
+  const [recurringConsent, setRecurringConsent] = useState(false);
+  const [showPledgeModal, setShowPledgeModal] = useState(false);
+  const [activePledge, setActivePledge] = useState<{
+    id: string;
+    category: string;
+    pendingAmount: number;
+    eventId?: string;
+    eventTitle?: string;
+  } | null>(null);
+  const [activePledgeCount, setActivePledgeCount] = useState(0);
+
   const [recentDonations, setRecentDonations] = useState<DonationRecord[]>([]);
   const [selectedDonation, setSelectedDonation] = useState<DonationRecord | null>(null);
   const [showReceipt, setShowReceipt] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
-  
+
+  const [copiedValue, setCopiedValue] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
   // Active App Font Family (Modern, Classic, Prominent)
   const activeFontOption = FONT_STYLE_OPTIONS.find(o => o.id === fontStyle) || FONT_STYLE_OPTIONS[0];
   const appFontFamily = activeFontOption.family;
@@ -274,20 +331,114 @@ export default function GivingScreen({ navigation }: any) {
   const secondaryText = isDark ? '#A1A1AA' : (colors.textSecondary || '#64748B');
   const highlightColor = isDark ? '#FCD34D' : (colors.accent || '#0F172A');
 
-  // Fetch userName if available
-  const [userName, setUserName] = useState(user?.displayName || 'Anonymous');
+  const initialMemberName =
+    member?.name ||
+    [member?.firstName, member?.lastName].filter(Boolean).join(' ').trim() ||
+    user?.displayName ||
+    'Anonymous';
+  const [userName, setUserName] = useState(initialMemberName);
+  const [memberPhone, setMemberPhone] = useState(member?.phone || user?.phoneNumber || '');
+  const [memberEmail, setMemberEmail] = useState(member?.email || user?.email || '');
 
   useEffect(() => {
-    // Optional: fetch more detailed user info from Firestore if needed
     if (user?.uid) {
-      firestore().collection('Rhema Church').doc('rhema').collection('members').doc(user.uid).get().then(doc => {
-        const data = doc.data();
-        if (data?.name || data?.firstName) {
-          setUserName(data.name || `${data.firstName || ''} ${data.lastName || ''}`.trim());
-        }
-      }).catch(e => console.log('User fetch error:', e));
+      firestore()
+        .collection(RHEMA_ROOT_COLLECTION)
+        .doc(effectiveChurchId)
+        .collection('members')
+        .doc(user.uid)
+        .get()
+        .then(doc => {
+          const data = doc.data();
+          if (data?.name || data?.firstName) {
+            setUserName(data.name || `${data.firstName || ''} ${data.lastName || ''}`.trim());
+          }
+          if (data?.phone) setMemberPhone(data.phone);
+          if (data?.email) setMemberEmail(data.email);
+        })
+        .catch(e => console.log('User fetch error:', e));
     }
-  }, [user]);
+  }, [user, effectiveChurchId]);
+
+  // Derived Rhema Church payment details (never hardcoded/dummy)
+  const churchDisplayName =
+    activeChurch?.name?.trim() ||
+    RHEMA_CHURCH_NAME;
+
+  const givingDetails = activeChurch?.givingDetails;
+
+  const upiAccounts: ResolvedUpiAccount[] = [];
+  const seenUpiPairs = new Set<string>();
+  const pushUpiAccount = (acct: ResolvedUpiAccount) => {
+    const cleanPhonePe = acct.phonepeNumber?.trim() || '';
+    const cleanUpi = acct.upiId?.trim() || '';
+    if (isPlaceholderValue(cleanPhonePe) && isPlaceholderValue(cleanUpi)) return;
+    const validPhonePe = !isPlaceholderValue(cleanPhonePe) ? cleanPhonePe : '';
+    const validUpi = !isPlaceholderValue(cleanUpi) ? cleanUpi : '';
+    if (!validPhonePe && !validUpi) return;
+    const dedupKey = `${validPhonePe}|${validUpi.toLowerCase()}`;
+    if (seenUpiPairs.has(dedupKey)) return;
+    seenUpiPairs.add(dedupKey);
+    upiAccounts.push({
+      id: acct.id,
+      name: acct.name?.trim(),
+      phonepeNumber: validPhonePe,
+      upiId: validUpi,
+    });
+  };
+
+  if (givingDetails) {
+    pushUpiAccount({
+      id: 'primary-upi',
+      phonepeNumber: givingDetails.phonepeNumber,
+      upiId: givingDetails.upiId,
+    });
+    givingDetails.upis?.forEach((u, idx) => {
+      pushUpiAccount({
+        id: u.id || `upi-${idx}`,
+        name: u.name,
+        phonepeNumber: u.phonepeNumber,
+        upiId: u.upiId,
+      });
+    });
+  }
+
+  const bankAccounts: ResolvedBankAccount[] = [];
+  const pushBankAccount = (bank: ResolvedBankAccount) => {
+    const accountName = bank.accountName?.trim() || '';
+    const bankName = bank.bankName?.trim() || '';
+    const accountNumber = bank.accountNumber?.trim() || '';
+    const ifscCode = bank.ifscCode?.trim() || '';
+    if (!accountName && !bankName && !accountNumber && !ifscCode) return;
+    bankAccounts.push({
+      id: bank.id,
+      name: bank.name?.trim(),
+      accountName,
+      bankName,
+      accountNumber,
+      ifscCode,
+    });
+  };
+
+  if (givingDetails) {
+    pushBankAccount({
+      id: 'primary-bank',
+      accountName: givingDetails.accountName,
+      bankName: givingDetails.bankName,
+      accountNumber: givingDetails.accountNumber,
+      ifscCode: givingDetails.ifscCode,
+    });
+    givingDetails.banks?.forEach((b, idx) => {
+      pushBankAccount({
+        id: b.id || `bank-${idx}`,
+        name: b.name,
+        accountName: b.accountName,
+        bankName: b.bankName,
+        accountNumber: b.accountNumber,
+        ifscCode: b.ifscCode,
+      });
+    });
+  }
 
   useEffect(() => {
     if (user?.uid) {
@@ -302,12 +453,14 @@ export default function GivingScreen({ navigation }: any) {
                 const data = doc.data();
                 donations.push({
                   id: doc.id,
-                  amount: data.amount,
-                  category: data.category,
+                  amount: Number(data.amount) || 0,
+                  category: data.category || 'Offering',
                   date: data.date || new Date().toISOString(),
                   userName: data.userName || user?.displayName || 'Anonymous',
                   paymentId: data.paymentId,
-                  status: data.status,
+                  orderId: data.orderId,
+                  paymentMethod: data.paymentMethod || 'Razorpay',
+                  status: data.status || 'pending',
                 });
               });
               
@@ -331,108 +484,442 @@ export default function GivingScreen({ navigation }: any) {
     }
   }, [user]);
 
-  const handlePayment = async () => {
-    const numAmt = parseFloat(amount);
-    if (isNaN(numAmt) || numAmt <= 0) {
-      Alert.alert('Invalid Amount', 'Please enter a valid amount.');
+  const handleDeleteDonation = (donation: DonationRecord) => {
+    const formattedAmt = Number(donation.amount || 0).toLocaleString('en-IN');
+    Alert.alert(
+      'Delete Payment Record',
+      `Remove this ${donation.category} payment record (₹${formattedAmt}) from your history?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingId(donation.id);
+            try {
+              await Promise.all([
+                firestore().collection('church_donations').doc(donation.id).delete(),
+                firestore()
+                  .collection(RHEMA_ROOT_COLLECTION)
+                  .doc(effectiveChurchId)
+                  .collection('donations')
+                  .doc(donation.id)
+                  .delete()
+                  .catch(() => {}),
+              ]);
+            } catch (err) {
+              console.error('Error deleting donation record:', err);
+              Alert.alert('Error', 'Unable to delete payment record. Please try again.');
+            } finally {
+              setDeletingId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  useEffect(() => {
+    if (!user?.uid) {
+      setActivePledgeCount(0);
       return;
     }
+    const unsub = firestore()
+      .collection(RHEMA_ROOT_COLLECTION)
+      .doc(effectiveChurchId)
+      .collection('pledges')
+      .where('memberUid', '==', user.uid)
+      .onSnapshot(
+        (snap) => {
+          if (!snap) return;
+          const activeList = snap.docs
+            .map((d) => ({ id: d.id, ...(d.data() as any) }))
+            .filter((p) => ['active', 'partially_paid', 'overdue'].includes(String(p.status || '').toLowerCase()) && Number(p.pendingAmount ?? p.pledgeAmount ?? 0) > 0);
+          setActivePledgeCount(activeList.length);
+
+          const routePledgeId = route?.params?.pledgeId;
+          if (routePledgeId) {
+            const matched = activeList.find((p) => p.id === routePledgeId);
+            if (matched) {
+              const pending = Number(matched.pendingAmount ?? matched.pledgeAmount ?? 0);
+              const payAmt = Math.min(pending, Number(matched.installmentAmount || pending) || pending);
+              setActivePledge({
+                id: matched.id,
+                category: matched.category || 'Pledge',
+                pendingAmount: pending,
+                eventId: matched.eventId,
+                eventTitle: matched.eventTitle,
+              });
+              if (payAmt > 0) setAmount(String(payAmt));
+              if (CATEGORIES.some((c) => c.id === matched.category)) {
+                setActiveCat(matched.category);
+              }
+            }
+          }
+        },
+        () => {}
+      );
+    return () => unsub();
+  }, [user?.uid, effectiveChurchId, route?.params?.pledgeId]);
+
+  const handlePayment = async () => {
+    if (!user?.uid) {
+      Alert.alert('Sign In Required', 'Please sign in to complete your donation.');
+      return;
+    }
+
+    const numAmt = parseFloat(amount);
+    if (!Number.isFinite(numAmt) || numAmt < 1) {
+      Alert.alert('Invalid Amount', 'Please enter a valid donation amount of at least ₹1.');
+      return;
+    }
+
+    if (paymentMode === 'recurring' && !recurringConsent) {
+      Alert.alert(
+        'Consent Required',
+        'Please review and check the recurring payment consent box before proceeding.'
+      );
+      return;
+    }
+
+    if (!RazorpayCheckout || typeof RazorpayCheckout.open !== 'function') {
+      Alert.alert(
+        'Checkout Unavailable',
+        'Online payment gateway is unavailable on this device build. Please use Direct Transfer or try again on a supported mobile build.'
+      );
+      return;
+    }
+
+    const finalCategory =
+      activeCat === 'Other' && otherPurpose.trim()
+        ? `Other: ${otherPurpose.trim()}`
+        : activeCat;
+    const nowIso = new Date().toISOString();
+    const donorName = userName || 'Anonymous';
+    const donorPhone = memberPhone || user?.phoneNumber || '';
+    const donorEmail = memberEmail || user?.email || '';
 
     setLoading(true);
     let docRef: any = null;
     try {
-      // 1. Create a donation record in Firebase Firestore
+      // ── Branch A: Recurring Razorpay Subscription Checkout ──
+      if (paymentMode === 'recurring') {
+        const consentText = `I authorize automatic ${recurringFrequency} Razorpay donations of ₹${numAmt.toLocaleString('en-IN')} towards ${finalCategory} until paused or cancelled.`;
+        const createRecurring = functions()
+          .app.functions('asia-south1')
+          .httpsCallable('createRazorpayRecurringDonation');
+
+        const subRes = await createRecurring({
+          amount: numAmt,
+          frequency: recurringFrequency,
+          category: finalCategory,
+          churchId: effectiveChurchId,
+          appName: churchDisplayName,
+          pledgeId: activePledge?.id || '',
+          consentConfirmed: true,
+          consentText,
+          donorName,
+          donorPhone,
+          donorEmail,
+        });
+
+        const subData = (subRes.data || {}) as any;
+        const subId = subData.subscriptionId;
+        const subKeyId = subData.keyId;
+
+        if (!subId || !subKeyId) {
+          throw new Error('Failed to initialize recurring Razorpay subscription.');
+        }
+
+        const subOptions: any = {
+          description: `Recurring ${recurringFrequency} ${finalCategory} - ${churchDisplayName}`,
+          currency: 'INR',
+          key: subKeyId,
+          name: churchDisplayName,
+          subscription_id: subId,
+          prefill: {
+            email: donorEmail,
+            contact: donorPhone,
+            name: donorName,
+          },
+          theme: { color: colors.accent || '#1a2d5a' },
+        };
+        if (activeChurch?.theme?.logoUrl) {
+          subOptions.image = activeChurch.theme.logoUrl;
+        }
+
+        let subCheckoutData: any;
+        try {
+          subCheckoutData = await RazorpayCheckout.open(subOptions);
+        } catch (checkoutErr: any) {
+          const msg = checkoutErr?.description || checkoutErr?.message || 'Recurring authorization cancelled or failed.';
+          const isCancel =
+            checkoutErr?.code === 0 ||
+            checkoutErr?.code === 2 ||
+            (typeof msg === 'string' && msg.toLowerCase().includes('cancel'));
+          Alert.alert(
+            isCancel ? 'Authorization Cancelled' : 'Authorization Failed',
+            isCancel ? 'Your recurring payment setup was cancelled.' : msg
+          );
+          return;
+        }
+
+        const verifySub = functions()
+          .app.functions('asia-south1')
+          .httpsCallable('verifyRazorpaySubscriptionDonation');
+        const verifySubRes = await verifySub({
+          razorpay_payment_id: subCheckoutData?.razorpay_payment_id,
+          razorpay_subscription_id: subCheckoutData?.razorpay_subscription_id || subId,
+          razorpay_signature: subCheckoutData?.razorpay_signature,
+          churchId: effectiveChurchId,
+          amount: numAmt,
+          frequency: recurringFrequency,
+          category: finalCategory,
+          pledgeId: activePledge?.id || '',
+          donorName,
+          donorPhone,
+          donorEmail,
+        });
+
+        const verifyPayload = (verifySubRes.data || {}) as any;
+        if (verifyPayload?.success) {
+          const completedRecord: DonationRecord = {
+            id: verifyPayload.donationId || subId,
+            amount: numAmt,
+            category: finalCategory,
+            date: nowIso,
+            userName: donorName,
+            paymentId: subCheckoutData?.razorpay_payment_id,
+            paymentMethod: `Razorpay Recurring (${recurringFrequency})`,
+            status: 'completed',
+          };
+          setActivePledge(null);
+          Alert.alert(
+            'Recurring Giving Active!',
+            `Your ${recurringFrequency} ₹${numAmt.toLocaleString('en-IN')} ${finalCategory} mandate is active. You can pause or cancel anytime from Profile → Giving History.`,
+            [
+              { text: 'OK' },
+              {
+                text: 'View Receipt',
+                onPress: () => {
+                  setSelectedDonation(completedRecord);
+                  setShowReceipt(true);
+                },
+              },
+            ]
+          );
+        }
+        return;
+      }
+
+      // ── Branch B: Standard One-Time Razorpay Donation (Existing Flow) ──
       docRef = await firestore().collection('church_donations').add({
         amount: numAmt,
-        category: activeCat === 'Other' && otherPurpose ? `Other: ${otherPurpose}` : activeCat,
-        userId: user?.uid || 'anonymous',
-        userName: userName,
-        phone: user?.phoneNumber || '',
+        category: finalCategory,
+        givingGroup: activePledge ? 'Pledge' : (finalCategory.toLowerCase().includes('tithe') ? 'Tithe' : 'Offering'),
+        recurringType: 'one_time',
+        paymentGateway: 'Razorpay',
+        appId: effectiveChurchId,
+        appName: churchDisplayName,
+        sourceChannel: 'member_app',
+        pledgeId: activePledge?.id || null,
+        eventId: activePledge?.eventId || null,
+        eventTitle: activePledge?.eventTitle || null,
+        userId: user.uid,
+        userName: donorName,
+        phone: donorPhone,
+        email: donorEmail,
+        churchId: effectiveChurchId,
+        paymentMethod: 'Razorpay',
         status: 'pending',
-        date: new Date().toISOString(),
-        timestamp: firestore.FieldValue.serverTimestamp()
+        date: nowIso,
+        timestamp: firestore.FieldValue.serverTimestamp(),
       });
 
-      // 2. Call Firebase Function to create Razorpay Order
+      // 2. Call Firebase Function in asia-south1 to create a real Razorpay Order
       const createOrder = functions().app.functions('asia-south1').httpsCallable('createRazorpayOrder');
       const response = await createOrder({
         amount: numAmt,
+        currency: 'INR',
         type: 'donation',
-        receipt: docRef.id
+        category: finalCategory,
+        churchId: effectiveChurchId,
+        donationId: docRef.id,
+        receipt: docRef.id,
+        pledgeId: activePledge?.id || '',
+        eventId: activePledge?.eventId || '',
+        donorName,
+        donorPhone,
+        donorEmail,
       });
 
-      const { order, key_id } = response.data as any;
+      const resData = (response.data || {}) as any;
+      const keyId = resData.keyId || resData.key_id;
+      const orderId = resData.orderId || resData.order?.id;
+      const orderAmount = resData.amount ?? resData.order?.amount ?? Math.round(numAmt * 100);
+      const orderCurrency = resData.currency || resData.order?.currency || 'INR';
 
-      // 3. Open Razorpay Checkout
-      const options = {
-        description: 'Church Donation',
-        image: 'https://yt3.googleusercontent.com/AYz499xBLUqxUccyHR8_DubeLzrURqkLnD_r4HuEEkQeJaJHuJL15dxzvOnanGuyARyJcAAPBns=s160-c-k-c0x00ffffff-no-rj',
-        currency: order.currency,
-        key: key_id,
-        amount: order.amount,
-        name: 'Church of God',
-        order_id: order.id,
+      if (!keyId || !orderId) {
+        throw new Error('Payment order initialization failed. Missing order details from server.');
+      }
+
+      // 3. Open Razorpay Checkout (never receives or uses Key Secret)
+      const options: any = {
+        description: `${finalCategory} - ${churchDisplayName}`,
+        currency: orderCurrency,
+        key: keyId,
+        amount: orderAmount,
+        name: churchDisplayName,
+        order_id: orderId,
         prefill: {
-          email: user?.email || '',
-          contact: user?.phoneNumber || '',
-          name: userName
+          email: donorEmail,
+          contact: donorPhone,
+          name: donorName,
         },
-        theme: { color: colors.accent || '#1a2d5a' }
+        theme: { color: colors.accent || '#1a2d5a' },
       };
+      if (activeChurch?.theme?.logoUrl) {
+        options.image = activeChurch.theme.logoUrl;
+      }
 
-      RazorpayCheckout.open(options).then(async (data: any) => {
-        // Payment Success
-        // 4. Verify Payment with Backend
-        try {
-          const verifyPayment = functions().app.functions('asia-south1').httpsCallable('verifyRazorpayPayment');
-          const verifyRes = await verifyPayment({
-            razorpay_order_id: data.razorpay_order_id,
-            razorpay_payment_id: data.razorpay_payment_id,
-            razorpay_signature: data.razorpay_signature,
-            type: 'donation'
-          });
+      let checkoutData: any;
+      try {
+        checkoutData = await RazorpayCheckout.open(options);
+      } catch (checkoutError: any) {
+        let errorMsg = checkoutError?.description || checkoutError?.message || 'Payment was cancelled or failed.';
+        let isCancellation = false;
 
-          if ((verifyRes.data as any).success) {
-            await docRef.update({ 
-              status: 'completed',
-              paymentId: data.razorpay_payment_id,
-              orderId: data.razorpay_order_id
-            });
-            Alert.alert('Success', 'Thank you for your generous donation!');
-          } else {
-            await docRef.update({ status: 'failed' });
-            Alert.alert('Payment Failed', 'Verification failed.');
+        if (checkoutError?.code === 0 || checkoutError?.code === 2) {
+          if (typeof errorMsg === 'string') {
+            if (
+              errorMsg.toLowerCase().includes('cancel') ||
+              (errorMsg.includes('payment_error') && errorMsg.includes('payment_authentication'))
+            ) {
+              isCancellation = true;
+            }
           }
-        } catch (vErr) {
-          console.error('Verification error:', vErr);
-          await docRef.update({ status: 'failed' });
-          Alert.alert('Payment Error', 'Payment was successful but verification failed.');
         }
-      }).catch(async (error: any) => {
-        // Payment Failed or Cancelled
-        await docRef.update({ status: 'failed' });
-        Alert.alert('Payment Cancelled', 'Your payment was cancelled or failed.');
-      });
-      
-    } catch (err) {
+
+        if (typeof checkoutError?.description === 'string' && checkoutError.description.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(checkoutError.description);
+            if (parsed?.error?.description && parsed.error.description !== 'undefined') {
+              errorMsg = parsed.error.description;
+            }
+            if (parsed?.error?.reason?.toLowerCase?.().includes('cancel')) {
+              isCancellation = true;
+            }
+          } catch {
+            // Keep existing errorMsg
+          }
+        }
+
+        await docRef
+          .update({
+            status: isCancellation ? 'cancelled' : 'failed',
+            errorReason: errorMsg,
+          })
+          .catch(() => {});
+
+        Alert.alert(
+          isCancellation ? 'Payment Cancelled' : 'Payment Failed',
+          isCancellation ? 'Your payment was cancelled.' : errorMsg
+        );
+        return;
+      }
+
+      // 4. Verify Payment Signature & Complete Donation on Backend
+      try {
+        const verifyPayment = functions().app.functions('asia-south1').httpsCallable('verifyRazorpayPayment');
+        const verifyRes = await verifyPayment({
+          razorpay_order_id: checkoutData?.razorpay_order_id || orderId,
+          razorpay_payment_id: checkoutData?.razorpay_payment_id,
+          razorpay_signature: checkoutData?.razorpay_signature,
+          type: 'donation',
+          donationId: docRef.id,
+          churchId: effectiveChurchId,
+          pledgeId: activePledge?.id || '',
+        });
+
+        if ((verifyRes.data as any)?.success) {
+          const completedRecord: DonationRecord = {
+            id: docRef.id,
+            amount: numAmt,
+            category: finalCategory,
+            date: nowIso,
+            userName: donorName,
+            paymentId: checkoutData?.razorpay_payment_id,
+            paymentMethod: 'Razorpay',
+            status: 'completed',
+          };
+          setActivePledge(null);
+          Alert.alert(
+            'Thank You!',
+            `Your ${finalCategory} gift of ₹${numAmt} to ${churchDisplayName} has been received.`,
+            [
+              { text: 'OK' },
+              {
+                text: 'View Receipt',
+                onPress: () => {
+                  setSelectedDonation(completedRecord);
+                  setShowReceipt(true);
+                },
+              },
+            ]
+          );
+        } else {
+          await docRef.update({ status: 'failed' }).catch(() => {});
+          Alert.alert('Payment Verification Failed', 'Verification failed. Please contact the church office.');
+        }
+      } catch (vErr: any) {
+        console.error('Verification error:', vErr);
+        await docRef.update({ status: 'failed' }).catch(() => {});
+        Alert.alert(
+          'Payment Verification Error',
+          vErr?.message || 'Payment succeeded, but server verification failed. Please contact support.'
+        );
+      }
+    } catch (err: any) {
       console.error('Donation error:', err);
       if (docRef) {
-        await docRef.update({ status: 'failed' });
+        await docRef.update({ status: 'failed', errorReason: err?.message || 'Init error' }).catch(() => {});
       }
-      Alert.alert('Error', 'Unable to initiate payment. Please try again.');
+      const errMsg = err?.message || 'Unable to initiate payment. Please try again.';
+      if (paymentMode === 'recurring' && String(errMsg).toLowerCase().includes('subscription')) {
+        Alert.alert(
+          'Recurring AutoPay Not Enabled',
+          errMsg,
+          [
+            { text: 'OK', style: 'cancel' },
+            {
+              text: 'Create Monthly Pledge',
+              onPress: () => {
+                setPaymentMode('one_time');
+                setShowPledgeModal(true);
+              },
+            },
+          ]
+        );
+      } else {
+        Alert.alert('Payment Error', errMsg);
+      }
     } finally {
       setLoading(false);
     }
   };
 
   const handleCopy = async (text: string, label: string) => {
+    if (!text) return;
     try {
-      await Share.share({
-        message: text,
-      });
+      await Clipboard.setStringAsync(text);
+      setCopiedValue(text);
+      setTimeout(() => {
+        setCopiedValue(prev => (prev === text ? null : prev));
+      }, 2000);
+      Alert.alert('Copied', `${label} copied to clipboard.`);
     } catch (err) {
-      console.error(err);
-      Alert.alert('Error', 'Failed to share details.');
+      console.error('Clipboard copy error:', err);
+      Alert.alert('Error', `Failed to copy ${label}.`);
     }
   };
 
@@ -463,6 +950,30 @@ export default function GivingScreen({ navigation }: any) {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         
+        {activePledge && (
+          <View
+            style={[
+              styles.activePledgeBanner,
+              {
+                backgroundColor: isDark ? 'rgba(252,211,77,0.12)' : '#FEF3C7',
+                borderColor: isDark ? 'rgba(252,211,77,0.35)' : '#F59E0B',
+              },
+            ]}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.activePledgeTitle, fStyle, { color: isDark ? '#FCD34D' : '#92400E' }]}>
+                Paying Pledge: {activePledge.category}{activePledge.eventTitle ? ` · ${activePledge.eventTitle}` : ''}
+              </Text>
+              <Text style={[styles.activePledgeSub, fStyle, { color: secondaryText }]}>
+                Pending Balance: ₹{activePledge.pendingAmount.toLocaleString('en-IN')}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => setActivePledge(null)} style={{ padding: 6 }}>
+              <X size={16} color={isDark ? '#FCD34D' : '#92400E'} />
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* ── Category Selection (Glassmorphic look) ── */}
         <Text style={[styles.sectionTitle, fStyle, { color: secondaryText, fontSize: scaleFont(11) }]}>SELECT GIVING CATEGORY</Text>
         <View style={styles.grid}>
@@ -549,6 +1060,142 @@ export default function GivingScreen({ navigation }: any) {
            />
         </View>
 
+        {/* ── One-Time vs Recurring Payment Selection ── */}
+        <Text style={[styles.sectionTitle, fStyle, { color: secondaryText, fontSize: scaleFont(11) }]}>PAYMENT SCHEDULE</Text>
+        <View style={[styles.modeSwitchRow, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
+          <TouchableOpacity
+            style={[
+              styles.modeOptionBtn,
+              paymentMode === 'one_time' && {
+                backgroundColor: isDark ? 'rgba(252, 211, 77, 0.16)' : highlightColor,
+              },
+            ]}
+            onPress={() => {
+              setPaymentMode('one_time');
+              setRecurringConsent(false);
+            }}
+          >
+            <Text
+              style={[
+                styles.modeOptionTxt,
+                fStyle,
+                {
+                  color:
+                    paymentMode === 'one_time'
+                      ? isDark
+                        ? '#FCD34D'
+                        : '#FFFFFF'
+                      : secondaryText,
+                },
+              ]}
+            >
+              One-Time Payment
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.modeOptionBtn,
+              paymentMode === 'recurring' && {
+                backgroundColor: isDark ? 'rgba(252, 211, 77, 0.16)' : highlightColor,
+              },
+            ]}
+            onPress={() => setPaymentMode('recurring')}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Repeat
+                size={13}
+                color={
+                  paymentMode === 'recurring'
+                    ? isDark
+                      ? '#FCD34D'
+                      : '#FFFFFF'
+                    : secondaryText
+                }
+              />
+              <Text
+                style={[
+                  styles.modeOptionTxt,
+                  fStyle,
+                  {
+                    color:
+                      paymentMode === 'recurring'
+                        ? isDark
+                          ? '#FCD34D'
+                          : '#FFFFFF'
+                        : secondaryText,
+                  },
+                ]}
+              >
+                Recurring (Auto-Pay)
+              </Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {paymentMode === 'recurring' && (
+          <View style={[styles.recurringCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
+            <Text style={[styles.upiLabel, fStyle, { color: secondaryText, marginBottom: 8 }]}>
+              SELECT FREQUENCY
+            </Text>
+            <View style={styles.freqRow}>
+              {(['weekly', 'monthly', 'yearly'] as const).map((freq) => {
+                const isSel = recurringFrequency === freq;
+                const label = freq === 'weekly' ? 'Weekly' : freq === 'yearly' ? 'Yearly' : 'Monthly';
+                return (
+                  <TouchableOpacity
+                    key={freq}
+                    style={[
+                      styles.freqChip,
+                      {
+                        backgroundColor: subtleSurface,
+                        borderColor: isSel ? '#FCD34D' : cardBorder,
+                      },
+                      isSel && { backgroundColor: isDark ? 'rgba(252, 211, 77, 0.15)' : '#FEF3C7' },
+                    ]}
+                    onPress={() => setRecurringFrequency(freq)}
+                  >
+                    <Text
+                      style={[
+                        styles.freqChipTxt,
+                        fStyle,
+                        { color: isSel ? (isDark ? '#FCD34D' : '#92400E') : primaryText },
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.consentBox,
+                {
+                  backgroundColor: recurringConsent
+                    ? isDark
+                      ? 'rgba(16, 185, 129, 0.12)'
+                      : '#ECFDF5'
+                    : subtleSurface,
+                  borderColor: recurringConsent ? '#10b981' : cardBorder,
+                },
+              ]}
+              onPress={() => setRecurringConsent((prev) => !prev)}
+              activeOpacity={0.8}
+            >
+              {recurringConsent ? (
+                <CheckSquare size={19} color="#10b981" />
+              ) : (
+                <Square size={19} color={secondaryText} />
+              )}
+              <Text style={[styles.consentTxt, fStyle, { color: primaryText, fontSize: scaleFont(11) }]}>
+                I explicitly consent to authorize recurring {recurringFrequency} Razorpay Auto-Pay donations of ₹{amount || '0'} until paused or cancelled.
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* ── Payment Button ── */}
         <TouchableOpacity 
           style={[
@@ -569,47 +1216,219 @@ export default function GivingScreen({ navigation }: any) {
               <ActivityIndicator size="small" color="#fff" />
             ) : (
               <>
-                <Text style={[styles.payBtnTxt, fStyle, { fontSize: scaleFont(16) }]}>Proceed to Pay ₹{amount || '0'}</Text>
+                <Text style={[styles.payBtnTxt, fStyle, { fontSize: scaleFont(16) }]}>
+                  {paymentMode === 'recurring'
+                    ? `Authorize Recurring ₹${amount || '0'}/${recurringFrequency === 'weekly' ? 'wk' : recurringFrequency === 'yearly' ? 'yr' : 'mo'}`
+                    : `Proceed to Pay ₹${amount || '0'}`}
+                </Text>
                 <AnimatedPayIcons isDark={isDark} />
               </>
             )}
           </LinearGradient>
         </TouchableOpacity>
 
-        {/* ── UPI Box (Glassmorphic) ── */}
-        <View style={[styles.upiInfoCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
-          <Text style={[styles.upiSectionTitle, fStyle, { color: isDark ? '#FCD34D' : primaryText, fontSize: scaleFont(13) }]}>Direct Transfer / PhonePe</Text>
-          
-          <View style={styles.upiDetailRow}>
-            <View>
-              <Text style={[styles.upiLabel, fStyle, { color: secondaryText }]}>PHONEPE NUMBER</Text>
-              <Text style={[styles.upiValue, fStyle, { color: primaryText, fontSize: scaleFont(15) }]}>8000504070</Text>
-            </View>
-            <TouchableOpacity 
-              style={[styles.copyBtn, { backgroundColor: subtleSurface, borderWidth: 1, borderColor: cardBorder }]} 
-              onPress={() => handleCopy('8000504070', 'PhonePe Number')}
-            >
-              <Share2 size={14} color={isDark ? '#FCD34D' : primaryText} />
-              <Text style={[styles.copyBtnTxt, fStyle, { color: isDark ? '#FCD34D' : primaryText, fontSize: scaleFont(12) }]}>Copy</Text>
-            </TouchableOpacity>
+        {/* ── Pledge Commitment Card ── */}
+        <View style={[styles.pledgePromoCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.pledgePromoTitle, fStyle, { color: primaryText, fontSize: scaleFont(14) }]}>
+              Make a Pledge Commitment
+            </Text>
+            <Text style={[styles.pledgePromoSub, fStyle, { color: secondaryText, fontSize: scaleFont(11) }]}>
+              Commit Weekly, Monthly, Yearly or Event-wise with automatic reminders.
+            </Text>
           </View>
-
-          <View style={[styles.upiDivider, { backgroundColor: cardBorder }]} />
-
-          <View style={styles.upiDetailRow}>
-            <View>
-              <Text style={[styles.upiLabel, fStyle, { color: secondaryText }]}>UPI ID</Text>
-              <Text style={[styles.upiValue, fStyle, { color: primaryText, fontSize: scaleFont(15) }]}>8000504070@ybl</Text>
-            </View>
-            <TouchableOpacity 
-              style={[styles.copyBtn, { backgroundColor: subtleSurface, borderWidth: 1, borderColor: cardBorder }]} 
-              onPress={() => handleCopy('8000504070@ybl', 'UPI ID')}
+          <View style={styles.pledgePromoActions}>
+            <TouchableOpacity
+              style={[
+                styles.pledgeOpenBtn,
+                {
+                  backgroundColor: isDark ? 'rgba(252, 211, 77, 0.16)' : '#FEF3C7',
+                  borderColor: isDark ? 'rgba(252, 211, 77, 0.4)' : '#F59E0B',
+                },
+              ]}
+              onPress={() => setShowPledgeModal(true)}
             >
-              <Share2 size={14} color={isDark ? '#FCD34D' : primaryText} />
-              <Text style={[styles.copyBtnTxt, fStyle, { color: isDark ? '#FCD34D' : primaryText, fontSize: scaleFont(12) }]}>Copy</Text>
+              <HeartHandshake size={14} color={isDark ? '#FCD34D' : '#92400E'} />
+              <Text style={[styles.pledgeOpenTxt, fStyle, { color: isDark ? '#FCD34D' : '#92400E' }]}>
+                New Pledge
+              </Text>
             </TouchableOpacity>
+            {activePledgeCount > 0 && (
+              <TouchableOpacity
+                onPress={() => navigation.navigate('GivingHistory', { initialTab: 'pledges' })}
+              >
+                <Text style={[styles.viewPledgesLink, fStyle, { color: isDark ? '#FCD34D' : highlightColor }]}>
+                  {activePledgeCount} Active →
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
+
+        {/* ── Direct Transfer / PhonePe & UPI (Fetched from Church Settings) ── */}
+        <View style={[styles.upiInfoCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
+          <Text style={[styles.upiSectionTitle, fStyle, { color: isDark ? '#FCD34D' : primaryText, fontSize: scaleFont(13) }]}>
+            Direct Transfer / PhonePe & UPI
+          </Text>
+
+          {upiAccounts.length > 0 ? (
+            upiAccounts.map((acct, acctIdx) => (
+              <View key={acct.id}>
+                {acctIdx > 0 && <View style={[styles.upiDivider, { backgroundColor: cardBorder }]} />}
+                {!!acct.name && (
+                  <Text style={[styles.subGroupTitle, fStyle, { color: secondaryText, fontSize: scaleFont(11) }]}>
+                    {acct.name}
+                  </Text>
+                )}
+
+                {!!acct.phonepeNumber && (
+                  <View style={styles.upiDetailRow}>
+                    <View style={{ flex: 1, paddingRight: 10 }}>
+                      <Text style={[styles.upiLabel, fStyle, { color: secondaryText }]}>PHONEPE NUMBER</Text>
+                      <Text style={[styles.upiValue, fStyle, { color: primaryText, fontSize: scaleFont(15) }]}>
+                        {acct.phonepeNumber}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.copyBtn, { backgroundColor: subtleSurface, borderWidth: 1, borderColor: cardBorder }]}
+                      onPress={() => handleCopy(acct.phonepeNumber!, 'PhonePe Number')}
+                    >
+                      {copiedValue === acct.phonepeNumber ? (
+                        <Check size={14} color="#10b981" />
+                      ) : (
+                        <Copy size={14} color={isDark ? '#FCD34D' : primaryText} />
+                      )}
+                      <Text style={[styles.copyBtnTxt, fStyle, { color: copiedValue === acct.phonepeNumber ? '#10b981' : (isDark ? '#FCD34D' : primaryText), fontSize: scaleFont(12) }]}>
+                        {copiedValue === acct.phonepeNumber ? 'Copied' : 'Copy'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {!!acct.phonepeNumber && !!acct.upiId && (
+                  <View style={[styles.upiDivider, { backgroundColor: cardBorder }]} />
+                )}
+
+                {!!acct.upiId && (
+                  <View style={styles.upiDetailRow}>
+                    <View style={{ flex: 1, paddingRight: 10 }}>
+                      <Text style={[styles.upiLabel, fStyle, { color: secondaryText }]}>UPI ID</Text>
+                      <Text style={[styles.upiValue, fStyle, { color: primaryText, fontSize: scaleFont(15) }]}>
+                        {acct.upiId}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.copyBtn, { backgroundColor: subtleSurface, borderWidth: 1, borderColor: cardBorder }]}
+                      onPress={() => handleCopy(acct.upiId!, 'UPI ID')}
+                    >
+                      {copiedValue === acct.upiId ? (
+                        <Check size={14} color="#10b981" />
+                      ) : (
+                        <Copy size={14} color={isDark ? '#FCD34D' : primaryText} />
+                      )}
+                      <Text style={[styles.copyBtnTxt, fStyle, { color: copiedValue === acct.upiId ? '#10b981' : (isDark ? '#FCD34D' : primaryText), fontSize: scaleFont(12) }]}>
+                        {copiedValue === acct.upiId ? 'Copied' : 'Copy'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            ))
+          ) : (
+            <Text style={[styles.emptyInfoText, fStyle, { color: secondaryText, fontSize: scaleFont(13) }]}>
+              Direct UPI / PhonePe details have not been configured yet. Use Razorpay above or contact {churchDisplayName}.
+            </Text>
+          )}
+        </View>
+
+        {/* ── Bank Transfer Details (Fetched from Church Settings) ── */}
+        {bankAccounts.length > 0 && (
+          <View style={[styles.upiInfoCard, { backgroundColor: cardSurface, borderColor: cardBorder, marginTop: 16 }]}>
+            <View style={styles.cardSectionHeader}>
+              <Building2 size={16} color={isDark ? '#FCD34D' : primaryText} />
+              <Text style={[styles.upiSectionTitle, fStyle, { color: isDark ? '#FCD34D' : primaryText, fontSize: scaleFont(13), marginBottom: 0 }]}>
+                Bank Transfer Details
+              </Text>
+            </View>
+
+            {bankAccounts.map((bank, bankIdx) => (
+              <View key={bank.id} style={{ marginTop: 14 }}>
+                {bankIdx > 0 && <View style={[styles.upiDivider, { backgroundColor: cardBorder, marginTop: 2 }]} />}
+                {!!bank.name && (
+                  <Text style={[styles.subGroupTitle, fStyle, { color: secondaryText, fontSize: scaleFont(11) }]}>
+                    {bank.name}
+                  </Text>
+                )}
+
+                {!!bank.accountName && (
+                  <View style={styles.bankFieldBlock}>
+                    <Text style={[styles.upiLabel, fStyle, { color: secondaryText }]}>ACCOUNT NAME</Text>
+                    <Text style={[styles.upiValue, fStyle, { color: primaryText, fontSize: scaleFont(14) }]}>
+                      {bank.accountName}
+                    </Text>
+                  </View>
+                )}
+
+                {!!bank.bankName && (
+                  <View style={styles.bankFieldBlock}>
+                    <Text style={[styles.upiLabel, fStyle, { color: secondaryText }]}>BANK NAME</Text>
+                    <Text style={[styles.upiValue, fStyle, { color: primaryText, fontSize: scaleFont(14) }]}>
+                      {bank.bankName}
+                    </Text>
+                  </View>
+                )}
+
+                {!!bank.accountNumber && (
+                  <View style={[styles.upiDetailRow, { marginTop: 10 }]}>
+                    <View style={{ flex: 1, paddingRight: 10 }}>
+                      <Text style={[styles.upiLabel, fStyle, { color: secondaryText }]}>ACCOUNT NUMBER</Text>
+                      <Text style={[styles.upiValue, fStyle, { color: primaryText, fontSize: scaleFont(15) }]}>
+                        {bank.accountNumber}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.copyBtn, { backgroundColor: subtleSurface, borderWidth: 1, borderColor: cardBorder }]}
+                      onPress={() => handleCopy(bank.accountNumber!, 'Account Number')}
+                    >
+                      {copiedValue === bank.accountNumber ? (
+                        <Check size={14} color="#10b981" />
+                      ) : (
+                        <Copy size={14} color={isDark ? '#FCD34D' : primaryText} />
+                      )}
+                      <Text style={[styles.copyBtnTxt, fStyle, { color: copiedValue === bank.accountNumber ? '#10b981' : (isDark ? '#FCD34D' : primaryText), fontSize: scaleFont(12) }]}>
+                        {copiedValue === bank.accountNumber ? 'Copied' : 'Copy'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {!!bank.ifscCode && (
+                  <View style={[styles.upiDetailRow, { marginTop: 12 }]}>
+                    <View style={{ flex: 1, paddingRight: 10 }}>
+                      <Text style={[styles.upiLabel, fStyle, { color: secondaryText }]}>IFSC CODE</Text>
+                      <Text style={[styles.upiValue, fStyle, { color: primaryText, fontSize: scaleFont(15) }]}>
+                        {bank.ifscCode}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.copyBtn, { backgroundColor: subtleSurface, borderWidth: 1, borderColor: cardBorder }]}
+                      onPress={() => handleCopy(bank.ifscCode!, 'IFSC Code')}
+                    >
+                      {copiedValue === bank.ifscCode ? (
+                        <Check size={14} color="#10b981" />
+                      ) : (
+                        <Copy size={14} color={isDark ? '#FCD34D' : primaryText} />
+                      )}
+                      <Text style={[styles.copyBtnTxt, fStyle, { color: copiedValue === bank.ifscCode ? '#10b981' : (isDark ? '#FCD34D' : primaryText), fontSize: scaleFont(12) }]}>
+                        {copiedValue === bank.ifscCode ? 'Copied' : 'Copy'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* ── Recent Payments History ── */}
         <View style={{ marginTop: 30 }}>
@@ -622,29 +1441,146 @@ export default function GivingScreen({ navigation }: any) {
               <Text style={[styles.emptyHistoryText, fStyle, { color: secondaryText, fontSize: scaleFont(13) }]}>No recent payments found.</Text>
             </View>
           ) : (
-            recentDonations.map(donation => (
-              <TouchableOpacity
-                key={donation.id}
-                style={[styles.historyCard, { backgroundColor: cardSurface, borderWidth: 1, borderColor: cardBorder }]}
-                onPress={() => {
-                  setSelectedDonation(donation);
-                  setShowReceipt(true);
-                }}
-              >
-                <View style={styles.historyCardLeft}>
-                  <View style={[styles.historyIconBox, { backgroundColor: subtleSurface }]}>
-                     <CheckCircle size={20} color={donation.status === 'completed' ? "#10b981" : (donation.status === 'failed' ? "#ef4444" : "#f59e0b")} />
+            recentDonations.map(donation => {
+              const st = (donation.status || '').toLowerCase();
+              const isPaid = st === 'completed' || st === 'success' || st === 'paid' || st === 'approved' || st === 'confirmed';
+              const isFailed = st === 'failed' || st === 'cancelled' || st === 'rejected';
+              const statusColor = isPaid ? '#10b981' : (isFailed ? '#ef4444' : '#f59e0b');
+              const statusBg = isPaid
+                ? 'rgba(16, 185, 129, 0.14)'
+                : isFailed
+                ? 'rgba(239, 68, 68, 0.14)'
+                : 'rgba(245, 158, 11, 0.14)';
+              const statusLabel = isPaid
+                ? 'Paid'
+                : st === 'cancelled'
+                ? 'Cancelled'
+                : isFailed
+                ? 'Failed'
+                : 'Pending';
+
+              const parsedDate = new Date(donation.date);
+              const dateText = isNaN(parsedDate.getTime())
+                ? 'Recent'
+                : `${parsedDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} · ${parsedDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`;
+              const isDeleting = deletingId === donation.id;
+
+              return (
+                <View
+                  key={donation.id}
+                  style={[
+                    styles.historyCard,
+                    {
+                      backgroundColor: cardSurface,
+                      borderColor: cardBorder,
+                      borderLeftColor: statusColor,
+                    },
+                  ]}
+                >
+                  {/* Card Top Row */}
+                  <View style={styles.historyCardHeader}>
+                    <View style={styles.historyCardLeft}>
+                      <View style={[styles.historyIconBox, { backgroundColor: statusBg }]}>
+                        {isPaid ? (
+                          <CheckCircle size={20} color={statusColor} />
+                        ) : isFailed ? (
+                          <XCircle size={20} color={statusColor} />
+                        ) : (
+                          <Clock size={20} color={statusColor} />
+                        )}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.historyCatText, fStyle, { color: primaryText, fontSize: scaleFont(15) }]} numberOfLines={1}>
+                          {donation.category}
+                        </Text>
+                        <Text style={[styles.historyDateText, fStyle, { color: secondaryText, fontSize: scaleFont(11) }]}>
+                          {dateText}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.historyRightCol}>
+                      <Text style={[styles.historyAmountText, fStyle, { color: isDark ? '#FCD34D' : primaryText, fontSize: scaleFont(17) }]}>
+                        ₹{Number(donation.amount || 0).toLocaleString('en-IN')}
+                      </Text>
+                      <View style={[styles.statusPill, { backgroundColor: statusBg }]}>
+                        <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+                        <Text style={[styles.statusPillTxt, fStyle, { color: statusColor }]}>{statusLabel}</Text>
+                      </View>
+                    </View>
                   </View>
-                  <View>
-                    <Text style={[styles.historyCatText, fStyle, { color: primaryText, fontSize: scaleFont(14) }]}>{donation.category}</Text>
-                    <Text style={[styles.historyDateText, fStyle, { color: secondaryText, fontSize: scaleFont(11) }]}>
-                      {new Date(donation.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+
+                  {/* Transaction Metadata */}
+                  <View style={[styles.historyMetaRow, { backgroundColor: subtleSurface }]}>
+                    <Text style={[styles.historyMetaTxt, fStyle, { color: secondaryText, fontSize: scaleFont(11) }]} numberOfLines={1}>
+                      {isPaid && donation.paymentId
+                        ? `${donation.paymentMethod || 'Razorpay'} · ID: ${donation.paymentId}`
+                        : isPaid
+                        ? `${donation.paymentMethod || 'Razorpay'} · Verified Payment`
+                        : st === 'cancelled'
+                        ? 'Payment was cancelled before completion'
+                        : isFailed
+                        ? 'Payment could not be completed'
+                        : 'Awaiting payment confirmation'}
                     </Text>
                   </View>
+
+                  {/* Action Footer */}
+                  <View style={[styles.historyCardDivider, { backgroundColor: cardBorder }]} />
+                  <View style={styles.historyActionsRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.historyDeleteBtn,
+                        {
+                          backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2',
+                          borderColor: isDark ? 'rgba(239, 68, 68, 0.25)' : '#FECACA',
+                        },
+                      ]}
+                      onPress={() => handleDeleteDonation(donation)}
+                      disabled={isDeleting}
+                      activeOpacity={0.75}
+                    >
+                      {isDeleting ? (
+                        <ActivityIndicator size="small" color="#ef4444" />
+                      ) : (
+                        <>
+                          <Trash2 size={14} color="#ef4444" />
+                          <Text style={[styles.historyDeleteTxt, fStyle, { fontSize: scaleFont(12) }]}>Delete</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+
+                    {isPaid && (
+                      <TouchableOpacity
+                        style={[
+                          styles.historyReceiptBtn,
+                          {
+                            backgroundColor: isDark ? 'rgba(252, 211, 77, 0.14)' : '#FEF3C7',
+                            borderColor: isDark ? 'rgba(252, 211, 77, 0.35)' : '#FDE68A',
+                          },
+                        ]}
+                        onPress={() => {
+                          setSelectedDonation(donation);
+                          setShowReceipt(true);
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <FileText size={14} color={isDark ? '#FCD34D' : '#92400E'} />
+                        <Text
+                          style={[
+                            styles.historyReceiptTxt,
+                            fStyle,
+                            { color: isDark ? '#FCD34D' : '#92400E', fontSize: scaleFont(12) },
+                          ]}
+                        >
+                          View Receipt
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 </View>
-                <Text style={[styles.historyAmountText, fStyle, { color: isDark ? '#FCD34D' : primaryText, fontSize: scaleFont(15) }]}>₹{donation.amount}</Text>
-              </TouchableOpacity>
-            ))
+              );
+            })
           )}
         </View>
 
@@ -700,6 +1636,28 @@ export default function GivingScreen({ navigation }: any) {
         visible={showReceipt} 
         onClose={() => setShowReceipt(false)} 
         donation={selectedDonation} 
+      />
+
+      {/* ── Pledge Commitment Form Modal ── */}
+      <PledgeFormModal
+        visible={showPledgeModal}
+        onClose={() => setShowPledgeModal(false)}
+        initialAmount={amount}
+        initialCategory={activeCat}
+        onPayFirstInstallment={(pledge) => {
+          setPaymentMode('one_time');
+          setActivePledge({
+            id: pledge.id,
+            category: pledge.category,
+            pendingAmount: pledge.pledgeAmount,
+            eventId: pledge.eventId,
+            eventTitle: pledge.eventTitle,
+          });
+          setAmount(String(pledge.pledgeAmount));
+          if (CATEGORIES.some((c) => c.id === pledge.category)) {
+            setActiveCat(pledge.category);
+          }
+        }}
       />
     </View>
   );
@@ -825,6 +1783,10 @@ const styles = StyleSheet.create({
   copyBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12, gap: 6 },
   copyBtnTxt: { fontSize: 12, fontWeight: '700' },
   upiDivider: { height: 1, marginVertical: 16 },
+  subGroupTitle: { fontSize: 11, fontWeight: '800', letterSpacing: 0.6, marginBottom: 8, textTransform: 'uppercase' },
+  emptyInfoText: { fontSize: 13, lineHeight: 19 },
+  cardSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  bankFieldBlock: { marginTop: 8 },
 
   securityFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 24 },
   securityText: { fontSize: 11, color: '#94a3b8', fontWeight: '600' },
@@ -842,10 +1804,133 @@ const styles = StyleSheet.create({
   
   emptyHistoryBox: { padding: 20, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginTop: 10 },
   emptyHistoryText: { fontSize: 13, fontStyle: 'italic' },
-  historyCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderRadius: 16, marginBottom: 10, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
-  historyCardLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  historyIconBox: { padding: 10, borderRadius: 12 },
-  historyCatText: { fontSize: 14, fontWeight: '700' },
-  historyDateText: { fontSize: 11, marginTop: 2 },
-  historyAmountText: { fontSize: 15, fontWeight: '800' },
+  historyCard: {
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderLeftWidth: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  historyCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  historyCardLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  historyIconBox: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  historyCatText: { fontSize: 15, fontWeight: '800' },
+  historyDateText: { fontSize: 11, marginTop: 3 },
+  historyRightCol: { alignItems: 'flex-end', gap: 5 },
+  historyAmountText: { fontSize: 17, fontWeight: '800' },
+  statusPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusPillTxt: { fontSize: 10, fontWeight: '800', letterSpacing: 0.3, textTransform: 'uppercase' },
+  historyMetaRow: { marginTop: 12, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10 },
+  historyMetaTxt: { fontSize: 11, fontWeight: '600' },
+  historyCardDivider: { height: 1, marginVertical: 12 },
+  historyActionsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  historyDeleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  historyDeleteTxt: { color: '#ef4444', fontWeight: '700', fontSize: 12 },
+  historyReceiptBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  historyReceiptTxt: { fontWeight: '800', fontSize: 12 },
+  activePledgeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 18,
+    gap: 10,
+  },
+  activePledgeTitle: { fontSize: 13, fontWeight: '800' },
+  activePledgeSub: { fontSize: 11, marginTop: 2 },
+  modeSwitchRow: {
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 4,
+    marginBottom: 14,
+  },
+  modeOptionBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modeOptionTxt: { fontSize: 12, fontWeight: '800' },
+  recurringCard: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 16,
+  },
+  freqRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  freqChip: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  freqChipTxt: { fontSize: 12, fontWeight: '700' },
+  consentBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 10,
+  },
+  consentTxt: { flex: 1, lineHeight: 16, fontWeight: '600' },
+  pledgePromoCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 20,
+  },
+  pledgePromoTitle: { fontSize: 14, fontWeight: '800' },
+  pledgePromoSub: { fontSize: 11, marginTop: 2, lineHeight: 16 },
+  pledgePromoActions: { alignItems: 'flex-end', gap: 6 },
+  pledgeOpenBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  pledgeOpenTxt: { fontSize: 12, fontWeight: '800' },
+  viewPledgesLink: { fontSize: 11, fontWeight: '800' },
 });

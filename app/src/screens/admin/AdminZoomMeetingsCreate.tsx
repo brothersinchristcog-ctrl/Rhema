@@ -16,27 +16,116 @@ import {
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import * as Clipboard from 'expo-clipboard';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
+import { isMeetingAdmin, saveEditedOnlineMeeting } from '../../utils/meetingActions';
 
-export default function AdminZoomMeetingsCreate({ 
-  onBack, 
+function toJsDate(val: any): Date | null {
+  if (!val) return null;
+  if (typeof val?.toDate === 'function') return val.toDate();
+  if (typeof val?.seconds === 'number') return new Date(val.seconds * 1000);
+  if (val instanceof Date) return val;
+  if (typeof val === 'string' || typeof val === 'number') {
+    const parsed = new Date(val);
+    return isNaN(parsed.getTime()) ? null : parsed;
+  }
+  return null;
+}
+
+function formatTime12h(date: Date): string {
+  return date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
+function formatDateDDMMYYYY(date: Date): string {
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${day}-${month}-${year}`;
+}
+
+function resolveInitialProvider(
+  editingMeeting: any,
+  initialProvider: 'zoom' | 'google_meet'
+): 'zoom' | 'google_meet' {
+  if (editingMeeting) {
+    return editingMeeting.provider === 'zoom' || editingMeeting.meetingType === 'zoom'
+      ? 'zoom'
+      : 'google_meet';
+  }
+  return initialProvider;
+}
+
+function buildInitialForm(editingMeeting: any, fallbackTeacher: string) {
+  if (!editingMeeting) {
+    return {
+      title: '',
+      topic: '',
+      bibleBook: '',
+      date: '',
+      startTime: '',
+      endTime: '',
+      teacherName: fallbackTeacher || '',
+      meetingLink: '',
+      zoomMeetingId: '',
+      password: '',
+    };
+  }
+  const startDt = toJsDate(editingMeeting.startTime);
+  const endDt = toJsDate(editingMeeting.endTime);
+
+  let dateStr = String(editingMeeting.date || '').trim();
+  if (!dateStr && typeof editingMeeting.scheduledDate === 'string' && editingMeeting.scheduledDate.includes('-')) {
+    const parts = editingMeeting.scheduledDate.split('-');
+    if (parts.length === 3 && parts[0]?.length === 4) {
+      dateStr = `${parts[2]}-${parts[1]}-${parts[0]}`;
+    }
+  }
+  if (!dateStr && startDt) {
+    dateStr = formatDateDDMMYYYY(startDt);
+  }
+
+  return {
+    title: String(editingMeeting.title || ''),
+    topic: String(editingMeeting.topic || editingMeeting.subtitle || editingMeeting.description || ''),
+    bibleBook: String(editingMeeting.bibleBook || ''),
+    date: dateStr,
+    startTime: String(editingMeeting.startTimeLabel || (startDt ? formatTime12h(startDt) : '')),
+    endTime: String(editingMeeting.endTimeLabel || (endDt ? formatTime12h(endDt) : '')),
+    teacherName: String(editingMeeting.teacherName || editingMeeting.teacher || fallbackTeacher || ''),
+    meetingLink: String(editingMeeting.meetingLink || editingMeeting.meetingUrl || editingMeeting.url || ''),
+    zoomMeetingId: String(editingMeeting.meetingId || ''),
+    password: String(editingMeeting.password || ''),
+  };
+}
+
+export default function AdminZoomMeetingsCreate({
+  onBack,
   initialProvider = 'zoom',
   hideHeader = false,
-}: { 
-  onBack: () => void; 
+  editingMeeting = null,
+  onSaved,
+}: {
+  onBack: () => void;
   initialProvider?: 'zoom' | 'google_meet';
   hideHeader?: boolean;
+  editingMeeting?: any | null;
+  onSaved?: (updatedMeeting: any) => void;
 }) {
   const { isDark, screenBg, cardSurface, primaryText, secondaryText, borderColor: adminBorderColor, barStyle } = useAdminTheme();
   const insets = useSafeAreaInsets();
-  const { member } = useAuth();
-  const [provider, setProvider] = useState<'zoom' | 'google_meet'>(initialProvider);
+  const { member, isPlatformSuperAdmin } = useAuth();
+  const canManageMeetings = isMeetingAdmin(member, isPlatformSuperAdmin);
+  const isEditing = Boolean(editingMeeting?.id);
+  const [provider, setProvider] = useState<'zoom' | 'google_meet'>(() =>
+    resolveInitialProvider(editingMeeting, initialProvider)
+  );
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (initialProvider) {
-      setProvider(initialProvider);
-    }
-  }, [initialProvider]);
+    setProvider(resolveInitialProvider(editingMeeting, initialProvider));
+  }, [initialProvider, editingMeeting]);
   
   // Custom Popup State
   const [popup, setPopup] = useState({
@@ -88,35 +177,21 @@ export default function AdminZoomMeetingsCreate({
     }
   };
 
-  const [form, setForm] = useState({
-    title: '',
-    topic: '',
-    bibleBook: '',
-    date: '',
-    startTime: '',
-    endTime: '',
-    teacherName: member?.name || '',
-    meetingLink: '',
-  });
+  const [form, setForm] = useState(() =>
+    buildInitialForm(editingMeeting, member?.name || '')
+  );
+
+  useEffect(() => {
+    if (editingMeeting) {
+      setForm(buildInitialForm(editingMeeting, member?.name || ''));
+    }
+  }, [editingMeeting?.id]);
 
   const [isDatePickerVisible, setDatePickerVisibility] = useState(false);
   const [isStartTimePickerVisible, setStartTimePickerVisibility] = useState(false);
   const [isEndTimePickerVisible, setEndTimePickerVisibility] = useState(false);
 
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString('en-US', { 
-      hour: 'numeric', 
-      minute: '2-digit',
-      hour12: true 
-    });
-  };
-  
-  const formatDateDDMMYYYY = (date: Date) => {
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    return `${day}-${month}-${year}`;
-  };
+  const formatTime = formatTime12h;
 
   const handleChange = (key: string, value: string) => {
     setForm(prev => ({ ...prev, [key]: value }));
@@ -145,7 +220,12 @@ export default function AdminZoomMeetingsCreate({
       const data = response.data as any;
       const resolvedUrl = data?.meetingUri || data?.meetingUrl;
       if (data?.success && resolvedUrl) {
-        setForm(prev => ({ ...prev, meetingLink: resolvedUrl }));
+        setForm(prev => ({
+          ...prev,
+          meetingLink: resolvedUrl,
+          zoomMeetingId: String(data?.meetingId || prev.zoomMeetingId || ''),
+          password: String(data?.password || prev.password || ''),
+        }));
         showPopup('link', 'Zoom Link Generated!', 'Your official Zoom Meeting has been created. Members can join via this link.', resolvedUrl);
       } else {
         showPopup('error', 'Error', data?.message || 'Failed to generate Zoom link.');
@@ -242,6 +322,10 @@ export default function AdminZoomMeetingsCreate({
   };
 
   const handleGenerateLink = () => {
+    if (!canManageMeetings) {
+      showPopup('error', 'Admin Access Only', 'Only church admins or pastors can generate meeting links.');
+      return;
+    }
     if (provider === 'google_meet') {
       handleGenerateGoogleMeetLink();
     } else {
@@ -250,38 +334,115 @@ export default function AdminZoomMeetingsCreate({
   };
 
   const handleCreate = async () => {
-    if (!form.title || !form.date || !form.startTime || !form.endTime || !form.meetingLink) {
+    if (!canManageMeetings) {
+      showPopup('error', 'Admin Access Only', 'Only church admins or pastors can create or edit online meetings.');
+      return;
+    }
+
+    if (!form.title.trim() || !form.date || !form.startTime || !form.endTime || !form.meetingLink.trim()) {
       showPopup('error', 'Missing Fields', 'Please fill out all required fields, including the Meeting Link.');
+      return;
+    }
+
+    const startTimestamp = parseDateTimeToMs(form.date, form.startTime);
+    const endTimestamp = parseDateTimeToMs(form.date, form.endTime);
+    if (startTimestamp && endTimestamp && endTimestamp <= startTimestamp) {
+      showPopup('error', 'Invalid Time Range', 'End Time must be later than Start Time.');
       return;
     }
 
     setLoading(true);
     try {
-      const startTimestamp = parseDateTimeToMs(form.date, form.startTime);
-      const endTimestamp = parseDateTimeToMs(form.date, form.endTime);
+      const targetChurchId = editingMeeting?.churchId || member?.churchId || 'rhema';
+
+      if (isEditing && editingMeeting?.id) {
+        const startMs = startTimestamp || Date.now();
+        const endMs = endTimestamp && endTimestamp > startMs ? endTimestamp : startMs + 60 * 60 * 1000;
+        const cleanTitle = form.title.trim();
+        const cleanTopic = form.topic.trim();
+        const cleanBook = form.bibleBook.trim();
+        const cleanTeacher = form.teacherName.trim() || 'Church Admin';
+        const cleanLink = form.meetingLink.trim();
+
+        await saveEditedOnlineMeeting({
+          churchId: targetChurchId,
+          meetingId: editingMeeting.id,
+          title: cleanTitle,
+          topic: cleanTopic,
+          bibleBook: cleanBook,
+          date: form.date,
+          startTime: form.startTime,
+          endTime: form.endTime,
+          teacherId: editingMeeting.teacherId || member?.id || 'admin',
+          teacherName: cleanTeacher,
+          meetingLink: cleanLink,
+          provider,
+          startTimestamp: startMs,
+          endTimestamp: endMs,
+        });
+
+        const updatedMeeting = {
+          ...editingMeeting,
+          title: cleanTitle,
+          topic: cleanTopic,
+          description: cleanTopic,
+          bibleBook: cleanBook,
+          date: form.date,
+          startTimeLabel: form.startTime,
+          endTimeLabel: form.endTime,
+          startTime: { seconds: Math.floor(startMs / 1000) },
+          endTime: { seconds: Math.floor(endMs / 1000) },
+          teacherName: cleanTeacher,
+          meetingLink: cleanLink,
+          meetingUrl: cleanLink,
+          url: cleanLink,
+          provider,
+          meetingType: provider,
+        };
+
+        showPopup(
+          'success',
+          'Meeting Updated!',
+          `${provider === 'google_meet' ? 'Google Meet' : 'Zoom Meeting'} changes have been saved.`,
+          '',
+          () => {
+            if (onSaved) onSaved(updatedMeeting);
+            else onBack();
+          }
+        );
+        return;
+      }
 
       const createBibleClass = firebase.app().functions('asia-south1').httpsCallable('createBibleClass');
       const result = await createBibleClass({
-        churchId: member?.churchId || 'rhema',
-        title: form.title,
-        topic: form.topic,
-        bibleBook: form.bibleBook,
+        churchId: targetChurchId,
+        title: form.title.trim(),
+        topic: form.topic.trim(),
+        bibleBook: form.bibleBook.trim(),
         date: form.date,
         startTime: form.startTime,
         endTime: form.endTime,
         teacherId: member?.id || 'admin',
-        teacherName: form.teacherName,
-        meetingLink: form.meetingLink,
+        teacherName: form.teacherName.trim(),
+        meetingLink: form.meetingLink.trim(),
         provider: provider,
         meetingType: provider,
         recurrence: 'NONE',
+        ...(form.zoomMeetingId ? { meetingId: form.zoomMeetingId } : {}),
+        ...(form.password ? { password: form.password } : {}),
         startTimestamp,
         endTimestamp,
       });
 
       const data = result.data as any;
       if (data.success) {
-        showPopup('success', 'Class Created!', `${provider === 'google_meet' ? 'Google Meet' : 'Zoom Meeting'} has been scheduled successfully and members will be notified.`, '', onBack);
+        showPopup(
+          'success',
+          'Meeting Scheduled!',
+          `${provider === 'google_meet' ? 'Google Meet' : 'Zoom Meeting'} has been scheduled and members have been notified. Tap "Go Live" when you start the meeting to send a live join alert.`,
+          '',
+          onBack
+        );
       } else {
         showPopup('error', 'Error', data.message || 'Failed to create class');
       }
@@ -308,7 +469,7 @@ export default function AdminZoomMeetingsCreate({
               backgroundColor: isDark ? '#000000' : '#FFFFFF',
               borderBottomWidth: 1.5,
               borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0',
-              paddingTop: Platform.OS === 'ios' ? Math.max(insets.top, 20) : 10,
+              paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 20 : 12),
               paddingBottom: 10,
               paddingHorizontal: 16,
             }
@@ -325,7 +486,13 @@ export default function AdminZoomMeetingsCreate({
             </TouchableOpacity>
 
             <Text style={[styles.headerTitle, { color: primaryText }]} numberOfLines={1}>
-              {isGoogle ? 'Schedule Google Meet' : 'Schedule Zoom Meeting'}
+              {isEditing
+                ? isGoogle
+                  ? 'Edit Google Meet'
+                  : 'Edit Zoom Meeting'
+                : isGoogle
+                ? 'Schedule Google Meet'
+                : 'Schedule Zoom Meeting'}
             </Text>
 
             <View style={{ width: 40 }} />
@@ -333,10 +500,21 @@ export default function AdminZoomMeetingsCreate({
         </View>
       )}
 
-      <KeyboardAvoidingView 
-        style={{ flex: 1 }} 
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      {!canManageMeetings ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 }}>
+          <AlertCircle size={40} color="#EF4444" style={{ marginBottom: 12 }} />
+          <Text style={[styles.screenHeading, { color: primaryText, textAlign: 'center', marginBottom: 6 }]}>
+            Admin Access Required
+          </Text>
+          <Text style={[styles.subtitle, { color: secondaryText, textAlign: 'center', marginBottom: 0 }]}>
+            Only church admins and pastors can create or edit online meetings.
+          </Text>
+        </View>
+      ) : (
+        <KeyboardAvoidingView 
+          style={{ flex: 1 }} 
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
         <ScrollView 
           contentContainerStyle={[
             styles.scroll,
@@ -347,8 +525,10 @@ export default function AdminZoomMeetingsCreate({
         >
           <Text style={[styles.screenHeading, { color: primaryText }]}>Meeting Details</Text>
           <Text style={[styles.subtitle, { color: secondaryText }]}>
-            {isGoogle 
-              ? 'Schedule a new Bible class with an automatic Google Meet space link for members.' 
+            {isEditing
+              ? `Update the scheduled ${isGoogle ? 'Google Meet' : 'Zoom Meeting'} time, topic, host, or link.`
+              : isGoogle
+              ? 'Schedule a new Bible class with an automatic Google Meet space link for members.'
               : 'Generate an official Zoom Meet link automatically, and notifications will be sent to members.'}
           </Text>
           
@@ -465,9 +645,15 @@ export default function AdminZoomMeetingsCreate({
               <View style={[styles.inputContainer, { backgroundColor: cardSurface, borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : adminBorderColor, justifyContent: 'space-between', paddingRight: 8 }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, overflow: 'hidden' }}>
                   <LinkIcon size={18} color={isGoogle ? '#10B981' : (isDark ? '#60A5FA' : '#2563EB')} />
-                  <Text style={[styles.input, { color: isGoogle ? '#10B981' : (isDark ? '#60A5FA' : '#2563EB'), fontWeight: '600' }]} numberOfLines={1}>
-                    {form.meetingLink}
-                  </Text>
+                  <TextInput
+                    style={[styles.input, { color: isGoogle ? '#10B981' : (isDark ? '#60A5FA' : '#2563EB'), fontWeight: '600' }]}
+                    value={form.meetingLink}
+                    onChangeText={(t) => handleChange('meetingLink', t)}
+                    placeholder="https://meet.google.com/..."
+                    placeholderTextColor={isDark ? '#64748B' : '#94A3B8'}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                   <TouchableOpacity onPress={() => copyToClipboard(form.meetingLink)} style={styles.iconBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -514,12 +700,13 @@ export default function AdminZoomMeetingsCreate({
               <ActivityIndicator color={isDark ? '#000000' : '#FFFFFF'} />
             ) : (
               <Text style={[styles.submitBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>
-                Create & Notify Members
+                {isEditing ? 'Save Changes' : 'Schedule Meeting'}
               </Text>
             )}
           </TouchableOpacity>
         </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      )}
 
       <DateTimePickerModal
         isVisible={isDatePickerVisible}

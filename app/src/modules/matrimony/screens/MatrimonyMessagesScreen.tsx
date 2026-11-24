@@ -21,6 +21,7 @@ import {
   Crown,
   Heart,
   Home,
+  Lock,
   MessageCircle,
   Search,
   SlidersHorizontal,
@@ -31,6 +32,8 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '../../../context/AuthContext';
 import { FONT_STYLE_OPTIONS, useTheme } from '../../../context/ThemeContext';
+import { e2eeService, E2EEStateSnapshot } from '../../../services/e2eeService';
+import ChatEncryptionModal, { ChatEncryptionModalMode } from '../../../components/ChatEncryptionModal';
 import { isMatrimonyInactiveError, matrimonyApi } from '../services/matrimonyApi';
 import { matrimonyChatService } from '../services/matrimonyChatService';
 import { matrimonyPerf } from '../services/matrimonyPerf';
@@ -294,6 +297,26 @@ export default function MatrimonyMessagesScreen({ navigation }: any) {
   const [typingMap, setTypingMap] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(() => !initialChatContacts);
   const [refreshing, setRefreshing] = useState(false);
+  const [e2eeState, setE2eeState] = useState<E2EEStateSnapshot>(() => e2eeService.getState());
+  const [e2eeModalMode, setE2eeModalMode] = useState<ChatEncryptionModalMode | null>(null);
+  const autoPromptedE2eeRef = useRef(false);
+
+  useEffect(() => {
+    const syncPrompt = (snap: E2EEStateSnapshot) => {
+      setE2eeState(snap);
+      if (!myUid || autoPromptedE2eeRef.current) return;
+      if (snap.status === 'needs_pin_unlock') {
+        autoPromptedE2eeRef.current = true;
+        setE2eeModalMode('unlock_backup');
+      } else if (snap.status === 'ready' && snap.needsBackupPrompt) {
+        autoPromptedE2eeRef.current = true;
+        setE2eeModalMode('setup_backup');
+      }
+    };
+    syncPrompt(e2eeService.getState());
+    const unsub = e2eeService.subscribeState(syncPrompt);
+    return () => unsub();
+  }, [myUid]);
 
   const hasContactsRef = useRef((initialChatContacts?.contacts?.length || 0) > 0);
 
@@ -562,8 +585,44 @@ export default function MatrimonyMessagesScreen({ navigation }: any) {
           { backgroundColor: cardSurface, borderBottomColor: dividerColor },
         ]}
       >
-        <View style={styles.titleRow}>
+        <View
+          style={[
+            styles.titleRow,
+            { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+          ]}
+        >
           <Text style={[styles.screenTitle, { color: colors.text, fontFamily }]}>Messages</Text>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() =>
+              setE2eeModalMode(
+                e2eeState.status === 'needs_pin_unlock' ? 'unlock_backup' : 'manage'
+              )
+            }
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 5,
+              paddingHorizontal: 10,
+              paddingVertical: 5,
+              borderRadius: 12,
+              backgroundColor: 'rgba(0,168,132,0.12)',
+              borderWidth: 1,
+              borderColor: 'rgba(0,168,132,0.35)',
+            }}
+          >
+            <Lock size={13} color={WHATSAPP_GREEN} />
+            <Text
+              style={{
+                fontSize: 11.5,
+                fontWeight: '700',
+                color: WHATSAPP_GREEN,
+                fontFamily,
+              }}
+            >
+              {e2eeState.status === 'needs_pin_unlock' ? 'Unlock PIN' : 'Encrypted'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         <View style={[styles.searchBox, { backgroundColor: softBg }]}>
@@ -628,6 +687,39 @@ export default function MatrimonyMessagesScreen({ navigation }: any) {
 
       {/* Chats List */}
       <View style={{ flex: 1, backgroundColor: softBg }}>
+        {e2eeState.status === 'needs_pin_unlock' ? (
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => setE2eeModalMode('unlock_backup')}
+            style={{
+              marginHorizontal: 16,
+              marginTop: 10,
+              marginBottom: 4,
+              paddingHorizontal: 14,
+              paddingVertical: 10,
+              borderRadius: 12,
+              backgroundColor: isDark ? '#182229' : '#FFF3CD',
+              borderWidth: 1,
+              borderColor: isDark ? 'rgba(251,191,36,0.35)' : '#FDE68A',
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <Lock size={14} color={isDark ? '#FBBF24' : '#856404'} />
+            <Text
+              style={{
+                flex: 1,
+                fontSize: 12.5,
+                fontWeight: '700',
+                color: isDark ? '#FDE68A' : '#856404',
+                fontFamily,
+              }}
+            >
+              Encrypted messages locked — Tap to enter your Backup PIN
+            </Text>
+          </TouchableOpacity>
+        ) : null}
         {loading && displayedRows.length === 0 ? (
           <View style={styles.centerBox}>
             <ActivityIndicator size="large" color={WHATSAPP_GREEN} />
@@ -744,7 +836,6 @@ export default function MatrimonyMessagesScreen({ navigation }: any) {
                 <X size={22} color={colors.text} />
               </TouchableOpacity>
             </View>
-
             <View style={[styles.filterSheetDivider, { backgroundColor: dividerColor }]} />
 
             <View style={styles.filterOptionsList}>
@@ -877,6 +968,15 @@ export default function MatrimonyMessagesScreen({ navigation }: any) {
           </View>
         </View>
       </Modal>
+
+      <ChatEncryptionModal
+        visible={Boolean(e2eeModalMode)}
+        uid={myUid}
+        mode={e2eeModalMode || 'manage'}
+        isDark={isDark}
+        accentColor={WHATSAPP_GREEN}
+        onClose={() => setE2eeModalMode(null)}
+      />
     </SafeAreaView>
   );
 }

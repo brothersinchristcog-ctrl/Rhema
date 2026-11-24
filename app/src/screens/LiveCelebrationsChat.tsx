@@ -26,6 +26,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../context/AuthContext';
 import { useChurch } from '../context/ChurchContext';
 import { LinearGradient } from 'expo-linear-gradient';
+import { e2eeService, E2EEStateSnapshot } from '../services/e2eeService';
+import { roomKeyManager } from '../services/roomKeyManager';
+import ChatEncryptionModal, { ChatEncryptionModalMode } from '../components/ChatEncryptionModal';
 
 const WISH_DICTIONARY: Record<string, string[]> = {
   'Birthday': [
@@ -123,6 +126,16 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
   const isTypingLocally = useRef(false);
   
   const [initialLastReadTime, setInitialLastReadTime] = useState<number>(0);
+
+  const e2eeUid = user?.uid || member?.id || '';
+  const [e2eeState, setE2eeState] = useState<E2EEStateSnapshot>(() => e2eeService.getState());
+  const [e2eeModalMode, setE2eeModalMode] = useState<ChatEncryptionModalMode | null>(null);
+
+  useEffect(() => {
+    setE2eeState(e2eeService.getState());
+    const unsub = e2eeService.subscribeState(setE2eeState);
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     const fetchLastRead = async () => {
@@ -240,32 +253,62 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
   useEffect(() => {
     if (!activeChurch?.id) return;
 
-    const unsubscribe = firestore()
+    const churchId = activeChurch.id;
+    const celebrationDocRef = firestore()
       .collection('Rhema Church')
-      .doc(activeChurch.id)
+      .doc(churchId)
       .collection('live_celebrations')
-      .doc(todayStr)
+      .doc(todayStr);
+    const ctx = { scope: 'celebrations' as const, churchId, dateId: todayStr };
+
+    let disposed = false;
+    let seq = 0;
+    let latestDocs: Array<{ id: string; data: Record<string, any> }> = [];
+    let hasLockedMessages = false;
+
+    const processDocs = async (docs: Array<{ id: string; data: Record<string, any> }>) => {
+      const currentSeq = ++seq;
+      let foundLocked = false;
+      const decrypted = await Promise.all(
+        docs.map(async ({ id, data }) => {
+          const rawText = typeof data.text === 'string' ? data.text : '';
+          let finalText = rawText;
+          if (rawText && e2eeService.isEncryptedPayload(rawText) && e2eeUid) {
+            const dec = await roomKeyManager.decryptString(ctx, e2eeUid, rawText);
+            finalText = dec.text;
+            if (dec.lockedReason) foundLocked = true;
+          }
+          return { id, ...data, text: finalText };
+        })
+      );
+      if (disposed || currentSeq !== seq) return;
+      hasLockedMessages = foundLocked;
+      setMessages(decrypted);
+      setLoading(false);
+    };
+
+    const unsubscribe = celebrationDocRef
       .collection('messages')
       .orderBy('createdAt', 'asc')
-      .onSnapshot(snap => {
-        if (snap) {
-          const msgs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          setMessages(msgs);
+      .onSnapshot(
+        (snap) => {
+          if (snap) {
+            latestDocs = snap.docs.map((doc) => ({ id: doc.id, data: doc.data() || {} }));
+            processDocs(latestDocs);
+          } else {
+            setLoading(false);
+          }
+        },
+        (err) => {
+          console.error('Chat error:', err);
+          setLoading(false);
         }
-        setLoading(false);
-      }, err => {
-        console.error('Chat error:', err);
-        setLoading(false);
-      });
+      );
 
-    const typingUnsubscribe = firestore()
-      .collection('Rhema Church')
-      .doc(activeChurch.id)
-      .collection('live_celebrations')
-      .doc(todayStr)
+    const typingUnsubscribe = celebrationDocRef
       .collection('presence')
       .doc('typing')
-      .onSnapshot(snap => {
+      .onSnapshot((snap) => {
         if (snap) {
           const data = typeof snap.data === 'function' ? snap.data() : null;
           if (data) {
@@ -279,20 +322,89 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
         }
       });
 
+    const keyReqsUnsubscribe = celebrationDocRef.collection('keyRequests').onSnapshot(
+      (reqSnap) => {
+        if (
+          reqSnap &&
+          !reqSnap.empty &&
+          e2eeUid &&
+          e2eeService.getState().status === 'ready'
+        ) {
+          roomKeyManager.fulfillCelebrationsKeyRequests(ctx, e2eeUid).catch(() => {});
+        }
+      },
+      () => {}
+    );
+
+    const envelopesUnsubscribe = e2eeUid
+      ? celebrationDocRef
+          .collection('keyEnvelopes')
+          .where('uid', '==', e2eeUid)
+          .onSnapshot(
+            () => {
+              if (hasLockedMessages && latestDocs.length > 0) {
+                processDocs(latestDocs);
+              }
+            },
+            () => {}
+          )
+      : () => {};
+
+    let prevStatus = e2eeService.getState().status;
+    const unsubState = e2eeService.subscribeState((snap) => {
+      if (snap.status !== prevStatus) {
+        prevStatus = snap.status;
+        if (snap.status === 'ready') {
+          if (latestDocs.length > 0) {
+            processDocs(latestDocs);
+          }
+          if (e2eeUid) {
+            roomKeyManager.fulfillCelebrationsKeyRequests(ctx, e2eeUid).catch(() => {});
+          }
+        }
+      }
+    });
+
     return () => {
+      disposed = true;
       unsubscribe();
       typingUnsubscribe();
+      keyReqsUnsubscribe();
+      envelopesUnsubscribe();
+      unsubState();
     };
-  }, [activeChurch?.id]);
+  }, [activeChurch?.id, e2eeUid]);
 
   const sendMessage = async (text: string) => {
-    if (!text.trim() || !activeChurch?.id || !member) return;
-    
+    const cleanText = text.trim();
+    if (!cleanText || !activeChurch?.id || !member) return;
+
+    const ctx = {
+      scope: 'celebrations' as const,
+      churchId: activeChurch.id,
+      dateId: todayStr,
+    };
+
+    let storedText = cleanText;
+    if (e2eeUid) {
+      try {
+        const enc = await roomKeyManager.encryptString(ctx, e2eeUid, [e2eeUid], cleanText);
+        storedText = enc.cipherText;
+      } catch (encErr: any) {
+        if (encErr?.message === 'PIN_UNLOCK_REQUIRED') {
+          setE2eeModalMode('unlock_backup');
+          return;
+        }
+        Alert.alert('Encryption Error', encErr?.message || 'Unable to encrypt message.');
+        return;
+      }
+    }
+
     setInputText('');
     Keyboard.dismiss();
     isTypingLocally.current = false;
     updateTypingStatus(false);
-    
+
     try {
       if (editingMsgId) {
         await firestore()
@@ -303,8 +415,9 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
           .collection('messages')
           .doc(editingMsgId)
           .update({
-            text: text.trim(),
-            isEdited: true
+            text: storedText,
+            encrypted: true,
+            isEdited: true,
           });
         setEditingMsgId(null);
       } else {
@@ -316,15 +429,26 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
           .doc(todayStr)
           .collection('messages')
           .doc();
-          
+
         batch.set(msgRef, {
-            text: text.trim(),
-            userId: member.id,
-            userName: member.name || user?.displayName || 'Unknown',
-            userPhoto: (member as any).profilePhoto || (member as any).photoURL || (member as any).photoUrl || (member as any).profileImageUrl || (member as any).PhotoUrl || (member as any).Photo || user?.photoURL || null,
-            createdAt: firestore.FieldValue.serverTimestamp(),
-            reactions: {},
-            ...(selectedCelebrantId ? { targetCelebrantId: selectedCelebrantId, targetCelebrantName: selectedCelebrantName } : {})
+          text: storedText,
+          encrypted: true,
+          userId: member.id,
+          userName: member.name || user?.displayName || 'Unknown',
+          userPhoto:
+            (member as any).profilePhoto ||
+            (member as any).photoURL ||
+            (member as any).photoUrl ||
+            (member as any).profileImageUrl ||
+            (member as any).PhotoUrl ||
+            (member as any).Photo ||
+            user?.photoURL ||
+            null,
+          createdAt: firestore.FieldValue.serverTimestamp(),
+          reactions: {},
+          ...(selectedCelebrantId
+            ? { targetCelebrantId: selectedCelebrantId, targetCelebrantName: selectedCelebrantName }
+            : {}),
         });
 
         if (selectedCelebrantId) {
@@ -616,9 +740,36 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
           <Text style={styles.headerDate}>{dateFormatted}</Text>
         </View>
         
-        <View style={styles.liveBadge}>
-          <AnimatedSpikes />
-          <Text style={styles.liveText}>LIVE</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <TouchableOpacity
+            onPress={() =>
+              setE2eeModalMode(
+                e2eeState.status === 'needs_pin_unlock' ? 'unlock_backup' : 'manage'
+              )
+            }
+            activeOpacity={0.8}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 4,
+              paddingHorizontal: 8,
+              paddingVertical: 4,
+              borderRadius: 12,
+              backgroundColor: 'rgba(255, 200, 128, 0.14)',
+              borderWidth: 1,
+              borderColor: 'rgba(255, 200, 128, 0.35)',
+            }}
+          >
+            <MaterialIcons name="lock" size={12} color={COLORS.primary} />
+            <Text style={{ color: COLORS.primary, fontSize: 10.5, fontWeight: '700' }}>
+              {e2eeState.status === 'needs_pin_unlock' ? 'PIN' : 'E2EE'}
+            </Text>
+          </TouchableOpacity>
+
+          <View style={styles.liveBadge}>
+            <AnimatedSpikes />
+            <Text style={styles.liveText}>LIVE</Text>
+          </View>
         </View>
       </View>
 
@@ -701,6 +852,29 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
 
           {/* Live Wishes Chat Section */}
           <View style={styles.chatSection}>
+            {e2eeState.status === 'needs_pin_unlock' ? (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => setE2eeModalMode('unlock_backup')}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8,
+                  paddingHorizontal: 12,
+                  paddingVertical: 9,
+                  borderRadius: 12,
+                  marginBottom: 10,
+                  backgroundColor: 'rgba(255, 200, 128, 0.14)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(255, 200, 128, 0.38)',
+                }}
+              >
+                <MaterialIcons name="lock" size={14} color={COLORS.primary} />
+                <Text style={{ flex: 1, color: COLORS.primary, fontSize: 12, fontWeight: '700' }}>
+                  Encrypted wishes locked on this device — Tap to enter Backup PIN
+                </Text>
+              </TouchableOpacity>
+            ) : null}
             <View style={styles.chatHeader}>
               <View style={[styles.chatHeaderLeft, { flex: 1 }]}>
                 <Text style={{ fontSize: 20 }}>💬</Text>
@@ -1011,6 +1185,14 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
         </TouchableOpacity>
       </Modal>
 
+      <ChatEncryptionModal
+        visible={Boolean(e2eeModalMode)}
+        uid={e2eeUid}
+        mode={e2eeModalMode || 'manage'}
+        isDark={true}
+        accentColor={COLORS.primary}
+        onClose={() => setE2eeModalMode(null)}
+      />
     </SafeAreaView>
   );
 }

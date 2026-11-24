@@ -25,7 +25,7 @@ const DEFAULT_RHEMA_DETAILS: ChurchDetails = {
   churchCode: 'RHEMA',
   subdomain: 'rhema',
   contactEmail: 'contact@rhemaglobalministries.org',
-  contactPhone: '+1234567890',
+  contactPhone: '',
   tagline: 'Transforming Lives Through The Word of God',
   aboutUs: 'Welcome to Rhema Global Ministries. A Bible-believing, Christ-centered ministry.',
   isActive: true,

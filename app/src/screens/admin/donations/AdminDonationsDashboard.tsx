@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, DeviceEventEmitter, StatusBar, Platform, Animated, Easing } from 'react-native';
-import { ArrowLeft, FileText, Heart, Sun, Calendar, TrendingUp } from 'lucide-react-native';
+import { ArrowLeft, FileText, Heart, Sun, Calendar, TrendingUp, BarChart3 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,7 +8,7 @@ import { COLORS, formatCurrency } from './AdminDonationsUtils';
 import { AdminTabContext } from '../../../context/AdminTabContext';
 import { useAdminTheme } from '../../../utils/adminThemeHelper';
 
-export default function AdminDonationsDashboard({ donations = [], onNavigate }: any) {
+export default function AdminDonationsDashboard({ donations = [], pledgesCount = 0, onNavigate }: any) {
   const { isDark } = useAdminTheme();
   const insets = useSafeAreaInsets();
   const { setActiveTab } = useContext(AdminTabContext) || {};
@@ -611,6 +611,32 @@ export default function AdminDonationsDashboard({ donations = [], onNavigate }: 
             </LinearGradient>
           </TouchableOpacity>
         </View>
+
+        {/* ── Donation & Pledge Reports Entry Card ── */}
+        <TouchableOpacity
+          style={[
+            styles.reportsBannerBtn,
+            {
+              backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+              borderColor: isDark ? 'rgba(255,255,255,0.12)' : '#CBD5E1',
+            },
+          ]}
+          onPress={() => onNavigate('reports')}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.reportsIconBox, { backgroundColor: isDark ? 'rgba(252,211,77,0.14)' : '#FEF3C7' }]}>
+            <BarChart3 size={20} color={isDark ? '#FCD34D' : '#92400E'} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.reportsBannerTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+              Donation & Pledge Reports
+            </Text>
+            <Text style={[styles.reportsBannerSub, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+              App, Member, Gateway, Recurring & {pledgesCount} Pledge Reports
+            </Text>
+          </View>
+          <Text style={{ fontSize: 12, fontWeight: '800', color: isDark ? '#FCD34D' : '#0F766E' }}>Open →</Text>
+        </TouchableOpacity>
       </ScrollView>
 
       {/* ── Bottom Navigation in One Long Badge with Single Cross Line & Shadow ── */}
@@ -1059,5 +1085,30 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: '800',
     letterSpacing: 0.1,
+  },
+  reportsBannerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    marginTop: 14,
+    marginBottom: 8,
+  },
+  reportsIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reportsBannerTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  reportsBannerSub: {
+    fontSize: 11,
+    marginTop: 2,
   },
 });

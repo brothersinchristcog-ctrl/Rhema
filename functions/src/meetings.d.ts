@@ -1,20 +1,84 @@
+export interface OnlineMeetingTopicMessageParams {
+    title: string;
+    body: string;
+    churchId: string;
+    meetingId: string;
+    notificationType?: 'online_meeting' | 'online_meeting_scheduled';
+    provider?: string | undefined;
+    url?: string | undefined;
+    password?: string | undefined;
+    date?: string | undefined;
+    startTimeLabel?: string | undefined;
+    endTimeLabel?: string | undefined;
+    teacherName?: string | undefined;
+    topic?: string | undefined;
+    bibleBook?: string | undefined;
+}
+/**
+ * Build a high-priority FCM payload for online meeting alerts
+ * targeting Android's 'church_alerts' channel and iOS APNs alerts.
+ */
+export declare function buildOnlineMeetingTopicMessage({ title, body, churchId, meetingId, notificationType, provider, url, password, date, startTimeLabel, endTimeLabel, teacherName, topic, bibleBook, }: OnlineMeetingTopicMessageParams): {
+    notification: {
+        title: string;
+        body: string;
+    };
+    data: {
+        title: string;
+        body: string;
+        channelId: string;
+        sound: string;
+        priority: string;
+        bibleBook?: string;
+        topic?: string;
+        teacherName?: string;
+        endTimeLabel?: string;
+        startTimeLabel?: string;
+        date?: string;
+        password?: string;
+        type: "online_meeting" | "online_meeting_scheduled";
+        id: string;
+        meetingId: string;
+        churchId: string;
+        provider: string;
+        url: string;
+        screen: string;
+        click_action: string;
+    };
+    android: {
+        priority: "high";
+        notification: {
+            channelId: string;
+            sound: string;
+            priority: "max";
+            defaultSound: boolean;
+            defaultVibrateTimings: boolean;
+            visibility: "public";
+        };
+    };
+    apns: {
+        headers: {
+            'apns-priority': string;
+            'apns-push-type': string;
+        };
+        payload: {
+            aps: {
+                alert: {
+                    title: string;
+                    body: string;
+                };
+                sound: string;
+                badge: number;
+            };
+        };
+    };
+    topic: string;
+};
 /**
  * Helper: Acquire Server-to-Server OAuth access token from Zoom
  */
 export declare function getZoomServerToServerToken(): Promise<string>;
 export declare function extractZoomUserId(accessToken: string): string;
-/**
- * 📹 CREATE ZOOM MEETING (Callable Function)
- * Called by backend services or ZoomService.
- */
-export declare const createZoomMeeting: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
-    success: boolean;
-    meetingId: string;
-    meetingUrl: any;
-    meetingUri: any;
-    password: any;
-    startUrl: any;
-}>, unknown>;
 /**
  * 📹 GENERATE ZOOM MEETING LINK (Callable Function in asia-south1)
  * Called by AdminZoomMeetingsCreate.tsx when tapping "+ Generate Zoom Meet Link".
@@ -34,9 +98,40 @@ export declare const generateZoomMeetingLink: import("firebase-functions/v2/http
 export declare const createBibleClass: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
     success: boolean;
     id: string;
+    scheduledNotified: boolean;
 }>, unknown>;
 /**
- * 🔗 HTTP Trigger Alternative for createZoomMeeting
+ * 🔴 START ONLINE MEETING LIVE & NOTIFY MEMBERS (asia-south1)
+ * Transitions meeting status to 'live' and sends member push notifications once.
  */
-export declare const createZoomMeetingHttp: import("firebase-functions/v2/https").HttpsFunction;
+export declare const startBibleClass: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
+    success: boolean;
+    id: string;
+    status: string;
+    pushSent: boolean;
+}>, unknown>;
+/**
+ * ⏹️ END ONLINE MEETING (asia-south1)
+ * Marks a live or scheduled meeting as 'completed' without sending notifications.
+ */
+export declare const endBibleClass: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
+    success: boolean;
+    id: string;
+    status: string;
+}>, unknown>;
+/**
+ * ✏️ UPDATE ONLINE MEETING / BIBLE CLASS (asia-south1)
+ * Updates both member-facing and admin dashboard collections atomically.
+ */
+export declare const updateBibleClass: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
+    success: boolean;
+    id: string;
+}>, unknown>;
+/**
+ * 🗑️ DELETE ONLINE MEETING / BIBLE CLASS (asia-south1)
+ */
+export declare const deleteBibleClass: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
+    success: boolean;
+    id: string;
+}>, unknown>;
 //# sourceMappingURL=meetings.d.ts.map

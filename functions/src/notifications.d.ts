@@ -1,31 +1,5 @@
 import './globalConfig.js';
 /**
- * 🔔 SEND MEETING NOTIFICATION
- * Triggered when a new online meeting is scheduled in Firestore.
- * Sends a notification to the church's topic with strict atomic deduplication to prevent 5x duplicates.
- */
-export declare const pushMeetingLive: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
-    churchId: string;
-    meetingId: string;
-}>>;
-/**
- * 🛡️ DEPRECATED DUPLICATE TRIGGERS:
- * Deployed under old names in Firebase (alertMeetingPush, sendMeetingNotification, sendMeetingPush, meetingPushV1).
- * Replaced with no-ops here so when deployed they will NEVER send duplicate notifications.
- */
-export declare const alertMeetingPush: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
-    churchId: string;
-    meetingId: string;
-}>>;
-export declare const sendMeetingNotification: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
-    churchId: string;
-    meetingId: string;
-}>>;
-export declare const sendMeetingPush: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
-    churchId: string;
-    meetingId: string;
-}>>;
-/**
  * 🙏 MANDATORY NOTIFICATION: ADMIN NOTIFIED OF EVERY PRAYER REQUEST (Primary single-church collection)
  * Triggered automatically whenever a member submits a prayer request in Firestore.
  * Always notifies church admins ONLY, clearly showing which specific member submitted it.
@@ -99,6 +73,28 @@ export declare function checkAndPublishScheduledSermons(sermonsRef: any, churchI
  */
 export declare const publishScheduledSermons: import("firebase-functions/v2/scheduler").ScheduleFunction;
 export declare const monitorMeetingLive: import("firebase-functions/v2/scheduler").ScheduleFunction;
+/**
+ * Shared YouTube Live FCM dispatcher:
+ * Sends BOTH direct token multicast (to every active member device registered in Firestore)
+ * and topic broadcast (`church_{churchId}`), with full Android `notification` + `android.notification`
+ * (`channelId: 'church_alerts'`, shared `tag` & `collapseKey`) so killed/background Android devices
+ * always display the alert natively without duplicates.
+ */
+export declare function dispatchYouTubeLivePush(db: any, params: {
+    churchId: string;
+    videoId?: string;
+    liveUrl: string;
+    pushTitle: string;
+    pushBody: string;
+    streamTitle?: string;
+    docId?: string;
+}): Promise<{
+    delivered: boolean;
+    totalTokens: number;
+    multicastSuccess: number;
+    multicastFailed: number;
+    topicSent: boolean;
+}>;
 export declare function checkChurchYouTubeLive(churchDoc: any, churchId: string, db: any): Promise<void>;
 /**
  * 🏛️ NOTIFY SUPER ADMINS OF NEW CHURCH REGISTRATION
@@ -404,5 +400,13 @@ export declare const onKidsSessionUpdated: import("firebase-functions").CloudFun
 export declare const onKidsAttendanceAbsentCreated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
     churchId: string;
     attendanceId: string;
+}>>;
+/**
+ * 💼 EXPENSE APPROVAL NOTIFICATION TRIGGER (SUPER ADMIN ONLY)
+ * Dispatches FCM push + deterministic in-app notification strictly to verified Super Admins
+ * whenever a ledger expense transitions to 'Pending Approval', 'Approved', or 'Rejected'.
+ */
+export declare const onLedgerExpenseApproval: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").DocumentSnapshot> | undefined, {
+    expenseId: string;
 }>>;
 //# sourceMappingURL=notifications.d.ts.map

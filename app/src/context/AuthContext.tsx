@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { InteractionManager } from 'react-native';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import messaging from '@react-native-firebase/messaging';
@@ -444,6 +445,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               if (isSuperRole) {
                 setIsPlatformSuperAdmin(true);
                 AsyncStorage.setItem('@cached_is_super_admin', JSON.stringify(true)).catch(() => {});
+                require('../services/NotificationService').default.subscribeToSuperAdminTopic().catch(() => {});
               }
             }
 
@@ -454,25 +456,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             (async () => {
               try {
                 const NotificationService = require('../services/NotificationService').default;
+                await NotificationService.setupCategoriesAndChannels().catch(() => {});
                 await NotificationService.requestUserPermission().catch(() => {});
                 const token = await messaging().getToken().catch(() => null);
                 if (token) {
-                  await require('../services/firebaseConfig').firestore()
-                    .collection('Rhema Church').doc(targetChurchId)
-                    .collection('members').doc(userState.uid).set({
-                      fcmToken: token
-                    }, { merge: true });
-
-                  await NotificationService.subscribeToChurchTopic(targetChurchId);
+                  await NotificationService.saveTokenToFirestore(token);
                 }
+                await NotificationService.subscribeToChurchTopic(targetChurchId);
 
                 messaging().onTokenRefresh(async (newToken) => {
-                  await require('../services/firebaseConfig').firestore()
-                    .collection('Rhema Church').doc(targetChurchId)
-                    .collection('members').doc(userState.uid).set({
-                      fcmToken: newToken
-                    }, { merge: true });
-
+                  await NotificationService.saveTokenToFirestore(newToken);
                   await NotificationService.subscribeToChurchTopic(targetChurchId);
                 });
               } catch (err) {
@@ -557,6 +550,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
+  useEffect(() => {
+    if (loading) return;
+    if (user?.uid && !user.isAnonymous) {
+      let cancelled = false;
+      let interactionHandle: { cancel?: () => void } | null = null;
+      const timer = setTimeout(() => {
+        interactionHandle = InteractionManager.runAfterInteractions(() => {
+          if (cancelled) return;
+          const { e2eeService } = require('../services/e2eeService');
+          e2eeService.initializeForUser(user.uid).catch((err: any) => {
+            console.warn('⚠️ [Auth] E2EE init warning:', err);
+          });
+        });
+      }, 3500);
+      return () => {
+        cancelled = true;
+        clearTimeout(timer);
+        interactionHandle?.cancel?.();
+      };
+    }
+    const { roomKeyManager } = require('../services/roomKeyManager');
+    const { e2eeService } = require('../services/e2eeService');
+    roomKeyManager.clearCache();
+    e2eeService.clearSessionMemory();
+  }, [loading, user?.uid, user?.isAnonymous]);
+
   const signInAnonymously = async () => {
     try {
       const cred = await auth().signInAnonymously();
@@ -582,6 +601,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (auth().currentUser) {
         await auth().signOut().catch(() => {});
       }
+      require('../services/roomKeyManager').roomKeyManager.clearCache();
+      require('../services/e2eeService').e2eeService.clearSessionMemory();
       await AsyncStorage.multiRemove([
         '@cached_member', 
         '@cached_user', 

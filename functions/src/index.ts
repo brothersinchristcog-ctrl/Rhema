@@ -9,7 +9,7 @@ import { getStorage } from 'firebase-admin/storage';
 import { SalesforceBackend } from './services/SalesforceBackend.js';
 import { sendWhatsAppTemplateInternal } from './whatsapp.js';
 import { generateCelebrationImage } from './imageGenerator.js';
-import { checkChurchYouTubeLive } from './notifications.js';
+import { checkChurchYouTubeLive, dispatchYouTubeLivePush } from './notifications.js';
 import { randomUUID } from 'crypto';
 
 
@@ -1536,40 +1536,22 @@ export const triggerTestYouTubeLive = onCall({ invoker: 'public' }, async (reque
         { merge: true }
       );
 
-    // Send ONE single topic push (data-only on Android so NotificationService renders
-    // the notification directly with the "📺 Join Live Now" action button).
-    await getMsg().send({
-      data: {
-        type: 'youtube_live',
-        url: liveUrl,
-        videoId,
-        churchId,
-        title: pushTitle,
-        pushTitle,
-        pushBody,
-        id: docId,
-      },
-      topic: `church_${churchId}`,
-      android: {
-        priority: 'high' as const,
-      },
-      apns: {
-        headers: { 'apns-priority': '10' },
-        payload: {
-          aps: {
-            alert: {
-              title: pushTitle,
-              body: pushBody,
-            },
-            sound: 'default',
-            badge: 1,
-            category: 'youtube_live',
-          },
-        },
-      },
+    // Send to all registered member tokens (multicast) + church topic with shared tag deduplication
+    const pushResult = await dispatchYouTubeLivePush(db, {
+      churchId,
+      videoId,
+      liveUrl,
+      pushTitle,
+      pushBody,
+      streamTitle: pushTitle,
+      docId,
     });
 
-    return { success: true, broadcastId: docId };
+    return {
+      success: pushResult.delivered,
+      broadcastId: docId,
+      ...pushResult,
+    };
   } catch (error: any) {
     if (error instanceof HttpsError) throw error;
     console.error('triggerTestYouTubeLive Error:', error);
@@ -1822,7 +1804,6 @@ export {
   triggerDailyVersePushHttp,
   sendDailyVersePushScheduled,
   monitorMeetingLive,
-  pushMeetingLive,
   onBaptismRequestCreatedAdmin,
   onBaptismRequestCreatedAdminLegacy,
   onPrayerRequestCreatedAdmin,
@@ -1858,6 +1839,7 @@ export {
   onKidsSessionCreated,
   onKidsSessionUpdated,
   onKidsAttendanceAbsentCreated,
+  onLedgerExpenseApproval,
 } from './notifications.js';
 
 export {
@@ -1874,10 +1856,12 @@ export {
 } from './rosterNotifications.js';
 
 export {
-  createZoomMeeting,
-  createZoomMeetingHttp,
   generateZoomMeetingLink,
   createBibleClass,
+  updateBibleClass,
+  deleteBibleClass,
+  startBibleClass,
+  endBibleClass,
 } from './meetings.js';
 
 export { guestInviteLanding } from './guestInvite.js';
@@ -1965,3 +1949,26 @@ export {
   seedMatrimonyTestUsers,
   deleteMatrimonyTestUsers,
 } from './matrimony/testSeed.js';
+
+export {
+  createRhemaChatGroup,
+  onRhemaChatMessageCreated,
+} from './churchChat/chatFunctions.js';
+
+export {
+  createRazorpayOrder,
+  verifyRazorpayPayment,
+  createRazorpayRecurringDonation,
+  verifyRazorpaySubscriptionDonation,
+  manageRazorpayRecurringDonation,
+  createRazorpayOrderV4,
+  verifyRazorpaySubscriptionV3,
+  createRazorpayDonationOrderV6,
+  verifyRazorpayDonationV6,
+  razorpayWebhookV1,
+} from './razorpay.js';
+
+export {
+  sendPledgeRemindersScheduled,
+  triggerPledgeRemindersManual,
+} from './pledgeReminders.js';

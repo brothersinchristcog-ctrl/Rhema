@@ -7,13 +7,19 @@ import AdminDonationsList from './AdminDonationsList';
 import AdminDonationsDetails from './AdminDonationsDetails';
 import AdminDonationsForm from './AdminDonationsForm';
 import AdminDonationsGive from './AdminDonationsGive';
+import AdminDonationsReports from './AdminDonationsReports';
 import { useAdminTheme } from '../../../utils/adminThemeHelper';
+import { useChurch } from '../../../context/ChurchContext';
+import { RHEMA_CHURCH_ID, RHEMA_ROOT_COLLECTION } from '../../../constants/ChurchConfig';
 
 export default function AdminDonationsMain({ navigation }: any) {
   const { isDark } = useAdminTheme();
+  const { activeChurch, churchId } = useChurch();
+  const effectiveChurchId = churchId || activeChurch?.id || RHEMA_CHURCH_ID;
   const [activeTab, setActiveTab] = useState('dashboard');
   const [donations, setDonations] = useState<any[]>([]);
   const [onlineDonations, setOnlineDonations] = useState<any[]>([]);
+  const [pledges, setPledges] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
   // States for passing data between screens
@@ -95,12 +101,34 @@ export default function AdminDonationsMain({ navigation }: any) {
       console.warn("⚠️ Error initializing church_donations listener:", e?.message);
     }
 
+    let unsubPledges: any = null;
+    try {
+      unsubPledges = db
+        .collection(RHEMA_ROOT_COLLECTION)
+        .doc(effectiveChurchId)
+        .collection('pledges')
+        .onSnapshot(
+          (snapshot) => {
+            if (!isMounted || !snapshot) return;
+            const fetched = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+            fetched.sort((a: any, b: any) => String(b.startDate || '').localeCompare(String(a.startDate || '')));
+            setPledges(fetched);
+          },
+          (error) => {
+            console.warn('⚠️ Firestore pledges onSnapshot bypassed:', error?.message);
+          }
+        );
+    } catch (e: any) {
+      console.warn('⚠️ Error initializing pledges listener:', e?.message);
+    }
+
     return () => {
       isMounted = false;
       if (unsubLedger) unsubLedger();
       if (unsubOnline) unsubOnline();
+      if (unsubPledges) unsubPledges();
     };
-  }, []);
+  }, [effectiveChurchId]);
 
   const allDonations = [...donations, ...onlineDonations.filter(d => d.status === 'completed')];
 
@@ -127,6 +155,7 @@ export default function AdminDonationsMain({ navigation }: any) {
       {activeTab === 'dashboard' && (
         <AdminDonationsDashboard 
           donations={allDonations} 
+          pledgesCount={pledges.length}
           onNavigate={navigateTo} 
           navigation={navigation}
         />
@@ -152,6 +181,13 @@ export default function AdminDonationsMain({ navigation }: any) {
       {activeTab === 'give' && (
         <AdminDonationsGive 
           onNavigate={navigateTo} 
+        />
+      )}
+      {activeTab === 'reports' && (
+        <AdminDonationsReports
+          donations={allDonations}
+          pledges={pledges}
+          onNavigate={navigateTo}
         />
       )}
     </View>

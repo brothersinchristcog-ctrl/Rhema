@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Modal, Image, StatusBar, Platform } from 'react-native';
-import { ArrowLeft, User, Calendar, Tag, Target, FileText, CreditCard, Link, Receipt, Info, Clock, Edit2, Trash2, Download, Share2 } from 'lucide-react-native';
+import { ArrowLeft, User, Phone, Calendar, Tag, Target, FileText, CreditCard, Link, Receipt, Info, Clock, Edit2, Trash2, Download, Share2 } from 'lucide-react-native';
 import { COLORS, formatCurrency, formatDate, getInitials, generateDonationReceipt, getDonationReceiptHTML, formatReceiptNo } from './AdminDonationsUtils';
 import { db } from '../../../services/firebaseConfig';
 import FirestoreService from '../../../services/FirestoreService';
@@ -205,6 +205,7 @@ export default function AdminDonationsDetails({ donation, onNavigate }: any) {
             <View style={[styles.sectionTitleLine, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#E2E8F0' }]} />
           </View>
           <DetailRow icon={User} label="Donor Name" value={donation.name} />
+          <DetailRow icon={Phone} label="Phone Number" value={donation.phone || donation.donorPhone || '—'} />
           <DetailRow icon={Calendar} label="Donation Date" value={formatDate(donation.date)} />
           <DetailRow icon={Tag} label="Donation Type" value={donation.type} />
           <DetailRow icon={Target} label="Purpose" value={donation.purpose} />

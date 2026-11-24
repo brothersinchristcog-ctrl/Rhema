@@ -325,163 +325,163 @@ export const ensureMatrimonyChatRoom = onCall({ invoker: 'public' }, async (requ
 export const getMatrimonyChatContacts = onCall(
   { invoker: 'public', cpu: 'gcf_gen1', concurrency: 1, maxInstances: 10 },
   async (request) => {
-  const uid = requireAuthUid(request);
-  const db = getFirestore();
-  await assertMatrimonyProfileActive(db, uid);
+    const uid = requireAuthUid(request);
+    const db = getFirestore();
+    await assertMatrimonyProfileActive(db, uid);
 
-  const [viewerProfSnap, matchesSnap, sentAccSnap, recvAccSnap, blocks] = await Promise.all([
-    getProfileRef(db, uid).get(),
-    db.collection(COLLECTIONS.MATCHES).where('participantIds', 'array-contains', uid).get(),
-    db
-      .collection(COLLECTIONS.INTERESTS)
-      .where('senderUid', '==', uid)
-      .where('status', '==', 'accepted')
-      .get(),
-    db
-      .collection(COLLECTIONS.INTERESTS)
-      .where('receiverUid', '==', uid)
-      .where('status', '==', 'accepted')
-      .get(),
-    readBlockDocs(db, uid),
-  ]);
+    const [viewerProfSnap, matchesSnap, sentAccSnap, recvAccSnap, blocks] = await Promise.all([
+      getProfileRef(db, uid).get(),
+      db.collection(COLLECTIONS.MATCHES).where('participantIds', 'array-contains', uid).get(),
+      db
+        .collection(COLLECTIONS.INTERESTS)
+        .where('senderUid', '==', uid)
+        .where('status', '==', 'accepted')
+        .get(),
+      db
+        .collection(COLLECTIONS.INTERESTS)
+        .where('receiverUid', '==', uid)
+        .where('status', '==', 'accepted')
+        .get(),
+      readBlockDocs(db, uid),
+    ]);
 
-  if (!viewerProfSnap.exists) {
-    return {
-      success: true,
-      canMessage: false,
-      viewerTier: 'free',
-      contacts: [],
-      self: { uid, displayName: 'Rhema Member', signedProfilePhoto: null },
-    };
-  }
+    if (!viewerProfSnap.exists) {
+      return {
+        success: true,
+        canMessage: false,
+        viewerTier: 'free',
+        contacts: [],
+        self: { uid, displayName: 'Rhema Member', signedProfilePhoto: null },
+      };
+    }
 
-  const viewerData = viewerProfSnap.data() || {};
-  const entitlements = await resolveMemberEntitlements(db, uid, viewerData);
-  const unlockedSet = new Set(entitlements.unlockedContactUids);
-  const viewerPhoto = await resolveSinglePhotoUrl(viewerData.profilePhoto);
-  const viewerCode = viewerData.matrimonyId || `RM${uid.slice(0, 7).toUpperCase()}`;
-  const blockedSet = new Set(blocks.map((d) => d.id));
+    const viewerData = viewerProfSnap.data() || {};
+    const entitlements = await resolveMemberEntitlements(db, uid, viewerData);
+    const unlockedSet = new Set(entitlements.unlockedContactUids);
+    const viewerPhoto = await resolveSinglePhotoUrl(viewerData.profilePhoto);
+    const viewerCode = viewerData.matrimonyId || `RM${uid.slice(0, 7).toUpperCase()}`;
+    const blockedSet = new Set(blocks.map((d) => d.id));
 
-  const peerUids = new Set<string>();
-  matchesSnap.docs.forEach((d) => {
-    const arr = Array.isArray(d.data()?.participantIds) ? d.data().participantIds : [];
-    arr.forEach((p: unknown) => {
-      const s = String(p || '');
+    const peerUids = new Set<string>();
+    matchesSnap.docs.forEach((d) => {
+      const arr = Array.isArray(d.data()?.participantIds) ? d.data().participantIds : [];
+      arr.forEach((p: unknown) => {
+        const s = String(p || '');
+        if (s && s !== uid && !blockedSet.has(s)) peerUids.add(s);
+      });
+    });
+    sentAccSnap.docs.forEach((d) => {
+      const s = String(d.data()?.receiverUid || '');
       if (s && s !== uid && !blockedSet.has(s)) peerUids.add(s);
     });
-  });
-  sentAccSnap.docs.forEach((d) => {
-    const s = String(d.data()?.receiverUid || '');
-    if (s && s !== uid && !blockedSet.has(s)) peerUids.add(s);
-  });
-  recvAccSnap.docs.forEach((d) => {
-    const s = String(d.data()?.senderUid || '');
-    if (s && s !== uid && !blockedSet.has(s)) peerUids.add(s);
-  });
+    recvAccSnap.docs.forEach((d) => {
+      const s = String(d.data()?.senderUid || '');
+      if (s && s !== uid && !blockedSet.has(s)) peerUids.add(s);
+    });
 
-  const contacts: {
-    roomId: string;
-    uid: string;
-    displayName: string;
-    profileCode: string;
-    signedProfilePhoto: string | null;
-    age: number | null;
-    heightCm: number | null;
-    occupation: string;
-    gender: string;
-    isVerified: boolean;
-    city: string;
-    contactPhone: string | null;
-    matchTierEligible: boolean;
-  }[] = [];
+    const contacts: {
+      roomId: string;
+      uid: string;
+      displayName: string;
+      profileCode: string;
+      signedProfilePhoto: string | null;
+      age: number | null;
+      heightCm: number | null;
+      occupation: string;
+      gender: string;
+      isVerified: boolean;
+      city: string;
+      contactPhone: string | null;
+      matchTierEligible: boolean;
+    }[] = [];
 
-  const viewerHeightCm = typeof viewerData.heightCm === 'number' ? viewerData.heightCm : null;
-  const viewerOccupation = resolveOccupationLabel(viewerData);
-  const viewerGender = String(viewerData.gender || '').trim();
+    const viewerHeightCm = typeof viewerData.heightCm === 'number' ? viewerData.heightCm : null;
+    const viewerOccupation = resolveOccupationLabel(viewerData);
+    const viewerGender = String(viewerData.gender || '').trim();
 
-  await Promise.all(
-    Array.from(peerUids).map(async (targetUid) => {
-      const [tSnap, tPrivSnap, tBlocks] = await Promise.all([
-        getProfileRef(db, targetUid).get(),
-        readPrivateSnap(db, targetUid),
-        readBlockDocs(db, targetUid),
-      ]);
-      if (!tSnap.exists) return;
-      if (tBlocks.some((d) => d.id === uid)) return;
-      const tData = tSnap.data() || {};
-      if (tData.profileStatus !== 'approved') return;
+    await Promise.all(
+      Array.from(peerUids).map(async (targetUid) => {
+        const [tSnap, tPrivSnap, tBlocks] = await Promise.all([
+          getProfileRef(db, targetUid).get(),
+          readPrivateSnap(db, targetUid),
+          readBlockDocs(db, targetUid),
+        ]);
+        if (!tSnap.exists) return;
+        if (tBlocks.some((d) => d.id === uid)) return;
+        const tData = tSnap.data() || {};
+        if (tData.profileStatus !== 'approved') return;
 
-      const tPriv = tPrivSnap.exists ? tPrivSnap.data() || {} : {};
-      const tPhotoAllowed =
-        tData.photoVisibility !== 'protect_photo' ||
-        (Array.isArray(tData.protectedPhotoAllowedUids) &&
-          tData.protectedPhotoAllowedUids.includes(uid));
-      const tPhoto = tPhotoAllowed ? await resolveSinglePhotoUrl(tData.profilePhoto) : null;
-      const tCode = tData.matrimonyId || `RM${targetUid.slice(0, 7).toUpperCase()}`;
-      const tCity = tData.location?.village || tData.location?.city || tData.location?.state || '';
-      const tAge = typeof tData.age === 'number' ? tData.age : null;
-      const tHeightCm = typeof tData.heightCm === 'number' ? tData.heightCm : null;
-      const tOccupation = resolveOccupationLabel(tData);
-      const tGender = String(tData.gender || '').trim();
-      const roomId = getRoomId(uid, targetUid);
+        const tPriv = tPrivSnap.exists ? tPrivSnap.data() || {} : {};
+        const tPhotoAllowed =
+          tData.photoVisibility !== 'protect_photo' ||
+          (Array.isArray(tData.protectedPhotoAllowedUids) &&
+            tData.protectedPhotoAllowedUids.includes(uid));
+        const tPhoto = tPhotoAllowed ? await resolveSinglePhotoUrl(tData.profilePhoto) : null;
+        const tCode = tData.matrimonyId || `RM${targetUid.slice(0, 7).toUpperCase()}`;
+        const tCity = tData.location?.village || tData.location?.city || tData.location?.state || '';
+        const tAge = typeof tData.age === 'number' ? tData.age : null;
+        const tHeightCm = typeof tData.heightCm === 'number' ? tData.heightCm : null;
+        const tOccupation = resolveOccupationLabel(tData);
+        const tGender = String(tData.gender || '').trim();
+        const roomId = getRoomId(uid, targetUid);
 
-      const canSeePhone =
-        tData.mobilePrivacy !== 'messages_only' &&
-        entitlements.tier !== 'free' &&
-        (entitlements.contactNumberLimit < 0 || unlockedSet.has(targetUid));
-      const exposedPhone = canSeePhone ? tPriv.phoneNumber || null : null;
+        const canSeePhone =
+          tData.mobilePrivacy !== 'messages_only' &&
+          entitlements.tier !== 'free' &&
+          (entitlements.contactNumberLimit < 0 || unlockedSet.has(targetUid));
+        const exposedPhone = canSeePhone ? tPriv.phoneNumber || null : null;
 
-      await seedChatParticipantsInRtdb({
-        roomId,
+        await seedChatParticipantsInRtdb({
+          roomId,
+          uid,
+          targetUid,
+          viewerName: viewerData.displayName || 'Rhema Member',
+          viewerPhoto,
+          viewerCode,
+          viewerHeightCm,
+          viewerOccupation,
+          viewerGender,
+          targetName: tData.displayName || 'Rhema Member',
+          targetPhoto: tPhoto,
+          targetCode: tCode,
+          targetAge: tAge,
+          targetCity: tCity,
+          targetPhone: exposedPhone,
+          targetHeightCm: tHeightCm,
+          targetOccupation: tOccupation,
+          targetGender: tGender,
+        }).catch(() => undefined);
+
+        contacts.push({
+          roomId,
+          uid: targetUid,
+          displayName: tData.displayName || 'Rhema Member',
+          profileCode: tCode,
+          signedProfilePhoto: tPhoto,
+          age: tAge,
+          heightCm: tHeightCm,
+          occupation: tOccupation,
+          gender: tGender,
+          isVerified: tData.profileStatus === 'approved',
+          city: tCity,
+          contactPhone: exposedPhone,
+          matchTierEligible: Boolean(tPhoto),
+        });
+      })
+    );
+
+    return {
+      success: true,
+      canMessage: entitlements.messageAccess,
+      viewerTier: entitlements.tier,
+      contacts,
+      self: {
         uid,
-        targetUid,
-        viewerName: viewerData.displayName || 'Rhema Member',
-        viewerPhoto,
-        viewerCode,
-        viewerHeightCm,
-        viewerOccupation,
-        viewerGender,
-        targetName: tData.displayName || 'Rhema Member',
-        targetPhoto: tPhoto,
-        targetCode: tCode,
-        targetAge: tAge,
-        targetCity: tCity,
-        targetPhone: exposedPhone,
-        targetHeightCm: tHeightCm,
-        targetOccupation: tOccupation,
-        targetGender: tGender,
-      }).catch(() => undefined);
-
-      contacts.push({
-        roomId,
-        uid: targetUid,
-        displayName: tData.displayName || 'Rhema Member',
-        profileCode: tCode,
-        signedProfilePhoto: tPhoto,
-        age: tAge,
-        heightCm: tHeightCm,
-        occupation: tOccupation,
-        gender: tGender,
-        isVerified: tData.profileStatus === 'approved',
-        city: tCity,
-        contactPhone: exposedPhone,
-        matchTierEligible: Boolean(tPhoto),
-      });
-    })
-  );
-
-  return {
-    success: true,
-    canMessage: entitlements.messageAccess,
-    viewerTier: entitlements.tier,
-    contacts,
-    self: {
-      uid,
-      displayName: viewerData.displayName || 'Rhema Member',
-      signedProfilePhoto: viewerPhoto,
-    },
-  };
-});
+        displayName: viewerData.displayName || 'Rhema Member',
+        signedProfilePhoto: viewerPhoto,
+      },
+    };
+  });
 
 /**
  * 3. notifyMatrimonyChatMessage
@@ -490,7 +490,10 @@ export const getMatrimonyChatContacts = onCall(
 export const notifyMatrimonyChatMessage = onCall({ invoker: 'public' }, async (request) => {
   const uid = requireAuthUid(request);
   const targetUid = assertNonEmptyString(request.data?.targetUid, 'targetUid', 128);
-  const previewText = optionalString(request.data?.previewText, 180) || 'Sent you a message';
+  const rawPreview = optionalString(request.data?.previewText, 180) || 'Sent you a message';
+  const previewText = rawPreview.startsWith('e2ee:v1:')
+    ? '🔒 New encrypted message'
+    : rawPreview;
   const db = getFirestore();
 
   await assertMatrimonyProfileActive(db, uid);
@@ -578,7 +581,8 @@ export const sendMatrimonyMessage = onCall({ invoker: 'public' }, async (request
   const msgRef = rtdb.ref(`matrimony_chats/${roomId}/messages`).push();
   const msgId = msgRef.key || randomUUID();
   const createdAt = ServerValue.TIMESTAMP;
-  const preview = imageUrl && !text ? '📷 Photo' : text.slice(0, 120);
+  const isCipher = text.startsWith('e2ee:v1:');
+  const preview = imageUrl && !text ? '📷 Photo' : isCipher ? text : text.slice(0, 120);
 
   await rtdb.ref().update({
     [`matrimony_chats/${roomId}/participants/${uid}`]: true,

@@ -1,4 +1,4 @@
-import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
+import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 import axios from 'axios';
@@ -6,6 +6,311 @@ import axios from 'axios';
 const getDb = () => getFirestore();
 
 let cachedZoomToken: { token: string; expiresAt: number } | null = null;
+
+export interface OnlineMeetingTopicMessageParams {
+  title: string;
+  body: string;
+  churchId: string;
+  meetingId: string;
+  notificationType?: 'online_meeting' | 'online_meeting_scheduled';
+  provider?: string | undefined;
+  url?: string | undefined;
+  password?: string | undefined;
+  date?: string | undefined;
+  startTimeLabel?: string | undefined;
+  endTimeLabel?: string | undefined;
+  teacherName?: string | undefined;
+  topic?: string | undefined;
+  bibleBook?: string | undefined;
+}
+
+/**
+ * Build a high-priority FCM payload for online meeting alerts
+ * targeting Android's 'church_alerts' channel and iOS APNs alerts.
+ */
+export function buildOnlineMeetingTopicMessage({
+  title,
+  body,
+  churchId,
+  meetingId,
+  notificationType = 'online_meeting',
+  provider = '',
+  url = '',
+  password = '',
+  date = '',
+  startTimeLabel = '',
+  endTimeLabel = '',
+  teacherName = '',
+  topic = '',
+  bibleBook = '',
+}: OnlineMeetingTopicMessageParams) {
+  const safeTitle = String(title || '');
+  const safeBody = String(body || '');
+  const safePassword = password ? String(password) : '';
+
+  return {
+    notification: {
+      title: safeTitle,
+      body: safeBody,
+    },
+    data: {
+      type: notificationType,
+      id: String(meetingId),
+      meetingId: String(meetingId),
+      churchId: String(churchId),
+      provider: String(provider || ''),
+      url: String(url || ''),
+      screen: 'OnlineMeetingDetail',
+      click_action: 'FLUTTER_NOTIFICATION_CLICK',
+      ...(safePassword ? { password: safePassword } : {}),
+      ...(date ? { date: String(date) } : {}),
+      ...(startTimeLabel ? { startTimeLabel: String(startTimeLabel) } : {}),
+      ...(endTimeLabel ? { endTimeLabel: String(endTimeLabel) } : {}),
+      ...(teacherName ? { teacherName: String(teacherName) } : {}),
+      ...(topic ? { topic: String(topic) } : {}),
+      ...(bibleBook ? { bibleBook: String(bibleBook) } : {}),
+      title: safeTitle,
+      body: safeBody,
+      channelId: 'church_alerts',
+      sound: 'default',
+      priority: 'high',
+    },
+    android: {
+      priority: 'high' as const,
+      notification: {
+        channelId: 'church_alerts',
+        sound: 'default',
+        priority: 'max' as const,
+        defaultSound: true,
+        defaultVibrateTimings: true,
+        visibility: 'public' as const,
+      },
+    },
+    apns: {
+      headers: {
+        'apns-priority': '10',
+        'apns-push-type': 'alert',
+      },
+      payload: {
+        aps: {
+          alert: {
+            title: safeTitle,
+            body: safeBody,
+          },
+          sound: 'default',
+          badge: 1,
+        },
+      },
+    },
+    topic: `church_${churchId}`,
+  };
+}
+
+function collectTokensFromSnapshot(snap: any, tokenSet: Set<string>) {
+  if (!snap) return;
+  snap.forEach((doc: any) => {
+    const d = doc.data();
+    if (!d) return;
+    if (d.fcmToken && typeof d.fcmToken === 'string' && d.fcmToken.trim().length > 10) {
+      tokenSet.add(d.fcmToken.trim());
+    }
+    if (Array.isArray(d.fcmTokens)) {
+      d.fcmTokens.forEach((tk: unknown) => {
+        if (typeof tk === 'string' && tk.trim().length > 10) {
+          tokenSet.add(tk.trim());
+        }
+      });
+    }
+  });
+}
+
+async function collectChurchMemberTokens(db: any, churchId: string): Promise<string[]> {
+  const tokenSet = new Set<string>();
+  const [rhemaMembersRes, legacyMembersRes, usersRes] = await Promise.allSettled([
+    db.collection('Rhema Church').doc(churchId).collection('members').get(),
+    db.collection('churches').doc(churchId).collection('members').get(),
+    db.collection('users').get(),
+  ]);
+
+  if (rhemaMembersRes.status === 'fulfilled') {
+    collectTokensFromSnapshot(rhemaMembersRes.value, tokenSet);
+  }
+  if (legacyMembersRes.status === 'fulfilled') {
+    collectTokensFromSnapshot(legacyMembersRes.value, tokenSet);
+  }
+  if (usersRes.status === 'fulfilled' && usersRes.value) {
+    usersRes.value.forEach((doc: any) => {
+      const u = doc.data();
+      if (!u) return;
+      const uChurch = normalizeChurchId(u.primaryChurchId || u.churchId || 'rhema');
+      if (uChurch !== churchId) return;
+      if (u.fcmToken && typeof u.fcmToken === 'string' && u.fcmToken.trim().length > 10) {
+        tokenSet.add(u.fcmToken.trim());
+      }
+      if (Array.isArray(u.fcmTokens)) {
+        u.fcmTokens.forEach((tk: unknown) => {
+          if (typeof tk === 'string' && tk.trim().length > 10) {
+            tokenSet.add(tk.trim());
+          }
+        });
+      }
+    });
+  }
+
+  return Array.from(tokenSet);
+}
+
+interface DispatchMeetingAlertParams {
+  db: any;
+  churchId: string;
+  meetingId: string;
+  notifDocId: string;
+  eventKind: 'scheduled' | 'live';
+  meetingData: Record<string, any>;
+}
+
+async function dispatchOnlineMeetingAlert({
+  db,
+  churchId,
+  meetingId,
+  notifDocId,
+  eventKind,
+  meetingData,
+}: DispatchMeetingAlertParams): Promise<{ pushSent: boolean; inAppWritten: boolean }> {
+  const title = String(meetingData.title || 'Online Meeting').trim();
+  const provider = String(meetingData.provider || meetingData.meetingType || 'google_meet');
+  const providerLabel = provider === 'google_meet' ? 'Google Meet' : 'Zoom Meeting';
+  const meetingLink = String(
+    meetingData.meetingLink || meetingData.meetingUrl || meetingData.url || ''
+  ).trim();
+  const teacherName = String(meetingData.teacherName || meetingData.teacher || '').trim();
+  const date = String(meetingData.date || meetingData.scheduledDate || '').trim();
+  const startTimeLabel = String(meetingData.startTimeLabel || '').trim();
+  const endTimeLabel = String(meetingData.endTimeLabel || '').trim();
+  const topic = String(meetingData.topic || '').trim();
+  const bibleBook = String(meetingData.bibleBook || '').trim();
+  const password = String(meetingData.password || '').trim();
+
+  const timeRange =
+    startTimeLabel && endTimeLabel
+      ? `${startTimeLabel} - ${endTimeLabel}`
+      : startTimeLabel;
+
+  let pushTitle = '';
+  let pushBody = '';
+  if (eventKind === 'scheduled') {
+    pushTitle = `New Meeting Scheduled: ${title}`;
+    const detailParts = [
+      providerLabel,
+      date ? `on ${date}` : '',
+      timeRange ? `at ${timeRange}` : '',
+      teacherName ? `Host: ${teacherName}` : '',
+      topic || bibleBook || '',
+    ].filter(Boolean);
+    pushBody = `${detailParts.join(' • ')}. Tap to view meeting details.`;
+  } else {
+    pushTitle = `🔴 Live Now: ${title}`;
+    const liveParts = [
+      providerLabel,
+      teacherName ? `hosted by ${teacherName}` : '',
+      'is now live',
+    ].filter(Boolean);
+    pushBody = `${liveParts.join(' ')}! Tap to join the live meeting.`;
+  }
+
+  const notificationType: 'online_meeting' | 'online_meeting_scheduled' =
+    eventKind === 'live' ? 'online_meeting' : 'online_meeting_scheduled';
+
+  // Persist deterministic in-app notification docs so Member View -> Notifications
+  // shows both Scheduled & Live alerts cleanly without duplicate entries or duplicate push triggers.
+  const churchRef = db.collection('Rhema Church').doc(churchId);
+  const notifRef = churchRef.collection('notifications').doc(notifDocId);
+  const bcastRef = churchRef.collection('broadcasts').doc(notifDocId);
+
+  const inAppPayload: Record<string, any> = {
+    id: notifDocId,
+    meetingId,
+    churchId,
+    type: notificationType,
+    eventKind,
+    title: pushTitle,
+    body: pushBody,
+    content: pushBody,
+    provider,
+    meetingType: provider,
+    url: meetingLink,
+    meetingLink,
+    date,
+    startTimeLabel,
+    endTimeLabel,
+    teacherName,
+    topic,
+    bibleBook,
+    password,
+    status: eventKind === 'live' ? 'live' : 'scheduled',
+    screen: 'OnlineMeetingDetail',
+    read: false,
+    createdAt: FieldValue.serverTimestamp(),
+  };
+
+  let inAppWritten = false;
+  try {
+    const existingNotifSnap = await notifRef.get();
+    if (!existingNotifSnap.exists) {
+      await Promise.all([
+        notifRef.set(inAppPayload, { merge: true }),
+        bcastRef.set({ ...inAppPayload, silent: true }, { merge: true }),
+      ]);
+      inAppWritten = true;
+    } else {
+      inAppWritten = true;
+    }
+  } catch (inAppErr: any) {
+    console.warn('[dispatchOnlineMeetingAlert] In-app notification write warning:', inAppErr?.message || inAppErr);
+  }
+
+  const payload = buildOnlineMeetingTopicMessage({
+    title: pushTitle,
+    body: pushBody,
+    churchId,
+    meetingId,
+    notificationType,
+    provider,
+    url: meetingLink,
+    password,
+    date,
+    startTimeLabel,
+    endTimeLabel,
+    teacherName,
+    topic,
+    bibleBook,
+  });
+
+  let pushSent = false;
+  try {
+    const tokens = await collectChurchMemberTokens(db, churchId);
+    if (tokens.length > 0) {
+      const { topic: _omitTopic, ...multicastBase } = payload;
+      for (let i = 0; i < tokens.length; i += 500) {
+        const batch = tokens.slice(i, i + 500);
+        const res = await getMessaging().sendEachForMulticast({
+          ...multicastBase,
+          tokens: batch,
+        });
+        if (res.successCount > 0) {
+          pushSent = true;
+        }
+      }
+    } else {
+      await getMessaging().send(payload);
+      pushSent = true;
+    }
+  } catch (pushErr: any) {
+    console.warn('[dispatchOnlineMeetingAlert] FCM push warning:', pushErr?.message || pushErr);
+  }
+
+  return { pushSent, inAppWritten };
+}
 
 /**
  * Helper: Acquire Server-to-Server OAuth access token from Zoom
@@ -121,37 +426,6 @@ async function scheduleZoomMeetingOnApi(params: {
 }
 
 /**
- * 📹 CREATE ZOOM MEETING (Callable Function)
- * Called by backend services or ZoomService.
- */
-export const createZoomMeeting = onCall({ cors: true, invoker: 'public' }, async (request) => {
-  const { title, topic, description, startTime, endTime, duration, password } = request.data || {};
-  const resolvedTopic = String(topic || title || '').trim();
-
-  if (!resolvedTopic) {
-    throw new HttpsError('invalid-argument', 'Title is required for the meeting.');
-  }
-
-  try {
-    return await scheduleZoomMeetingOnApi({
-      topic: resolvedTopic,
-      description,
-      startTime,
-      endTime,
-      duration,
-      password,
-    });
-  } catch (err: any) {
-    console.error('[createZoomMeeting] Error:', err?.response?.data || err?.message || err);
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      'Failed to create Zoom meeting via Zoom API';
-    throw new HttpsError('internal', msg);
-  }
-});
-
-/**
  * 📹 GENERATE ZOOM MEETING LINK (Callable Function in asia-south1)
  * Called by AdminZoomMeetingsCreate.tsx when tapping "+ Generate Zoom Meet Link".
  */
@@ -181,6 +455,87 @@ export const generateZoomMeetingLink = onCall(
   }
 );
 
+function normalizeChurchId(raw: unknown): string {
+  const clean = String(raw || 'rhema').trim();
+  return !clean || clean === 'default' ? 'rhema' : clean;
+}
+
+function buildMeetingPayload(data: Record<string, any>, churchId: string) {
+  const title = String(data.title || '').trim();
+  const meetingLink = String(data.meetingLink || '').trim();
+  if (!title || !meetingLink) {
+    throw new HttpsError('invalid-argument', 'Title and meeting link are required.');
+  }
+
+  const startMs =
+    typeof data.startTimestamp === 'number' && !isNaN(data.startTimestamp)
+      ? data.startTimestamp
+      : Date.now();
+  const endMs =
+    typeof data.endTimestamp === 'number' &&
+    !isNaN(data.endTimestamp) &&
+    data.endTimestamp > startMs
+      ? data.endTimestamp
+      : startMs + 60 * 60 * 1000;
+
+  // Convert DD-MM-YYYY -> YYYY-MM-DD when provided for scheduledDate sorting
+  let scheduledDate: string | undefined;
+  if (typeof data.date === 'string' && data.date.includes('-')) {
+    const parts = data.date.trim().split('-');
+    const yearPart = parts[2];
+    if (parts.length === 3 && yearPart && yearPart.length === 4) {
+      scheduledDate = `${yearPart}-${parts[1]}-${parts[0]}`;
+    }
+  }
+
+  return {
+    churchId,
+    title,
+    topic: String(data.topic || ''),
+    description: String(data.topic || ''),
+    bibleBook: String(data.bibleBook || ''),
+    date: String(data.date || ''),
+    scheduledDate: scheduledDate || new Date(startMs).toISOString().split('T')[0],
+    startTimeLabel: String(data.startTime || ''),
+    endTimeLabel: String(data.endTime || ''),
+    startTime: Timestamp.fromMillis(startMs),
+    endTime: Timestamp.fromMillis(endMs),
+    teacherId: String(data.teacherId || 'admin'),
+    teacherName: String(data.teacherName || 'Church Admin'),
+    meetingLink,
+    meetingUrl: meetingLink,
+    url: meetingLink,
+    provider: String(data.provider || 'zoom'),
+    meetingType: String(data.meetingType || data.provider || 'zoom'),
+    recurrence: String(data.recurrence || 'NONE'),
+    ...(data.meetingId ? { meetingId: String(data.meetingId).trim() } : {}),
+    ...(data.password ? { password: String(data.password).trim() } : {}),
+  };
+}
+
+async function assertMeetingAdmin(uid: string | undefined, churchId: string) {
+  if (!uid) {
+    throw new HttpsError('unauthenticated', 'Authentication is required.');
+  }
+  const db = getDb();
+  const [platformSnap, memberSnap] = await Promise.all([
+    db.collection('platform_admins').doc(uid).get(),
+    db.collection('Rhema Church').doc(churchId).collection('members').doc(uid).get(),
+  ]);
+
+  if (platformSnap.exists && platformSnap.data()?.superadmin === true) {
+    return;
+  }
+  const roleStr = String(memberSnap.data()?.userType || memberSnap.data()?.role || '').toUpperCase();
+  if (
+    memberSnap.exists &&
+    (roleStr.includes('ADMIN') || roleStr.includes('PASTOR') || roleStr.includes('SUPER'))
+  ) {
+    return;
+  }
+  throw new HttpsError('permission-denied', 'Only church admins or pastors can manage meetings.');
+}
+
 /**
  * 📅 CREATE ONLINE MEETING / BIBLE CLASS & NOTIFY MEMBERS (asia-south1)
  * Called by AdminZoomMeetingsCreate.tsx for both Google Meet and Zoom meetings.
@@ -189,35 +544,12 @@ export const createBibleClass = onCall(
   { region: 'asia-south1', cors: true, invoker: 'public' },
   async (request) => {
     const data = request.data || {};
-    const rawChurchId = String(data.churchId || 'rhema').trim();
-    const churchId = rawChurchId === 'default' || !rawChurchId ? 'rhema' : rawChurchId;
-    const title = String(data.title || '').trim();
-    const meetingLink = String(data.meetingLink || '').trim();
-
-    if (!title || !meetingLink) {
-      throw new HttpsError('invalid-argument', 'Title and meeting link are required.');
-    }
+    const churchId = normalizeChurchId(data.churchId);
+    await assertMeetingAdmin(request.auth?.uid, churchId);
+    const baseFields = buildMeetingPayload(data, churchId);
 
     try {
       const db = getDb();
-      const startMs =
-        typeof data.startTimestamp === 'number' && !isNaN(data.startTimestamp)
-          ? data.startTimestamp
-          : Date.now();
-      const endMs =
-        typeof data.endTimestamp === 'number' && !isNaN(data.endTimestamp) && data.endTimestamp > startMs
-          ? data.endTimestamp
-          : startMs + 60 * 60 * 1000;
-
-      // Convert DD-MM-YYYY -> YYYY-MM-DD when provided for scheduledDate sorting
-      let scheduledDate: string | undefined;
-      if (typeof data.date === 'string' && data.date.includes('-')) {
-        const parts = data.date.trim().split('-');
-        if (parts.length === 3 && parts[2].length === 4) {
-          scheduledDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
-        }
-      }
-
       const meetingRef = db
         .collection('Rhema Church')
         .doc(churchId)
@@ -226,64 +558,41 @@ export const createBibleClass = onCall(
 
       const meetingDoc = {
         id: meetingRef.id,
-        churchId,
-        title,
-        topic: String(data.topic || ''),
-        description: String(data.topic || ''),
-        bibleBook: String(data.bibleBook || ''),
-        date: String(data.date || ''),
-        scheduledDate: scheduledDate || new Date(startMs).toISOString().split('T')[0],
-        startTimeLabel: String(data.startTime || ''),
-        endTimeLabel: String(data.endTime || ''),
-        startTime: Timestamp.fromMillis(startMs),
-        endTime: Timestamp.fromMillis(endMs),
-        teacherId: String(data.teacherId || 'admin'),
-        teacherName: String(data.teacherName || 'Church Admin'),
-        meetingLink,
-        meetingUrl: meetingLink,
-        url: meetingLink,
-        provider: String(data.provider || 'zoom'),
-        meetingType: String(data.meetingType || data.provider || 'zoom'),
-        recurrence: String(data.recurrence || 'NONE'),
-        status: 'upcoming',
-        notificationSent: true,
-        notificationSentAt: FieldValue.serverTimestamp(),
+        ...baseFields,
+        status: 'scheduled',
+        scheduledNotified: true,
+        scheduledNotifiedAt: FieldValue.serverTimestamp(),
+        liveNotified: false,
+        reminderNotified: false,
+        notificationSent: false,
+        notificationSentAt: null,
         createdAt: FieldValue.serverTimestamp(),
       };
 
       // Save for Member screens (Rhema Church/{churchId}/online_meetings)
-      // and Admin Online Meetings dashboard (churches/default/online_meetings) without duplicate push trigger
+      // and Admin Online Meetings dashboard (churches/default/online_meetings).
+      // Send only the Scheduled alert here; Live notification is triggered strictly by startBibleClass.
       await Promise.all([
         meetingRef.set(meetingDoc),
         db.collection('churches').doc('default').collection('online_meetings').doc(meetingRef.id).set(meetingDoc),
       ]);
 
-      // Notify subscribed church members once
-      try {
-        const providerLabel = data.provider === 'google_meet' ? 'Google Meet' : 'Zoom';
-        await getMessaging().send({
-          notification: {
-            title: `📅 New ${providerLabel}: ${title}`,
-            body: `${data.date ? `${data.date} · ` : ''}${data.startTime ? `${data.startTime} — ` : ''}Tap to view meeting link.`,
-          },
-          data: {
-            type: 'online_meeting',
-            meetingId: meetingRef.id,
-            churchId,
-            provider: String(data.provider || ''),
-            url: meetingLink,
-          },
-          topic: `church_${churchId}`,
-        });
-      } catch (pushErr: any) {
-        console.warn('[createBibleClass] FCM topic push warning:', pushErr?.message || pushErr);
-      }
+      const { pushSent } = await dispatchOnlineMeetingAlert({
+        db,
+        churchId,
+        meetingId: meetingRef.id,
+        notifDocId: `meeting_sched_${meetingRef.id}`,
+        eventKind: 'scheduled',
+        meetingData: meetingDoc,
+      });
 
       return {
         success: true,
         id: meetingRef.id,
+        scheduledNotified: pushSent,
       };
     } catch (err: any) {
+      if (err instanceof HttpsError) throw err;
       console.error('[createBibleClass] Error:', err);
       throw new HttpsError('internal', err?.message || 'Failed to schedule meeting.');
     }
@@ -291,31 +600,226 @@ export const createBibleClass = onCall(
 );
 
 /**
- * 🔗 HTTP Trigger Alternative for createZoomMeeting
+ * 🔴 START ONLINE MEETING LIVE & NOTIFY MEMBERS (asia-south1)
+ * Transitions meeting status to 'live' and sends member push notifications once.
  */
-export const createZoomMeetingHttp = onRequest({ cors: true, invoker: 'public' }, async (req, res) => {
-  const { title, topic, description, startTime, endTime, duration, password } = req.body || {};
-  const resolvedTopic = String(topic || title || '').trim();
+export const startBibleClass = onCall(
+  { region: 'asia-south1', cors: true, invoker: 'public' },
+  async (request) => {
+    const data = request.data || {};
+    const churchId = normalizeChurchId(data.churchId);
+    const meetingId = String(data.meetingId || data.id || '').trim();
+    if (!meetingId) {
+      throw new HttpsError('invalid-argument', 'Meeting ID is required.');
+    }
 
-  if (!resolvedTopic) {
-    res.status(400).json({ error: 'Title is required for the meeting.' });
-    return;
-  }
+    await assertMeetingAdmin(request.auth?.uid, churchId);
 
-  try {
-    const result = await scheduleZoomMeetingOnApi({
-      topic: resolvedTopic,
-      description,
-      startTime,
-      endTime,
-      duration,
-      password,
-    });
-    res.status(200).json(result);
-  } catch (err: any) {
-    console.error('[createZoomMeetingHttp] Error:', err?.response?.data || err?.message || err);
-    res.status(500).json({
-      error: err?.response?.data?.message || err?.message || 'Failed to create Zoom meeting via Zoom API',
-    });
+    try {
+      const db = getDb();
+      const memberRef = db
+        .collection('Rhema Church')
+        .doc(churchId)
+        .collection('online_meetings')
+        .doc(meetingId);
+      const adminRef = db
+        .collection('churches')
+        .doc('default')
+        .collection('online_meetings')
+        .doc(meetingId);
+
+      const txResult = await db.runTransaction(async (tx: any) => {
+        const [memberSnap, adminSnap] = await Promise.all([
+          tx.get(memberRef),
+          tx.get(adminRef),
+        ]);
+        const existingData = memberSnap.exists
+          ? memberSnap.data()
+          : adminSnap.exists
+          ? adminSnap.data()
+          : null;
+        if (!existingData) {
+          throw new HttpsError('not-found', 'Meeting not found.');
+        }
+
+        const shouldSendLiveAlert = existingData.liveNotified !== true;
+        const livePatch = {
+          ...existingData,
+          id: meetingId,
+          churchId,
+          status: 'live',
+          liveNotified: true,
+          notificationSent: true,
+          notificationSentAt: FieldValue.serverTimestamp(),
+          startedAt: FieldValue.serverTimestamp(),
+          startedBy: request.auth?.uid || 'admin',
+          updatedAt: FieldValue.serverTimestamp(),
+        };
+
+        tx.set(memberRef, livePatch, { merge: true });
+        return { existingData, livePatch, shouldSendLiveAlert };
+      });
+
+      await adminRef.set(txResult.livePatch, { merge: true });
+
+      let pushSent = false;
+      if (txResult.shouldSendLiveAlert) {
+        const dispatchRes = await dispatchOnlineMeetingAlert({
+          db,
+          churchId,
+          meetingId,
+          notifDocId: `meeting_live_${meetingId}`,
+          eventKind: 'live',
+          meetingData: txResult.livePatch,
+        });
+        pushSent = dispatchRes.pushSent;
+      }
+
+      return {
+        success: true,
+        id: meetingId,
+        status: 'live',
+        pushSent,
+      };
+    } catch (err: any) {
+      if (err instanceof HttpsError) throw err;
+      console.error('[startBibleClass] Error:', err);
+      throw new HttpsError('internal', err?.message || 'Failed to start meeting live.');
+    }
   }
-});
+);
+
+/**
+ * ⏹️ END ONLINE MEETING (asia-south1)
+ * Marks a live or scheduled meeting as 'completed' without sending notifications.
+ */
+export const endBibleClass = onCall(
+  { region: 'asia-south1', cors: true, invoker: 'public' },
+  async (request) => {
+    const data = request.data || {};
+    const churchId = normalizeChurchId(data.churchId);
+    const meetingId = String(data.meetingId || data.id || '').trim();
+    if (!meetingId) {
+      throw new HttpsError('invalid-argument', 'Meeting ID is required.');
+    }
+
+    await assertMeetingAdmin(request.auth?.uid, churchId);
+
+    try {
+      const db = getDb();
+      const endPatch = {
+        status: 'completed',
+        endedAt: FieldValue.serverTimestamp(),
+        endedBy: request.auth?.uid || 'admin',
+        updatedAt: FieldValue.serverTimestamp(),
+      };
+
+      await Promise.all([
+        db
+          .collection('Rhema Church')
+          .doc(churchId)
+          .collection('online_meetings')
+          .doc(meetingId)
+          .set(endPatch, { merge: true }),
+        db
+          .collection('churches')
+          .doc('default')
+          .collection('online_meetings')
+          .doc(meetingId)
+          .set(endPatch, { merge: true }),
+      ]);
+
+      return {
+        success: true,
+        id: meetingId,
+        status: 'completed',
+      };
+    } catch (err: any) {
+      if (err instanceof HttpsError) throw err;
+      console.error('[endBibleClass] Error:', err);
+      throw new HttpsError('internal', err?.message || 'Failed to end meeting.');
+    }
+  }
+);
+
+/**
+ * ✏️ UPDATE ONLINE MEETING / BIBLE CLASS (asia-south1)
+ * Updates both member-facing and admin dashboard collections atomically.
+ */
+export const updateBibleClass = onCall(
+  { region: 'asia-south1', cors: true, invoker: 'public' },
+  async (request) => {
+    const data = request.data || {};
+    const churchId = normalizeChurchId(data.churchId);
+    const meetingId = String(data.meetingId || data.id || '').trim();
+    if (!meetingId) {
+      throw new HttpsError('invalid-argument', 'Meeting ID is required.');
+    }
+
+    await assertMeetingAdmin(request.auth?.uid, churchId);
+    const baseFields = buildMeetingPayload(data, churchId);
+
+    try {
+      const db = getDb();
+      const updateDoc = {
+        id: meetingId,
+        ...baseFields,
+        updatedAt: FieldValue.serverTimestamp(),
+      };
+
+      await Promise.all([
+        db
+          .collection('Rhema Church')
+          .doc(churchId)
+          .collection('online_meetings')
+          .doc(meetingId)
+          .set(updateDoc, { merge: true }),
+        db
+          .collection('churches')
+          .doc('default')
+          .collection('online_meetings')
+          .doc(meetingId)
+          .set(updateDoc, { merge: true }),
+      ]);
+
+      return {
+        success: true,
+        id: meetingId,
+      };
+    } catch (err: any) {
+      if (err instanceof HttpsError) throw err;
+      console.error('[updateBibleClass] Error:', err);
+      throw new HttpsError('internal', err?.message || 'Failed to update meeting.');
+    }
+  }
+);
+
+/**
+ * 🗑️ DELETE ONLINE MEETING / BIBLE CLASS (asia-south1)
+ */
+export const deleteBibleClass = onCall(
+  { region: 'asia-south1', cors: true, invoker: 'public' },
+  async (request) => {
+    const data = request.data || {};
+    const churchId = normalizeChurchId(data.churchId);
+    const meetingId = String(data.meetingId || data.id || '').trim();
+    if (!meetingId) {
+      throw new HttpsError('invalid-argument', 'Meeting ID is required.');
+    }
+
+    await assertMeetingAdmin(request.auth?.uid, churchId);
+
+    try {
+      const db = getDb();
+      await Promise.all([
+        db.collection('Rhema Church').doc(churchId).collection('online_meetings').doc(meetingId).delete(),
+        db.collection('churches').doc('default').collection('online_meetings').doc(meetingId).delete(),
+      ]);
+      return { success: true, id: meetingId };
+    } catch (err: any) {
+      if (err instanceof HttpsError) throw err;
+      console.error('[deleteBibleClass] Error:', err);
+      throw new HttpsError('internal', err?.message || 'Failed to delete meeting.');
+    }
+  }
+);

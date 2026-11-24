@@ -1,23 +1,32 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Linking, ActivityIndicator, StatusBar, Platform, Alert, Clipboard, ToastAndroid } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
-import { Calendar, Clock, User, BookOpen, Radio, ExternalLink, LogOut, Video, Key, Copy } from 'lucide-react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, StatusBar, Platform, Alert, ToastAndroid } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Clipboard from 'expo-clipboard';
+import { ArrowLeft, Calendar, Clock, User, BookOpen, Radio, ExternalLink, LogOut, Video, Key, Copy, CheckCircle } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useAdminTheme, createAdminThemedStyles } from '../utils/adminThemeHelper';
 import { useAuth } from '../context/AuthContext';
 import { useChurch } from '../context/ChurchContext';
 import { useLanguage } from '../context/LanguageContext';
 import firestore from '@react-native-firebase/firestore';
-import { openZoomMeeting } from '../utils/ZoomLauncher';
+import {
+  launchOnlineMeetingUrl,
+  parseMeetingTimestamp,
+  resolveMeetingStatus,
+} from '../utils/meetingActions';
 
 const BRAND = '#1a2d5a';
-const LIVE_COLOR = '#ef4444';
-const SUCCESS = '#10b981';
 const SHOW_YOUTUBE_LIVE = false;
 
 export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
   const { isDark: _adminIsDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
-  const { meeting } = route.params;
+  const insets = useSafeAreaInsets();
+  const initialMeeting =
+    route.params?.meeting ||
+    (route.params?.meetingId
+      ? { id: String(route.params.meetingId), churchId: String(route.params?.churchId || 'rhema') }
+      : {});
+  const [meeting, setMeeting] = useState<any>(initialMeeting);
   const { isDark } = useTheme();
   const { user, member } = useAuth();
   const { activeChurch } = useChurch();
@@ -26,11 +35,41 @@ export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
   const [hasJoined, setHasJoined] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Colors
+  useEffect(() => {
+    if (route.params?.meeting) {
+      setMeeting(route.params.meeting);
+    } else if (route.params?.meetingId) {
+      setMeeting({
+        id: String(route.params.meetingId),
+        churchId: String(route.params?.churchId || activeChurch?.id || member?.churchId || 'rhema'),
+      });
+    }
+  }, [route.params?.meeting, route.params?.meetingId, route.params?.churchId, activeChurch?.id, member?.churchId]);
+
   const bgColor = screenBg;
-  const cardColor = cardSurface;
   const textColor = primaryText;
-  const mutedText = secondaryText;
+
+  // Real-time listener on the meeting doc so Scheduled -> Live -> Completed transitions reflect immediately
+  useEffect(() => {
+    const churchId = activeChurch?.id || meeting?.churchId || member?.churchId;
+    if (!churchId || !meeting?.id) return;
+
+    const unsubMeeting = firestore()
+      .collection('Rhema Church')
+      .doc(churchId)
+      .collection('online_meetings')
+      .doc(meeting.id)
+      .onSnapshot(
+        (doc) => {
+          if (doc.exists) {
+            setMeeting({ id: doc.id, ...doc.data() });
+          }
+        },
+        () => {}
+      );
+
+    return () => unsubMeeting();
+  }, [activeChurch?.id, meeting?.id, meeting?.churchId, member?.churchId]);
 
   useEffect(() => {
     const churchId = activeChurch?.id || meeting?.churchId || member?.churchId;
@@ -65,35 +104,19 @@ export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
       return;
     }
 
-    let cleanUrl = rawLink.trim();
-    if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
-      cleanUrl = `https://${cleanUrl}`;
-    }
-
-    // 1. Immediately launch the meeting so the member is NEVER blocked
-    const isZoom = meeting?.provider === 'zoom' || meeting?.meetingType === 'zoom' || cleanUrl.includes('zoom.us');
     try {
-      if (isZoom) {
-        await openZoomMeeting({
-          meetingLink: cleanUrl,
-          meetingId: meeting?.meetingId,
-          password: meeting?.password,
-          userName: member?.name || user?.displayName || 'Church Member'
-        });
-      } else {
-        const canOpen = await Linking.canOpenURL(cleanUrl).catch(() => true);
-        if (canOpen) {
-          await Linking.openURL(cleanUrl);
-        } else {
-          Alert.alert('Cannot Open Link', `Unable to open: ${cleanUrl}`);
-        }
+      const opened = await launchOnlineMeetingUrl(
+        meeting,
+        member?.name || user?.displayName || 'Church Member'
+      );
+      if (!opened) {
+        Alert.alert('Cannot Open Link', `Unable to open: ${rawLink}`);
       }
     } catch (launchErr: any) {
       console.error('Failed to open meeting URL:', launchErr);
       Alert.alert('Error', 'Could not open meeting link. Please make sure Google Meet or a web browser is installed.');
     }
 
-    // 2. Record attendance in Firestore in background (non-blocking)
     const churchId = activeChurch?.id || meeting?.churchId || member?.churchId;
     const attendeeId = user?.uid || member?.id;
     if (churchId && meeting?.id && attendeeId) {
@@ -136,37 +159,54 @@ export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
     }
   };
 
-  const formattedDate = meeting.startTime 
-    ? new Date(meeting.startTime.seconds * 1000).toLocaleDateString('en-GB').replace(/\//g, '-') 
-    : 'TBA';
-    
-  const formattedTime = meeting.startTime 
-    ? new Date(meeting.startTime.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
-    : 'TBA';
+  const startDt = parseMeetingTimestamp(meeting.startTime);
+  const endDt = parseMeetingTimestamp(meeting.endTime);
 
-  const isCompleted = meeting.status === 'completed' || (meeting.endTime && new Date(meeting.endTime.seconds * 1000) < new Date());
-  
-  const isLive = meeting.status === 'live' || (
-    meeting.startTime && meeting.endTime && 
-    new Date(meeting.startTime.seconds * 1000) <= new Date() && 
-    new Date(meeting.endTime.seconds * 1000) >= new Date()
-  );
+  const formattedDate = startDt
+    ? startDt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    : meeting.date || 'TBA';
 
-  const gradStart = isLive ? '#c0392b' : isCompleted ? '#374151' : '#1a2d5a';
-  const gradEnd   = isLive ? '#991b1b' : isCompleted ? '#1f2937' : '#0f1e3d';
+  const formattedTime = startDt && endDt
+    ? `${startDt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – ${endDt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    : startDt
+    ? startDt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : meeting.startTimeLabel || 'TBA';
 
+  const canonicalStatus = resolveMeetingStatus(meeting, true);
+  const isCompleted = canonicalStatus === 'completed';
+  const isLive = canonicalStatus === 'live';
+
+  const gradStart = isLive ? '#b91c1c' : isCompleted ? '#374151' : '#1a2d5a';
+  const gradEnd = isLive ? '#7f1d1d' : isCompleted ? '#1f2937' : '#0f1e3d';
+
+  const topPad = Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8;
 
   return (
     <View style={[styles.container, { backgroundColor: bgColor }]}>
-      <StatusBar barStyle="light-content" backgroundColor={BRAND} />
+      <StatusBar barStyle={barStyle} backgroundColor={bgColor} />
 
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <MaterialIcons name="arrow-back" color="#fff" size={24} />
+      {/* Clean Theme-Aligned Header */}
+      <View
+        style={[
+          styles.header,
+          {
+            paddingTop: topPad,
+            backgroundColor: bgColor,
+            borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1',
+          },
+        ]}
+      >
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={[styles.backBtn, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}
+          activeOpacity={0.8}
+        >
+          <ArrowLeft color={textColor} size={20} strokeWidth={2.4} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t('meetings.meetingDetails')}</Text>
-        <View style={{ width: 44 }} />
+        <Text style={[styles.headerTitle, { color: textColor }]} numberOfLines={1}>
+          {t('meetings.meetingDetails')}
+        </Text>
+        <View style={{ width: 40 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -174,8 +214,23 @@ export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
           {/* Decorative circle */}
           <View style={[styles.gradCircle, { backgroundColor: gradEnd }]} />
 
-          {/* Platform Badge & YouTube Badge */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 6, flexWrap: 'wrap' }}>
+          {/* Status Pill + Platform Badge + YouTube Badge */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 6, flexWrap: 'wrap' }}>
+            {isLive ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.22)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.6)' }}>
+                <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#4ADE80', marginRight: 6 }} />
+                <Text style={{ color: '#ffffff', fontSize: 12, fontWeight: '800', letterSpacing: 0.3 }}>LIVE NOW</Text>
+              </View>
+            ) : isCompleted ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.14)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }}>
+                <Text style={{ color: '#E5E7EB', fontSize: 12, fontWeight: '700' }}>COMPLETED</Text>
+              </View>
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(245, 158, 11, 0.25)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: '#FBBF24' }}>
+                <Text style={{ color: '#FDE68A', fontSize: 12, fontWeight: '800' }}>SCHEDULED</Text>
+              </View>
+            )}
+
             {meeting.meetingType === 'zoom' || meeting.provider === 'zoom' ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(45, 140, 255, 0.4)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: '#2D8CFF' }}>
                 <Video size={13} color="#ffffff" style={{ marginRight: 5 }} />
@@ -212,9 +267,9 @@ export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
           </Text>
 
           {/* Subtitle / Topic */}
-          {(meeting.subtitle || meeting.topic || meeting.bibleBook) ? (
+          {(meeting.subtitle || meeting.topic) ? (
             <Text style={styles.gradSubtitle} numberOfLines={2}>
-              {meeting.subtitle || meeting.topic || meeting.bibleBook}
+              {meeting.subtitle || meeting.topic}
             </Text>
           ) : null}
 
@@ -232,12 +287,19 @@ export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
             <Text style={styles.gradInfoText}>{formattedTime}</Text>
           </View>
 
-          {meeting.teacher && (
+          {meeting.bibleBook ? (
+            <View style={styles.gradInfoRow}>
+              <BookOpen size={18} color="rgba(255,255,255,0.75)" />
+              <Text style={styles.gradInfoText}>{meeting.bibleBook}</Text>
+            </View>
+          ) : null}
+
+          {(meeting.teacher || meeting.teacherName) ? (
             <View style={styles.gradInfoRow}>
               <User size={18} color="rgba(255,255,255,0.75)" />
-              <Text style={styles.gradInfoText}>{t('meetings.hostPrefix')} {meeting.teacher}</Text>
+              <Text style={styles.gradInfoText}>{t('meetings.hostPrefix')} {meeting.teacher || meeting.teacherName}</Text>
             </View>
-          )}
+          ) : null}
 
           {meeting.password ? (
             <View style={[styles.gradInfoRow, { justifyContent: 'space-between', backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, marginTop: 6 }]}>
@@ -248,8 +310,8 @@ export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
                 </Text>
               </View>
               <TouchableOpacity 
-                onPress={() => {
-                  Clipboard.setString(meeting.password);
+                onPress={async () => {
+                  await Clipboard.setStringAsync(String(meeting.password));
                   if (Platform.OS === 'android') {
                     ToastAndroid.show(`Passcode ${meeting.password} copied!`, ToastAndroid.SHORT);
                   } else {
@@ -264,12 +326,12 @@ export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
             </View>
           ) : null}
           
-          {meeting.description && (
+          {meeting.description && meeting.description !== meeting.topic && meeting.description !== meeting.subtitle ? (
             <View style={[styles.gradInfoRow, { alignItems: 'flex-start', marginTop: 8 }]}>
               <BookOpen size={18} color="rgba(255,255,255,0.75)" style={{ marginTop: 2 }} />
               <Text style={[styles.gradInfoText, { lineHeight: 22, opacity: 0.9 }]}>{meeting.description}</Text>
             </View>
-          )}
+          ) : null}
 
           {/* YouTube Live Stream Watch Option */}
           {SHOW_YOUTUBE_LIVE && meeting.youtubeLive?.enabled ? (
@@ -304,46 +366,71 @@ export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
             </TouchableOpacity>
           ) : null}
 
-          {/* Action buttons */}
+          {/* Action area based on canonical meeting status */}
           {isCompleted ? (
             <View style={[styles.gradActions, { marginTop: 20, justifyContent: 'center' }]}>
-              <View style={[styles.gradLeaveBtn, { borderWidth: 0, backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 32 }]}>
+              <View style={[styles.gradLeaveBtn, { borderWidth: 0, backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 32, flex: 1 }]}>
                 <Text style={[styles.gradLeaveText, { opacity: 0.9 }]}>{t('meetings.meetingCompleted')}</Text>
               </View>
             </View>
+          ) : !isLive ? (
+            <View style={{ marginTop: 18 }}>
+              <View style={styles.waitingBanner}>
+                <Clock size={16} color="#FDE68A" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13.5 }}>
+                    Waiting for Host to Start
+                  </Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 2, lineHeight: 17 }}>
+                    You will receive a live notification as soon as this meeting begins.
+                  </Text>
+                </View>
+              </View>
+            </View>
           ) : (
-            <View style={[styles.gradActions, { marginTop: 20 }]}>
+            <View style={{ marginTop: 18, gap: 12 }}>
               {loading ? (
                 <ActivityIndicator size="small" color="#fff" style={{ marginVertical: 10 }} />
               ) : hasJoined ? (
                 <>
-                  {/* Joined / Open Link */}
-                  <TouchableOpacity
-                    style={[styles.gradJoinBtn, { backgroundColor: '#fff' }]}
-                    onPress={handleJoin}
-                  >
-                    <Video size={16} color={gradStart} />
-                    <Text style={[styles.gradJoinText, { color: gradStart }]}>{t('meetings.joined')}</Text>
-                  </TouchableOpacity>
+                  <View style={styles.joinedBanner}>
+                    <CheckCircle size={18} color="#4ADE80" />
+                    <Text style={styles.joinedBannerText}>
+                      You joined this live session
+                    </Text>
+                  </View>
 
-                  {/* Leave */}
-                  <TouchableOpacity
-                    style={styles.gradLeaveBtn}
-                    onPress={handleLeave}
-                  >
-                    <Text style={styles.gradLeaveText}>{t('meetings.leave')}</Text>
-                  </TouchableOpacity>
+                  <View style={styles.gradActions}>
+                    <TouchableOpacity
+                      style={[styles.gradJoinBtn, { flex: 1.2, justifyContent: 'center' }]}
+                      onPress={handleJoin}
+                      activeOpacity={0.85}
+                    >
+                      <ExternalLink size={15} color={gradStart} />
+                      <Text style={[styles.gradJoinText, { color: gradStart }]}>Open Meeting</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.gradLeaveBtn, { flex: 1 }]}
+                      onPress={handleLeave}
+                      activeOpacity={0.85}
+                    >
+                      <LogOut size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
+                      <Text style={styles.gradLeaveText}>{t('meetings.leave')}</Text>
+                    </TouchableOpacity>
+                  </View>
                 </>
               ) : (
                 <TouchableOpacity
-                  style={styles.gradJoinBtn}
+                  style={[styles.gradJoinBtn, { justifyContent: 'center' }]}
                   onPress={handleJoin}
+                  activeOpacity={0.85}
                 >
-                  <Video size={16} color={gradStart} />
+                  <Video size={17} color={gradStart} />
                   <Text style={[styles.gradJoinText, { color: gradStart }]}>
-                    {isLive
-                      ? (meeting.meetingType === 'zoom' || meeting.provider === 'zoom' ? '● Join Live Stream' : t('meetings.joinLive'))
-                      : (meeting.meetingType === 'zoom' || meeting.provider === 'zoom' ? 'Join Zoom Meeting' : t('meetings.join'))}
+                    {meeting.meetingType === 'zoom' || meeting.provider === 'zoom'
+                      ? 'Join Live Zoom Meeting'
+                      : 'Join Live Google Meet'}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -360,33 +447,30 @@ const styles = createAdminThemedStyles(StyleSheet.create({
 
   // Header
   header: {
-    backgroundColor: BRAND,
-    paddingTop: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight ?? 24) + 12,
     paddingHorizontal: 20,
-    paddingBottom: 20,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
+    paddingBottom: 14,
+    borderBottomWidth: 1.2,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  headerTitle: { color: '#fff', fontSize: 18, fontWeight: '800', letterSpacing: 0.2 },
+  headerTitle: { fontSize: 19, fontWeight: '800', letterSpacing: -0.2, flex: 1, textAlign: 'center' },
   backBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
   
-  scrollContent: { padding: 16, paddingBottom: 40 },
+  scrollContent: { padding: 16, paddingBottom: 44 },
 
   // Gradient card (Matching OnlineMeetingsScreen)
   gradCard: {
     borderRadius: 24,
     padding: 24,
-    marginTop: 8,
+    marginTop: 6,
     overflow: 'hidden',
     elevation: 8,
     shadowColor: '#000',
@@ -405,14 +489,14 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   },
   gradTitle: {
     color: '#fff',
-    fontSize: 26,
+    fontSize: 25,
     fontWeight: '900',
     letterSpacing: 0.2,
-    lineHeight: 34,
+    lineHeight: 32,
     marginBottom: 6,
   },
   gradSubtitle: {
-    color: 'rgba(255,255,255,0.7)',
+    color: 'rgba(255,255,255,0.78)',
     fontSize: 15,
     fontWeight: '600',
     marginBottom: 16,
@@ -421,7 +505,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   gradDivider: {
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.18)',
-    marginBottom: 20,
+    marginBottom: 18,
   },
   gradInfoRow: {
     flexDirection: 'row',
@@ -431,26 +515,53 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   },
   gradInfoText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 15.5,
+    fontWeight: '700',
+    flex: 1,
+  },
+  waitingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.45)',
+  },
+  joinedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderRadius: 14,
+    backgroundColor: 'rgba(16, 185, 129, 0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(74, 222, 128, 0.45)',
+  },
+  joinedBannerText: {
+    color: '#FFFFFF',
+    fontSize: 13.5,
     fontWeight: '700',
     flex: 1,
   },
   gradActions: {
     flexDirection: 'row',
-    gap: 12,
-    marginTop: 12,
+    gap: 10,
   },
   gradJoinBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     backgroundColor: '#fff',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
+    paddingVertical: 13,
+    paddingHorizontal: 20,
     borderRadius: 24,
   },
   gradJoinText: {
-    fontSize: 15,
+    fontSize: 14.5,
     fontWeight: '800',
   },
   gradLeaveBtn: {
@@ -460,12 +571,12 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     borderWidth: 1.5,
     borderColor: 'rgba(255,255,255,0.45)',
     paddingVertical: 12,
-    paddingHorizontal: 24,
+    paddingHorizontal: 18,
     borderRadius: 24,
   },
   gradLeaveText: {
     color: '#fff',
-    fontSize: 15,
+    fontSize: 14.5,
     fontWeight: '700',
   },
 }));

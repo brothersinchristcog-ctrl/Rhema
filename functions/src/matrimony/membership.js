@@ -14,10 +14,12 @@ function requireAuthUid(request) {
     return uid;
 }
 function getRazorpayCredentials() {
-    return {
-        keyId: process.env.RAZORPAY_KEY_ID || 'rzp_live_TRsx05AgR0CwMk',
-        keySecret: process.env.RAZORPAY_KEY_SECRET || 'Vz8oYPOYf0yOJ2st13r0abn0',
-    };
+    const keyId = (process.env.RAZORPAY_KEY_ID || '').trim();
+    const keySecret = (process.env.RAZORPAY_KEY_SECRET || '').trim();
+    if (!keyId || !keySecret) {
+        throw new HttpsError('failed-precondition', 'Razorpay credentials are not configured on the server. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in backend environment variables.');
+    }
+    return { keyId, keySecret };
 }
 function parsePlanId(raw) {
     const clean = String(raw || '').trim().toLowerCase();

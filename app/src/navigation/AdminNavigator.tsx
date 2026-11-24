@@ -94,6 +94,7 @@ import AdminMatrimonyScreen from '../screens/admin/AdminMatrimonyScreen';
 import AdminJobCircleDashboard from '../screens/admin/job_circle/AdminJobCircleDashboard';
 import CareCellService from '../services/CareCellService';
 import { RHEMA_CHURCH_ID } from '../constants/ChurchConfig';
+import { isSuperAdminMember } from '../utils/roleUtils';
 
 const { width } = Dimensions.get('window');
 
@@ -124,9 +125,7 @@ export default function AdminNavigator({ navigation, route }: any) {
 
 
   const { isDark, colors, fontStyle, scaleFont, appFontFamily, screenBg, cardSurface, primaryText, secondaryText } = useAdminTheme();
-  const isSuperAdminUser = isPlatformSuperAdmin ||
-    String(member?.userType || '').toUpperCase().includes('SUPER') ||
-    Boolean((member as any)?.isSuperAdmin);
+  const isSuperAdminUser = isSuperAdminMember(member, isPlatformSuperAdmin);
 
   const [activeTab, setActiveTab] = useState(0);
   const [tabHistory, setTabHistory] = useState<number[]>([]);

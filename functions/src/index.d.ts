@@ -23,12 +23,17 @@ export declare const triggerDailyPromisePushHttp: import("firebase-functions/v2/
  */
 export declare const checkYouTubeLive: import("firebase-functions/v2/scheduler").ScheduleFunction;
 export declare const triggerTestYouTubeLive: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
+    delivered: boolean;
+    totalTokens: number;
+    multicastSuccess: number;
+    multicastFailed: number;
+    topicSent: boolean;
     success: boolean;
     broadcastId: string;
 }>, unknown>;
-export { publishScheduledSermons, triggerPublishScheduledSermonsHttp, triggerDailyVersePushHttp, sendDailyVersePushScheduled, monitorMeetingLive, pushMeetingLive, onBaptismRequestCreatedAdmin, onBaptismRequestCreatedAdminLegacy, onPrayerRequestCreatedAdmin, onPrayerRequestCreatedAdminLegacy, onPrayerRequestProcessedMember, onPrayerRequestProcessedMemberLegacy, pushPrayerRequestApproved, pushCareCellAnnouncement, pushCareCellMeeting, pushCareCellPrayerRequest, pushCareCellVisit, onCareCellVisitResponseUpdated, onTestimonyCreatedAdmin, onTestimonyCreatedAdminLegacy, onTestimonyUpdatedWorkflow, onTestimonyUpdatedWorkflowLegacy, onVolunteerApplicationCreated, onVolunteerApplicationCreatedLegacy, onVolunteerApplicationUpdated, onVolunteerApplicationUpdatedLegacy, onEventUpdatedForVolunteers, onEventUpdatedForVolunteersLegacy, scheduledVolunteerReminders, triggerVolunteerPushTestHttp, onJobApplicationCreated, onJobApplicationUpdated, onJobOpportunityCreated, onJobOpportunityUpdated, onRegistrationRequestCreated, onRegistrationRequestUpdated, onVolunteerPostCreated, onVolunteerPostUpdated, onKidsSessionCreated, onKidsSessionUpdated, onKidsAttendanceAbsentCreated, } from './notifications.js';
+export { publishScheduledSermons, triggerPublishScheduledSermonsHttp, triggerDailyVersePushHttp, sendDailyVersePushScheduled, monitorMeetingLive, onBaptismRequestCreatedAdmin, onBaptismRequestCreatedAdminLegacy, onPrayerRequestCreatedAdmin, onPrayerRequestCreatedAdminLegacy, onPrayerRequestProcessedMember, onPrayerRequestProcessedMemberLegacy, pushPrayerRequestApproved, pushCareCellAnnouncement, pushCareCellMeeting, pushCareCellPrayerRequest, pushCareCellVisit, onCareCellVisitResponseUpdated, onTestimonyCreatedAdmin, onTestimonyCreatedAdminLegacy, onTestimonyUpdatedWorkflow, onTestimonyUpdatedWorkflowLegacy, onVolunteerApplicationCreated, onVolunteerApplicationCreatedLegacy, onVolunteerApplicationUpdated, onVolunteerApplicationUpdatedLegacy, onEventUpdatedForVolunteers, onEventUpdatedForVolunteersLegacy, scheduledVolunteerReminders, triggerVolunteerPushTestHttp, onJobApplicationCreated, onJobApplicationUpdated, onJobOpportunityCreated, onJobOpportunityUpdated, onRegistrationRequestCreated, onRegistrationRequestUpdated, onVolunteerPostCreated, onVolunteerPostUpdated, onKidsSessionCreated, onKidsSessionUpdated, onKidsAttendanceAbsentCreated, onLedgerExpenseApproval, } from './notifications.js';
 export { onServiceAssignmentQueueDispatched, onServiceAssignmentResponded, checkServiceAssignmentTimeoutsCron, sendServiceRosterRemindersCron, triggerCheckRosterTimeoutsHttp, dispatchServiceAssignmentNotificationHttp, onServiceRehearsalCreated, onServicePlanPublished, bookResponsibilitySlotHttp, declineResponsibilitySlotHttp, } from './rosterNotifications.js';
-export { createZoomMeeting, createZoomMeetingHttp, generateZoomMeetingLink, createBibleClass, } from './meetings.js';
+export { generateZoomMeetingLink, createBibleClass, updateBibleClass, deleteBibleClass, startBibleClass, endBibleClass, } from './meetings.js';
 export { guestInviteLanding } from './guestInvite.js';
 export { startMatrimonyRegistration, saveMatrimonyDraft, submitMatrimonyProfile, resetMatrimonyProfile, deactivateMyMatrimonyAccount, deleteMyMatrimonyAccount, getMatrimonyStatus, uploadMatrimonyPhoto, } from './matrimony/registration.js';
 export { getMatrimonyAdminDashboard, getMatrimonyPendingProfiles, getMatrimonyAdminProfileDetail, approveMatrimonyProfile, rejectMatrimonyProfile, requestMatrimonyCorrection, suspendMatrimonyProfile, removeMatrimonyProfileForAbuse, deleteMatrimonyProfile, inactivateMatrimonyProfile, activateMatrimonyProfile, resolveMatrimonyReport, } from './matrimony/admin.js';
@@ -39,4 +44,7 @@ export { ensureMatrimonyChatRoom, getMatrimonyChatContacts, notifyMatrimonyChatM
 export { getMatrimonyPlans, getMemberEntitlements, createMatrimonyUpgradeOrder, verifyMatrimonyUpgradePayment, expireMatrimonySubscriptions, } from './matrimony/membership.js';
 export { adminGetMatrimonyPlansAndSubs, adminUpsertMatrimonyPlan, adminGrantComplimentarySubscription, } from './matrimony/adminPlans.js';
 export { seedMatrimonyTestUsers, deleteMatrimonyTestUsers, } from './matrimony/testSeed.js';
+export { createRhemaChatGroup, onRhemaChatMessageCreated, } from './churchChat/chatFunctions.js';
+export { createRazorpayOrder, verifyRazorpayPayment, createRazorpayRecurringDonation, verifyRazorpaySubscriptionDonation, manageRazorpayRecurringDonation, createRazorpayOrderV4, verifyRazorpaySubscriptionV3, createRazorpayDonationOrderV6, verifyRazorpayDonationV6, razorpayWebhookV1, } from './razorpay.js';
+export { sendPledgeRemindersScheduled, triggerPledgeRemindersManual, } from './pledgeReminders.js';
 //# sourceMappingURL=index.d.ts.map

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, StatusBar, Platform, ActivityIndicator, Modal, PanResponder, Animated, Dimensions, Linking, Alert, Image, BackHandler, Clipboard, ToastAndroid } from 'react-native';
-import { ChevronLeft, ArrowLeft, Bell, Calendar, Info, MessageCircle, AlertTriangle, X, Gift, Heart, Sparkles, Droplets, Trash2, Tv, BookOpen, Music, Mic , Video, Layers, UserCheck, Zap, HeartHandshake, Briefcase, CheckCircle2 } from 'lucide-react-native';
+import { ChevronLeft, ArrowLeft, Bell, Calendar, Info, MessageCircle, AlertTriangle, X, Gift, Heart, Sparkles, Droplets, Trash2, Tv, BookOpen, Music, Mic , Video, Layers, UserCheck, Zap, HeartHandshake, Briefcase, CheckCircle2, Wallet } from 'lucide-react-native';
 import { openZoomMeeting } from '../utils/ZoomLauncher';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,6 +15,7 @@ import firestore, {
   onSnapshot 
 } from '@react-native-firebase/firestore';
 import { useAuth } from '../context/AuthContext';
+import { isSuperAdminMember } from '../utils/roleUtils';
 import { formatDateDisplay } from '../utils/DateUtils';
 import { useChurch } from '../context/ChurchContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -140,6 +141,8 @@ export default function UpdatesScreen({ navigation, route }: any) {
   const { t } = useLanguage();
 
   const getTypeName = (type: string) => {
+    if (type === 'online_meeting') return 'LIVE MEETING';
+    if (type === 'online_meeting_scheduled') return 'MEETING SCHEDULED';
     if (type === 'testimony_admin') return 'TESTIMONY REVIEW';
     if (type === 'testimony_published') return 'NEW TESTIMONY';
     if (type === 'testimony_member_status') return 'TESTIMONY UPDATE';
@@ -164,6 +167,10 @@ export default function UpdatesScreen({ navigation, route }: any) {
     if (type === 'registration_request_admin') return 'REGISTRATION APPROVAL';
     if (type === 'registration_approved') return 'REGISTRATION APPROVED';
     if (type === 'registration_rejected') return 'REGISTRATION UPDATE';
+    if (type === 'expense_approval') return 'EXPENSE APPROVAL';
+    if (type === 'expense_approved') return 'EXPENSE APPROVED';
+    if (type === 'expense_rejected') return 'EXPENSE REJECTED';
+    if (type === 'invoice') return 'INVOICE';
     if (type === 'kids_check_in') return 'KIDS CHECK-IN';
     if (type === 'kids_check_out') return 'KIDS CHECK-OUT';
     if (type === 'kids_absent') return 'KIDS ATTENDANCE';
@@ -180,8 +187,9 @@ export default function UpdatesScreen({ navigation, route }: any) {
   const [memberNotifsList, setMemberNotifsList] = useState<any[]>([]);
 
   useEffect(() => {
-    const combined = [...broadcastsList, ...churchNotifsList, ...meetingsList, ...memberNotifsList].sort((a, b) => (b.rawDate || 0) - (a.rawDate || 0));
+    const combined = [...churchNotifsList, ...broadcastsList, ...meetingsList, ...memberNotifsList].sort((a, b) => (b.rawDate || 0) - (a.rawDate || 0));
     const seenIds = new Set<string>();
+    const seenMeetingKeys = new Set<string>();
     const seenVolunteerKeys = new Set<string>();
     const seenRosterAlertKeys = new Set<string>();
     const seenLiveStreams = new Set<string>();
@@ -192,6 +200,15 @@ export default function UpdatesScreen({ navigation, route }: any) {
         return false;
       }
       seenIds.add(item.id);
+
+      // Deduplicate online meeting notifications by event kind + meetingId
+      if (item.type === 'online_meeting' || item.type === 'online_meeting_scheduled') {
+        const mKey = `${item.type}|${item.meetingId || item.id}`;
+        if (seenMeetingKeys.has(mKey)) {
+          return false;
+        }
+        seenMeetingKeys.add(mKey);
+      }
 
       // Deduplicate Bible Quiz updates (e.g. Daily Bible Quiz logged across both broadcasts & notifications)
       if (item.type === 'quiz' || item.type === 'bible_quiz' || item.type === 'quiz_scheduled') {
@@ -243,10 +260,11 @@ export default function UpdatesScreen({ navigation, route }: any) {
   const [hasAutoOpened, setHasAutoOpened] = useState(false);
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const [clearedBeforeTimestamp, setClearedBeforeTimestamp] = useState<number>(0);
-  const { user, member } = useAuth();
+  const { user, member, isPlatformSuperAdmin } = useAuth();
   const { activeChurch } = useChurch();
   const adminRoleStr = `${member?.userType || ''} ${(member as any)?.role || ''}`.toUpperCase();
-  const isAdmin = adminRoleStr.includes('ADMIN') || adminRoleStr.includes('SUPER') || adminRoleStr.includes('PASTOR');
+  const isSuperAdmin = isSuperAdminMember(member, isPlatformSuperAdmin);
+  const isAdmin = isSuperAdmin || adminRoleStr.includes('ADMIN') || adminRoleStr.includes('PASTOR');
 
   const handleBack = () => {
     if (selectedUpdate) {
@@ -511,6 +529,11 @@ export default function UpdatesScreen({ navigation, route }: any) {
       return null;
     }
 
+    // SECURITY: Expense approvals, decisions & platform super-admin notices are strictly Super Admin only
+    if ((data.targetRole === 'super_admin' || data.type === 'expense_approval' || data.type === 'expense_approved' || data.type === 'expense_rejected' || data.type === 'invoice' || data.type === 'new_church') && !isSuperAdmin) {
+      return null;
+    }
+
     // SECURITY: If broadcast/notification is targeted to a specific user, skip it if not for this user
     const targetIdVal = data.targetMemberId || data.targetUid || data.recipientId;
     const isPhoneTargeted = data.targetPhone && typeof data.targetPhone === 'string' && data.targetPhone.trim().length > 0;
@@ -550,8 +573,12 @@ export default function UpdatesScreen({ navigation, route }: any) {
 
     if (data.type === 'online_meeting') {
       icon = Video;
-      color = '#3b82f6';
+      color = '#ef4444';
       resolvedType = 'online_meeting';
+    } else if (data.type === 'online_meeting_scheduled') {
+      icon = Calendar;
+      color = '#2563EB';
+      resolvedType = 'online_meeting_scheduled';
     } else if (data.type === 'youtube_live' || data.type === 'live' || (data.title?.includes('🎥') && !data.title?.toLowerCase().includes('online meeting') && !data.title?.toLowerCase().includes('google meet') && !data.title?.toLowerCase().includes('zoom'))) {
       icon = Tv;
       color = '#ef4444';
@@ -641,6 +668,18 @@ export default function UpdatesScreen({ navigation, route }: any) {
       icon = AlertTriangle;
       color = '#EF4444';
       resolvedType = 'registration_rejected';
+    } else if (data.type === 'expense_approved') {
+      icon = CheckCircle2;
+      color = '#10B981';
+      resolvedType = 'expense_approved';
+    } else if (data.type === 'expense_rejected') {
+      icon = AlertTriangle;
+      color = '#EF4444';
+      resolvedType = 'expense_rejected';
+    } else if (data.type === 'expense_approval' || data.type === 'invoice') {
+      icon = Wallet;
+      color = '#F43F5E';
+      resolvedType = data.type;
     } else if (data.type === 'admin_roster_alert' || data.title?.includes('Response Deadline Expired') || data.title?.includes('No Volunteers:') || data.title?.includes('All Volunteers Declined') || data.title?.includes('Unfilled Dut')) {
       icon = Layers;
       color = '#DC2626';
@@ -819,7 +858,18 @@ export default function UpdatesScreen({ navigation, route }: any) {
       type: resolvedType,
       icon: icon,
       color: color,
-      url: data.url || '',
+      url: data.url || data.meetingLink || '',
+      meetingId: data.meetingId || null,
+      meetingLink: data.meetingLink || data.url || '',
+      provider: data.provider || data.meetingType || null,
+      password: data.password || null,
+      teacherName: data.teacherName || data.teacher || null,
+      meetingDate: data.date || null,
+      startTimeLabel: data.startTimeLabel || null,
+      endTimeLabel: data.endTimeLabel || null,
+      topic: data.topic || null,
+      bibleBook: data.bibleBook || null,
+      meetingStatus: data.status || null,
       videoId: data.videoId || null,
       imageUrl: data.imageUrl || null,
       sermonId: data.sermonId || (resolvedType === 'sermon' && data.id && !String(data.id).startsWith('sermon_') ? data.id : null) || data.relatedId || (resolvedType === 'sermon' ? docId.replace(/^sermon_/, '') : null),
@@ -987,33 +1037,62 @@ export default function UpdatesScreen({ navigation, route }: any) {
         qMeetings,
         (snapshot) => {
           if (snapshot) {
-            const list = snapshot.docs.map((doc) => {
-              const data = doc.data();
-              let dateStr = new Date().toISOString().split('T')[0];
-              if (data.startTime && typeof data.startTime.toDate === 'function') {
-                const dt = data.startTime.toDate();
-                dateStr =
-                  dt.toLocaleDateString() +
-                  ' • ' +
-                  dt.toLocaleTimeString('en-US', {
-                    hour: 'numeric',
-                    minute: '2-digit',
-                    hour12: true,
-                  });
-              }
+            const list = snapshot.docs
+              .map((doc) => ({ id: doc.id, data: doc.data() }))
+              .filter(
+                ({ data }) =>
+                  data.status === 'live' ||
+                  data.status === 'LIVE' ||
+                  data.liveNotified === true
+              )
+              .map(({ id, data }) => {
+                let dateStr = new Date().toISOString().split('T')[0];
+                if (data.startedAt && typeof data.startedAt.toDate === 'function') {
+                  const dt = data.startedAt.toDate();
+                  dateStr =
+                    dt.toLocaleDateString() +
+                    ' • ' +
+                    dt.toLocaleTimeString('en-US', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true,
+                    });
+                } else if (data.startTime && typeof data.startTime.toDate === 'function') {
+                  const dt = data.startTime.toDate();
+                  dateStr =
+                    dt.toLocaleDateString() +
+                    ' • ' +
+                    dt.toLocaleTimeString('en-US', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true,
+                    });
+                }
 
-              return {
-                id: doc.id,
-                title: t('updates.newOnlineMeeting'),
-                content: `${data.title || ''} ${t('updates.meetingScheduled')}`.trim(),
-                date: dateStr,
-                type: 'online_meeting',
-                icon: Video,
-                color: '#3B82F6',
-                url: data.meetingLink || '',
-                rawDate: data.createdAt?.toMillis?.() || 0,
-              };
-            });
+                return {
+                  id: `meeting_live_${id}`,
+                  meetingId: id,
+                  title: `🔴 Live Now: ${data.title || t('updates.newOnlineMeeting')}`,
+                  content: `${data.provider === 'google_meet' ? 'Google Meet' : 'Zoom Meeting'} is now live. Tap to join now.`.trim(),
+                  date: dateStr,
+                  type: 'online_meeting',
+                  icon: Video,
+                  color: '#EF4444',
+                  url: data.meetingLink || data.url || '',
+                  meetingLink: data.meetingLink || data.url || '',
+                  provider: data.provider || data.meetingType || 'google_meet',
+                  password: data.password || '',
+                  teacherName: data.teacherName || data.teacher || '',
+                  meetingDate: data.date || '',
+                  startTimeLabel: data.startTimeLabel || '',
+                  endTimeLabel: data.endTimeLabel || '',
+                  topic: data.topic || '',
+                  bibleBook: data.bibleBook || '',
+                  meetingStatus: 'live',
+                  churchId: churchToQuery,
+                  rawDate: data.startedAt?.toMillis?.() || data.createdAt?.toMillis?.() || 0,
+                };
+              });
             setMeetingsList(list);
           }
         },
@@ -1334,6 +1413,20 @@ export default function UpdatesScreen({ navigation, route }: any) {
                       requestId: update.requestId || update.referenceId || update.id,
                       timestamp: Date.now(),
                     });
+                  } else if ((update.type === 'expense_approval' || update.type === 'expense_approved' || update.type === 'expense_rejected' || update.type === 'invoice') && isSuperAdmin) {
+                    const approvalSubTab =
+                      update.type === 'expense_approved'
+                        ? 'approved'
+                        : update.type === 'expense_rejected'
+                        ? 'rejected'
+                        : 'pending';
+                    navigation.navigate('AdminRoot', {
+                      targetTab: 'Expense',
+                      innerTab: update.type === 'invoice' ? 'invoice' : 'approvals',
+                      approvalSubTab,
+                      expenseId: update.expenseId || update.relatedId || update.id,
+                      timestamp: Date.now(),
+                    });
                   } else if (
                     update.type === 'kids_check_in' ||
                     update.type === 'kids_check_out' ||
@@ -1376,6 +1469,39 @@ export default function UpdatesScreen({ navigation, route }: any) {
                         applicationId: update.applicationId,
                         timestamp: Date.now(),
                       });
+                    }
+                  } else if (update.type === 'online_meeting' || update.type === 'online_meeting_scheduled') {
+                    const targetChurchId = update.churchId || activeChurch?.id || member?.churchId || 'rhema';
+                    const rawMeetingId =
+                      update.meetingId ||
+                      String(update.id || '')
+                        .replace(/^meeting_live_/, '')
+                        .replace(/^meeting_sched_/, '');
+                    if (rawMeetingId) {
+                      navigation.navigate('OnlineMeetingDetail', {
+                        meetingId: rawMeetingId,
+                        churchId: targetChurchId,
+                        meeting: {
+                          id: rawMeetingId,
+                          churchId: targetChurchId,
+                          title: update.title?.replace(/^🔴 Live Now:\s*/i, '').replace(/^New Meeting Scheduled:\s*/i, '') || 'Online Meeting',
+                          meetingLink: update.meetingLink || update.url || '',
+                          meetingUrl: update.meetingLink || update.url || '',
+                          url: update.meetingLink || update.url || '',
+                          provider: update.provider || 'google_meet',
+                          meetingType: update.provider || 'google_meet',
+                          password: update.password || '',
+                          date: update.meetingDate || '',
+                          startTimeLabel: update.startTimeLabel || '',
+                          endTimeLabel: update.endTimeLabel || '',
+                          teacherName: update.teacherName || '',
+                          topic: update.topic || '',
+                          bibleBook: update.bibleBook || '',
+                          status: update.type === 'online_meeting' ? 'live' : 'scheduled',
+                        },
+                      });
+                    } else {
+                      navigation.navigate('OnlineMeetings');
                     }
                   } else {
                     setSelectedUpdate(update);
@@ -1789,6 +1915,49 @@ export default function UpdatesScreen({ navigation, route }: any) {
                   </TouchableOpacity>
                 )}
 
+                {(selectedUpdate?.type === 'expense_approval' || selectedUpdate?.type === 'expense_approved' || selectedUpdate?.type === 'expense_rejected' || selectedUpdate?.type === 'invoice') && isSuperAdmin && (
+                  <TouchableOpacity
+                    style={[
+                      styles.joinLiveBtn,
+                      {
+                        backgroundColor:
+                          selectedUpdate?.type === 'expense_approved'
+                            ? '#10B981'
+                            : selectedUpdate?.type === 'expense_rejected'
+                            ? '#EF4444'
+                            : '#F43F5E',
+                        marginTop: 16,
+                      },
+                    ]}
+                    onPress={() => {
+                      const expId = selectedUpdate?.expenseId || selectedUpdate?.relatedId || selectedUpdate?.id;
+                      const innerTab = selectedUpdate?.type === 'invoice' ? 'invoice' : 'approvals';
+                      const approvalSubTab =
+                        selectedUpdate?.type === 'expense_approved'
+                          ? 'approved'
+                          : selectedUpdate?.type === 'expense_rejected'
+                          ? 'rejected'
+                          : 'pending';
+                      setSelectedUpdate(null);
+                      navigation.navigate('AdminRoot', {
+                        targetTab: 'Expense',
+                        innerTab,
+                        approvalSubTab,
+                        expenseId: expId,
+                        timestamp: Date.now(),
+                      });
+                    }}
+                  >
+                    <Text style={styles.joinLiveBtnTxt}>
+                      {selectedUpdate?.type === 'expense_approved'
+                        ? '✅ View Approved Expense'
+                        : selectedUpdate?.type === 'expense_rejected'
+                        ? '❌ View Rejected Expense'
+                        : '💼 Review Expense Approval'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
                 {(selectedUpdate?.type === 'volunteer_application_member' ||
                   selectedUpdate?.type === 'volunteer_assignment' ||
                   selectedUpdate?.type === 'volunteer_event_change' ||
@@ -1830,10 +1999,10 @@ export default function UpdatesScreen({ navigation, route }: any) {
                   </TouchableOpacity>
                 )}
 
-                {selectedUpdate?.type === 'online_meeting' && (
-                  <View style={{ marginTop: 14 }}>
+                {(selectedUpdate?.type === 'online_meeting' || selectedUpdate?.type === 'online_meeting_scheduled') && (
+                  <View style={{ marginTop: 14, gap: 10 }}>
                     {selectedUpdate?.password ? (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F1F5F9', padding: 10, borderRadius: 10, marginBottom: 10, borderWidth: 1, borderColor: '#CBD5E1' }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F1F5F9', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#CBD5E1' }}>
                         <Text style={{ fontSize: 13, color: '#1E293B', fontWeight: '600' }}>
                           🔑 Passcode: <Text style={{ color: '#2563EB', fontWeight: '800' }}>{selectedUpdate.password}</Text>
                         </Text>
@@ -1852,65 +2021,109 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     ) : null}
 
                     <TouchableOpacity
-                      style={[styles.joinLiveBtn, { backgroundColor: '#10B981' }]}
-                      onPress={async () => {
-                        const rawLink = selectedUpdate.url || selectedUpdate.meetingLink || selectedUpdate.link || '';
-                        const pwd = selectedUpdate.password || '';
+                      style={[styles.joinLiveBtn, { backgroundColor: '#1a2d5a' }]}
+                      onPress={() => {
+                        const targetChurchId = selectedUpdate?.churchId || activeChurch?.id || member?.churchId || 'rhema';
+                        const rawMeetingId =
+                          selectedUpdate?.meetingId ||
+                          String(selectedUpdate?.id || '')
+                            .replace(/^meeting_live_/, '')
+                            .replace(/^meeting_sched_/, '');
+                        const snapshotUpdate = selectedUpdate;
                         setSelectedUpdate(null);
-
-                        if (!rawLink || !rawLink.trim()) {
-                          Alert.alert('No Meeting Link', 'Meeting link is not available.');
-                          return;
-                        }
-
-                        let cleanUrl = rawLink.trim();
-                        if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
-                          cleanUrl = `https://${cleanUrl}`;
-                        }
-
-                        const churchId = activeChurch?.id || selectedUpdate.churchId || member?.churchId;
-                        const attendeeId = user?.uid || member?.id;
-                        if (churchId && selectedUpdate.meetingId && attendeeId) {
-                          firestore()
-                            .collection('Rhema Church')
-                            .doc(churchId)
-                            .collection('online_meetings')
-                            .doc(selectedUpdate.meetingId)
-                            .collection('attendees')
-                            .doc(attendeeId)
-                            .set({
-                              name: member?.name || user?.displayName || 'Church Member',
-                              profilePhoto: (member as any)?.profilePhoto || (member as any)?.photoURL || user?.photoURL || null,
-                              joinedAt: firestore.FieldValue.serverTimestamp()
-                            }, { merge: true })
-                            .catch(() => {});
-                        }
-
-                        const isZoom = cleanUrl.includes('zoom.us') || selectedUpdate.provider === 'zoom' || selectedUpdate.meetingType === 'zoom';
-                        try {
-                          if (isZoom) {
-                            await openZoomMeeting({
-                              meetingLink: cleanUrl,
-                              meetingId: selectedUpdate.meetingId,
-                              password: pwd,
-                              userName: (member?.name || user?.displayName) || undefined
-                            });
-                          } else {
-                            const canOpen = await Linking.canOpenURL(cleanUrl).catch(() => true);
-                            if (canOpen) {
-                              await Linking.openURL(cleanUrl);
-                            } else {
-                              Alert.alert('Error', `Cannot open meeting link: ${cleanUrl}`);
-                            }
-                          }
-                        } catch (err) {
-                          console.error('Could not open meeting link', err);
-                          Alert.alert('Error', 'Could not open meeting link. Please make sure Google Meet or a browser is installed.');
+                        if (rawMeetingId) {
+                          navigation.navigate('OnlineMeetingDetail', {
+                            meetingId: rawMeetingId,
+                            churchId: targetChurchId,
+                            meeting: {
+                              id: rawMeetingId,
+                              churchId: targetChurchId,
+                              title: snapshotUpdate?.title || 'Online Meeting',
+                              meetingLink: snapshotUpdate?.meetingLink || snapshotUpdate?.url || '',
+                              url: snapshotUpdate?.meetingLink || snapshotUpdate?.url || '',
+                              provider: snapshotUpdate?.provider || 'google_meet',
+                              meetingType: snapshotUpdate?.provider || 'google_meet',
+                              password: snapshotUpdate?.password || '',
+                              date: snapshotUpdate?.meetingDate || '',
+                              startTimeLabel: snapshotUpdate?.startTimeLabel || '',
+                              endTimeLabel: snapshotUpdate?.endTimeLabel || '',
+                              teacherName: snapshotUpdate?.teacherName || '',
+                              topic: snapshotUpdate?.topic || '',
+                              bibleBook: snapshotUpdate?.bibleBook || '',
+                              status: snapshotUpdate?.type === 'online_meeting' ? 'live' : 'scheduled',
+                            },
+                          });
+                        } else {
+                          navigation.navigate('OnlineMeetings');
                         }
                       }}
                     >
-                      <Text style={styles.joinLiveBtnTxt}>🎥 ● Join Live Stream</Text>
+                      <Text style={styles.joinLiveBtnTxt}>View Meeting Details</Text>
                     </TouchableOpacity>
+
+                    {selectedUpdate?.type === 'online_meeting' ? (
+                      <TouchableOpacity
+                        style={[styles.joinLiveBtn, { backgroundColor: '#10B981' }]}
+                        onPress={async () => {
+                          const rawLink = selectedUpdate.url || selectedUpdate.meetingLink || selectedUpdate.link || '';
+                          const pwd = selectedUpdate.password || '';
+                          const targetMId = selectedUpdate.meetingId;
+                          const churchId = activeChurch?.id || selectedUpdate.churchId || member?.churchId;
+                          setSelectedUpdate(null);
+
+                          if (!rawLink || !rawLink.trim()) {
+                            Alert.alert('No Meeting Link', 'Meeting link is not available.');
+                            return;
+                          }
+
+                          let cleanUrl = rawLink.trim();
+                          if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+                            cleanUrl = `https://${cleanUrl}`;
+                          }
+
+                          const attendeeId = user?.uid || member?.id;
+                          if (churchId && targetMId && attendeeId) {
+                            firestore()
+                              .collection('Rhema Church')
+                              .doc(churchId)
+                              .collection('online_meetings')
+                              .doc(targetMId)
+                              .collection('attendees')
+                              .doc(attendeeId)
+                              .set({
+                                name: member?.name || user?.displayName || 'Church Member',
+                                profilePhoto: (member as any)?.profilePhoto || (member as any)?.photoURL || user?.photoURL || null,
+                                joinedAt: firestore.FieldValue.serverTimestamp()
+                              }, { merge: true })
+                              .catch(() => {});
+                          }
+
+                          const isZoom = cleanUrl.includes('zoom.us') || selectedUpdate.provider === 'zoom' || selectedUpdate.meetingType === 'zoom';
+                          try {
+                            if (isZoom) {
+                              await openZoomMeeting({
+                                meetingLink: cleanUrl,
+                                meetingId: targetMId,
+                                password: pwd,
+                                userName: (member?.name || user?.displayName) || undefined
+                              });
+                            } else {
+                              const canOpen = await Linking.canOpenURL(cleanUrl).catch(() => true);
+                              if (canOpen) {
+                                await Linking.openURL(cleanUrl);
+                              } else {
+                                Alert.alert('Error', `Cannot open meeting link: ${cleanUrl}`);
+                              }
+                            }
+                          } catch (err) {
+                            console.error('Could not open meeting link', err);
+                            Alert.alert('Error', 'Could not open meeting link. Please make sure Google Meet or a browser is installed.');
+                          }
+                        }}
+                      >
+                        <Text style={styles.joinLiveBtnTxt}>🎥 ● Join Live Meeting</Text>
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
                 )}
               </View>

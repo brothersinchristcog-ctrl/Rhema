@@ -1,0 +1,165 @@
+================================================================================
+RHEMA GLOBAL MINISTRIES - RAZORPAY DASHBOARD UPI & RECURRING SETUP GUIDE
+================================================================================
+Document: RAZORPAY_DASHBOARD_UPI_GUIDE.txt
+Applies To: Member View -> Give (One-Time, Recurring Auto-Pay, Pledge Payments)
+Backend Project: rhema-global-ministries (Firebase Cloud Functions)
+================================================================================
+
+--------------------------------------------------------------------------------
+TABLE OF CONTENTS
+--------------------------------------------------------------------------------
+1. HOW OUR APP CONNECTS TO RAZORPAY PAYMENT METHODS
+2. STEP 1: WHAT TO ENABLE UNDER "PAYMENT METHODS -> UPI/QR"
+3. STEP 2: WHAT TO ENABLE FOR RECURRING PAYMENTS (UPI AUTOPAY & SUBSCRIPTIONS)
+4. STEP 3: CARDS, NETBANKING & WALLETS CHECK
+5. STEP 4: WEBHOOK CONFIGURATION (FOR AUTOMATIC RECURRING RENEWAL RECEIPTS)
+6. STEP 5: WEBSITE & APP WHITELISTING (WHEN SWITCHING TO RHEMA KEYS)
+7. QUICK TEST CHECKLIST (ONE-TIME, PLEDGE, AND RECURRING)
+
+================================================================================
+
+--------------------------------------------------------------------------------
+1. HOW OUR APP CONNECTS TO RAZORPAY PAYMENT METHODS
+--------------------------------------------------------------------------------
+In our app (`GivingScreen.tsx`), Razorpay Checkout does NOT lock or hide any
+payment method. Whatever you mark Active inside your Razorpay Dashboard under
+Account & Settings -> Payment methods is automatically shown to church members.
+
+- One-Time Donations & Pledge Payments -> Shows all active standard methods
+  (UPI apps like GPay/PhonePe/Paytm, UPI ID, UPI QR, Cards, Netbanking, Wallets).
+- Recurring Donations (Weekly / Monthly / Yearly) -> Shows Razorpay's recurring-
+  supported methods (UPI AutoPay, Recurring Cards, eMandate) if enabled.
+
+
+--------------------------------------------------------------------------------
+2. STEP 1: WHAT TO ENABLE UNDER "PAYMENT METHODS -> UPI/QR"
+--------------------------------------------------------------------------------
+Go to: https://dashboard.razorpay.com/app/account-settings
+Click: Account & Settings -> Payment methods -> UPI/QR
+
+Check and make sure the following are ACTIVE:
+  [x] UPI (Collect & Intent)
+      - Allows members to pay directly with Google Pay, PhonePe, Paytm, BHIM,
+        Amazon Pay, or by typing a UPI ID (e.g., name@okaxis / number@ybl).
+  [x] UPI Intent (In-App UPI Apps)
+      - Lets Android/iOS open GPay / PhonePe / Paytm directly in one tap
+        instead of asking the member to manually enter a UPI ID.
+  [x] UPI QR / Dynamic QR
+      - Lets members scan a QR if paying from another phone.
+  [x] Google Pay / PhonePe / Paytm (Specific Toggles if listed)
+      - Make sure none are marked Blocked/Inactive.
+
+NOTE: Standard UPI Collect + UPI Intent works immediately on One-Time donations
+and Pledge payments without needing Subscriptions enabled.
+
+
+--------------------------------------------------------------------------------
+3. STEP 2: WHAT TO ENABLE FOR RECURRING PAYMENTS (UPI AUTOPAY & SUBSCRIPTIONS)
+--------------------------------------------------------------------------------
+Recurring donations (Weekly / Monthly / Yearly) in the Give tab use Razorpay
+Plans + Subscriptions. If Subscriptions or UPI AutoPay is disabled on the
+merchant account, recurring Auto-Pay setup will notify the member and offer a
+Recurring Pledge with push reminders instead.
+
+To enable true Auto-Debit Recurring in Razorpay Dashboard:
+  1) Left Sidebar -> Payments -> Subscriptions
+     - Check if Subscriptions is Activated on your account.
+     - If it says "Activate" or "Request Access", complete the short activation
+       form (Purpose: Voluntary Recurring Church Tithes / Donations).
+  2) Account & Settings -> Payment methods -> UPI/QR
+     - Check for "UPI AutoPay" / "Recurring UPI" -> Request / Enable if not
+       already Active.
+     - Note: UPI AutoPay supports mandates up to ₹15,000 per cycle without
+       additional factor auth prompts (up to ₹1,00,000 with UPI PIN setup).
+  3) Account & Settings -> Payment methods -> Netbanking / Cards
+     - Keep Recurring Cards (Visa/Mastercard/RuPay e-Mandate) & Netbanking
+       eMandate enabled as backup options for members who prefer Card/Bank
+       auto-debit instead of UPI AutoPay.
+
+
+--------------------------------------------------------------------------------
+4. STEP 3: CARDS, NETBANKING & WALLETS CHECK
+--------------------------------------------------------------------------------
+Go to: Account & Settings -> Payment methods
+Verify these tabs also show ACTIVE for complete member coverage:
+  - Cards: Domestic Credit & Debit Cards (Visa, Mastercard, RuPay)
+  - Netbanking: All major banks (SBI, HDFC, ICICI, Axis, Kotak, etc.)
+  - Wallets: PhonePe, Amazon Pay, Freecharge, etc. (optional)
+
+
+--------------------------------------------------------------------------------
+5. STEP 4: WEBHOOK CONFIGURATION (FOR AUTOMATIC RECURRING RENEWAL RECEIPTS)
+--------------------------------------------------------------------------------
+Our backend webhook (`razorpayWebhookV1`) listens for automatic future-cycle
+subscription charges (`subscription.charged`, `invoice.paid`) and automatically
+creates the receipt + sends a push notification to that member.
+
+To connect Razorpay Dashboard to the webhook:
+  1) Go to: Account & Settings -> Website and app settings -> Webhooks
+  2) Click: "+ Add New Webhook"
+  3) Webhook URL:
+     https://razorpaywebhookv1-bdghspqhza-uc.a.run.app
+  4) Secret:
+     Enter any strong secret passphrase you choose and save it in your backend
+     `functions/.env` as:
+       RAZORPAY_GIVING_WEBHOOK_SECRET=your_webhook_secret_here
+  5) Active Events to Check:
+     [x] payment.captured
+     [x] payment.failed
+     [x] subscription.activated
+     [x] subscription.charged
+     [x] subscription.halted
+     [x] subscription.paused
+     [x] subscription.resumed
+     [x] subscription.cancelled
+     [x] subscription.completed
+     [x] invoice.paid
+  6) Click "Create Webhook", then redeploy only the webhook function in
+     Cloud Shell:
+     firebase deploy --only functions:razorpayWebhookV1 --project rhema-global-ministries
+
+
+--------------------------------------------------------------------------------
+6. STEP 5: WEBSITE & APP WHITELISTING (WHEN SWITCHING TO RHEMA KEYS)
+--------------------------------------------------------------------------------
+During testing with Covenant Synergy keys (configured in `functions/.env`), keep
+all keys strictly inside `functions/.env` (never inside mobile app code).
+
+When switching later to Rhema Global Ministries' own Razorpay account:
+  1) Inside Rhema's Razorpay Dashboard -> Account & Settings -> Website and app
+     settings -> Business website details:
+     - Make sure Rhema Global Ministries' official website and Google Play
+       Store / App Store app URL are listed & Approved before going Live.
+  2) Inside Rhema's Razorpay Dashboard -> Website and app settings -> API keys:
+     - Generate Rhema's Live Key ID & Key Secret (save `rzp-key.csv`).
+  3) Inside Razorpay -> Payment methods -> UPI/QR & Subscriptions:
+     - Repeat Steps 2 & 3 above on Rhema's account.
+  4) Replace ONLY these values in `functions/.env` (Cloud Shell):
+     RAZORPAY_GIVING_KEY_ID=rhema_key_id
+     RAZORPAY_GIVING_KEY_SECRET=rhema_key_secret
+     RAZORPAY_GIVING_WEBHOOK_SECRET=rhema_webhook_secret
+  5) Redeploy Cloud Functions (no mobile app code changes required):
+     firebase deploy --only functions:createRazorpayOrder,functions:verifyRazorpayPayment,functions:createRazorpayRecurringDonation,functions:verifyRazorpaySubscriptionDonation,functions:manageRazorpayRecurringDonation,functions:razorpayWebhookV1 --project rhema-global-ministries
+
+
+--------------------------------------------------------------------------------
+7. QUICK TEST CHECKLIST (ONE-TIME, PLEDGE, AND RECURRING)
+--------------------------------------------------------------------------------
+[ ] One-Time UPI Test:
+    Member View -> Give -> ₹1 -> One-Time Payment -> Proceed to Pay -> Pay via
+    UPI (GPay / PhonePe / Paytm) -> Verify "Thank You!" alert + View Receipt +
+    card appears in Recent Payments History & Profile -> Giving & Tithes History.
+
+[ ] Pledge Test:
+    Member View -> Give -> New Pledge -> ₹100 Monthly or Event-wise -> Confirm
+    consent -> Submit -> Confirm NO receipt created and Pending shows ₹100 ->
+    Tap Pay Pledge -> Complete ₹1 -> Verify Received updates and Pending drops.
+
+[ ] Recurring UPI AutoPay / Subscription Test:
+    Member View -> Give -> Recurring (Auto-Pay) -> Select Monthly -> Check
+    consent checkbox -> Authorize -> Razorpay Checkout opens Subscription
+    mandate screen -> Verify mandate appears under Profile -> Giving & Tithes
+    History -> Recurring -> Test Pause / Resume / Cancel.
+
+================================================================================

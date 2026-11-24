@@ -11,6 +11,7 @@ import {
   stripGuestSuffix,
 } from '../utils/phoneUtils';
 import MemberIdService from './MemberIdService';
+import { isSuperAdminMember } from '../utils/roleUtils';
 
 // ─── Data Interfaces ─────────────────────────────────────────────────────────
 
@@ -2651,6 +2652,108 @@ class FirestoreService {
     }
   }
 
+  /** Fetches verified Super Admins only (from platform_admins and super-admin member records), never kids/dependents. */
+  async getSuperAdminMembers(): Promise<any[]> {
+    try {
+      const col = await this.getCollection('members');
+      const [platformSnap, membersSnap] = await Promise.all([
+        firestore().collection('platform_admins').get().catch(() => null),
+        col.get(),
+      ]);
+
+      const platformMap = new Map<string, any>();
+      if (platformSnap && !platformSnap.empty) {
+        platformSnap.docs.forEach((doc: any) => {
+          const data = doc.data() || {};
+          const roleStr = String(data.role || '').toLowerCase();
+          if (data.superadmin === true || roleStr.includes('super')) {
+            platformMap.set(doc.id, { id: doc.id, ...data });
+          }
+        });
+      }
+
+      const isDependentOrNonAccountDoc = (data: any, docId: string): boolean => {
+        const rel = String(data?.relation || '').trim().toLowerCase();
+        return Boolean(
+          data?.isKidMember === true ||
+          data?.childId ||
+          (data?.parentMemberId && data.parentMemberId !== docId) ||
+          (rel && !['self', 'head'].includes(rel)) ||
+          isGuestMemberDoc(data)
+        );
+      };
+
+      const mapped: any[] = [];
+      const matchedIds = new Set<string>();
+      membersSnap.docs.forEach((doc: any) => {
+        const data = doc.data() || {};
+        if (data.status === 'Left') return;
+        if (isDependentOrNonAccountDoc(data, doc.id)) return;
+
+        // Match strictly by own auth/doc UID or explicit Super Admin flags on this document —
+        // NEVER by family accountId or shared phone number (which would pull in kids/dependents).
+        const uidOnly = String(data.uid || '').trim();
+        const platformMatch =
+          platformMap.get(doc.id) ||
+          (uidOnly ? platformMap.get(uidOnly) : undefined);
+        const isSuper = isSuperAdminMember(data, false) || Boolean(platformMatch);
+        if (!isSuper) return;
+
+        const canonicalId = platformMatch?.id || uidOnly || doc.id;
+        matchedIds.add(doc.id);
+        matchedIds.add(canonicalId);
+        if (uidOnly) matchedIds.add(uidOnly);
+
+        const rawName =
+          (data.name && data.name.trim()) ||
+          (data.displayName && data.displayName.trim()) ||
+          (data.fullName && data.fullName.trim()) ||
+          (`${data.firstName || ''} ${data.lastName || ''}`.trim()) ||
+          (platformMatch?.name && String(platformMatch.name).trim()) ||
+          '';
+        const fullName = rawName || (data.phone ? `Super Admin (${data.phone})` : 'Super Admin');
+        mapped.push({
+          ...data,
+          id: canonicalId,
+          uid: canonicalId,
+          name: fullName,
+          displayName: fullName,
+          phone: data.phone || platformMatch?.phone || '',
+          userType: isSuperAdminMember(data, false)
+            ? (data.userType || data.role || 'Super Admin')
+            : (platformMatch?.role || 'Super Admin'),
+          role: data.role || platformMatch?.role || 'Super Admin',
+          superadmin: true,
+          isSuperAdmin: true,
+          email: data.email || '',
+          _hasRealName: Boolean(rawName),
+        });
+      });
+
+      platformMap.forEach((pData, pId) => {
+        if (matchedIds.has(pId)) return;
+        const rawName = (pData.name && String(pData.name).trim()) || '';
+        mapped.push({
+          ...pData,
+          id: pId,
+          uid: pId,
+          name: rawName || (pData.phone ? `Super Admin (${pData.phone})` : 'Super Admin'),
+          displayName: rawName || 'Super Admin',
+          userType: pData.role || 'Super Admin',
+          role: pData.role || 'Super Admin',
+          superadmin: true,
+          isSuperAdmin: true,
+          _hasRealName: Boolean(rawName),
+        });
+      });
+
+      return this.deduplicateMemberDocs(mapped);
+    } catch (error) {
+      console.error('Error fetching super admin members:', error);
+      return [];
+    }
+  }
+
   // --- 🎥 Videos, Sermons, Promises ---
 
 
@@ -3661,40 +3764,86 @@ class FirestoreService {
     }
   }
 
-  async getMemberDonations(phone: string): Promise<any[]> {
+  async getMemberDonations(phone?: string | null, uid?: string | null): Promise<any[]> {
     try {
       const col = await this.getCollection('donations');
-      
-      // Execute two separate queries to avoid Firestore composite/OR index requirements
-      const [snapshotPhone, snapshotDonorPhone] = await Promise.all([
-        col.where('phone', '==', phone).get(),
-        col.where('donorPhone', '==', phone).get()
-      ]);
-      
-      // Merge results and deduplicate by ID
-      const donationMap = new Map();
-      
-      snapshotPhone.docs.forEach(doc => {
-        donationMap.set(doc.id, { id: doc.id, ...doc.data() });
+
+      const phoneVariantsSet = new Set<string>();
+      const rawPhone = (phone || '').trim();
+      if (rawPhone) {
+        phoneVariantsSet.add(rawPhone);
+        const digits = rawPhone.replace(/\D/g, '');
+        if (digits) {
+          phoneVariantsSet.add(digits);
+          if (digits.length >= 10) {
+            const last10 = digits.slice(-10);
+            phoneVariantsSet.add(last10);
+            phoneVariantsSet.add(`+91${last10}`);
+            phoneVariantsSet.add(`91${last10}`);
+            phoneVariantsSet.add(`0${last10}`);
+          }
+        }
+      }
+      const phoneVariants = Array.from(phoneVariantsSet).slice(0, 10);
+
+      const queries: Promise<any>[] = [];
+
+      if (uid) {
+        queries.push(col.where('userId', '==', uid).get());
+        queries.push(firestore().collection('church_donations').where('userId', '==', uid).get());
+      }
+
+      if (phoneVariants.length > 0) {
+        queries.push(col.where('phone', 'in', phoneVariants).get());
+        queries.push(col.where('donorPhone', 'in', phoneVariants).get());
+        queries.push(firestore().collection('church_donations').where('phone', 'in', phoneVariants).get());
+        queries.push(firestore().collection('ledger_donations').where('phone', 'in', phoneVariants).get());
+        queries.push(firestore().collection('ledger_donations').where('donorPhone', 'in', phoneVariants).get());
+      }
+
+      if (queries.length === 0) {
+        return [];
+      }
+
+      const settled = await Promise.allSettled(queries);
+      const donationMap = new Map<string, any>();
+
+      const getScore = (item: any) => {
+        const st = (item?.status || '').toLowerCase();
+        if (['completed', 'success', 'paid', 'approved', 'confirmed'].includes(st)) return 3;
+        if (item?.verified) return 2;
+        return 1;
+      };
+
+      settled.forEach((result) => {
+        if (result.status !== 'fulfilled' || !result.value?.docs) return;
+        result.value.docs.forEach((doc: any) => {
+          const data = doc.data();
+          const candidate = { id: doc.id, ...data };
+          const existing = donationMap.get(doc.id);
+          if (!existing || getScore(candidate) >= getScore(existing)) {
+            donationMap.set(doc.id, { ...existing, ...candidate });
+          }
+        });
       });
-      
-      snapshotDonorPhone.docs.forEach(doc => {
-        donationMap.set(doc.id, { id: doc.id, ...doc.data() });
-      });
-      
-      let results = Array.from(donationMap.values());
-      
-      // Sort locally by createdAt desc
-      results.sort((a: any, b: any) => {
-        const dateA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
-        const dateB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
-        return dateB - dateA;
-      });
-      
+
+      const results = Array.from(donationMap.values());
+
+      const getEpoch = (d: any): number => {
+        if (d.createdAt?.toDate) return d.createdAt.toDate().getTime();
+        if (d.timestamp?.toDate) return d.timestamp.toDate().getTime();
+        if (d.date) {
+          const parsed = new Date(d.date).getTime();
+          if (!isNaN(parsed)) return parsed;
+        }
+        return 0;
+      };
+
+      results.sort((a: any, b: any) => getEpoch(b) - getEpoch(a));
       return results;
     } catch (error: any) {
       console.error('Error fetching member donations:', error);
-      throw error; // Rethrow so the UI can show the actual error if it's something else
+      throw error;
     }
   }
 
