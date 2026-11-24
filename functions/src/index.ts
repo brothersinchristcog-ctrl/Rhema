@@ -1915,6 +1915,7 @@ export {
 
 export {
   getMatrimonyMatches,
+  getMatrimonyHomeSummary,
   toggleMatrimonyShortlist,
   recordMatrimonyProfileView,
   dismissMatrimonyMatch,
@@ -1931,6 +1932,7 @@ export {
   getMatrimonyNotificationsFeed,
   manageMatrimonyNotification,
   getMatrimonyCandidatePhotos,
+  searchMatrimonyById,
 } from './matrimony/matches.js';
 
 export {

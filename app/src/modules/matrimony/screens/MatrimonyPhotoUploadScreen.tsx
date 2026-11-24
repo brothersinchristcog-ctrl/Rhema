@@ -106,7 +106,7 @@ export default function MatrimonyPhotoUploadScreen({ navigation, route }: any) {
       }
       result = await ImagePicker.launchCameraAsync({
         allowsEditing: false,
-        quality: 0.55,
+        quality: 0.35,
         base64: true,
       });
     } else {
@@ -118,7 +118,7 @@ export default function MatrimonyPhotoUploadScreen({ navigation, route }: any) {
       result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: false,
-        quality: 0.55,
+        quality: 0.35,
         base64: true,
       });
     }
@@ -126,6 +126,16 @@ export default function MatrimonyPhotoUploadScreen({ navigation, route }: any) {
     const asset = result.assets?.[0];
     if (result.canceled || (!asset?.base64 && !asset?.uri)) return;
     const localUri = asset.uri;
+    const prevPrimaryUri = primaryPhotoUri;
+    const prevPrimaryPath = primaryStoragePath;
+    const prevGalleryUris = galleryUris;
+    const prevGalleryPaths = galleryPaths;
+
+    if (isPrimary) {
+      setPrimaryPhotoUri(localUri);
+    } else {
+      setGalleryUris([...prevGalleryUris, localUri].slice(0, 2));
+    }
 
     setUploading(true);
     try {
@@ -140,10 +150,6 @@ export default function MatrimonyPhotoUploadScreen({ navigation, route }: any) {
         setPrimaryPhotoUri(nextPrimaryUri);
         setPrimaryStoragePath(storagePath);
         setAvoidHighlight(null);
-        await matrimonyApi.saveDraft('photos', {
-          profilePhoto: storagePath,
-          gallery: galleryPaths,
-        });
         matrimonyApi.patchCachedRegistration((prev) => ({
           ...prev,
           profile: prev.profile
@@ -151,21 +157,28 @@ export default function MatrimonyPhotoUploadScreen({ navigation, route }: any) {
                 ...prev.profile,
                 profilePhoto: storagePath,
                 signedProfilePhoto: nextPrimaryUri,
-                gallery: galleryPaths,
-                signedGallery: galleryUris,
+                gallery: prevGalleryPaths,
+                signedGallery: prevGalleryUris,
               }
             : prev.profile,
         }));
+        setUploading(false);
+        matrimonyApi
+          .saveDraft('photos', {
+            profilePhoto: storagePath,
+            gallery: prevGalleryPaths,
+          })
+          .catch((saveErr: any) => {
+            setPrimaryPhotoUri(prevPrimaryUri);
+            setPrimaryStoragePath(prevPrimaryPath);
+            Alert.alert('Save Failed', saveErr?.message || 'Could not save uploaded photo.');
+          });
       } else {
-        const nextUris = [...galleryUris, signedUrl || localUri].slice(0, 2);
-        const nextPaths = [...galleryPaths, storagePath].slice(0, 2);
+        const nextUris = [...prevGalleryUris, signedUrl || localUri].slice(0, 2);
+        const nextPaths = [...prevGalleryPaths, storagePath].slice(0, 2);
         setGalleryUris(nextUris);
         setGalleryPaths(nextPaths);
         setAvoidHighlight(null);
-        await matrimonyApi.saveDraft('photos', {
-          profilePhoto: primaryStoragePath || undefined,
-          gallery: nextPaths,
-        });
         matrimonyApi.patchCachedRegistration((prev) => ({
           ...prev,
           profile: prev.profile
@@ -176,8 +189,21 @@ export default function MatrimonyPhotoUploadScreen({ navigation, route }: any) {
               }
             : prev.profile,
         }));
+        setUploading(false);
+        matrimonyApi
+          .saveDraft('photos', {
+            profilePhoto: prevPrimaryPath || undefined,
+            gallery: nextPaths,
+          })
+          .catch((saveErr: any) => {
+            setGalleryUris(prevGalleryUris);
+            setGalleryPaths(prevGalleryPaths);
+            Alert.alert('Save Failed', saveErr?.message || 'Could not save uploaded photo.');
+          });
       }
     } catch (err: any) {
+      setPrimaryPhotoUri(prevPrimaryUri);
+      setGalleryUris(prevGalleryUris);
       const msg = err?.message || 'Could not upload photo.';
       const cat = classifyAvoidCategory(err);
       setAvoidHighlight(cat);

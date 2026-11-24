@@ -36,18 +36,28 @@ export default function MatrimonyMyPhotosScreen({ navigation }: any) {
   const { colors, isDark, fontStyle, scaleFont } = useTheme();
   const fontFamily = FONT_STYLE_OPTIONS.find((f) => f.id === fontStyle)?.family;
 
-  const [loading, setLoading] = useState(true);
+  const cachedProfile = matrimonyApi.getCachedRegistration()?.profile;
+  const [loading, setLoading] = useState(!cachedProfile);
   const [uploading, setUploading] = useState(false);
-  const [primaryPhotoUri, setPrimaryPhotoUri] = useState<string | null>(null);
-  const [primaryStoragePath, setPrimaryStoragePath] = useState<string | null>(null);
-  const [galleryUris, setGalleryUris] = useState<string[]>([]);
-  const [galleryPaths, setGalleryPaths] = useState<string[]>([]);
+  const [primaryPhotoUri, setPrimaryPhotoUri] = useState<string | null>(
+    cachedProfile?.signedProfilePhoto || null
+  );
+  const [primaryStoragePath, setPrimaryStoragePath] = useState<string | null>(
+    cachedProfile?.profilePhoto || null
+  );
+  const [galleryUris, setGalleryUris] = useState<string[]>(
+    (cachedProfile?.signedGallery || []).slice(0, MAX_GALLERY_PHOTOS)
+  );
+  const [galleryPaths, setGalleryPaths] = useState<string[]>(
+    (cachedProfile?.gallery || []).slice(0, MAX_GALLERY_PHOTOS)
+  );
   const [pickerSheetTarget, setPickerSheetTarget] = useState<'primary' | 'secondary' | null>(null);
 
   const loadPhotos = useCallback(async () => {
-    setLoading(true);
+    const hasWarm = Boolean(matrimonyApi.getCachedRegistration()?.profile);
+    if (!hasWarm) setLoading(true);
     try {
-      const res = await matrimonyApi.startRegistration({ force: true });
+      const res = await matrimonyApi.startRegistration({ force: !hasWarm });
       setPrimaryPhotoUri(res.profile?.signedProfilePhoto || null);
       setPrimaryStoragePath(res.profile?.profilePhoto || null);
       setGalleryUris((res.profile?.signedGallery || []).slice(0, MAX_GALLERY_PHOTOS));
@@ -90,7 +100,7 @@ export default function MatrimonyMyPhotosScreen({ navigation }: any) {
       }
       result = await ImagePicker.launchCameraAsync({
         allowsEditing: false,
-        quality: 0.55,
+        quality: 0.35,
         base64: true,
       });
     } else {
@@ -102,7 +112,7 @@ export default function MatrimonyMyPhotosScreen({ navigation }: any) {
       result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: false,
-        quality: 0.55,
+        quality: 0.35,
         base64: true,
       });
     }
@@ -110,6 +120,16 @@ export default function MatrimonyMyPhotosScreen({ navigation }: any) {
     const asset = result.assets?.[0];
     if (result.canceled || (!asset?.base64 && !asset?.uri)) return;
     const localUri = asset.uri;
+    const prevPrimaryUri = primaryPhotoUri;
+    const prevPrimaryPath = primaryStoragePath;
+    const prevGalleryUris = galleryUris;
+    const prevGalleryPaths = galleryPaths;
+
+    if (isPrimary) {
+      setPrimaryPhotoUri(localUri);
+    } else {
+      setGalleryUris([...prevGalleryUris, localUri].slice(0, MAX_GALLERY_PHOTOS));
+    }
 
     setUploading(true);
     try {
@@ -123,10 +143,6 @@ export default function MatrimonyMyPhotosScreen({ navigation }: any) {
         const nextPrimaryUri = signedUrl || localUri;
         setPrimaryPhotoUri(nextPrimaryUri);
         setPrimaryStoragePath(storagePath);
-        await matrimonyApi.saveDraft('photos', {
-          profilePhoto: storagePath,
-          gallery: galleryPaths,
-        });
         matrimonyApi.patchCachedRegistration((prev) => ({
           ...prev,
           profile: prev.profile
@@ -134,20 +150,27 @@ export default function MatrimonyMyPhotosScreen({ navigation }: any) {
                 ...prev.profile,
                 profilePhoto: storagePath,
                 signedProfilePhoto: nextPrimaryUri,
-                gallery: galleryPaths,
-                signedGallery: galleryUris,
+                gallery: prevGalleryPaths,
+                signedGallery: prevGalleryUris,
               }
             : prev.profile,
         }));
+        setUploading(false);
+        matrimonyApi
+          .saveDraft('photos', {
+            profilePhoto: storagePath,
+            gallery: prevGalleryPaths,
+          })
+          .catch((saveErr: any) => {
+            setPrimaryPhotoUri(prevPrimaryUri);
+            setPrimaryStoragePath(prevPrimaryPath);
+            Alert.alert('Save Failed', saveErr?.message || 'Could not save uploaded photo.');
+          });
       } else {
-        const nextUris = [...galleryUris, signedUrl || localUri].slice(0, MAX_GALLERY_PHOTOS);
-        const nextPaths = [...galleryPaths, storagePath].slice(0, MAX_GALLERY_PHOTOS);
+        const nextUris = [...prevGalleryUris, signedUrl || localUri].slice(0, MAX_GALLERY_PHOTOS);
+        const nextPaths = [...prevGalleryPaths, storagePath].slice(0, MAX_GALLERY_PHOTOS);
         setGalleryUris(nextUris);
         setGalleryPaths(nextPaths);
-        await matrimonyApi.saveDraft('photos', {
-          profilePhoto: primaryStoragePath || undefined,
-          gallery: nextPaths,
-        });
         matrimonyApi.patchCachedRegistration((prev) => ({
           ...prev,
           profile: prev.profile
@@ -158,8 +181,21 @@ export default function MatrimonyMyPhotosScreen({ navigation }: any) {
               }
             : prev.profile,
         }));
+        setUploading(false);
+        matrimonyApi
+          .saveDraft('photos', {
+            profilePhoto: prevPrimaryPath || undefined,
+            gallery: nextPaths,
+          })
+          .catch((saveErr: any) => {
+            setGalleryUris(prevGalleryUris);
+            setGalleryPaths(prevGalleryPaths);
+            Alert.alert('Save Failed', saveErr?.message || 'Could not save uploaded photo.');
+          });
       }
     } catch (err: any) {
+      setPrimaryPhotoUri(prevPrimaryUri);
+      setGalleryUris(prevGalleryUris);
       Alert.alert('Photo Not Accepted', err?.message || 'Could not upload photo.');
     } finally {
       setUploading(false);
@@ -179,24 +215,34 @@ export default function MatrimonyMyPhotosScreen({ navigation }: any) {
           const nextPaths = galleryPaths.filter((_, i) => i !== index);
           setGalleryUris(nextUris);
           setGalleryPaths(nextPaths);
+          matrimonyApi.patchCachedRegistration((prev) => ({
+            ...prev,
+            profile: prev.profile
+              ? {
+                  ...prev.profile,
+                  gallery: nextPaths,
+                  signedGallery: nextUris,
+                }
+              : prev.profile,
+          }));
           try {
             await matrimonyApi.saveDraft('photos', {
               profilePhoto: primaryStoragePath || undefined,
               gallery: nextPaths,
             });
+          } catch (err: any) {
+            setGalleryUris(prevUris);
+            setGalleryPaths(prevPaths);
             matrimonyApi.patchCachedRegistration((prev) => ({
               ...prev,
               profile: prev.profile
                 ? {
                     ...prev.profile,
-                    gallery: nextPaths,
-                    signedGallery: nextUris,
+                    gallery: prevPaths,
+                    signedGallery: prevUris,
                   }
                 : prev.profile,
             }));
-          } catch (err: any) {
-            setGalleryUris(prevUris);
-            setGalleryPaths(prevPaths);
             Alert.alert('Update Failed', err?.message || 'Could not remove photo.');
           }
         },
@@ -230,29 +276,41 @@ export default function MatrimonyMyPhotosScreen({ navigation }: any) {
           setPrimaryStoragePath(selectedPath);
           setGalleryUris(nextGalleryUris);
           setGalleryPaths(nextGalleryPaths);
+          matrimonyApi.patchCachedRegistration((prev) => ({
+            ...prev,
+            profile: prev.profile
+              ? {
+                  ...prev.profile,
+                  profilePhoto: selectedPath,
+                  signedProfilePhoto: selectedUri,
+                  gallery: nextGalleryPaths,
+                  signedGallery: nextGalleryUris,
+                }
+              : prev.profile,
+          }));
 
           try {
             await matrimonyApi.saveDraft('photos', {
               profilePhoto: selectedPath,
               gallery: nextGalleryPaths,
             });
-            matrimonyApi.patchCachedRegistration((prev) => ({
-              ...prev,
-              profile: prev.profile
-                ? {
-                    ...prev.profile,
-                    profilePhoto: selectedPath,
-                    signedProfilePhoto: selectedUri,
-                    gallery: nextGalleryPaths,
-                    signedGallery: nextGalleryUris,
-                  }
-                : prev.profile,
-            }));
           } catch (err: any) {
             setPrimaryPhotoUri(prevPrimaryUri);
             setPrimaryStoragePath(prevPrimaryPath);
             setGalleryUris(prevGalleryUris);
             setGalleryPaths(prevGalleryPaths);
+            matrimonyApi.patchCachedRegistration((prev) => ({
+              ...prev,
+              profile: prev.profile
+                ? {
+                    ...prev.profile,
+                    profilePhoto: prevPrimaryPath,
+                    signedProfilePhoto: prevPrimaryUri,
+                    gallery: prevGalleryPaths,
+                    signedGallery: prevGalleryUris,
+                  }
+                : prev.profile,
+            }));
             Alert.alert('Update Failed', err?.message || 'Could not update profile picture.');
           }
         },

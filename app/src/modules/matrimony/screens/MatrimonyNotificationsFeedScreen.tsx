@@ -28,6 +28,7 @@ import {
   Trash2,
 } from 'lucide-react-native';
 import { FONT_STYLE_OPTIONS, useTheme } from '../../../context/ThemeContext';
+import MatrimonyCachedImage from '../components/MatrimonyCachedImage';
 import { matrimonyApi } from '../services/matrimonyApi';
 import { MatrimonyNotificationFeedItem } from '../types/matrimony';
 
@@ -97,8 +98,9 @@ function NotificationAvatar({
 
   if (photoUri) {
     return (
-      <Image
-        source={{ uri: photoUri }}
+      <MatrimonyCachedImage
+        uri={photoUri}
+        recyclingKey={item.senderUid || item.id}
         style={styles.avatarImg}
         resizeMode="cover"
         onError={() => setImgFailed(true)}
@@ -206,8 +208,10 @@ export default function MatrimonyNotificationsFeedScreen({ navigation }: any) {
   const [refreshing, setRefreshing] = useState(false);
   const [menuItem, setMenuItem] = useState<MatrimonyNotificationFeedItem | null>(null);
   const respondSeqMapRef = useRef<Map<string, number>>(new Map());
+  const lastFeedLoadAtRef = useRef<number>(0);
 
   const loadFeed = useCallback(async (force = false) => {
+    lastFeedLoadAtRef.current = Date.now();
     try {
       const res = await matrimonyApi.getNotificationsFeed({ force });
       if (Array.isArray(res?.notifications)) {
@@ -224,7 +228,13 @@ export default function MatrimonyNotificationsFeedScreen({ navigation }: any) {
   useEffect(() => {
     loadFeed(false);
     const unsub = navigation.addListener('focus', () => {
-      loadFeed(true);
+      const cached = matrimonyApi.getCachedNotificationsFeed();
+      if (cached?.notifications) {
+        setItems(cached.notifications);
+        setLoading(false);
+      }
+      if (Date.now() - lastFeedLoadAtRef.current < 1500) return;
+      loadFeed(false);
     });
     return unsub;
   }, [navigation, loadFeed]);

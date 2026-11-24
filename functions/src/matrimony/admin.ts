@@ -5,6 +5,7 @@ import { getStorage } from 'firebase-admin/storage';
 import { COLLECTIONS, DEFAULT_CHURCH_ID, MATRIMONY_BUCKET } from './constants.js';
 import { sendMatrimonyNotification } from './notifications.js';
 import {
+  ensureUniqueMatrimonyId,
   getAdminProfileRef,
   getBanRef,
   getProfileRef,
@@ -636,9 +637,15 @@ export const approveMatrimonyProfile = onCall({ invoker: 'public' }, async (requ
   }
 
   if (profileSnap.exists) {
+    const matrimonyId = await ensureUniqueMatrimonyId(
+      db,
+      targetUid,
+      profileSnap.data()?.matrimonyId
+    );
     batch.set(
       profileRef,
       {
+        matrimonyId,
         profileStatus: 'approved',
         verificationStatus: 'verified',
         approvalType: 'manual_admin',
@@ -673,6 +680,7 @@ export const approveMatrimonyProfile = onCall({ invoker: 'public' }, async (requ
     batch.set(
       adminProfileRef,
       {
+        matrimonyId,
         profileStatus: 'approved',
         verificationStatus: 'verified',
         visibility: 'discoverable',
@@ -1124,9 +1132,15 @@ export const activateMatrimonyProfile = onCall(
   }
 
   if (profileSnap.exists) {
+    const matrimonyId = await ensureUniqueMatrimonyId(
+      db,
+      targetUid,
+      profileSnap.data()?.matrimonyId
+    );
     batch.set(
       profileRef,
       {
+        matrimonyId,
         profileStatus: 'approved',
         verificationStatus: 'verified',
         approvalType: 'manual_admin',
@@ -1161,6 +1175,7 @@ export const activateMatrimonyProfile = onCall(
     batch.set(
       adminProfileRef,
       {
+        matrimonyId,
         profileStatus: 'approved',
         verificationStatus: 'verified',
         visibility: 'discoverable',

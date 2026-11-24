@@ -89,7 +89,7 @@ export default function MatrimonyStatusScreen({ navigation }: any) {
                 return;
               }
               if (liveStatus === 'approved') {
-                navigation.replace('MatrimonyHome');
+                navigation.replace('MatrimonyMainTabs');
                 return;
               }
               setStatusData((prev) =>
@@ -249,7 +249,7 @@ export default function MatrimonyStatusScreen({ navigation }: any) {
           {status === 'approved' ? (
             <TouchableOpacity
               style={styles.primaryBtn}
-              onPress={() => navigation.replace('MatrimonyHome')}
+              onPress={() => navigation.replace('MatrimonyMainTabs')}
             >
               <Text style={[styles.primaryBtnText, { fontFamily, fontSize: scaleFont(15) }]}>
                 Open Rhema Matrimony

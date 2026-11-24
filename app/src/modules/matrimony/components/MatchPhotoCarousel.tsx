@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Dimensions,
-  Image,
   NativeScrollEvent,
   NativeSyntheticEvent,
   ScrollView,
@@ -11,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { Image as ImageIcon, User } from 'lucide-react-native';
+import MatrimonyCachedImage from './MatrimonyCachedImage';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -93,11 +93,11 @@ export default function MatchPhotoCarousel({
               onPress={() => onPressPhoto?.(index)}
               style={{ width: containerWidth, height }}
             >
-              <Image
-                source={{ uri: item }}
+              <MatrimonyCachedImage
+                uri={item}
+                recyclingKey={`${carouselKey}-${index}`}
                 style={{ width: containerWidth, height }}
                 resizeMode="cover"
-                fadeDuration={0}
               />
             </TouchableOpacity>
           ))}

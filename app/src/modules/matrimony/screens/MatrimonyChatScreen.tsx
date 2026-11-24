@@ -39,6 +39,7 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '../../../context/AuthContext';
 import { FONT_STYLE_OPTIONS, useTheme } from '../../../context/ThemeContext';
+import MatrimonyCachedImage from '../components/MatrimonyCachedImage';
 import MatrimonyReportModal from '../components/MatrimonyReportModal';
 import { isMatrimonyInactiveError, matrimonyApi } from '../services/matrimonyApi';
 import { getMatrimonyRoomId, matrimonyChatService } from '../services/matrimonyChatService';
@@ -52,6 +53,7 @@ import {
 const WHATSAPP_GREEN = '#00A884';
 const TICK_BLUE = '#38BDF8';
 const CORAL_RED = '#E04B5A';
+const CHAT_PAGE_SIZE = 50;
 const CHAT_EMPTY_MEN_IMG = require('../../../../assets/matrimony_chat_empty_men.png');
 const CHAT_EMPTY_WOMEN_IMG = require('../../../../assets/matrimony_chat_empty_women.png');
 
@@ -180,6 +182,10 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
   });
   const [roomError, setRoomError] = useState<string | null>(null);
   const [messages, setMessages] = useState<MatrimonyChatMessage[]>([]);
+  const [olderMessages, setOlderMessages] = useState<MatrimonyChatMessage[]>([]);
+  const [optimisticMessages, setOptimisticMessages] = useState<MatrimonyChatMessage[]>([]);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [hasMoreOlder, setHasMoreOlder] = useState(false);
   const [presence, setPresence] = useState<MatrimonyPresenceState | null>(null);
   const [peerTyping, setPeerTyping] = useState(false);
 
@@ -197,6 +203,11 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
 
   const listRef = useRef<FlatList<TimelineItem>>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastRoomSyncAtRef = useRef<number>(0);
+  const olderCheckedOnceRef = useRef<boolean>(false);
+  const loadingOlderRef = useRef<boolean>(false);
+  const lastNewestMsgIdRef = useRef<string | null>(null);
+  const sendTapGuardRef = useRef<number>(0);
   const animatedKeyboard = useAnimatedKeyboard();
 
   useEffect(() => {
@@ -219,6 +230,7 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
     if (!myUid || !targetUid) return;
     try {
       const res = await matrimonyApi.ensureChatRoom(targetUid);
+      lastRoomSyncAtRef.current = Date.now();
       setRoomId(res.roomId);
       setPeer((prev) => ({
         ...(prev || {}),
@@ -260,23 +272,45 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
 
   useEffect(() => {
     const unsub = navigation.addListener('focus', () => {
+      if (roomReady && !roomError && Date.now() - lastRoomSyncAtRef.current < 15000) {
+        return;
+      }
       syncChatRoom();
     });
     return unsub;
-  }, [navigation, syncChatRoom]);
+  }, [navigation, syncChatRoom, roomReady, roomError]);
+
+  useEffect(() => {
+    olderCheckedOnceRef.current = false;
+    setOlderMessages([]);
+    setOptimisticMessages([]);
+    setHasMoreOlder(false);
+    lastNewestMsgIdRef.current = null;
+  }, [roomId]);
 
   useEffect(() => {
     if (!myUid || !roomId || !targetUid || !roomReady || !isMutualMatch) return;
     matrimonyChatService.startPresenceTracking(myUid, roomId);
     matrimonyChatService.setActiveChatRoom(myUid, roomId);
 
-    const unsubMsgs = matrimonyChatService.subscribeRoomMessages(roomId, myUid, (list) => {
-      setMessages(list);
-      const unreadIds = list
-        .filter((m) => m.senderUid === targetUid && !m.readBy?.[myUid])
-        .map((m) => m.id);
-      matrimonyChatService.markRoomRead(roomId, myUid, targetUid, unreadIds);
-    });
+    const unsubMsgs = matrimonyChatService.subscribeRoomMessages(
+      roomId,
+      myUid,
+      (list) => {
+        setMessages(list);
+        if (!olderCheckedOnceRef.current) {
+          olderCheckedOnceRef.current = true;
+          if (list.length >= CHAT_PAGE_SIZE) {
+            setHasMoreOlder(true);
+          }
+        }
+        const unreadIds = list
+          .filter((m) => m.senderUid === targetUid && !m.readBy?.[myUid])
+          .map((m) => m.id);
+        matrimonyChatService.markRoomRead(roomId, myUid, targetUid, unreadIds);
+      },
+      CHAT_PAGE_SIZE
+    );
     const unsubPresence = matrimonyChatService.subscribePresence(targetUid, setPresence);
     const unsubTyping = matrimonyChatService.subscribeTyping(roomId, targetUid, setPeerTyping);
 
@@ -288,12 +322,62 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
       matrimonyChatService.setActiveChatRoom(myUid, null);
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     };
-  }, [myUid, roomId, targetUid, roomReady]);
+  }, [myUid, roomId, targetUid, roomReady, isMutualMatch]);
+
+  const mergedMessages = useMemo(() => {
+    const byId = new Map<string, MatrimonyChatMessage>();
+    olderMessages.forEach((m) => byId.set(m.id, m));
+    messages.forEach((m) => byId.set(m.id, m));
+    optimisticMessages.forEach((opt) => {
+      const alreadySynced = messages.some(
+        (live) =>
+          live.senderUid === opt.senderUid &&
+          live.text === opt.text &&
+          Math.abs(live.createdAt - opt.createdAt) < 15000
+      );
+      if (!alreadySynced && !byId.has(opt.id)) {
+        byId.set(opt.id, opt);
+      }
+    });
+    return Array.from(byId.values()).sort((a, b) => a.createdAt - b.createdAt);
+  }, [olderMessages, messages, optimisticMessages]);
+
+  const handleLoadOlderMessages = useCallback(async () => {
+    if (!roomId || !myUid || loadingOlderRef.current || !hasMoreOlder) return;
+    const earliest = mergedMessages[0];
+    if (!earliest?.createdAt) {
+      setHasMoreOlder(false);
+      return;
+    }
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    try {
+      const res = await matrimonyChatService.fetchOlderRoomMessages(
+        roomId,
+        myUid,
+        earliest.createdAt,
+        40
+      );
+      if (res.messages.length > 0) {
+        setOlderMessages((prev) => {
+          const existing = new Set(prev.map((m) => m.id));
+          const additions = res.messages.filter((m) => !existing.has(m.id));
+          return [...additions, ...prev];
+        });
+      }
+      setHasMoreOlder(res.hasMore && res.messages.length > 0);
+    } catch (err) {
+      console.warn('fetchOlderRoomMessages warning:', err);
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  }, [roomId, myUid, hasMoreOlder, mergedMessages]);
 
   const timeline = useMemo<TimelineItem[]>(() => {
     const items: TimelineItem[] = [];
     let lastDate = '';
-    messages.forEach((m) => {
+    mergedMessages.forEach((m) => {
       const label = formatDateHeader(m.createdAt);
       if (label !== lastDate) {
         items.push({ kind: 'date', id: `date-${label}-${m.createdAt}`, label });
@@ -302,13 +386,17 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
       items.push({ kind: 'msg', id: m.id, msg: m });
     });
     return items;
-  }, [messages]);
+  }, [mergedMessages]);
 
   useEffect(() => {
-    if (timeline.length > 0) {
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
+    const newestMsg = mergedMessages[mergedMessages.length - 1];
+    if (!newestMsg) return;
+    if (lastNewestMsgIdRef.current !== newestMsg.id) {
+      const shouldAnimate = Boolean(lastNewestMsgIdRef.current);
+      lastNewestMsgIdRef.current = newestMsg.id;
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: shouldAnimate }), 60);
     }
-  }, [timeline.length]);
+  }, [mergedMessages]);
 
   const revealPaywallCard = useCallback(() => {
     setInputText('');
@@ -341,11 +429,31 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
       return;
     }
     const textToSend = (overrideText ?? inputText).trim();
-    if (!textToSend || !roomId || !myUid || !peer || sending) return;
+    const now = Date.now();
+    if (!textToSend || !roomId || !myUid || !peer) return;
+    if (now - sendTapGuardRef.current < 220) return;
+    sendTapGuardRef.current = now;
+
     if (!overrideText) setInputText('');
     const activeReply = replyTo;
     setReplyTo(null);
-    setSending(true);
+
+    const tempId = `opt_${now}_${Math.random().toString(36).slice(2, 7)}`;
+    const optMsg: MatrimonyChatMessage = {
+      id: tempId,
+      senderUid: myUid,
+      text: textToSend,
+      type: 'text',
+      replyTo: activeReply,
+      createdAt: now,
+      deliveredBy: {},
+      readBy: {},
+      deletedForEveryone: false,
+      deletedFor: {},
+    };
+    setOptimisticMessages((prev) => [...prev, optMsg]);
+    matrimonyChatService.setTyping(roomId, myUid, false);
+
     try {
       await matrimonyChatService.sendMessage({
         roomId,
@@ -360,10 +468,15 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
         replyTo: activeReply,
         peerOnline: presence?.online === true,
       });
+      setTimeout(() => {
+        setOptimisticMessages((prev) => prev.filter((m) => m.id !== tempId));
+      }, 2500);
     } catch (err: any) {
+      setOptimisticMessages((prev) => prev.filter((m) => m.id !== tempId));
+      if (!overrideText) {
+        setInputText((cur) => cur || textToSend);
+      }
       Alert.alert('Message Not Sent', err?.message || 'Unable to deliver message right now.');
-    } finally {
-      setSending(false);
     }
   };
 
@@ -418,20 +531,33 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
   const handleOpenPeerProfile = async () => {
     if (!peer) return;
     setHeaderMenuOpen(false);
-    try {
-      const res = await matrimonyApi.getMatches({ tab: 'all', matchBasis: 'all_filters' });
-      const foundIdx = (res.matches || []).findIndex((m) => m.uid === peer.uid);
-      if (foundIdx >= 0) {
+    // 1. Check warm client caches first for 0ms navigation
+    const cachedMatches = matrimonyApi.getCachedMatches()?.matches || [];
+    const cachedMatchIdx = cachedMatches.findIndex((m) => m.uid === peer.uid);
+    if (cachedMatchIdx >= 0) {
+      navigation.navigate('MatrimonyMatchDetail', {
+        matches: cachedMatches,
+        initialIndex: cachedMatchIdx,
+        tabTitle: 'Mutual Match',
+      });
+      return;
+    }
+    const cachedHub = matrimonyApi.getCachedInterestsHub();
+    if (cachedHub) {
+      const cachedCombined = [...(cachedHub.received || []), ...(cachedHub.sent || [])].map(
+        (e) => e.candidate
+      );
+      const hubIdx = cachedCombined.findIndex((c) => c.uid === peer.uid);
+      if (hubIdx >= 0) {
         navigation.navigate('MatrimonyMatchDetail', {
-          matches: res.matches,
-          initialIndex: foundIdx,
+          matches: cachedCombined,
+          initialIndex: hubIdx,
           tabTitle: 'Mutual Match',
         });
         return;
       }
-    } catch {
-      // Fallback via interests hub accepted list
     }
+    // 2. Fall back to bounded server lookup if neither cache contains this peer
     try {
       const hub = await matrimonyApi.getInterestsHub();
       const combined = [...(hub.received || []), ...(hub.sent || [])].map((e) => e.candidate);
@@ -442,10 +568,30 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
           initialIndex: idx,
           tabTitle: 'Mutual Match',
         });
+        return;
       }
     } catch {
-      Alert.alert('Profile', `${peer.displayName} (${peer.profileCode})`);
+      // Fall through to bounded matches lookup
     }
+    try {
+      const res = await matrimonyApi.getMatches({
+        tab: 'all',
+        matchBasis: 'all_filters',
+        limit: 40,
+      });
+      const foundIdx = (res.matches || []).findIndex((m) => m.uid === peer.uid);
+      if (foundIdx >= 0) {
+        navigation.navigate('MatrimonyMatchDetail', {
+          matches: res.matches,
+          initialIndex: foundIdx,
+          tabTitle: 'Mutual Match',
+        });
+        return;
+      }
+    } catch {
+      // Ignore fallback error
+    }
+    Alert.alert('Profile', `${peer.displayName} (${peer.profileCode})`);
   };
 
   const handleCallPeer = () => {
@@ -590,8 +736,9 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
                   onPress={() => setPreviewImageUrl(m.imageUrl || null)}
                   style={styles.bubbleImageWrap}
                 >
-                  <Image
-                    source={{ uri: m.imageUrl }}
+                  <MatrimonyCachedImage
+                    uri={m.imageUrl}
+                    recyclingKey={m.id}
                     style={styles.bubbleImage}
                     resizeMode="cover"
                   />
@@ -673,8 +820,9 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
         >
           <View style={styles.headerAvatarBox}>
             {peer?.signedProfilePhoto ? (
-              <Image
-                source={{ uri: peer.signedProfilePhoto }}
+              <MatrimonyCachedImage
+                uri={peer.signedProfilePhoto}
+                recyclingKey={peer.uid}
                 style={styles.headerAvatarImg}
                 resizeMode="cover"
               />
@@ -775,49 +923,86 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
             data={timeline}
             keyExtractor={(item) => item.id}
             renderItem={renderTimelineItem}
+            initialNumToRender={16}
+            maxToRenderPerBatch={12}
+            windowSize={7}
+            updateCellsBatchingPeriod={50}
+            removeClippedSubviews={Platform.OS === 'android'}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             ListHeaderComponent={
-              canMessage ? (
-                <View style={styles.privacyBannerWrap}>
-                  <View
-                    style={[
-                      styles.privacyBanner,
-                      { backgroundColor: isDark ? '#182229' : '#FFF3CD' },
-                    ]}
-                  >
-                    <Lock size={12} color={isDark ? '#FBBF24' : '#856404'} />
-                    <Text
+              <>
+                {hasMoreOlder && isMutualMatch ? (
+                  <View style={{ alignItems: 'center', marginBottom: 10 }}>
+                    <TouchableOpacity
+                      onPress={handleLoadOlderMessages}
+                      disabled={loadingOlder}
+                      activeOpacity={0.8}
                       style={[
-                        styles.privacyBannerText,
-                        { color: isDark ? '#FDE68A' : '#856404', fontFamily },
+                        styles.datePill,
+                        {
+                          backgroundColor: isDark ? '#182229' : 'rgba(255,255,255,0.95)',
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 6,
+                        },
                       ]}
                     >
-                      Private real-time chat unlocked through your Rhema Matrimony mutual match.
-                    </Text>
+                      {loadingOlder ? (
+                        <ActivityIndicator size="small" color={WHATSAPP_GREEN} />
+                      ) : null}
+                      <Text
+                        style={[
+                          styles.datePillText,
+                          { color: WHATSAPP_GREEN, fontFamily },
+                        ]}
+                      >
+                        {loadingOlder ? 'Loading earlier messages...' : 'Load earlier messages'}
+                      </Text>
+                    </TouchableOpacity>
                   </View>
-                </View>
-              ) : timeline.length > 0 ? (
-                <View style={styles.privacyBannerWrap}>
-                  <View
-                    style={[
-                      styles.privacyBanner,
-                      { backgroundColor: isDark ? '#182229' : '#FFF3CD' },
-                    ]}
-                  >
-                    <Lock size={12} color={isDark ? '#FBBF24' : '#856404'} />
-                    <Text
+                ) : null}
+                {canMessage ? (
+                  <View style={styles.privacyBannerWrap}>
+                    <View
                       style={[
-                        styles.privacyBannerText,
-                        { color: isDark ? '#FDE68A' : '#856404', fontFamily },
+                        styles.privacyBanner,
+                        { backgroundColor: isDark ? '#182229' : '#FFF3CD' },
                       ]}
                     >
-                      Read-only chat history · Pay now to continue this conversation.
-                    </Text>
+                      <Lock size={12} color={isDark ? '#FBBF24' : '#856404'} />
+                      <Text
+                        style={[
+                          styles.privacyBannerText,
+                          { color: isDark ? '#FDE68A' : '#856404', fontFamily },
+                        ]}
+                      >
+                        Private real-time chat unlocked through your Rhema Matrimony mutual match.
+                      </Text>
+                    </View>
                   </View>
-                </View>
-              ) : null
+                ) : timeline.length > 0 ? (
+                  <View style={styles.privacyBannerWrap}>
+                    <View
+                      style={[
+                        styles.privacyBanner,
+                        { backgroundColor: isDark ? '#182229' : '#FFF3CD' },
+                      ]}
+                    >
+                      <Lock size={12} color={isDark ? '#FBBF24' : '#856404'} />
+                      <Text
+                        style={[
+                          styles.privacyBannerText,
+                          { color: isDark ? '#FDE68A' : '#856404', fontFamily },
+                        ]}
+                      >
+                        Read-only chat history · Pay now to continue this conversation.
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
+              </>
             }
             ListEmptyComponent={
               !canMessage || !isMutualMatch ? (
@@ -1120,15 +1305,11 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
                   : '#94A3B8',
               },
             ]}
-            disabled={canMessage ? !inputText.trim() || sending || !roomReady : !roomReady}
+            disabled={canMessage ? !inputText.trim() || !roomReady : !roomReady}
             activeOpacity={0.85}
             onPress={() => handleSendText()}
           >
-            {sending ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Send size={19} color="#FFFFFF" />
-            )}
+            <Send size={19} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
         )}

@@ -779,3 +779,12 @@ export interface MatrimonyNotificationFeedItem {
   incomingPhotoRequestStatus?: 'pending' | 'approved' | 'declined' | null;
   candidate?: MatrimonyMatchCandidate | null;
 }
+
+export interface SearchMatrimonyByIdResponse {
+  success: boolean;
+  found: boolean;
+  reason?: 'not_found' | 'self' | 'not_eligible' | 'hidden_by_you';
+  message?: string;
+  profile?: MatrimonyMatchCandidate;
+  viewerPhoto?: string | null;
+}

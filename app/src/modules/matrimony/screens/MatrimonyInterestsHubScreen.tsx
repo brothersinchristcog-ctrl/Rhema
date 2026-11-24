@@ -42,11 +42,13 @@ import {
 import { useAuth } from '../../../context/AuthContext';
 import { FONT_STYLE_OPTIONS, useTheme } from '../../../context/ThemeContext';
 import InterestsEmptyIllustration from '../components/InterestsEmptyIllustration';
+import MatrimonyCachedImage from '../components/MatrimonyCachedImage';
 import MatrimonyTierToggle from '../components/MatrimonyTierToggle';
 import ProtectedPhotoPlaceholder from '../components/ProtectedPhotoPlaceholder';
 import VerifiedRibbonBadge from '../components/VerifiedRibbonBadge';
 import { isMatrimonyInactiveError, matrimonyApi } from '../services/matrimonyApi';
 import { matrimonyChatService } from '../services/matrimonyChatService';
+import { matrimonyPerf } from '../services/matrimonyPerf';
 import { MatrimonyInterestEntry } from '../types/matrimony';
 
 const ORANGE_ACTIVE = '#EA580C';
@@ -55,6 +57,314 @@ const GREEN_ACCEPT = '#16A34A';
 const ORANGE_GRADIENT: readonly [string, string] = ['#FB923C', '#EA580C'];
 const AMBER_BORDER = '#D97706';
 const READ_STORAGE_KEY = '@rhema_matrimony_read_interests';
+
+interface InterestCardItemProps {
+  item: MatrimonyInterestEntry;
+  index: number;
+  direction: DirectionTab;
+  isBusy: boolean;
+  isDark: boolean;
+  cardSurface: string;
+  dividerColor: string;
+  textColor: string;
+  textSecondaryColor: string;
+  fontFamily?: string;
+  nameFontSize: number;
+  onOpenDetail: (index: number) => void;
+  onOpenSentMoreMenu: (entry: MatrimonyInterestEntry) => void;
+  onCall: (entry: MatrimonyInterestEntry) => void;
+  onSendMessage: (entry: MatrimonyInterestEntry) => void;
+  onRespond: (targetUid: string, action: 'accept' | 'decline' | 'withdraw', interestId?: string) => void;
+}
+
+const InterestCardItem = React.memo(
+  ({
+    item,
+    index,
+    direction,
+    isBusy,
+    isDark,
+    cardSurface,
+    dividerColor,
+    textColor,
+    textSecondaryColor,
+    fontFamily,
+    nameFontSize,
+    onOpenDetail,
+    onOpenSentMoreMenu,
+    onCall,
+    onSendMessage,
+    onRespond,
+  }: InterestCardItemProps) => {
+    const c = item.candidate;
+    const pronoun = isFemaleGender(c.gender) ? 'her' : 'him';
+    const sentDateStr = formatShortDate(item.updatedAtMs || item.createdAtMs);
+    const detailsParts = [
+      c.age ? `${c.age} Yrs` : null,
+      formatCompactHeight(c.heightCm),
+      c.education?.qualification,
+      c.career?.profession,
+      c.location?.village || c.location?.city || c.location?.state,
+    ].filter(Boolean);
+
+    if (direction === 'sent') {
+      return (
+        <View
+          style={[
+            styles.interestCard,
+            { backgroundColor: cardSurface, borderColor: dividerColor },
+          ]}
+        >
+          <TouchableOpacity
+            activeOpacity={0.88}
+            onPress={() => onOpenDetail(index)}
+            style={{ gap: 12 }}
+          >
+            <View style={styles.cardTopRow}>
+              <View style={styles.sentThumbBox}>
+                {c.signedProfilePhoto ? (
+                  <MatrimonyCachedImage
+                    uri={c.signedProfilePhoto}
+                    recyclingKey={c.uid}
+                    style={styles.thumbImg}
+                    resizeMode="cover"
+                  />
+                ) : c.isPhotoProtected ? (
+                  <ProtectedPhotoPlaceholder
+                    gender={c.gender}
+                    compact
+                    requestStatus={c.photoRequestStatus}
+                    fontFamily={fontFamily}
+                  />
+                ) : (
+                  <View
+                    style={[
+                      styles.thumbPlaceholder,
+                      { backgroundColor: isDark ? '#1E293B' : '#EEF2F6' },
+                    ]}
+                  >
+                    <User size={36} color="#94A3B8" />
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.cardInfoCol}>
+                <View style={styles.cardTopBadgeRow}>
+                  <VerifiedRibbonBadge fontFamily={fontFamily} tier={c.candidateTier} />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    {c.isShortlisted ? (
+                      <View style={styles.sentShortlistTag}>
+                        <Bookmark size={11} color={ORANGE_ACTIVE} fill={ORANGE_ACTIVE} />
+                        <Text style={styles.sentShortlistTagText}>Shortlisted</Text>
+                      </View>
+                    ) : null}
+                    <TouchableOpacity
+                      disabled={isBusy}
+                      onPress={() => onOpenSentMoreMenu(item)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <MoreVertical size={18} color={textSecondaryColor} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <Text
+                  style={[styles.cardName, { color: textColor, fontFamily, fontSize: nameFontSize }]}
+                  numberOfLines={1}
+                >
+                  {c.displayName}
+                </Text>
+
+                <Text
+                  style={[styles.cardDetails, { color: textColor, fontFamily }]}
+                  numberOfLines={2}
+                >
+                  {detailsParts.join('  •  ')}
+                </Text>
+              </View>
+            </View>
+
+            <Text style={[styles.sentStatusLine, { color: textColor, fontFamily }]}>
+              <Text style={{ fontWeight: '800' }}>
+                {item.status === 'accepted'
+                  ? `Interest accepted by ${c.displayName}`
+                  : item.status === 'declined'
+                  ? `Interest declined by ${c.displayName}`
+                  : `You sent ${pronoun} an interest`}
+              </Text>
+              <Text style={{ color: textSecondaryColor, fontWeight: '500' }}>
+                {` - ${sentDateStr}`}
+              </Text>
+            </Text>
+          </TouchableOpacity>
+
+          {item.status !== 'declined' ? (
+            <View style={styles.cardActionsRow}>
+              <TouchableOpacity
+                style={[styles.callOutlineBtn, { borderColor: CORAL_RED }]}
+                activeOpacity={0.82}
+                onPress={() => onCall(item)}
+              >
+                <Phone size={15} color={CORAL_RED} strokeWidth={2} />
+                <Text style={[styles.callOutlineText, { fontFamily }]}>Call Now</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.sendMessageSolidBtn}
+                activeOpacity={0.85}
+                onPress={() => onSendMessage(item)}
+              >
+                <Mail size={15} color="#FFFFFF" strokeWidth={2} />
+                <Text style={[styles.sendMessageSolidText, { fontFamily }]}>Send Message</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+        </View>
+      );
+    }
+
+    const receivedDetailsParts = [
+      c.age ? `${c.age} Yrs` : null,
+      formatCompactHeight(c.heightCm),
+      c.faithSummary?.division,
+      c.education?.qualification,
+      c.career?.profession,
+      c.location?.village || c.location?.city || c.location?.state,
+      c.faithSummary?.baptized === true ? 'Baptized' : null,
+    ].filter(Boolean);
+
+    const statusMeta =
+      item.status === 'accepted'
+        ? { bg: '#DCFCE7', text: '#15803D', label: 'Accepted' }
+        : item.status === 'declined'
+        ? { bg: '#FEE2E2', text: '#B91C1C', label: 'Declined' }
+        : { bg: '#FEF3C7', text: '#B45309', label: 'Pending' };
+
+    return (
+      <View
+        style={[
+          styles.interestCard,
+          { backgroundColor: cardSurface, borderColor: dividerColor },
+        ]}
+      >
+        <View style={styles.cardTopRow}>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            onPress={() => onOpenDetail(index)}
+            style={styles.thumbBox}
+          >
+            {c.signedProfilePhoto ? (
+              <MatrimonyCachedImage
+                uri={c.signedProfilePhoto}
+                recyclingKey={c.uid}
+                style={styles.thumbImg}
+                resizeMode="cover"
+              />
+            ) : c.isPhotoProtected ? (
+              <ProtectedPhotoPlaceholder
+                gender={c.gender}
+                compact
+                requestStatus={c.photoRequestStatus}
+                fontFamily={fontFamily}
+              />
+            ) : (
+              <View
+                style={[
+                  styles.thumbPlaceholder,
+                  { backgroundColor: isDark ? '#1E293B' : '#EEF2F6' },
+                ]}
+              >
+                <User size={40} color="#94A3B8" />
+              </View>
+            )}
+            {c.photoCount > 0 && (
+              <View style={styles.photoCountPill}>
+                <Text style={styles.photoCountText}>{c.photoCount}</Text>
+                <ImageIcon size={11} color="#0F172A" />
+              </View>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => onOpenDetail(index)}
+            style={styles.cardInfoCol}
+          >
+            <View style={styles.cardTopBadgeRow}>
+              <VerifiedRibbonBadge fontFamily={fontFamily} tier={c.candidateTier} />
+              <View style={[styles.statusBadge, { backgroundColor: statusMeta.bg }]}>
+                <Text style={[styles.statusBadgeText, { color: statusMeta.text }]}>
+                  {statusMeta.label}
+                </Text>
+              </View>
+            </View>
+
+            <Text
+              style={[styles.cardName, { color: textColor, fontFamily, fontSize: nameFontSize }]}
+              numberOfLines={1}
+            >
+              {c.displayName}
+            </Text>
+
+            <Text
+              style={[styles.cardMeta, { color: textSecondaryColor, fontFamily }]}
+              numberOfLines={1}
+            >
+              {c.profileCode} | {formatTimeAgo(item.updatedAtMs || item.createdAtMs)}
+            </Text>
+
+            <Text
+              style={[styles.cardDetails, { color: textColor, fontFamily }]}
+              numberOfLines={3}
+            >
+              {receivedDetailsParts.join('  •  ')}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {item.status === 'pending' && (
+          <View style={styles.cardActionsRow}>
+            <TouchableOpacity
+              style={[styles.outlineActionBtn, { borderColor: dividerColor }]}
+              disabled={isBusy}
+              onPress={() => onRespond(c.uid, 'decline', item.id)}
+            >
+              <X size={15} color={textSecondaryColor} />
+              <Text style={[styles.outlineActionText, { color: textSecondaryColor, fontFamily }]}>
+                Decline
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.acceptActionBtn}
+              disabled={isBusy}
+              onPress={() => onRespond(c.uid, 'accept', item.id)}
+            >
+              {isBusy ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Check size={15} color="#FFFFFF" strokeWidth={2.6} />
+                  <Text style={[styles.acceptActionText, { fontFamily }]}>Accept</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    );
+  },
+  (prev, next) =>
+    prev.item === next.item &&
+    prev.index === next.index &&
+    prev.direction === next.direction &&
+    prev.isBusy === next.isBusy &&
+    prev.isDark === next.isDark &&
+    prev.cardSurface === next.cardSurface &&
+    prev.dividerColor === next.dividerColor &&
+    prev.fontFamily === next.fontFamily &&
+    prev.nameFontSize === next.nameFontSize
+);
 
 type DirectionTab = 'received' | 'sent';
 type StatusSubTab = 'all' | 'pending' | 'accepted' | 'declined';
@@ -124,7 +434,6 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
   const [sentList, setSentList] = useState<MatrimonyInterestEntry[]>(
     () => initialHubSnapshot?.sent || []
   );
-  const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [loading, setLoading] = useState(() => !initialHubSnapshot);
   const [refreshing, setRefreshing] = useState(false);
   const [busyUid, setBusyUid] = useState<string | null>(null);
@@ -139,18 +448,6 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
   const [readIds, setReadIds] = useState<string[]>([]);
   const [menuTargetUid, setMenuTargetUid] = useState<string | null>(null);
   const [shortlistBusyUid, setShortlistBusyUid] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!user?.uid) return;
-    const stopPresence = matrimonyChatService.startPresenceTracking(user.uid, null);
-    const unsubInbox = matrimonyChatService.subscribeInbox(user.uid, (items) => {
-      setUnreadChatCount(items.reduce((sum, it) => sum + (it.unreadCount || 0), 0));
-    });
-    return () => {
-      unsubInbox();
-      stopPresence();
-    };
-  }, [user?.uid]);
 
   useEffect(() => {
     AsyncStorage.getItem(READ_STORAGE_KEY)
@@ -184,6 +481,7 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
   );
 
   const loadInterests = useCallback(async (silent = false, force = false) => {
+    const trace = matrimonyPerf.startTrace('interests_hub_load', { force, silent });
     const cached = matrimonyApi.getCachedInterestsHub();
     if (cached && !force) {
       setReceivedList(cached.received || []);
@@ -194,11 +492,16 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
       setLoading(true);
     }
     try {
-      const res = await matrimonyApi.getInterestsHub({ force: true });
+      const res = await matrimonyApi.getInterestsHub({ force });
       setReceivedList(res.received || []);
       setSentList(res.sent || []);
       hasHubDataRef.current = true;
+      trace.stop(true, {
+        receivedCount: res.received?.length ?? 0,
+        sentCount: res.sent?.length ?? 0,
+      });
     } catch (err: any) {
+      trace.stop(false);
       if (isMatrimonyInactiveError(err)) {
         navigation.reset({ index: 0, routes: [{ name: 'MatrimonyStatus' }] });
         return;
@@ -208,7 +511,7 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [navigation]);
 
   useEffect(() => {
     loadInterests(false, false);
@@ -358,70 +661,85 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
     }
   }, [direction, subTab]);
 
-  const handleRespond = async (
-    targetUid: string,
-    action: 'accept' | 'decline' | 'withdraw',
-    interestId?: string
-  ) => {
-    if (busyUid === targetUid) return;
-    if (interestId) markInterestAsRead(interestId);
-    setBusyUid(targetUid);
+  const busyUidRef = useRef<string | null>(null);
+  const shortlistBusyUidRef = useRef<string | null>(null);
 
-    if (action === 'withdraw') {
-      setSentList((prev) => prev.filter((row) => row.candidate.uid !== targetUid));
-    } else {
-      const optimisticStatus = action === 'accept' ? 'accepted' : 'declined';
-      setReceivedList((prev) =>
-        prev.map((row) =>
-          row.candidate.uid === targetUid
-            ? {
-                ...row,
-                status: optimisticStatus,
-                candidate: { ...row.candidate, interestStatus: optimisticStatus },
-              }
-            : row
-        )
-      );
-    }
+  const handleRespond = useCallback(
+    async (
+      targetUid: string,
+      action: 'accept' | 'decline' | 'withdraw',
+      interestId?: string
+    ) => {
+      if (busyUidRef.current === targetUid) return;
+      busyUidRef.current = targetUid;
+      if (interestId) markInterestAsRead(interestId);
+      setBusyUid(targetUid);
 
-    try {
-      await matrimonyApi.respondInterest(targetUid, action);
-      await loadInterests(true);
-      if (action === 'accept') {
-        Alert.alert('Interest Accepted', 'You and this member are now a Mutual Match!');
-      } else if (action === 'withdraw') {
-        Alert.alert('Interest Withdrawn', 'Your pending interest request has been removed.');
+      if (action === 'withdraw') {
+        setSentList((prev) => prev.filter((row) => row.candidate.uid !== targetUid));
+      } else {
+        const optimisticStatus = action === 'accept' ? 'accepted' : 'declined';
+        setReceivedList((prev) =>
+          prev.map((row) =>
+            row.candidate.uid === targetUid
+              ? {
+                  ...row,
+                  status: optimisticStatus,
+                  candidate: { ...row.candidate, interestStatus: optimisticStatus },
+                }
+              : row
+          )
+        );
       }
-    } catch (err: any) {
-      await loadInterests(true);
-      Alert.alert('Error', err?.message || 'Unable to update interest.');
-    } finally {
-      setBusyUid(null);
-    }
-  };
 
-  const openDetail = (index: number) => {
-    const entry = filteredItems[index];
-    if (entry && direction === 'received') {
-      markInterestAsRead(entry.id);
-    }
-    const headerTitle =
-      direction === 'received'
-        ? 'Interests Received'
-        : subTab === 'pending'
-        ? 'Sent Waiting'
-        : 'Interests Sent';
-    navigation.navigate('MatrimonyMatchDetail', {
-      matches: filteredItems.map((e) => ({
-        ...e.candidate,
-        interestSentAtMs: e.candidate.interestSentAtMs || e.updatedAtMs || e.createdAtMs,
-      })),
-      initialIndex: index,
-      tabTitle: headerTitle,
-    });
-  };
+      const trace = matrimonyPerf.startTrace('respond_interest_rpc', { action });
+      try {
+        await matrimonyApi.respondInterest(targetUid, action);
+        trace.stop(true);
+        if (action === 'accept') {
+          Alert.alert('Interest Accepted', 'You and this member are now a Mutual Match!');
+        } else if (action === 'withdraw') {
+          Alert.alert('Interest Withdrawn', 'Your pending interest request has been removed.');
+        }
+      } catch (err: any) {
+        trace.stop(false);
+        await loadInterests(true, true);
+        Alert.alert('Error', err?.message || 'Unable to update interest.');
+      } finally {
+        if (busyUidRef.current === targetUid) {
+          busyUidRef.current = null;
+        }
+        setBusyUid(null);
+      }
+    },
+    [loadInterests, markInterestAsRead]
+  );
 
-  const handleCallCandidate = (entry: MatrimonyInterestEntry) => {
+  const openDetail = useCallback(
+    (index: number) => {
+      const entry = filteredItems[index];
+      if (entry && direction === 'received') {
+        markInterestAsRead(entry.id);
+      }
+      const headerTitle =
+        direction === 'received'
+          ? 'Interests Received'
+          : subTab === 'pending'
+          ? 'Sent Waiting'
+          : 'Interests Sent';
+      navigation.navigate('MatrimonyMatchDetail', {
+        matches: filteredItems.map((e) => ({
+          ...e.candidate,
+          interestSentAtMs: e.candidate.interestSentAtMs || e.updatedAtMs || e.createdAtMs,
+        })),
+        initialIndex: index,
+        tabTitle: headerTitle,
+      });
+    },
+    [direction, filteredItems, markInterestAsRead, navigation, subTab]
+  );
+
+  const handleCallCandidate = useCallback((entry: MatrimonyInterestEntry) => {
     const c = entry.candidate;
     if (c.mobilePrivacy === 'messages_only') {
       Alert.alert(
@@ -442,43 +760,47 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
         ? `Phone number (${c.maskedPhone || 'hidden'}) could not be loaded.`
         : `Direct phone calling unlocks once ${c.displayName} accepts your interest.`
     );
-  };
+  }, []);
 
-  const handleSendMessageCandidate = (entry: MatrimonyInterestEntry) => {
-    const c = entry.candidate;
-    if (entry.status === 'accepted') {
-      navigation.navigate('MatrimonyChat', {
-        targetUid: c.uid,
-        peer: {
-          uid: c.uid,
-          displayName: c.displayName,
-          profileCode: c.profileCode,
-          signedProfilePhoto: c.signedProfilePhoto || null,
-          age: c.age ?? null,
-          heightCm: c.heightCm ?? null,
-          occupation:
-            c.career?.profession ||
-            c.career?.occupationCategory ||
-            c.career?.employmentType ||
-            c.education?.qualification ||
-            null,
-          gender: c.gender || null,
-          isVerified: true,
-          city: c.location?.village || c.location?.city || c.location?.state || '',
-          contactPhone: c.contactPhone || null,
-        },
-      });
-      return;
-    }
-    Alert.alert(
-      'Send Message',
-      `Direct messaging opens once ${c.displayName} accepts your interest.`
-    );
-  };
+  const handleSendMessageCandidate = useCallback(
+    (entry: MatrimonyInterestEntry) => {
+      const c = entry.candidate;
+      if (entry.status === 'accepted') {
+        navigation.navigate('MatrimonyChat', {
+          targetUid: c.uid,
+          peer: {
+            uid: c.uid,
+            displayName: c.displayName,
+            profileCode: c.profileCode,
+            signedProfilePhoto: c.signedProfilePhoto || null,
+            age: c.age ?? null,
+            heightCm: c.heightCm ?? null,
+            occupation:
+              c.career?.profession ||
+              c.career?.occupationCategory ||
+              c.career?.employmentType ||
+              c.education?.qualification ||
+              null,
+            gender: c.gender || null,
+            isVerified: true,
+            city: c.location?.village || c.location?.city || c.location?.state || '',
+            contactPhone: c.contactPhone || null,
+          },
+        });
+        return;
+      }
+      Alert.alert(
+        'Send Message',
+        `Direct messaging opens once ${c.displayName} accepts your interest.`
+      );
+    },
+    [navigation]
+  );
 
-  const handleToggleShortlistFromCard = async (entry: MatrimonyInterestEntry) => {
+  const handleToggleShortlistFromCard = useCallback(async (entry: MatrimonyInterestEntry) => {
     const c = entry.candidate;
-    if (shortlistBusyUid === c.uid) return;
+    if (shortlistBusyUidRef.current === c.uid) return;
+    shortlistBusyUidRef.current = c.uid;
     const prevShortlisted = Boolean(c.isShortlisted);
     const nextShortlisted = !prevShortlisted;
 
@@ -502,273 +824,58 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
       applyFlag(prevShortlisted);
       Alert.alert('Error', err?.message || 'Could not update shortlist.');
     } finally {
+      if (shortlistBusyUidRef.current === c.uid) {
+        shortlistBusyUidRef.current = null;
+      }
       setShortlistBusyUid(null);
     }
-  };
+  }, []);
 
-  const openSentMoreMenu = (entry: MatrimonyInterestEntry) => {
-    if (busyUid === entry.candidate.uid) return;
+  const openSentMoreMenu = useCallback((entry: MatrimonyInterestEntry) => {
+    if (busyUidRef.current === entry.candidate.uid) return;
     setMenuTargetUid(entry.candidate.uid);
-  };
+  }, []);
 
-  const renderInterestCard = ({ item, index }: { item: MatrimonyInterestEntry; index: number }) => {
-    const c = item.candidate;
-    const pronoun = isFemaleGender(c.gender) ? 'her' : 'him';
-    const sentDateStr = formatShortDate(item.updatedAtMs || item.createdAtMs);
-    const detailsParts = [
-      c.age ? `${c.age} Yrs` : null,
-      formatCompactHeight(c.heightCm),
-      c.education?.qualification,
-      c.career?.profession,
-      c.location?.village || c.location?.city || c.location?.state,
-    ].filter(Boolean);
+  const cardNameFontSize = scaleFont(17);
 
-    if (direction === 'sent') {
-      return (
-        <View
-          style={[
-            styles.interestCard,
-            { backgroundColor: cardSurface, borderColor: dividerColor },
-          ]}
-        >
-          <TouchableOpacity
-            activeOpacity={0.88}
-            onPress={() => openDetail(index)}
-            style={{ gap: 12 }}
-          >
-            <View style={styles.cardTopRow}>
-              <View style={styles.sentThumbBox}>
-                {c.signedProfilePhoto ? (
-                  <Image
-                    source={{ uri: c.signedProfilePhoto }}
-                    style={styles.thumbImg}
-                    resizeMode="cover"
-                  />
-                ) : c.isPhotoProtected ? (
-                  <ProtectedPhotoPlaceholder
-                    gender={c.gender}
-                    compact
-                    requestStatus={c.photoRequestStatus}
-                    fontFamily={fontFamily}
-                  />
-                ) : (
-                  <View
-                    style={[
-                      styles.thumbPlaceholder,
-                      { backgroundColor: isDark ? '#1E293B' : '#EEF2F6' },
-                    ]}
-                  >
-                    <User size={36} color="#94A3B8" />
-                  </View>
-                )}
-              </View>
-
-              <View style={styles.cardInfoCol}>
-                <View style={styles.cardTopBadgeRow}>
-                  <VerifiedRibbonBadge fontFamily={fontFamily} tier={c.candidateTier} />
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    {c.isShortlisted ? (
-                      <View style={styles.sentShortlistTag}>
-                        <Bookmark size={11} color={ORANGE_ACTIVE} fill={ORANGE_ACTIVE} />
-                        <Text style={styles.sentShortlistTagText}>Shortlisted</Text>
-                      </View>
-                    ) : null}
-                    <TouchableOpacity
-                      disabled={busyUid === c.uid}
-                      onPress={() => openSentMoreMenu(item)}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <MoreVertical size={18} color={colors.textSecondary} />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                <Text
-                  style={[styles.cardName, { color: colors.text, fontFamily, fontSize: scaleFont(17) }]}
-                  numberOfLines={1}
-                >
-                  {c.displayName}
-                </Text>
-
-                <Text
-                  style={[styles.cardDetails, { color: colors.text, fontFamily }]}
-                  numberOfLines={2}
-                >
-                  {detailsParts.join('  •  ')}
-                </Text>
-              </View>
-            </View>
-
-            <Text style={[styles.sentStatusLine, { color: colors.text, fontFamily }]}>
-              <Text style={{ fontWeight: '800' }}>
-                {item.status === 'accepted'
-                  ? `Interest accepted by ${c.displayName}`
-                  : item.status === 'declined'
-                  ? `Interest declined by ${c.displayName}`
-                  : `You sent ${pronoun} an interest`}
-              </Text>
-              <Text style={{ color: colors.textSecondary, fontWeight: '500' }}>
-                {` - ${sentDateStr}`}
-              </Text>
-            </Text>
-          </TouchableOpacity>
-
-          {item.status !== 'declined' ? (
-            <View style={styles.cardActionsRow}>
-              <TouchableOpacity
-                style={[styles.callOutlineBtn, { borderColor: CORAL_RED }]}
-                activeOpacity={0.82}
-                onPress={() => handleCallCandidate(item)}
-              >
-                <Phone size={15} color={CORAL_RED} strokeWidth={2} />
-                <Text style={[styles.callOutlineText, { fontFamily }]}>Call Now</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.sendMessageSolidBtn}
-                activeOpacity={0.85}
-                onPress={() => handleSendMessageCandidate(item)}
-              >
-                <Mail size={15} color="#FFFFFF" strokeWidth={2} />
-                <Text style={[styles.sendMessageSolidText, { fontFamily }]}>Send Message</Text>
-              </TouchableOpacity>
-            </View>
-          ) : null}
-        </View>
-      );
-    }
-
-    const receivedDetailsParts = [
-      c.age ? `${c.age} Yrs` : null,
-      formatCompactHeight(c.heightCm),
-      c.faithSummary?.division,
-      c.education?.qualification,
-      c.career?.profession,
-      c.location?.village || c.location?.city || c.location?.state,
-      c.faithSummary?.baptized === true ? 'Baptized' : null,
-    ].filter(Boolean);
-
-    const statusMeta =
-      item.status === 'accepted'
-        ? { bg: '#DCFCE7', text: '#15803D', label: 'Accepted' }
-        : item.status === 'declined'
-        ? { bg: '#FEE2E2', text: '#B91C1C', label: 'Declined' }
-        : { bg: '#FEF3C7', text: '#B45309', label: 'Pending' };
-
-    return (
-      <View
-        style={[
-          styles.interestCard,
-          { backgroundColor: cardSurface, borderColor: dividerColor },
-        ]}
-      >
-        <View style={styles.cardTopRow}>
-          <TouchableOpacity
-            activeOpacity={0.9}
-            onPress={() => openDetail(index)}
-            style={styles.thumbBox}
-          >
-            {c.signedProfilePhoto ? (
-              <Image
-                source={{ uri: c.signedProfilePhoto }}
-                style={styles.thumbImg}
-                resizeMode="cover"
-              />
-            ) : c.isPhotoProtected ? (
-              <ProtectedPhotoPlaceholder
-                gender={c.gender}
-                compact
-                requestStatus={c.photoRequestStatus}
-                fontFamily={fontFamily}
-              />
-            ) : (
-              <View
-                style={[
-                  styles.thumbPlaceholder,
-                  { backgroundColor: isDark ? '#1E293B' : '#EEF2F6' },
-                ]}
-              >
-                <User size={40} color="#94A3B8" />
-              </View>
-            )}
-            {c.photoCount > 0 && (
-              <View style={styles.photoCountPill}>
-                <Text style={styles.photoCountText}>{c.photoCount}</Text>
-                <ImageIcon size={11} color="#0F172A" />
-              </View>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={() => openDetail(index)}
-            style={styles.cardInfoCol}
-          >
-            <View style={styles.cardTopBadgeRow}>
-              <VerifiedRibbonBadge fontFamily={fontFamily} tier={c.candidateTier} />
-              <View style={[styles.statusBadge, { backgroundColor: statusMeta.bg }]}>
-                <Text style={[styles.statusBadgeText, { color: statusMeta.text }]}>
-                  {statusMeta.label}
-                </Text>
-              </View>
-            </View>
-
-            <Text
-              style={[styles.cardName, { color: colors.text, fontFamily, fontSize: scaleFont(17) }]}
-              numberOfLines={1}
-            >
-              {c.displayName}
-            </Text>
-
-            <Text
-              style={[styles.cardMeta, { color: colors.textSecondary, fontFamily }]}
-              numberOfLines={1}
-            >
-              {c.profileCode} | {formatTimeAgo(item.updatedAtMs || item.createdAtMs)}
-            </Text>
-
-            <Text
-              style={[styles.cardDetails, { color: colors.text, fontFamily }]}
-              numberOfLines={3}
-            >
-              {receivedDetailsParts.join('  •  ')}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Actions Footer */}
-        {item.status === 'pending' && (
-          <View style={styles.cardActionsRow}>
-            <TouchableOpacity
-              style={[styles.outlineActionBtn, { borderColor: dividerColor }]}
-              disabled={busyUid === c.uid}
-              onPress={() => handleRespond(c.uid, 'decline', item.id)}
-            >
-              <X size={15} color={colors.textSecondary} />
-              <Text style={[styles.outlineActionText, { color: colors.textSecondary, fontFamily }]}>
-                Decline
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.acceptActionBtn}
-              disabled={busyUid === c.uid}
-              onPress={() => handleRespond(c.uid, 'accept', item.id)}
-            >
-              {busyUid === c.uid ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <>
-                  <Check size={15} color="#FFFFFF" strokeWidth={2.6} />
-                  <Text style={[styles.acceptActionText, { fontFamily }]}>Accept</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
-    );
-  };
+  const renderInterestCard = useCallback(
+    ({ item, index }: { item: MatrimonyInterestEntry; index: number }) => (
+      <InterestCardItem
+        item={item}
+        index={index}
+        direction={direction}
+        isBusy={busyUid === item.candidate.uid}
+        isDark={isDark}
+        cardSurface={cardSurface}
+        dividerColor={dividerColor}
+        textColor={colors.text}
+        textSecondaryColor={colors.textSecondary}
+        fontFamily={fontFamily}
+        nameFontSize={cardNameFontSize}
+        onOpenDetail={openDetail}
+        onOpenSentMoreMenu={openSentMoreMenu}
+        onCall={handleCallCandidate}
+        onSendMessage={handleSendMessageCandidate}
+        onRespond={handleRespond}
+      />
+    ),
+    [
+      direction,
+      busyUid,
+      isDark,
+      cardSurface,
+      dividerColor,
+      colors.text,
+      colors.textSecondary,
+      fontFamily,
+      cardNameFontSize,
+      openDetail,
+      openSentMoreMenu,
+      handleCallCandidate,
+      handleSendMessageCandidate,
+      handleRespond,
+    ]
+  );
 
   const activeFilterCount = (filterUnread ? 1 : 0) + (filterRead ? 1 : 0);
 
@@ -980,8 +1087,9 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
             }
             showsVerticalScrollIndicator={false}
             initialNumToRender={6}
-            maxToRenderPerBatch={6}
+            maxToRenderPerBatch={5}
             windowSize={5}
+            updateCellsBatchingPeriod={50}
             removeClippedSubviews={Platform.OS === 'android'}
             refreshControl={
               <RefreshControl
@@ -1008,81 +1116,6 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
             }
           />
         )}
-      </View>
-
-      {/* Bottom Navigation Bar */}
-      <View
-        style={[
-          styles.bottomNav,
-          {
-            backgroundColor: colors.surface,
-            borderTopColor: colors.border,
-            paddingBottom: Math.max(insets.bottom, 10),
-          },
-        ]}
-      >
-        {[
-          {
-            key: 'Home',
-            label: 'Home',
-            Icon: Home,
-            active: false,
-            onPress: () => navigation.navigate('MatrimonyHome'),
-          },
-          {
-            key: 'Matches',
-            label: 'Matches',
-            Icon: Users,
-            active: false,
-            onPress: () => navigation.navigate('MatrimonyMatches'),
-          },
-          {
-            key: 'Interests',
-            label: 'Interests',
-            Icon: Heart,
-            active: true,
-            onPress: () => {},
-          },
-          {
-            key: 'Messages',
-            label: 'Messages',
-            Icon: MessageCircle,
-            active: false,
-            onPress: () => navigation.navigate('MatrimonyMessages'),
-          },
-          {
-            key: 'Upgrade',
-            label: 'Upgrade',
-            Icon: Crown,
-            active: false,
-            onPress: () => navigation.navigate('MatrimonyUpgrade'),
-          },
-        ].map(({ key, label, Icon, active, onPress }) => (
-          <TouchableOpacity key={key} style={styles.navItem} onPress={onPress} activeOpacity={0.8}>
-            <View style={{ position: 'relative' }}>
-              <Icon size={20} color={active ? ORANGE_ACTIVE : colors.textSecondary} />
-              {key === 'Messages' && unreadChatCount > 0 && (
-                <View style={styles.navChatBadge}>
-                  <Text style={styles.navChatBadgeText}>
-                    {unreadChatCount > 99 ? '99+' : unreadChatCount}
-                  </Text>
-                </View>
-              )}
-            </View>
-            <Text
-              style={[
-                styles.navLabel,
-                {
-                  color: active ? ORANGE_ACTIVE : colors.textSecondary,
-                  fontWeight: active ? '800' : '600',
-                  fontFamily,
-                },
-              ]}
-            >
-              {label}
-            </Text>
-          </TouchableOpacity>
-        ))}
       </View>
 
       {/* Filter Sheet matching screenshot (Unread / Read + Clear / Apply) */}

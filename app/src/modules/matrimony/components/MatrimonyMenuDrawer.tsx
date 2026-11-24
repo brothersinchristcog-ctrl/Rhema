@@ -1,9 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Animated,
-  Easing,
-  Image,
-  Modal,
+  BackHandler,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,6 +10,14 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Reanimated, {
+  Easing,
+  interpolate,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import Svg, { Defs, Path, Pattern, Rect } from 'react-native-svg';
 import {
   ArrowLeft,
@@ -24,309 +29,356 @@ import {
   ShieldCheck,
   UserPen,
 } from 'lucide-react-native';
+import { FONT_STYLE_OPTIONS, useTheme } from '../../../context/ThemeContext';
+import MatrimonyCachedImage from './MatrimonyCachedImage';
 
-interface MatrimonyMenuDrawerProps {
-  visible: boolean;
-  onClose: () => void;
+export interface MatrimonyDrawerMeta {
   displayName: string;
   profileCode: string;
   membershipLabel?: string;
   avatarUri: string | null;
-  isDark: boolean;
-  colors: {
-    bg: string;
-    surface: string;
-    text: string;
-    textSecondary: string;
-    border: string;
-  };
-  fontFamily?: string;
-  onUpgrade: () => void;
-  onEditProfile: () => void;
-  onEditPreferences: () => void;
-  onVerifyProfile: () => void;
-  onPrivacySettings: () => void;
-  onAccountSettings: () => void;
-  onNotifications: () => void;
-  onUploadPhotos: () => void;
+}
+
+interface MatrimonyMenuDrawerHostProps {
+  stackNavigation: any;
 }
 
 const ORANGE = '#E25B12';
 
-export default function MatrimonyMenuDrawer({
-  visible,
-  onClose,
-  displayName,
-  profileCode,
-  membershipLabel = 'Free Member',
-  avatarUri,
-  isDark,
-  colors,
-  fontFamily,
-  onUpgrade,
-  onEditProfile,
-  onEditPreferences,
-  onVerifyProfile,
-  onPrivacySettings,
-  onAccountSettings,
-  onNotifications,
-  onUploadPhotos,
-}: MatrimonyMenuDrawerProps) {
+type DrawerListener = {
+  open: (meta?: Partial<MatrimonyDrawerMeta>) => void;
+  close: () => void;
+};
+
+let activeDrawerHost: DrawerListener | null = null;
+
+export function openMatrimonyMenuDrawer(meta?: Partial<MatrimonyDrawerMeta>) {
+  activeDrawerHost?.open(meta);
+}
+
+export function closeMatrimonyMenuDrawer() {
+  activeDrawerHost?.close();
+}
+
+const DrawerLatticePattern = React.memo(({ patternStroke }: { patternStroke: string }) => (
+  <View style={StyleSheet.absoluteFill} pointerEvents="none">
+    <Svg width="100%" height="100%">
+      <Defs>
+        <Pattern
+          id="drawerDiamondGrid"
+          width="24"
+          height="36"
+          patternUnits="userSpaceOnUse"
+        >
+          <Path
+            d="M12 2 L22 18 L12 34 L2 18 Z"
+            fill="none"
+            stroke={patternStroke}
+            strokeWidth="1"
+          />
+        </Pattern>
+      </Defs>
+      <Rect width="100%" height="100%" fill="url(#drawerDiamondGrid)" />
+    </Svg>
+  </View>
+));
+
+function MatrimonyMenuDrawerComponent({ stackNavigation }: MatrimonyMenuDrawerHostProps) {
   const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
   const drawerWidth = Math.min(Math.round(screenWidth * 0.84), 340);
+  const { colors, isDark, fontStyle } = useTheme();
+  const fontFamily = FONT_STYLE_OPTIONS.find((f) => f.id === fontStyle)?.family;
 
-  const [modalVisible, setModalVisible] = useState(visible);
-  const slideAnim = useRef(new Animated.Value(-drawerWidth)).current;
-  const backdropAnim = useRef(new Animated.Value(0)).current;
+  const [isOpen, setIsOpen] = useState(false);
+  const [meta, setMeta] = useState<MatrimonyDrawerMeta>({
+    displayName: 'Member',
+    profileCode: '',
+    membershipLabel: 'Free Member',
+    avatarUri: null,
+  });
+
+  const isOpenRef = useRef(false);
+  const progress = useSharedValue(0);
+
+  const finishClose = useCallback(() => {
+    isOpenRef.current = false;
+    setIsOpen(false);
+  }, []);
+
+  const openDrawer = useCallback(
+    (nextMeta?: Partial<MatrimonyDrawerMeta>) => {
+      if (nextMeta) {
+        setMeta((prev) => {
+          const displayName = nextMeta.displayName ?? prev.displayName;
+          const profileCode = nextMeta.profileCode ?? prev.profileCode;
+          const membershipLabel = nextMeta.membershipLabel ?? prev.membershipLabel;
+          const avatarUri = nextMeta.avatarUri !== undefined ? nextMeta.avatarUri : prev.avatarUri;
+          if (
+            prev.displayName === displayName &&
+            prev.profileCode === profileCode &&
+            prev.membershipLabel === membershipLabel &&
+            prev.avatarUri === avatarUri
+          ) {
+            return prev;
+          }
+          return { displayName, profileCode, membershipLabel, avatarUri };
+        });
+      }
+      isOpenRef.current = true;
+      setIsOpen(true);
+      progress.value = withTiming(1, {
+        duration: 185,
+        easing: Easing.out(Easing.cubic),
+      });
+    },
+    [progress]
+  );
+
+  const closeDrawer = useCallback(() => {
+    if (!isOpenRef.current) return;
+    isOpenRef.current = false;
+    progress.value = withTiming(
+      0,
+      {
+        duration: 150,
+        easing: Easing.in(Easing.cubic),
+      },
+      (finished) => {
+        if (finished) {
+          runOnJS(finishClose)();
+        }
+      }
+    );
+  }, [progress, finishClose]);
 
   useEffect(() => {
-    if (visible) {
-      setModalVisible(true);
-      slideAnim.setValue(-drawerWidth);
-      backdropAnim.setValue(0);
-      Animated.parallel([
-        Animated.timing(slideAnim, {
-          toValue: 0,
-          duration: 240,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(backdropAnim, {
-          toValue: 1,
-          duration: 220,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ]).start();
-    } else if (modalVisible) {
-      Animated.parallel([
-        Animated.timing(slideAnim, {
-          toValue: -drawerWidth,
-          duration: 200,
-          easing: Easing.in(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(backdropAnim, {
-          toValue: 0,
-          duration: 180,
-          easing: Easing.in(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ]).start(({ finished }) => {
-        if (finished) {
-          setModalVisible(false);
-        }
-      });
-    }
-  }, [visible, drawerWidth, modalVisible, slideAnim, backdropAnim]);
+    activeDrawerHost = { open: openDrawer, close: closeDrawer };
+    return () => {
+      if (activeDrawerHost?.open === openDrawer) {
+        activeDrawerHost = null;
+      }
+    };
+  }, [openDrawer, closeDrawer]);
 
-  const handleAction = (action: () => void) => {
-    onClose();
-    setTimeout(action, 120);
-  };
+  useEffect(() => {
+    if (!isOpen) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      closeDrawer();
+      return true;
+    });
+    return () => sub.remove();
+  }, [isOpen, closeDrawer]);
+
+  const navigateAction = useCallback(
+    (routeName: string, params?: Record<string, any>) => {
+      closeDrawer();
+      stackNavigation?.navigate(routeName, params);
+    },
+    [closeDrawer, stackNavigation]
+  );
+
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+  }));
+
+  const drawerSlideStyle = useAnimatedStyle(() => {
+    const offscreenX = -(drawerWidth + 24);
+    return {
+      transform: [{ translateX: interpolate(progress.value, [0, 1], [offscreenX, 0]) }],
+    };
+  }, [drawerWidth]);
 
   const drawerBg = isDark ? colors.surface : '#FFFFFF';
   const dividerColor = isDark ? 'rgba(255, 255, 255, 0.1)' : '#E5E7EB';
   const upgradeBg = isDark ? 'rgba(226, 91, 18, 0.16)' : '#FFF3EB';
   const patternStroke = isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(148, 163, 184, 0.14)';
 
-  const menuItems = [
-    {
-      key: 'edit-profile',
-      label: 'Edit profile',
-      Icon: UserPen,
-      onPress: () => handleAction(onEditProfile),
-    },
-    {
-      key: 'edit-preferences',
-      label: 'Edit partner preferences',
-      Icon: FilePenLine,
-      onPress: () => handleAction(onEditPreferences),
-    },
-    {
-      key: 'verify-profile',
-      label: 'Verify your profile',
-      Icon: IdCard,
-      onPress: () => handleAction(onVerifyProfile),
-    },
-    {
-      key: 'privacy-settings',
-      label: 'Privacy settings',
-      Icon: ShieldCheck,
-      onPress: () => handleAction(onPrivacySettings),
-    },
-    {
-      key: 'account-settings',
-      label: 'Account settings',
-      Icon: Settings,
-      onPress: () => handleAction(onAccountSettings),
-    },
-    {
-      key: 'notifications',
-      label: 'Notifications',
-      Icon: Bell,
-      onPress: () => handleAction(onNotifications),
-    },
-  ];
+  const menuItems = useMemo(
+    () => [
+      {
+        key: 'edit-profile',
+        label: 'Edit profile',
+        Icon: UserPen,
+        onPress: () => navigateAction('MatrimonyEditProfile'),
+      },
+      {
+        key: 'edit-preferences',
+        label: 'Edit partner preferences',
+        Icon: FilePenLine,
+        onPress: () => navigateAction('MatrimonyEditProfile', { focusSection: 'partnerPreference' }),
+      },
+      {
+        key: 'verify-profile',
+        label: 'Verify your profile',
+        Icon: IdCard,
+        onPress: () => navigateAction('MatrimonyStatus'),
+      },
+      {
+        key: 'privacy-settings',
+        label: 'Privacy settings',
+        Icon: ShieldCheck,
+        onPress: () => navigateAction('MatrimonyPrivacySettings'),
+      },
+      {
+        key: 'account-settings',
+        label: 'Account settings',
+        Icon: Settings,
+        onPress: () => navigateAction('MatrimonyAccountSettings'),
+      },
+      {
+        key: 'notifications',
+        label: 'Notifications',
+        Icon: Bell,
+        onPress: () => navigateAction('MatrimonyNotifications'),
+      },
+    ],
+    [navigateAction]
+  );
 
   return (
-    <Modal
-      visible={modalVisible}
-      transparent
-      statusBarTranslucent
-      animationType="none"
-      onRequestClose={onClose}
+    <View
+      style={styles.rootOverlay}
+      pointerEvents={isOpen ? 'auto' : 'none'}
+      collapsable={false}
     >
-      <View style={styles.root}>
-        {/* Right-side dim backdrop */}
-        <Animated.View style={[styles.backdrop, { opacity: backdropAnim }]}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        </Animated.View>
+      {/* Right-side dim backdrop */}
+      <Reanimated.View style={[styles.backdrop, backdropStyle]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={closeDrawer} />
+      </Reanimated.View>
 
-        {/* Left Slide-Over Drawer */}
-        <Animated.View
-          style={[
-            styles.drawer,
-            {
-              width: drawerWidth,
-              backgroundColor: drawerBg,
-              transform: [{ translateX: slideAnim }],
-            },
-          ]}
+      {/* Pre-mounted GPU Slide-Over Drawer */}
+      <Reanimated.View
+        style={[
+          styles.drawer,
+          {
+            width: drawerWidth,
+            backgroundColor: drawerBg,
+          },
+          drawerSlideStyle,
+        ]}
+      >
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom + 24, 32) }}
         >
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: Math.max(insets.bottom + 24, 32) }}
-          >
-            {/* Top Profile Header with faint geometric lattice pattern */}
-            <View style={[styles.headerSection, { paddingTop: insets.top + 12 }]}>
-              <View style={StyleSheet.absoluteFill} pointerEvents="none">
-                <Svg width="100%" height="100%">
-                  <Defs>
-                    <Pattern
-                      id="drawerDiamondGrid"
-                      width="24"
-                      height="36"
-                      patternUnits="userSpaceOnUse"
-                    >
-                      <Path
-                        d="M12 2 L22 18 L12 34 L2 18 Z"
-                        fill="none"
-                        stroke={patternStroke}
-                        strokeWidth="1"
-                      />
-                    </Pattern>
-                  </Defs>
-                  <Rect width="100%" height="100%" fill="url(#drawerDiamondGrid)" />
-                </Svg>
-              </View>
+          {/* Top Profile Header with faint geometric lattice pattern */}
+          <View style={[styles.headerSection, { paddingTop: insets.top + 12 }]}>
+            <DrawerLatticePattern patternStroke={patternStroke} />
 
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={closeDrawer}
+              activeOpacity={0.75}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <ArrowLeft size={22} color={colors.text} />
+            </TouchableOpacity>
+
+            <View style={styles.profileRow}>
               <TouchableOpacity
-                style={styles.backBtn}
-                onPress={onClose}
-                activeOpacity={0.75}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                style={styles.avatarWrap}
+                onPress={() => navigateAction('MatrimonyMyPhotos')}
+                activeOpacity={0.85}
               >
-                <ArrowLeft size={22} color={colors.text} />
-              </TouchableOpacity>
-
-              <View style={styles.profileRow}>
-                <TouchableOpacity
-                  style={styles.avatarWrap}
-                  onPress={() => handleAction(onUploadPhotos)}
-                  activeOpacity={0.85}
-                >
-                  {avatarUri ? (
-                    <Image source={{ uri: avatarUri }} style={styles.avatar} />
-                  ) : (
-                    <View style={[styles.avatar, styles.avatarFallback]}>
-                      <Text style={styles.avatarInitial}>
-                        {displayName.charAt(0).toUpperCase()}
-                      </Text>
-                    </View>
-                  )}
-                  <View
-                    style={[
-                      styles.cameraBadge,
-                      {
-                        backgroundColor: isDark ? colors.bg : '#FFFFFF',
-                        borderColor: dividerColor,
-                      },
-                    ]}
-                  >
-                    <Camera size={12} color={colors.text} />
+                {meta.avatarUri ? (
+                  <MatrimonyCachedImage
+                    uri={meta.avatarUri}
+                    recyclingKey={meta.profileCode}
+                    style={styles.avatar}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={[styles.avatar, styles.avatarFallback]}>
+                    <Text style={styles.avatarInitial}>
+                      {(meta.displayName || 'M').charAt(0).toUpperCase()}
+                    </Text>
                   </View>
-                </TouchableOpacity>
-
-                <View style={styles.profileTextCol}>
-                  <Text
-                    style={[styles.profileName, { color: colors.text, fontFamily }]}
-                    numberOfLines={2}
-                  >
-                    {displayName}
-                  </Text>
-                  <Text style={[styles.profileId, { color: colors.textSecondary, fontFamily }]}>
-                    {profileCode}
-                  </Text>
-                  <Text style={[styles.membershipTier, { color: colors.textSecondary, fontFamily }]}>
-                    {membershipLabel}
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Warm Peach Upgrade Strip */}
-            <View style={[styles.upgradeStrip, { backgroundColor: upgradeBg }]}>
-              <Text
-                style={[styles.upgradeText, { color: colors.text, fontFamily }]}
-                numberOfLines={2}
-                adjustsFontSizeToFit
-                minimumFontScale={0.8}
-              >
-                Upgrade membership to call{'\n'}or message with matches
-              </Text>
-              <TouchableOpacity
-                style={styles.upgradeBtn}
-                onPress={() => handleAction(onUpgrade)}
-                activeOpacity={0.88}
-              >
-                <Text style={[styles.upgradeBtnText, { fontFamily }]}>Upgrade now</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Menu List Items */}
-            <View style={styles.menuList}>
-              {menuItems.map(({ key, label, Icon, onPress }, index) => (
-                <TouchableOpacity
-                  key={key}
+                )}
+                <View
                   style={[
-                    styles.menuRow,
-                    index < menuItems.length - 1 && {
-                      borderBottomWidth: StyleSheet.hairlineWidth,
-                      borderBottomColor: dividerColor,
+                    styles.cameraBadge,
+                    {
+                      backgroundColor: isDark ? colors.bg : '#FFFFFF',
+                      borderColor: dividerColor,
                     },
                   ]}
-                  onPress={onPress}
-                  activeOpacity={0.7}
                 >
-                  <Icon size={20} color={colors.textSecondary} strokeWidth={1.7} />
-                  <Text style={[styles.menuLabel, { color: colors.text, fontFamily }]}>
-                    {label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                  <Camera size={12} color={colors.text} />
+                </View>
+              </TouchableOpacity>
+
+              <View style={styles.profileTextCol}>
+                <Text
+                  style={[styles.profileName, { color: colors.text, fontFamily }]}
+                  numberOfLines={2}
+                >
+                  {meta.displayName}
+                </Text>
+                <Text style={[styles.profileId, { color: colors.textSecondary, fontFamily }]}>
+                  {meta.profileCode}
+                </Text>
+                <Text style={[styles.membershipTier, { color: colors.textSecondary, fontFamily }]}>
+                  {meta.membershipLabel || 'Free Member'}
+                </Text>
+              </View>
             </View>
-          </ScrollView>
-        </Animated.View>
-      </View>
-    </Modal>
+          </View>
+
+          {/* Warm Peach Upgrade Strip */}
+          <View style={[styles.upgradeStrip, { backgroundColor: upgradeBg }]}>
+            <Text
+              style={[styles.upgradeText, { color: colors.text, fontFamily }]}
+              numberOfLines={2}
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
+            >
+              Upgrade membership to call{'\n'}or message with matches
+            </Text>
+            <TouchableOpacity
+              style={styles.upgradeBtn}
+              onPress={() => navigateAction('MatrimonyUpgrade')}
+              activeOpacity={0.88}
+            >
+              <Text style={[styles.upgradeBtnText, { fontFamily }]}>Upgrade now</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Menu List Items */}
+          <View style={styles.menuList}>
+            {menuItems.map(({ key, label, Icon, onPress }, index) => (
+              <TouchableOpacity
+                key={key}
+                style={[
+                  styles.menuRow,
+                  index < menuItems.length - 1 && {
+                    borderBottomWidth: StyleSheet.hairlineWidth,
+                    borderBottomColor: dividerColor,
+                  },
+                ]}
+                onPress={onPress}
+                activeOpacity={0.7}
+              >
+                <Icon size={20} color={colors.textSecondary} strokeWidth={1.7} />
+                <Text style={[styles.menuLabel, { color: colors.text, fontFamily }]}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </ScrollView>
+      </Reanimated.View>
+    </View>
   );
 }
 
+const MatrimonyMenuDrawer = React.memo(MatrimonyMenuDrawerComponent);
+export default MatrimonyMenuDrawer;
+
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
+  rootOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 120,
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
@@ -341,7 +393,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 4, height: 0 },
     shadowOpacity: 0.16,
     shadowRadius: 14,
-    elevation: 12,
   },
   headerSection: {
     paddingHorizontal: 20,

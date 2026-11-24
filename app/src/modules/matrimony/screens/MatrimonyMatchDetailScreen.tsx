@@ -9,6 +9,7 @@ import {
   Easing,
   FlatList,
   Image,
+  InteractionManager,
   Linking,
   Modal,
   ScrollView,
@@ -258,27 +259,24 @@ export default function MatrimonyMatchDetailScreen({ navigation, route }: any) {
   }, [matchList, candidate]);
 
   useEffect(() => {
-    const neighborUrls: string[] = [];
-    for (const idx of [
-      currentIndex - 2,
-      currentIndex - 1,
-      currentIndex + 1,
-      currentIndex + 2,
-      currentIndex + 3,
-      currentIndex + 4,
-    ]) {
-      const item = matchList[idx];
-      if (!item) continue;
-      if (item.signedProfilePhoto) neighborUrls.push(item.signedProfilePhoto);
-      if (Array.isArray(item.signedGallery)) {
-        item.signedGallery.slice(0, 2).forEach((u) => u && neighborUrls.push(u));
+    let cancelled = false;
+    const handle = InteractionManager.runAfterInteractions(() => {
+      if (cancelled) return;
+      const neighborUrls: string[] = [];
+      for (const idx of [currentIndex - 1, currentIndex + 1, currentIndex + 2]) {
+        const uri = matchList[idx]?.signedProfilePhoto;
+        if (uri && uri.startsWith('http')) {
+          neighborUrls.push(uri);
+        }
       }
-    }
-    Array.from(new Set(neighborUrls)).forEach((uri) => {
-      if (uri.startsWith('http')) {
+      Array.from(new Set(neighborUrls)).forEach((uri) => {
         Image.prefetch(uri).catch(() => {});
-      }
+      });
     });
+    return () => {
+      cancelled = true;
+      handle?.cancel?.();
+    };
   }, [currentIndex, matchList]);
 
   useEffect(() => {
@@ -299,7 +297,7 @@ export default function MatrimonyMatchDetailScreen({ navigation, route }: any) {
         (!mem.validUntilMs || mem.validUntilMs > Date.now());
       if (isNowPaid && candidate && (!candidate.dob || !candidate.contactPhone)) {
         matrimonyApi
-          .getMatches({ tab: 'all' }, { force: true })
+          .getMatches({ tab: 'all', limit: 20 }, { force: true })
           .then((res) => {
             if (!res?.matches?.length) return;
             const byUid = new Map(res.matches.map((m) => [m.uid, m]));
@@ -324,6 +322,8 @@ export default function MatrimonyMatchDetailScreen({ navigation, route }: any) {
 
   const currentCandidateUid = matchList[currentIndex]?.uid;
   const currentInterestStatus = matchList[currentIndex]?.interestStatus;
+  const currentCandidateHasPhoto = Boolean(matchList[currentIndex]?.signedProfilePhoto);
+  const currentCandidatePhotoVis = matchList[currentIndex]?.photoVisibility;
 
   useEffect(() => {
     const myUid = auth().currentUser?.uid || '';
@@ -361,6 +361,9 @@ export default function MatrimonyMatchDetailScreen({ navigation, route }: any) {
           }
 
           if (!canSee) {
+            if (!currentCandidateHasPhoto && currentCandidatePhotoVis === vis) {
+              return;
+            }
             setMatchList((prev) =>
               prev.map((m) =>
                 m.uid === currentCandidateUid
@@ -390,6 +393,7 @@ export default function MatrimonyMatchDetailScreen({ navigation, route }: any) {
               ...(Array.isArray(d.gallery) ? d.gallery : []),
             ].filter((x): x is string => Boolean(x));
             if (rawPaths.length === 0) {
+              if (!currentCandidateHasPhoto) return;
               setMatchList((prev) =>
                 prev.map((m) =>
                   m.uid === currentCandidateUid
@@ -407,24 +411,29 @@ export default function MatrimonyMatchDetailScreen({ navigation, route }: any) {
               return;
             }
 
-            (async () => {
-              const clientUrls = await Promise.all(
-                rawPaths.map((p) => matrimonyApi.resolvePhotoUrl(p))
-              ).catch(() => [] as (string | null)[]);
-              if (!active) return;
+            // Skip redundant Storage/Cloud-Function photo resolution when photos are already loaded
+            if (currentCandidateHasPhoto && currentCandidatePhotoVis === vis) {
+              return;
+            }
 
-              let clean = clientUrls.filter((u): u is string => Boolean(u));
+            (async () => {
+              const serverRes = await matrimonyApi
+                .getCandidatePhotos(currentCandidateUid)
+                .catch(() => null);
+              if (!active) return;
+              let clean: string[] = [];
+              if (serverRes?.canSeePhotos && serverRes.signedProfilePhoto) {
+                clean = [
+                  serverRes.signedProfilePhoto,
+                  ...(Array.isArray(serverRes.signedGallery) ? serverRes.signedGallery : []),
+                ];
+              }
               if (clean.length === 0) {
-                const serverRes = await matrimonyApi
-                  .getCandidatePhotos(currentCandidateUid)
-                  .catch(() => null);
+                const clientUrls = await Promise.all(
+                  rawPaths.map((p) => matrimonyApi.resolvePhotoUrl(p))
+                ).catch(() => [] as (string | null)[]);
                 if (!active) return;
-                if (serverRes?.canSeePhotos && serverRes.signedProfilePhoto) {
-                  clean = [
-                    serverRes.signedProfilePhoto,
-                    ...(Array.isArray(serverRes.signedGallery) ? serverRes.signedGallery : []),
-                  ];
-                }
+                clean = clientUrls.filter((u): u is string => Boolean(u));
               }
 
               const nextMain = clean[0] || null;
@@ -464,7 +473,7 @@ export default function MatrimonyMatchDetailScreen({ navigation, route }: any) {
       active = false;
       unsub();
     };
-  }, [currentCandidateUid, currentInterestStatus, entitlements]);
+  }, [currentCandidateUid, currentInterestStatus, currentCandidateHasPhoto, currentCandidatePhotoVis, entitlements]);
 
   if (!candidate) {
     return (
@@ -501,41 +510,35 @@ export default function MatrimonyMatchDetailScreen({ navigation, route }: any) {
       clearTimeout(transitionTimerRef.current);
       transitionTimerRef.current = null;
     }
-    const seq = ++transitionSeqRef.current;
-
-    setSwitchingProfile(true);
-    onSwap();
-    scrollRef.current?.scrollTo({ y: 0, animated: false });
-    setScrollY(0);
+    ++transitionSeqRef.current;
 
     if (nextPhotoUri && nextPhotoUri.startsWith('http')) {
       Image.prefetch(nextPhotoUri).catch(() => undefined);
     }
 
-    transitionTimerRef.current = setTimeout(() => {
-      transitionTimerRef.current = null;
-      if (transitionSeqRef.current !== seq) return;
-      transitionX.setValue(direction >= 0 ? 14 : -14);
-      transitionOpacity.setValue(0.92);
-      setSwitchingProfile(false);
+    setSwitchingProfile(false);
+    transitionX.setValue(direction >= 0 ? 14 : -14);
+    transitionOpacity.setValue(0.92);
+    onSwap();
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+    setScrollY(0);
 
-      const enterAnim = Animated.parallel([
-        Animated.timing(transitionOpacity, {
-          toValue: 1,
-          duration: 90,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(transitionX, {
-          toValue: 0,
-          duration: 90,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-      ]);
-      activeTransitionRef.current = enterAnim;
-      enterAnim.start();
-    }, 180);
+    const enterAnim = Animated.parallel([
+      Animated.timing(transitionOpacity, {
+        toValue: 1,
+        duration: 90,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(transitionX, {
+        toValue: 0,
+        duration: 90,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]);
+    activeTransitionRef.current = enterAnim;
+    enterAnim.start();
   };
 
   const stepMatch = (delta: number) => {
@@ -547,17 +550,29 @@ export default function MatrimonyMatchDetailScreen({ navigation, route }: any) {
 
   const handleToggleShortlist = async () => {
     const targetUid = candidate.uid;
+    const shortlistKey = `shortlist:${targetUid}`;
+    if (pendingSendMapRef.current.has(shortlistKey)) return;
+    const prevShortlisted = Boolean(candidate.isShortlisted);
+
     setMatchList((prev) =>
-      prev.map((m) => (m.uid === targetUid ? { ...m, isShortlisted: !m.isShortlisted } : m))
+      prev.map((m) => (m.uid === targetUid ? { ...m, isShortlisted: !prevShortlisted } : m))
     );
-    try {
-      const res = await matrimonyApi.toggleShortlist(targetUid);
-      setMatchList((prev) =>
-        prev.map((m) => (m.uid === targetUid ? { ...m, isShortlisted: res.shortlisted } : m))
-      );
-    } catch (err: any) {
-      Alert.alert('Error', err?.message || 'Unable to update shortlist.');
-    }
+    const req = (async () => {
+      try {
+        const res = await matrimonyApi.toggleShortlist(targetUid);
+        setMatchList((prev) =>
+          prev.map((m) => (m.uid === targetUid ? { ...m, isShortlisted: res.shortlisted } : m))
+        );
+      } catch (err: any) {
+        setMatchList((prev) =>
+          prev.map((m) => (m.uid === targetUid ? { ...m, isShortlisted: prevShortlisted } : m))
+        );
+        Alert.alert('Error', err?.message || 'Unable to update shortlist.');
+      } finally {
+        pendingSendMapRef.current.delete(shortlistKey);
+      }
+    })();
+    pendingSendMapRef.current.set(shortlistKey, req);
   };
 
   const handleRequestPhotoAccess = async () => {
@@ -739,8 +754,9 @@ export default function MatrimonyMatchDetailScreen({ navigation, route }: any) {
   };
 
   const handleSendInterest = async () => {
-    if (candidate.interestStatus) return;
+    if (!candidate?.uid || candidate.interestStatus) return;
     const targetUid = candidate.uid;
+    if (pendingSendMapRef.current.has(targetUid)) return;
     const targetName = candidate.displayName;
     const optimisticSentAt = Date.now();
     // Instant optimistic transition to Call Now + Send Message & Undo toast

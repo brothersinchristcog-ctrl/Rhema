@@ -1,9 +1,8 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Image,
   RefreshControl,
   StatusBar,
   StyleSheet,
@@ -14,6 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AlertTriangle, RotateCcw, User } from 'lucide-react-native';
 import { FONT_STYLE_OPTIONS, useTheme } from '../../../context/ThemeContext';
+import { MatrimonyCachedImage } from '../components/MatrimonyCachedImage';
 import MatrimonyGradientHeader from '../components/MatrimonyGradientHeader';
 import { isMatrimonyInactiveError, matrimonyApi } from '../services/matrimonyApi';
 import { MatrimonyHiddenProfileItem } from '../types/matrimony';
@@ -50,7 +50,8 @@ export default function MatrimonyHiddenProfilesScreen({ navigation, route }: any
     () => !matrimonyApi.getCachedHiddenProfiles(apiType)
   );
   const [refreshing, setRefreshing] = useState(false);
-  const [busyUid, setBusyUid] = useState<string | null>(null);
+  const [restoringUids, setRestoringUids] = useState<Record<string, boolean>>({});
+  const restoringUidsRef = useRef<Set<string>>(new Set());
 
   const loadProfiles = useCallback(
     async (silent = false, force = false) => {
@@ -85,24 +86,38 @@ export default function MatrimonyHiddenProfilesScreen({ navigation, route }: any
     loadProfiles(false, false);
   }, [loadProfiles]);
 
-  const handleRestore = async (item: MatrimonyHiddenProfileItem) => {
-    if (busyUid) return;
-    setBusyUid(item.uid);
-    try {
-      await matrimonyApi.restoreDismissedMatches(item.uid, apiType);
-      setProfiles((prev) => prev.filter((p) => p.uid !== item.uid));
-    } catch (err: any) {
-      Alert.alert('Action Failed', err?.message || `Unable to ${restoreLabel.toLowerCase()} profile.`);
-    } finally {
-      setBusyUid(null);
-    }
-  };
+  const handleRestore = useCallback(
+    async (item: MatrimonyHiddenProfileItem) => {
+      if (restoringUidsRef.current.has(item.uid)) return;
+      restoringUidsRef.current.add(item.uid);
+      setRestoringUids((prev) => ({ ...prev, [item.uid]: true }));
+
+      try {
+        await matrimonyApi.restoreDismissedMatches(item.uid, apiType);
+        setProfiles((prev) => prev.filter((p) => p.uid !== item.uid));
+      } catch (err: any) {
+        Alert.alert(
+          'Action Failed',
+          err?.message || `Unable to ${restoreLabel.toLowerCase()} profile.`
+        );
+      } finally {
+        restoringUidsRef.current.delete(item.uid);
+        setRestoringUids((prev) => {
+          if (!prev[item.uid]) return prev;
+          const next = { ...prev };
+          delete next[item.uid];
+          return next;
+        });
+      }
+    },
+    [apiType, restoreLabel]
+  );
 
   const pageBg = isDark ? colors.bg : '#FFFFFF';
   const cardBg = isDark ? colors.surface : '#FFFFFF';
   const dividerColor = isDark ? 'rgba(255,255,255,0.1)' : '#E5E7EB';
 
-  const renderItem = ({ item }: { item: MatrimonyHiddenProfileItem }) => {
+  const renderItem = useCallback(({ item }: { item: MatrimonyHiddenProfileItem }) => {
     const metaParts = [
       item.age ? `${item.age} Yrs` : null,
       formatCompactHeight(item.heightCm),
@@ -118,8 +133,9 @@ export default function MatrimonyHiddenProfilesScreen({ navigation, route }: any
         ]}
       >
         {item.signedProfilePhoto ? (
-          <Image
-            source={{ uri: item.signedProfilePhoto }}
+          <MatrimonyCachedImage
+            uri={item.signedProfilePhoto}
+            recyclingKey={item.uid}
             style={styles.avatar}
             resizeMode="cover"
           />
@@ -163,10 +179,10 @@ export default function MatrimonyHiddenProfilesScreen({ navigation, route }: any
         <TouchableOpacity
           style={[styles.restoreBtn, { borderColor: CORAL_RED }]}
           activeOpacity={0.8}
-          disabled={busyUid === item.uid}
+          disabled={!!restoringUids[item.uid]}
           onPress={() => handleRestore(item)}
         >
-          {busyUid === item.uid ? (
+          {restoringUids[item.uid] ? (
             <ActivityIndicator size="small" color={CORAL_RED} />
           ) : (
             <>
@@ -177,7 +193,7 @@ export default function MatrimonyHiddenProfilesScreen({ navigation, route }: any
         </TouchableOpacity>
       </View>
     );
-  };
+  }, [cardBg, colors.text, colors.textSecondary, dividerColor, fontFamily, handleRestore, isDark, restoreLabel, restoringUids, scaleFont]);
 
   return (
     <View style={[styles.container, { backgroundColor: pageBg }]}>
@@ -299,6 +315,9 @@ const styles = StyleSheet.create({
   restoreBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 88,
+    minHeight: 32,
     gap: 5,
     borderWidth: 1,
     borderRadius: 18,

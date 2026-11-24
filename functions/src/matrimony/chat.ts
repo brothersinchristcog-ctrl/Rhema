@@ -28,6 +28,9 @@ function requireAuthUid(request: { auth?: { uid?: string } }): string {
   return uid;
 }
 
+let chatSignBlobUnavailable = false;
+const WARM_CHAT_PHOTO_CACHE = new Map<string, { url: string; expiresAtMs: number }>();
+
 async function resolveSinglePhotoUrl(pathOrUrl?: string | null): Promise<string | null> {
   if (!pathOrUrl || typeof pathOrUrl !== 'string') return null;
   const clean = pathOrUrl.trim();
@@ -35,35 +38,49 @@ async function resolveSinglePhotoUrl(pathOrUrl?: string | null): Promise<string 
   if (clean.startsWith('https://') || clean.startsWith('http://')) {
     return clean;
   }
+  const now = Date.now();
+  const cached = WARM_CHAT_PHOTO_CACHE.get(clean);
+  if (cached && cached.expiresAtMs > now + 5 * 60 * 1000) {
+    return cached.url;
+  }
+
   const bucket = getStorage().bucket(MATRIMONY_BUCKET);
-  try {
-    const [signedUrl] = await bucket.file(clean).getSignedUrl({
-      action: 'read',
-      expires: Date.now() + 24 * 60 * 60 * 1000,
-    });
-    return signedUrl;
-  } catch {
+  const expires = now + 24 * 60 * 60 * 1000;
+  if (!chatSignBlobUnavailable) {
     try {
-      const file = bucket.file(clean);
-      const [meta] = await file.getMetadata();
-      const existing = String(meta?.metadata?.firebaseStorageDownloadTokens || '')
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-      let token = existing[0];
-      if (!token) {
-        token = randomUUID();
-        await file.setMetadata({
-          metadata: {
-            ...(meta?.metadata || {}),
-            firebaseStorageDownloadTokens: token,
-          },
-        });
-      }
-      return `https://firebasestorage.googleapis.com/v0/b/${MATRIMONY_BUCKET}/o/${encodeURIComponent(clean)}?alt=media&token=${encodeURIComponent(token)}`;
+      const [signedUrl] = await bucket.file(clean).getSignedUrl({
+        action: 'read',
+        expires,
+      });
+      WARM_CHAT_PHOTO_CACHE.set(clean, { url: signedUrl, expiresAtMs: expires });
+      return signedUrl;
     } catch {
-      return null;
+      chatSignBlobUnavailable = true;
     }
+  }
+
+  try {
+    const file = bucket.file(clean);
+    const [meta] = await file.getMetadata();
+    const existing = String(meta?.metadata?.firebaseStorageDownloadTokens || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    let token = existing[0];
+    if (!token) {
+      token = randomUUID();
+      await file.setMetadata({
+        metadata: {
+          ...(meta?.metadata || {}),
+          firebaseStorageDownloadTokens: token,
+        },
+      });
+    }
+    const tokenUrl = `https://firebasestorage.googleapis.com/v0/b/${MATRIMONY_BUCKET}/o/${encodeURIComponent(clean)}?alt=media&token=${encodeURIComponent(token)}`;
+    WARM_CHAT_PHOTO_CACHE.set(clean, { url: tokenUrl, expiresAtMs: expires });
+    return tokenUrl;
+  } catch {
+    return null;
   }
 }
 

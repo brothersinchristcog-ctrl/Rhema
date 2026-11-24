@@ -181,6 +181,123 @@ export declare const getMatrimonyMatches: import("firebase-functions/v2/https").
     lockedAdvancedFilters?: never;
 }>, unknown>;
 /**
+ * 1b. getMatrimonyHomeSummary
+ * Consolidated single-RPC loader for MatrimonyHomeScreen: returns status, registration summary,
+ * entitlements, unread notification count, and all 4 Home preview strips in one Firestore pass.
+ */
+export declare const getMatrimonyHomeSummary: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
+    success: boolean;
+    registered: boolean;
+    profileStatus: string;
+    unreadNotificationsCount?: never;
+    viewerEntitlements?: never;
+    status?: never;
+    registration?: never;
+    allMatches?: never;
+    newMatches?: never;
+    viewedYou?: never;
+    viewedByYou?: never;
+} | {
+    success: boolean;
+    registered: boolean;
+    profileStatus: any;
+    unreadNotificationsCount: number;
+    viewerEntitlements: ResolvedMemberEntitlements;
+    status: {
+        success: boolean;
+        registered: boolean;
+        profileStatus: any;
+        verificationStatus: any;
+        visibility: any;
+        profileCompletion: any;
+        inactiveReason: any;
+        signedProfilePhoto: string | null;
+        profile: {
+            signedProfilePhoto: string | null;
+            signedGallery: string[];
+        };
+    };
+    registration: {
+        success: boolean;
+        eligible: boolean;
+        registered: boolean;
+        registrationId: string;
+        profile: {
+            signedProfilePhoto: string | null;
+            signedGallery: string[];
+        };
+        consent: any;
+        profileManager: any;
+        familyDetails: any;
+        incomeDetails: any;
+        preferences: FirebaseFirestore.DocumentData;
+    };
+    allMatches: {
+        success: boolean;
+        matches: any[];
+        totalCount: number;
+        hasMore: boolean;
+        nextOffset: number;
+        totalAvailableCount: number;
+        hiddenCount: number;
+        viewerGender: BinaryGender | null;
+        targetGender: BinaryGender | null;
+        viewerPhoto: string | null;
+        viewerPreferencesFilter: Record<string, any>;
+        preferencesUpdatedAtMs: number;
+        viewerEntitlements: ResolvedMemberEntitlements;
+        lockedAdvancedFilters: boolean;
+    };
+    newMatches: {
+        success: boolean;
+        matches: any[];
+        totalCount: number;
+        hasMore: boolean;
+        nextOffset: number;
+        totalAvailableCount: number;
+        hiddenCount: number;
+        viewerGender: BinaryGender | null;
+        targetGender: BinaryGender | null;
+        viewerPhoto: string | null;
+        viewerPreferencesFilter: Record<string, any>;
+        preferencesUpdatedAtMs: number;
+        viewerEntitlements: ResolvedMemberEntitlements;
+        lockedAdvancedFilters: boolean;
+    };
+    viewedYou: {
+        success: boolean;
+        matches: any[];
+        totalCount: number;
+        hasMore: boolean;
+        nextOffset: number;
+        totalAvailableCount: number;
+        hiddenCount: number;
+        viewerGender: BinaryGender | null;
+        targetGender: BinaryGender | null;
+        viewerPhoto: string | null;
+        viewerPreferencesFilter: Record<string, any>;
+        preferencesUpdatedAtMs: number;
+        viewerEntitlements: ResolvedMemberEntitlements;
+        lockedAdvancedFilters: boolean;
+    };
+    viewedByYou: {
+        success: boolean;
+        matches: any[];
+        totalCount: number;
+        hasMore: boolean;
+        nextOffset: number;
+        totalAvailableCount: number;
+        hiddenCount: number;
+        viewerGender: BinaryGender | null;
+        targetGender: BinaryGender | null;
+        viewerPhoto: string | null;
+        viewerPreferencesFilter: Record<string, any>;
+        preferencesUpdatedAtMs: number;
+        viewerEntitlements: ResolvedMemberEntitlements;
+        lockedAdvancedFilters: boolean;
+    };
+}>, unknown>;
+/**
  * 2. toggleMatrimonyShortlist
  */
 export declare const toggleMatrimonyShortlist: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
@@ -633,6 +750,104 @@ export declare const getMatrimonyCandidatePhotos: import("firebase-functions/v2/
     canSeePhotos: boolean;
     signedProfilePhoto: string | null;
     signedGallery: string[];
+}>, unknown>;
+/**
+ * 14. searchMatrimonyById
+ * Direct lookup of an approved opposite-gender profile by Matrimony ID (e.g. RMT820)
+ * using the warm approved catalog with full privacy, block, and compatibility evaluation.
+ */
+export declare const searchMatrimonyById: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
+    success: boolean;
+    found: boolean;
+    reason: string;
+    message: string;
+    profile?: never;
+    viewerPhoto?: never;
+} | {
+    success: boolean;
+    found: boolean;
+    profile: {
+        uid: string;
+        displayName: any;
+        profileCode: any;
+        gender: any;
+        age: any;
+        heightCm: any;
+        maritalStatus: any;
+        motherTongue: any;
+        aboutMe: any;
+        profileCreatedBy: string;
+        education: any;
+        career: any;
+        location: any;
+        faithSummary: any;
+        habits: any;
+        interests: any;
+        familySummary: any;
+        familyDetails: any;
+        annualIncomeRange: any;
+        dob: any;
+        maskedDob: string | null;
+        maskedPhone: string | null;
+        contactPhone: any;
+        isContactUnlocked: boolean;
+        canUnlockContact: boolean;
+        mobilePrivacy: string;
+        isPhotoProtected: boolean;
+        photoRequestStatus: "approved" | "declined" | "pending" | null;
+        photoVisibility: any;
+        candidateTier: import("./entitlements.js").MatrimonyTier;
+        isHighlighted: "gold" | "platinum" | "none";
+        visibilityPriority: number;
+        verificationSummary: {
+            adminApproved: boolean;
+            churchMemberVerified: boolean;
+            photoVerified: boolean;
+            baptismVerified: boolean;
+            trustLevel: "prime_verified" | "verified";
+        };
+        partnerPreferencesComparison: {
+            matchedCount: number;
+            totalCount: number;
+            sections: {
+                title: string;
+                items: {
+                    label: string;
+                    value: string;
+                    matched: boolean;
+                }[];
+            }[];
+        };
+        signedProfilePhoto: string | null;
+        signedGallery: string[];
+        photoCount: number;
+        matchScore: number;
+        sharedInterests: string[];
+        matchReasons: string[];
+        breakdown: {
+            ageScore: number;
+            educationScore: number;
+            interestsScore: number;
+            heightScore: number;
+            maritalScore: number;
+            familyScore: number;
+            faithScore: number;
+            careerScore: number;
+            locationScore: number;
+            lifestyleScore: number;
+            additionalScore: number;
+            habitsScore: number;
+        };
+        isShortlisted: boolean;
+        interestStatus: string | null;
+        interestSentAtMs: number;
+        joinedAtMs: number;
+        viewedAtMs: number;
+        updatedAtMs: number;
+    };
+    viewerPhoto: string | null;
+    reason?: never;
+    message?: never;
 }>, unknown>;
 export {};
 //# sourceMappingURL=matches.d.ts.map

@@ -56,4 +56,10 @@ export interface PurgeUserOptions {
  * Leaves their main Rhema Church membership record untouched.
  */
 export declare function purgeMatrimonyUserData(db: Firestore, targetUid: string, options?: PurgeUserOptions): Promise<void>;
+/**
+ * Atomically reserves and persists a guaranteed-unique Matrimony ID (e.g. RM1001)
+ * inside `matrimony_settings/matrimony_id_counter` so no two members can ever receive
+ * a duplicate profile ID, even under concurrent submissions or approvals.
+ */
+export declare function ensureUniqueMatrimonyId(db: Firestore, uid: string, existingCandidate?: unknown): Promise<string>;
 //# sourceMappingURL=store.d.ts.map

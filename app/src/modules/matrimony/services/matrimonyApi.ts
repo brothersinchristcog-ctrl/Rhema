@@ -4,6 +4,7 @@ import firestore from '@react-native-firebase/firestore';
 import functions from '@react-native-firebase/functions';
 import storage from '@react-native-firebase/storage';
 import { Image } from 'react-native';
+import { matrimonyPerf } from './matrimonyPerf';
 import {
   AdminMatrimonyCounts,
   AdminMatrimonyPlansAndSubsResponse,
@@ -23,6 +24,7 @@ import {
   MatrimonyPlanSpec,
   MatrimonyStatusResponse,
   MemberEntitlements,
+  SearchMatrimonyByIdResponse,
   StartRegistrationResponse,
 } from '../types/matrimony';
 
@@ -30,6 +32,7 @@ export const MATRIMONY_BUCKET_URL = 'gs://rhema-global-ministries-matrimony';
 const MATRIMONY_FUNCTIONS_REGION = 'us-central1';
 const DEFAULT_PROJECT_ID = 'rhema-global-ministries';
 const DEFAULT_CACHE_TTL_MS = 60_000;
+const PLANS_CACHE_TTL_MS = 10 * 60_000;
 const STORAGE_CACHE_PREFIX = '@rhema_matrimony_swr_v1_';
 
 interface CacheEntry<T> {
@@ -54,6 +57,7 @@ interface GetMatchesParams {
   filters?: MatrimonyMatchesFilter;
   offset?: number;
   limit?: number;
+  shuffleSeed?: number;
 }
 
 interface FetchCacheOptions {
@@ -71,20 +75,27 @@ interface MatrimonyMemoryStore {
   uid: string;
   hydratedFromDisk: boolean;
   cacheVersion: number;
+  lastPrefetchAt: number;
   registration: CacheEntry<StartRegistrationResponse> | null;
   status: CacheEntry<MatrimonyStatusResponse> | null;
   matchesByKey: Map<string, CacheEntry<GetMatrimonyMatchesResponse>>;
   lastMatchesKey: string | null;
   interestsHub: CacheEntry<GetMatrimonyInterestsHubResponse> | null;
   chatContacts: CacheEntry<ChatContactsResponse> | null;
+  plans: CacheEntry<MatrimonyPlanSpec[]> | null;
+  entitlements: CacheEntry<MemberEntitlements> | null;
   hiddenProfiles: Record<'dont_show' | 'blocked', CacheEntry<MatrimonyHiddenProfileItem[]> | null>;
   photoRequests: CacheEntry<MatrimonyPhotoRequestItem[]> | null;
   notificationsFeed: CacheEntry<{ notifications: MatrimonyNotificationFeedItem[]; unreadCount: number }> | null;
+  searchByIdCache: Map<string, CacheEntry<SearchMatrimonyByIdResponse>>;
   inflight: Map<string, Promise<any>>;
   resolvedUrls: Map<string, string>;
+  pendingDraftWrites: number;
+  lastLocalPatchAt: number;
 }
 
 let store: MatrimonyMemoryStore | null = null;
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
 function getStore(): MatrimonyMemoryStore {
   const currentUid = auth().currentUser?.uid || 'anon';
@@ -93,17 +104,23 @@ function getStore(): MatrimonyMemoryStore {
       uid: currentUid,
       hydratedFromDisk: false,
       cacheVersion: 0,
+      lastPrefetchAt: 0,
       registration: null,
       status: null,
       matchesByKey: new Map(),
       lastMatchesKey: null,
       interestsHub: null,
       chatContacts: null,
+      plans: null,
+      entitlements: null,
       hiddenProfiles: { dont_show: null, blocked: null },
       photoRequests: null,
       notificationsFeed: null,
+      searchByIdCache: new Map(),
       inflight: new Map(),
       resolvedUrls: new Map(),
+      pendingDraftWrites: 0,
+      lastLocalPatchAt: 0,
     };
   }
   return store;
@@ -197,7 +214,7 @@ function isEntryFresh<T>(entry: CacheEntry<T> | null | undefined, maxAgeMs: numb
   return Date.now() - entry.fetchedAt < maxAgeMs;
 }
 
-function persistSnapshotToDisk(): void {
+function writeSnapshotToDiskNow(): void {
   const s = getStore();
   if (!s.uid || s.uid === 'anon') return;
   const lastMatchesEntry = s.lastMatchesKey ? s.matchesByKey.get(s.lastMatchesKey) : null;
@@ -209,12 +226,25 @@ function persistSnapshotToDisk(): void {
     lastMatches: lastMatchesEntry?.data || null,
     interestsHub: s.interestsHub?.data || null,
     chatContacts: s.chatContacts?.data || null,
+    plans: s.plans?.data || null,
+    entitlements: s.entitlements?.data || null,
+    notificationsFeed: s.notificationsFeed?.data || null,
     hiddenProfiles: {
       dont_show: s.hiddenProfiles.dont_show?.data || null,
       blocked: s.hiddenProfiles.blocked?.data || null,
     },
   };
   AsyncStorage.setItem(`${STORAGE_CACHE_PREFIX}${s.uid}`, JSON.stringify(payload)).catch(() => {});
+}
+
+function persistSnapshotToDisk(): void {
+  const s = getStore();
+  if (!s.uid || s.uid === 'anon') return;
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    writeSnapshotToDiskNow();
+  }, 400);
 }
 
 function prefetchImageUrls(urls: (string | null | undefined)[]): void {
@@ -230,8 +260,11 @@ function invalidateCache(targets: {
   registration?: boolean;
   status?: boolean;
   matches?: boolean;
+  matchesTabs?: MatrimonyMatchTab[];
   interestsHub?: boolean;
   chatContacts?: boolean;
+  plans?: boolean;
+  entitlements?: boolean;
 }): void {
   const s = getStore();
   s.cacheVersion += 1;
@@ -244,37 +277,70 @@ function invalidateCache(targets: {
     s.inflight.delete('getStatus');
   }
   if (targets.matches) {
+    s.searchByIdCache.clear();
     s.matchesByKey.forEach((entry) => {
       entry.fetchedAt = 0;
     });
     for (const key of Array.from(s.inflight.keys())) {
       if (key.startsWith('getMatches:') || key.startsWith('matches:')) s.inflight.delete(key);
     }
+  } else if (targets.matchesTabs && targets.matchesTabs.length > 0) {
+    const tabSet = new Set(targets.matchesTabs);
+    s.matchesByKey.forEach((entry, k) => {
+      try {
+        const parsed = JSON.parse(k);
+        if (parsed?.tab && tabSet.has(parsed.tab)) {
+          entry.fetchedAt = 0;
+        }
+      } catch {
+        // Ignore unparseable key
+      }
+    });
   }
   if (targets.interestsHub) {
     if (s.interestsHub) s.interestsHub.fetchedAt = 0;
+    s.inflight.delete('getInterestsHub');
     s.inflight.delete('interestsHub');
   }
   if (targets.chatContacts) {
     if (s.chatContacts) s.chatContacts.fetchedAt = 0;
+    s.inflight.delete('getChatContacts');
     s.inflight.delete('chatContacts');
+  }
+  if (targets.plans) {
+    if (s.plans) s.plans.fetchedAt = 0;
+    s.inflight.delete('getPlans');
+  }
+  if (targets.entitlements) {
+    if (s.entitlements) s.entitlements.fetchedAt = 0;
+    s.inflight.delete('getMemberEntitlements');
   }
   persistSnapshotToDisk();
 }
 
 function clearAllCaches(): void {
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
+  cachedTokenValue = null;
+  cachedTokenPromise = null;
   const s = getStore();
   const uid = s.uid;
   s.cacheVersion += 1;
+  s.lastPrefetchAt = 0;
   s.registration = null;
   s.status = null;
   s.matchesByKey.clear();
   s.lastMatchesKey = null;
   s.interestsHub = null;
   s.chatContacts = null;
+  s.plans = null;
+  s.entitlements = null;
   s.hiddenProfiles = { dont_show: null, blocked: null };
   s.photoRequests = null;
   s.notificationsFeed = null;
+  s.searchByIdCache.clear();
   s.inflight.clear();
   s.resolvedUrls.clear();
   if (uid && uid !== 'anon') {
@@ -304,15 +370,47 @@ function isTransientCallableError(err: any): boolean {
   );
 }
 
+let cachedTokenPromise: Promise<string | null> | null = null;
+let cachedTokenValue: { uid: string; token: string; fetchedAt: number } | null = null;
+
+async function getAuthIdToken(forceRefresh = false): Promise<string | null> {
+  const currentUser = auth().currentUser;
+  if (!currentUser) return null;
+  if (
+    !forceRefresh &&
+    cachedTokenValue &&
+    cachedTokenValue.uid === currentUser.uid &&
+    Date.now() - cachedTokenValue.fetchedAt < 30_000
+  ) {
+    return cachedTokenValue.token;
+  }
+  if (!forceRefresh && cachedTokenPromise) return cachedTokenPromise;
+  const tokenReq = currentUser
+    .getIdToken(forceRefresh)
+    .then((token) => {
+      if (token) {
+        cachedTokenValue = { uid: currentUser.uid, token, fetchedAt: Date.now() };
+      }
+      return token || null;
+    })
+    .finally(() => {
+      if (!forceRefresh) cachedTokenPromise = null;
+    });
+  if (!forceRefresh) {
+    cachedTokenPromise = tokenReq;
+  }
+  return tokenReq;
+}
+
 async function callViaHttpsFallback<T>(
   functionName: string,
   payload: Record<string, any>,
-  timeoutMs: number
+  timeoutMs: number,
+  forceRefreshToken = false
 ): Promise<T> {
   const projectId = functions().app?.options?.projectId || DEFAULT_PROJECT_ID;
   const url = `https://${MATRIMONY_FUNCTIONS_REGION}-${projectId}.cloudfunctions.net/${functionName}`;
-  const currentUser = auth().currentUser;
-  const idToken = currentUser ? await currentUser.getIdToken() : null;
+  const idToken = await getAuthIdToken(forceRefreshToken);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -335,7 +433,15 @@ async function callViaHttpsFallback<T>(
         json?.error?.message ||
         (response.status === 503 ? 'unavailable' : `Request failed with status ${response.status}`);
       const error: any = new Error(message);
-      error.code = status || (response.status === 503 ? 'unavailable' : 'unknown');
+      error.code =
+        status ||
+        (response.status === 401
+          ? 'unauthenticated'
+          : response.status === 404
+          ? 'not-found'
+          : response.status === 503
+          ? 'unavailable'
+          : 'unknown');
       error.details = json?.error?.details;
       throw error;
     }
@@ -346,33 +452,60 @@ async function callViaHttpsFallback<T>(
   }
 }
 
+/**
+ * Invokes a Matrimony Cloud Function using non-blocking parallel HTTPS fetch first.
+ * React Native Firebase's native Android `httpsCallable` queues calls onto a single-threaded
+ * TaskExecutorService (`maximumPoolSize = 1`), which serialized parallel screen loads.
+ */
 async function callMatrimonyFunction<T>(
   functionName: string,
   payload: Record<string, any> = {},
   timeoutMs = 20000
 ): Promise<T> {
+  const trace = matrimonyPerf.startTrace(`rpc_${functionName}`);
   try {
-    const callable = functions()
-      .app.functions(MATRIMONY_FUNCTIONS_REGION)
-      .httpsCallable(functionName, { timeout: timeoutMs });
-    const res = await callable(payload);
-    return res.data as T;
+    const res = await callViaHttpsFallback<T>(functionName, payload, timeoutMs);
+    trace.stop(true, { transport: 'https_parallel' });
+    return res;
   } catch (err: any) {
-    if (!isTransientCallableError(err)) {
+    const code = getErrorCode(err);
+    const shouldRefreshAuth = code === 'unauthenticated';
+    if (!shouldRefreshAuth && !isTransientCallableError(err)) {
+      trace.stop(false, { transport: 'https_parallel', code });
       throw err;
     }
 
-    console.warn(`[matrimonyApi] ${functionName} callable failed (${err?.code || err?.message}), retrying via HTTPS fallback...`);
-    await sleep(350);
+    console.warn(`[matrimonyApi] ${functionName} fetch failed (${err?.code || err?.message}), retrying...`);
+    if (!shouldRefreshAuth) {
+      await sleep(300);
+    }
 
     try {
-      return await callViaHttpsFallback<T>(functionName, payload, timeoutMs);
-    } catch (fallbackErr: any) {
-      if (!isTransientCallableError(fallbackErr)) {
-        throw fallbackErr;
+      const res = await callViaHttpsFallback<T>(
+        functionName,
+        payload,
+        timeoutMs,
+        shouldRefreshAuth
+      );
+      trace.stop(true, { transport: shouldRefreshAuth ? 'https_token_refresh' : 'https_retry' });
+      return res;
+    } catch (retryErr: any) {
+      const retryCode = getErrorCode(retryErr);
+      if (retryCode !== 'unauthenticated' && !isTransientCallableError(retryErr)) {
+        trace.stop(false, { transport: 'https_retry', code: retryCode });
+        throw retryErr;
       }
-      await sleep(700);
-      return await callViaHttpsFallback<T>(functionName, payload, timeoutMs);
+      try {
+        const callable = functions()
+          .app.functions(MATRIMONY_FUNCTIONS_REGION)
+          .httpsCallable(functionName, { timeout: timeoutMs });
+        const res = await callable(payload);
+        trace.stop(true, { transport: 'native_callable_fallback' });
+        return res.data as T;
+      } catch (finalErr: any) {
+        trace.stop(false, { transport: 'native_callable_fallback', code: getErrorCode(finalErr) });
+        throw finalErr;
+      }
     }
   }
 }
@@ -504,37 +637,62 @@ export const matrimonyApi = {
   async hydrateCacheFromStorage(): Promise<void> {
     const s = getStore();
     if (s.hydratedFromDisk || !s.uid || s.uid === 'anon') return;
-    s.hydratedFromDisk = true;
-    try {
-      const raw = await AsyncStorage.getItem(`${STORAGE_CACHE_PREFIX}${s.uid}`);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      // Mark disk-hydrated entries with fetchedAt=0 so screens render immediately AND silently revalidate
-      if (parsed?.registration && !s.registration) {
-        s.registration = { data: parsed.registration, fetchedAt: 0 };
+    const inflightKey = 'hydrateCacheFromStorage';
+    const existing = s.inflight.get(inflightKey);
+    if (existing) return existing;
+
+    const req = (async () => {
+      s.hydratedFromDisk = true;
+      const trace = matrimonyPerf.startTrace('cache_hydrate');
+      try {
+        const raw = await AsyncStorage.getItem(`${STORAGE_CACHE_PREFIX}${s.uid}`);
+        if (!raw) {
+          trace.stop(true, { hit: false });
+          return;
+        }
+        const parsed = JSON.parse(raw);
+        // Mark disk-hydrated entries with fetchedAt=0 so screens render immediately AND silently revalidate
+        if (parsed?.registration && !s.registration) {
+          s.registration = { data: parsed.registration, fetchedAt: 0 };
+        }
+        if (parsed?.status && !s.status) {
+          s.status = { data: parsed.status, fetchedAt: 0 };
+        }
+        if (parsed?.lastMatchesKey && parsed?.lastMatches && !s.matchesByKey.has(parsed.lastMatchesKey)) {
+          s.matchesByKey.set(parsed.lastMatchesKey, { data: parsed.lastMatches, fetchedAt: 0 });
+          if (!s.lastMatchesKey) s.lastMatchesKey = parsed.lastMatchesKey;
+        }
+        if (parsed?.interestsHub && !s.interestsHub) {
+          s.interestsHub = { data: parsed.interestsHub, fetchedAt: 0 };
+        }
+        if (parsed?.chatContacts && !s.chatContacts) {
+          s.chatContacts = { data: parsed.chatContacts, fetchedAt: 0 };
+        }
+        if (Array.isArray(parsed?.plans) && !s.plans) {
+          s.plans = { data: parsed.plans, fetchedAt: 0 };
+        }
+        if (parsed?.entitlements && !s.entitlements) {
+          s.entitlements = { data: parsed.entitlements, fetchedAt: 0 };
+        }
+        if (parsed?.notificationsFeed && !s.notificationsFeed) {
+          s.notificationsFeed = { data: parsed.notificationsFeed, fetchedAt: 0 };
+        }
+        if (parsed?.hiddenProfiles?.dont_show && !s.hiddenProfiles.dont_show) {
+          s.hiddenProfiles.dont_show = { data: parsed.hiddenProfiles.dont_show, fetchedAt: 0 };
+        }
+        if (parsed?.hiddenProfiles?.blocked && !s.hiddenProfiles.blocked) {
+          s.hiddenProfiles.blocked = { data: parsed.hiddenProfiles.blocked, fetchedAt: 0 };
+        }
+        trace.stop(true, { hit: true });
+      } catch {
+        trace.stop(false, { hit: false });
+      } finally {
+        s.inflight.delete(inflightKey);
       }
-      if (parsed?.status && !s.status) {
-        s.status = { data: parsed.status, fetchedAt: 0 };
-      }
-      if (parsed?.lastMatchesKey && parsed?.lastMatches && !s.matchesByKey.has(parsed.lastMatchesKey)) {
-        s.matchesByKey.set(parsed.lastMatchesKey, { data: parsed.lastMatches, fetchedAt: 0 });
-        if (!s.lastMatchesKey) s.lastMatchesKey = parsed.lastMatchesKey;
-      }
-      if (parsed?.interestsHub && !s.interestsHub) {
-        s.interestsHub = { data: parsed.interestsHub, fetchedAt: 0 };
-      }
-      if (parsed?.chatContacts && !s.chatContacts) {
-        s.chatContacts = { data: parsed.chatContacts, fetchedAt: 0 };
-      }
-      if (parsed?.hiddenProfiles?.dont_show && !s.hiddenProfiles.dont_show) {
-        s.hiddenProfiles.dont_show = { data: parsed.hiddenProfiles.dont_show, fetchedAt: 0 };
-      }
-      if (parsed?.hiddenProfiles?.blocked && !s.hiddenProfiles.blocked) {
-        s.hiddenProfiles.blocked = { data: parsed.hiddenProfiles.blocked, fetchedAt: 0 };
-      }
-    } catch {
-      // Ignore corrupt cache JSON
-    }
+    })();
+
+    s.inflight.set(inflightKey, req);
+    return req;
   },
 
   getCachedRegistration(): StartRegistrationResponse | null {
@@ -565,57 +723,77 @@ export const matrimonyApi = {
     return getStore().chatContacts?.data || null;
   },
 
+  getCachedPlans(): MatrimonyPlanSpec[] | null {
+    return getStore().plans?.data || null;
+  },
+
+  getCachedEntitlements(): MemberEntitlements | null {
+    return getStore().entitlements?.data || null;
+  },
+
   async prefetchMatrimonyWorkspace(): Promise<void> {
     const s = getStore();
     if (!s.uid || s.uid === 'anon') return;
-    await matrimonyApi.hydrateCacheFromStorage().catch(() => undefined);
+    const inflightKey = 'prefetchMatrimonyWorkspace';
+    const existing = s.inflight.get(inflightKey);
+    if (existing) return existing;
+    if (Date.now() - s.lastPrefetchAt < 25_000) return;
 
-    // Read user's saved Matches screen preferences so prefetch hits the exact default query
-    let savedTab: MatrimonyMatchTab = 'all';
-    let savedMode: 'partner_preferences' | 'all_filters' = 'partner_preferences';
-    let savedSort: GetMatchesParams['sortBy'] = 'best_match';
-    let savedFilters: MatrimonyMatchesFilter = {};
-    try {
-      const entries = await AsyncStorage.multiGet([
-        `@rhema_matrimony_matches_tab_${s.uid}`,
-        `@rhema_matrimony_matches_mode_v3_${s.uid}`,
-        `@rhema_matrimony_matches_sort_${s.uid}`,
-        `@rhema_matrimony_matches_filters_v3_${s.uid}`,
-      ]);
-      const map = Object.fromEntries(entries);
-      if (map[`@rhema_matrimony_matches_tab_${s.uid}`]) {
-        savedTab = map[`@rhema_matrimony_matches_tab_${s.uid}`] as MatrimonyMatchTab;
-      }
-      if (
-        map[`@rhema_matrimony_matches_mode_v3_${s.uid}`] === 'custom' ||
-        map[`@rhema_matrimony_matches_mode_v3_${s.uid}`] === 'cleared'
-      ) {
-        savedMode = 'all_filters';
-      }
-      if (map[`@rhema_matrimony_matches_sort_${s.uid}`]) {
-        savedSort = map[`@rhema_matrimony_matches_sort_${s.uid}`] as GetMatchesParams['sortBy'];
-      }
-      if (map[`@rhema_matrimony_matches_filters_v3_${s.uid}`]) {
-        const parsed = JSON.parse(map[`@rhema_matrimony_matches_filters_v3_${s.uid}`] as string);
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          savedFilters = parsed;
+    const req = (async () => {
+      s.lastPrefetchAt = Date.now();
+      await matrimonyApi.hydrateCacheFromStorage().catch(() => undefined);
+
+      // Read user's saved Matches screen preferences so prefetch hits the exact default query
+      let savedTab: MatrimonyMatchTab = 'all';
+      let savedMode: 'partner_preferences' | 'all_filters' = 'partner_preferences';
+      let savedSort: GetMatchesParams['sortBy'] = 'best_match';
+      let savedFilters: MatrimonyMatchesFilter = {};
+      try {
+        const entries = await AsyncStorage.multiGet([
+          `@rhema_matrimony_matches_tab_${s.uid}`,
+          `@rhema_matrimony_matches_mode_v3_${s.uid}`,
+          `@rhema_matrimony_matches_sort_${s.uid}`,
+          `@rhema_matrimony_matches_filters_v3_${s.uid}`,
+        ]);
+        const map = Object.fromEntries(entries);
+        if (map[`@rhema_matrimony_matches_tab_${s.uid}`]) {
+          savedTab = map[`@rhema_matrimony_matches_tab_${s.uid}`] as MatrimonyMatchTab;
         }
+        if (
+          map[`@rhema_matrimony_matches_mode_v3_${s.uid}`] === 'custom' ||
+          map[`@rhema_matrimony_matches_mode_v3_${s.uid}`] === 'cleared'
+        ) {
+          savedMode = 'all_filters';
+        }
+        if (map[`@rhema_matrimony_matches_sort_${s.uid}`]) {
+          savedSort = map[`@rhema_matrimony_matches_sort_${s.uid}`] as GetMatchesParams['sortBy'];
+        }
+        if (map[`@rhema_matrimony_matches_filters_v3_${s.uid}`]) {
+          const parsed = JSON.parse(map[`@rhema_matrimony_matches_filters_v3_${s.uid}`] as string);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            savedFilters = parsed;
+          }
+        }
+      } catch {
+        // Fall back to default matches params
       }
-    } catch {
-      // Fall back to default matches params
-    }
 
-    await Promise.allSettled([
-      matrimonyApi.getStatus({ maxAgeMs: DEFAULT_CACHE_TTL_MS }),
-      matrimonyApi.getMatches(
-        { tab: savedTab, matchBasis: savedMode, sortBy: savedSort, filters: savedFilters, offset: 0, limit: 10 },
-        { maxAgeMs: DEFAULT_CACHE_TTL_MS }
-      ),
-      matrimonyApi.getInterestsHub({ maxAgeMs: DEFAULT_CACHE_TTL_MS }),
-      matrimonyApi.getChatContacts({ maxAgeMs: DEFAULT_CACHE_TTL_MS }),
-      matrimonyApi.getHiddenProfiles('dont_show', { maxAgeMs: DEFAULT_CACHE_TTL_MS }),
-      matrimonyApi.getHiddenProfiles('blocked', { maxAgeMs: DEFAULT_CACHE_TTL_MS }),
-    ]);
+      await Promise.allSettled([
+        matrimonyApi.getStatus({ maxAgeMs: DEFAULT_CACHE_TTL_MS }),
+        matrimonyApi.getMatches(
+          { tab: savedTab, matchBasis: savedMode, sortBy: savedSort, filters: savedFilters, offset: 0, limit: 12 },
+          { maxAgeMs: DEFAULT_CACHE_TTL_MS }
+        ),
+        matrimonyApi.getInterestsHub({ maxAgeMs: DEFAULT_CACHE_TTL_MS }),
+        matrimonyApi.getChatContacts({ maxAgeMs: DEFAULT_CACHE_TTL_MS }),
+        matrimonyApi.getMemberEntitlements({ maxAgeMs: DEFAULT_CACHE_TTL_MS }),
+      ]);
+    })().finally(() => {
+      s.inflight.delete(inflightKey);
+    });
+
+    s.inflight.set(inflightKey, req);
+    return req;
   },
 
   patchCachedRegistration(
@@ -639,6 +817,7 @@ export const matrimonyApi = {
           }
         : rawNext;
     s.cacheVersion += 1;
+    s.lastLocalPatchAt = Date.now();
     s.registration = { data: next, fetchedAt: 0 };
     if (s.status?.data) {
       s.status = {
@@ -696,16 +875,27 @@ export const matrimonyApi = {
     return req;
   },
 
+  hasPendingDraftSync(withinMs = 4000): boolean {
+    const s = getStore();
+    return s.pendingDraftWrites > 0 || Date.now() - s.lastLocalPatchAt < withinMs;
+  },
+
   async saveDraft(
     section: 'basic' | 'personal' | 'religious' | 'location' | 'professional' | 'additional' | 'interests' | 'consent' | 'details' | 'preferences' | 'photos' | 'privacy' | 'notifications' | 'complete',
     data: Record<string, any>
   ): Promise<{ success: boolean; section: string; saved: boolean }> {
-    const res = await callMatrimonyFunction<{ success: boolean; section: string; saved: boolean }>(
-      'saveMatrimonyDraft',
-      { section, data }
-    );
-    invalidateCache({ registration: true, status: true, matches: true, interestsHub: true, chatContacts: true });
-    return res;
+    const s = getStore();
+    s.pendingDraftWrites += 1;
+    try {
+      const res = await callMatrimonyFunction<{ success: boolean; section: string; saved: boolean }>(
+        'saveMatrimonyDraft',
+        { section, data }
+      );
+      invalidateCache({ registration: true, status: true, matches: true, interestsHub: true, chatContacts: true });
+      return res;
+    } finally {
+      s.pendingDraftWrites = Math.max(0, s.pendingDraftWrites - 1);
+    }
   },
 
   async savePrivacySettings(data: {
@@ -990,6 +1180,7 @@ export const matrimonyApi = {
           fetchedAt: Date.now(),
         };
         prefetchImageUrls(res.notifications.slice(0, 12).map((n) => n.senderPhoto));
+        persistSnapshotToDisk();
       }
       return res;
     })().finally(() => {
@@ -1378,6 +1569,122 @@ export const matrimonyApi = {
     return res;
   },
 
+  async getHomeSummary(options: FetchCacheOptions = {}): Promise<{
+    success: boolean;
+    registered?: boolean;
+    profileStatus?: string;
+    unreadNotificationsCount?: number;
+    viewerEntitlements?: MemberEntitlements;
+    status?: MatrimonyStatusResponse;
+    registration?: StartRegistrationResponse;
+    allMatches?: GetMatrimonyMatchesResponse;
+    newMatches?: GetMatrimonyMatchesResponse;
+    viewedYou?: GetMatrimonyMatchesResponse;
+    viewedByYou?: GetMatrimonyMatchesResponse;
+  }> {
+    const s = getStore();
+    const maxAge = options.maxAgeMs ?? DEFAULT_CACHE_TTL_MS;
+    const allKey = stableMatchesKey({
+      tab: 'all',
+      matchBasis: 'partner_preferences',
+      sortBy: 'best_match',
+      filters: {},
+    });
+    const newKey = stableMatchesKey({
+      tab: 'newly_joined',
+      matchBasis: 'partner_preferences',
+      sortBy: 'best_match',
+      filters: {},
+    });
+    const viewedYouKey = stableMatchesKey({
+      tab: 'viewed_you',
+      matchBasis: 'all_filters',
+      sortBy: 'last_active',
+      filters: {},
+    });
+    const viewedByYouKey = stableMatchesKey({
+      tab: 'viewed_by_you',
+      matchBasis: 'all_filters',
+      sortBy: 'last_active',
+      filters: {},
+    });
+
+    if (
+      !options.force &&
+      isEntryFresh(s.status, maxAge) &&
+      isEntryFresh(s.registration, maxAge) &&
+      isEntryFresh(s.matchesByKey.get(allKey), maxAge) &&
+      isEntryFresh(s.matchesByKey.get(newKey), maxAge) &&
+      isEntryFresh(s.matchesByKey.get(viewedYouKey), maxAge) &&
+      isEntryFresh(s.matchesByKey.get(viewedByYouKey), maxAge)
+    ) {
+      return {
+        success: true,
+        registered: true,
+        profileStatus: s.status?.data?.profileStatus,
+        unreadNotificationsCount: s.notificationsFeed?.data?.unreadCount,
+        viewerEntitlements: s.entitlements?.data,
+        status: s.status?.data,
+        registration: s.registration?.data,
+        allMatches: s.matchesByKey.get(allKey)?.data,
+        newMatches: s.matchesByKey.get(newKey)?.data,
+        viewedYou: s.matchesByKey.get(viewedYouKey)?.data,
+        viewedByYou: s.matchesByKey.get(viewedByYouKey)?.data,
+      };
+    }
+
+    const inflightKey = 'getHomeSummary';
+    if (!options.force) {
+      const existing = s.inflight.get(inflightKey);
+      if (existing) return existing;
+    }
+
+    const reqVersion = s.cacheVersion;
+    const req = (async () => {
+      const res = await callMatrimonyFunction<any>('getMatrimonyHomeSummary', {});
+      const now = Date.now();
+      if (reqVersion === s.cacheVersion && res?.success) {
+        if (res.status) s.status = { data: res.status, fetchedAt: now };
+        if (res.registration) s.registration = { data: res.registration, fetchedAt: now };
+        if (res.viewerEntitlements) {
+          s.entitlements = { data: res.viewerEntitlements, fetchedAt: now };
+        }
+        if (res.allMatches) {
+          s.matchesByKey.set(allKey, { data: res.allMatches, fetchedAt: now });
+          s.lastMatchesKey = allKey;
+        }
+        if (res.newMatches) s.matchesByKey.set(newKey, { data: res.newMatches, fetchedAt: now });
+        if (res.viewedYou) s.matchesByKey.set(viewedYouKey, { data: res.viewedYou, fetchedAt: now });
+        if (res.viewedByYou) {
+          s.matchesByKey.set(viewedByYouKey, { data: res.viewedByYou, fetchedAt: now });
+        }
+        if (typeof res.unreadNotificationsCount === 'number' && s.notificationsFeed?.data) {
+          s.notificationsFeed = {
+            ...s.notificationsFeed,
+            data: {
+              ...s.notificationsFeed.data,
+              unreadCount: res.unreadNotificationsCount,
+            },
+          };
+        }
+        prefetchImageUrls([
+          res.status?.signedProfilePhoto,
+          ...(res.allMatches?.matches || []).slice(0, 6).map((m: any) => m?.signedProfilePhoto),
+          ...(res.newMatches?.matches || []).slice(0, 4).map((m: any) => m?.signedProfilePhoto),
+        ]);
+        persistSnapshotToDisk();
+      }
+      return res;
+    })().finally(() => {
+      if (s.inflight.get(inflightKey) === req) {
+        s.inflight.delete(inflightKey);
+      }
+    });
+
+    s.inflight.set(inflightKey, req);
+    return req;
+  },
+
   async getMatches(
     params: GetMatchesParams = {},
     options: FetchCacheOptions = {}
@@ -1453,7 +1760,7 @@ export const matrimonyApi = {
       { targetUid }
     );
     if (res?.success) {
-      invalidateCache({ matches: true });
+      invalidateCache({ matchesTabs: ['viewed_by_you'] });
     }
     return res;
   },
@@ -1466,7 +1773,42 @@ export const matrimonyApi = {
       'toggleMatrimonyShortlist',
       shortlist !== undefined ? { targetUid, shortlist } : { targetUid }
     );
-    invalidateCache({ matches: true, interestsHub: true });
+    const s = getStore();
+    s.matchesByKey.forEach((entry, k) => {
+      if (!entry.data?.matches) return;
+      let isShortlistTab = false;
+      try {
+        const parsed = JSON.parse(k);
+        isShortlistTab =
+          parsed?.tab === 'shortlisted' || parsed?.tab === 'shortlisted_by_you';
+      } catch {
+        // ignore
+      }
+      entry.data = {
+        ...entry.data,
+        matches:
+          isShortlistTab && !res.shortlisted
+            ? entry.data.matches.filter((m) => m.uid !== targetUid)
+            : entry.data.matches.map((m) =>
+                m.uid === targetUid ? { ...m, isShortlisted: res.shortlisted } : m
+              ),
+      };
+    });
+    if (s.interestsHub?.data) {
+      const patchEntry = (e: any) =>
+        e?.candidate?.uid === targetUid
+          ? { ...e, candidate: { ...e.candidate, isShortlisted: res.shortlisted } }
+          : e;
+      s.interestsHub = {
+        ...s.interestsHub,
+        data: {
+          ...s.interestsHub.data,
+          received: (s.interestsHub.data.received || []).map(patchEntry),
+          sent: (s.interestsHub.data.sent || []).map(patchEntry),
+        },
+      };
+    }
+    invalidateCache({ matchesTabs: ['shortlisted', 'shortlisted_by_you'] });
     return res;
   },
 
@@ -1530,7 +1872,7 @@ export const matrimonyApi = {
       'dismissMatrimonyMatch',
       { targetUid, type }
     );
-    invalidateCache({ matches: true, interestsHub: true, chatContacts: type === 'blocked' });
+    invalidateCache({ interestsHub: true, chatContacts: type === 'blocked' });
     return res;
   },
 
@@ -1544,16 +1886,21 @@ export const matrimonyApi = {
     );
     const s = getStore();
     if (type === 'all') {
-      s.hiddenProfiles.dont_show = { data: [], fetchedAt: 0 };
-      s.hiddenProfiles.blocked = { data: [], fetchedAt: 0 };
+      s.hiddenProfiles.dont_show = { data: [], fetchedAt: Date.now() };
+      s.hiddenProfiles.blocked = { data: [], fetchedAt: Date.now() };
+      s.inflight.delete('hiddenProfiles:dont_show');
+      s.inflight.delete('hiddenProfiles:blocked');
     } else if (targetUid && s.hiddenProfiles[type]?.data) {
       s.hiddenProfiles[type] = {
         data: s.hiddenProfiles[type]!.data.filter((p) => p.uid !== targetUid),
         fetchedAt: Date.now(),
       };
+      s.inflight.delete(`hiddenProfiles:${type}`);
     } else {
       s.hiddenProfiles[type] = { data: [], fetchedAt: 0 };
+      s.inflight.delete(`hiddenProfiles:${type}`);
     }
+    persistSnapshotToDisk();
     invalidateCache({ matches: true, interestsHub: true, chatContacts: type !== 'dont_show' });
     return res;
   },
@@ -1715,7 +2062,20 @@ export const matrimonyApi = {
         };
       }
     });
-    invalidateCache({ matches: true, interestsHub: true, chatContacts: res.isMutual });
+    if (s.entitlements?.data && typeof (res as any).interestsSentThisMonth === 'number') {
+      s.entitlements = {
+        ...s.entitlements,
+        data: {
+          ...s.entitlements.data,
+          interestsSentThisMonth: (res as any).interestsSentThisMonth,
+          interestsRemaining:
+            typeof (res as any).interestsRemaining === 'number'
+              ? (res as any).interestsRemaining
+              : s.entitlements.data.interestsRemaining,
+        },
+      };
+    }
+    invalidateCache({ interestsHub: true, chatContacts: res.isMutual });
     return res;
   },
 
@@ -1754,22 +2114,53 @@ export const matrimonyApi = {
       'respondMatrimonyInterest',
       { targetUid, action }
     );
-    if (action === 'withdraw') {
-      const s = getStore();
-      s.matchesByKey.forEach((entry) => {
-        if (entry.data?.matches) {
-          entry.data = {
-            ...entry.data,
-            matches: entry.data.matches.map((m) =>
-              m.uid === targetUid
-                ? { ...m, interestStatus: null, interestSentAtMs: undefined }
-                : m
+    const s = getStore();
+    const nextMatchStatus = action === 'withdraw' ? null : action === 'accept' ? 'accepted' : 'declined';
+    s.matchesByKey.forEach((entry) => {
+      if (entry.data?.matches) {
+        entry.data = {
+          ...entry.data,
+          matches: entry.data.matches.map((m) =>
+            m.uid === targetUid
+              ? {
+                  ...m,
+                  interestStatus: nextMatchStatus as any,
+                  ...(action === 'withdraw' ? { interestSentAtMs: undefined } : {}),
+                }
+              : m
+          ),
+        };
+      }
+    });
+    if (s.interestsHub?.data) {
+      if (action === 'withdraw') {
+        s.interestsHub = {
+          ...s.interestsHub,
+          data: {
+            ...s.interestsHub.data,
+            sent: (s.interestsHub.data.sent || []).filter((e) => e.candidate?.uid !== targetUid),
+          },
+        };
+      } else {
+        const nextHubStatus = action === 'accept' ? 'accepted' : 'declined';
+        s.interestsHub = {
+          ...s.interestsHub,
+          data: {
+            ...s.interestsHub.data,
+            received: (s.interestsHub.data.received || []).map((e) =>
+              e.candidate?.uid === targetUid
+                ? {
+                    ...e,
+                    status: nextHubStatus,
+                    candidate: { ...e.candidate, interestStatus: nextHubStatus },
+                  }
+                : e
             ),
-          };
-        }
-      });
+          },
+        };
+      }
     }
-    invalidateCache({ matches: true, interestsHub: true, chatContacts: action === 'accept' });
+    invalidateCache({ chatContacts: action === 'accept' });
     return res;
   },
 
@@ -1830,12 +2221,66 @@ export const matrimonyApi = {
     return signedUrl;
   },
 
-  async getPlans(): Promise<{ success: boolean; plans: MatrimonyPlanSpec[] }> {
-    return callMatrimonyFunction('getMatrimonyPlans', {});
+  async getPlans(options: FetchCacheOptions = {}): Promise<{ success: boolean; plans: MatrimonyPlanSpec[] }> {
+    const s = getStore();
+    const maxAge = options.maxAgeMs ?? PLANS_CACHE_TTL_MS;
+    if (!options.force && isEntryFresh(s.plans, maxAge) && s.plans) {
+      return { success: true, plans: s.plans.data };
+    }
+    const inflightKey = 'getPlans';
+    if (!options.force) {
+      const existing = s.inflight.get(inflightKey);
+      if (existing) return existing;
+    }
+
+    const req = (async () => {
+      const res = await callMatrimonyFunction<{ success: boolean; plans: MatrimonyPlanSpec[] }>(
+        'getMatrimonyPlans',
+        {}
+      );
+      if (Array.isArray(res?.plans)) {
+        s.plans = { data: res.plans, fetchedAt: Date.now() };
+        persistSnapshotToDisk();
+      }
+      return res;
+    })().finally(() => {
+      s.inflight.delete(inflightKey);
+    });
+
+    s.inflight.set(inflightKey, req);
+    return req;
   },
 
-  async getMemberEntitlements(): Promise<{ success: boolean; entitlements: MemberEntitlements }> {
-    return callMatrimonyFunction('getMemberEntitlements', {});
+  async getMemberEntitlements(
+    options: FetchCacheOptions = {}
+  ): Promise<{ success: boolean; entitlements: MemberEntitlements }> {
+    const s = getStore();
+    const maxAge = options.maxAgeMs ?? DEFAULT_CACHE_TTL_MS;
+    if (!options.force && isEntryFresh(s.entitlements, maxAge) && s.entitlements) {
+      return { success: true, entitlements: s.entitlements.data };
+    }
+    const inflightKey = 'getMemberEntitlements';
+    if (!options.force) {
+      const existing = s.inflight.get(inflightKey);
+      if (existing) return existing;
+    }
+
+    const req = (async () => {
+      const res = await callMatrimonyFunction<{ success: boolean; entitlements: MemberEntitlements }>(
+        'getMemberEntitlements',
+        {}
+      );
+      if (res?.entitlements) {
+        s.entitlements = { data: res.entitlements, fetchedAt: Date.now() };
+        persistSnapshotToDisk();
+      }
+      return res;
+    })().finally(() => {
+      s.inflight.delete(inflightKey);
+    });
+
+    s.inflight.set(inflightKey, req);
+    return req;
   },
 
   async unlockContact(targetUid: string): Promise<{
@@ -1854,7 +2299,47 @@ export const matrimonyApi = {
       contactNumbersViewedCount: number;
       contactNumbersRemaining: number;
     }>('unlockMatrimonyContact', { targetUid });
-    invalidateCache({ matches: true, chatContacts: true });
+    const s = getStore();
+    s.matchesByKey.forEach((entry) => {
+      if (entry.data?.matches) {
+        entry.data = {
+          ...entry.data,
+          matches: entry.data.matches.map((m) =>
+            m.uid === targetUid
+              ? {
+                  ...m,
+                  contactPhone: res.contactPhone ?? m.contactPhone,
+                  dob: res.dob ?? m.dob,
+                  isContactUnlocked: true,
+                }
+              : m
+          ),
+        };
+      }
+    });
+    if (s.interestsHub?.data) {
+      const patchEntry = (e: any) =>
+        e?.candidate?.uid === targetUid
+          ? {
+              ...e,
+              candidate: {
+                ...e.candidate,
+                contactPhone: res.contactPhone ?? e.candidate.contactPhone,
+                dob: res.dob ?? e.candidate.dob,
+                isContactUnlocked: true,
+              },
+            }
+          : e;
+      s.interestsHub = {
+        ...s.interestsHub,
+        data: {
+          ...s.interestsHub.data,
+          received: (s.interestsHub.data.received || []).map(patchEntry),
+          sent: (s.interestsHub.data.sent || []).map(patchEntry),
+        },
+      };
+    }
+    invalidateCache({ chatContacts: true, entitlements: true });
     return res;
   },
 
@@ -1914,7 +2399,10 @@ export const matrimonyApi = {
           fetchedAt: Date.now(),
         };
       }
-      invalidateCache({ registration: true, status: true, matches: true });
+      if (res.entitlements) {
+        s.entitlements = { data: res.entitlements, fetchedAt: Date.now() };
+      }
+      invalidateCache({ registration: true, status: true, matches: true, entitlements: !res.entitlements });
     }
     return res;
   },
@@ -1957,10 +2445,12 @@ export const matrimonyApi = {
   async adminUpsertPlan(
     payload: Partial<MatrimonyPlanSpec> & { planId: string }
   ): Promise<{ success: boolean; plan: MatrimonyPlanSpec }> {
-    return callMatrimonyFunction<{ success: boolean; plan: MatrimonyPlanSpec }>(
+    const res = await callMatrimonyFunction<{ success: boolean; plan: MatrimonyPlanSpec }>(
       'adminUpsertMatrimonyPlan',
       payload
     );
+    invalidateCache({ plans: true });
+    return res;
   },
 
   async adminGrantComplimentarySubscription(payload: {
@@ -1984,7 +2474,63 @@ export const matrimonyApi = {
       subscriptionId?: string;
       validUntilMs?: number;
     }>('adminGrantComplimentarySubscription', payload);
-    invalidateCache({ registration: true, status: true, matches: true });
+    invalidateCache({ registration: true, status: true, matches: true, entitlements: true });
+    return res;
+  },
+
+  async searchByProfileId(profileCode: string): Promise<SearchMatrimonyByIdResponse> {
+    const cleaned = String(profileCode || '').replace(/\s+/g, '').toUpperCase();
+    if (!cleaned) {
+      return {
+        success: true,
+        found: false,
+        reason: 'not_found',
+        message: 'Please enter a valid Matrimony ID.',
+      };
+    }
+
+    const s = getStore();
+    const cachedLookup = s.searchByIdCache.get(cleaned);
+    if (cachedLookup && isEntryFresh(cachedLookup, DEFAULT_CACHE_TTL_MS)) {
+      return cachedLookup.data;
+    }
+
+    // 0ms instant hit when profile is already cached inside loaded Home/Matches feeds
+    const numericTarget = /^\d+$/.test(cleaned)
+      ? new Set([`RMT${cleaned}`, `RMT${cleaned.padStart(3, '0')}`, `RM${cleaned}`, `RM${cleaned.padStart(4, '0')}`])
+      : null;
+    for (const entry of s.matchesByKey.values()) {
+      if (!isEntryFresh(entry, 5 * 60_000)) continue;
+      const found = entry.data.matches?.find((m) => {
+        const code = String(m.profileCode || '').replace(/\s+/g, '').toUpperCase();
+        return code === cleaned || (numericTarget ? numericTarget.has(code) : false);
+      });
+      if (found) {
+        const hit: SearchMatrimonyByIdResponse = {
+          success: true,
+          found: true,
+          profile: found,
+          viewerPhoto: entry.data.viewerPhoto ?? null,
+        };
+        s.searchByIdCache.set(cleaned, { data: hit, fetchedAt: Date.now() });
+        return hit;
+      }
+    }
+
+    const res = await callMatrimonyFunction<SearchMatrimonyByIdResponse>('searchMatrimonyById', {
+      profileCode: cleaned,
+    });
+    if (res?.found && res.profile) {
+      const normalizedRes: SearchMatrimonyByIdResponse = { ...res };
+      s.searchByIdCache.set(cleaned, { data: normalizedRes, fetchedAt: Date.now() });
+      const actualCode = String(res.profile.profileCode || '').replace(/\s+/g, '').toUpperCase();
+      if (actualCode && actualCode !== cleaned) {
+        s.searchByIdCache.set(actualCode, { data: normalizedRes, fetchedAt: Date.now() });
+      }
+      if (res.profile.signedProfilePhoto) {
+        prefetchImageUrls([res.profile.signedProfilePhoto]);
+      }
+    }
     return res;
   },
 };

@@ -12,6 +12,7 @@ import { verifyRhemaMemberEligibility } from './eligibility.js';
 import { resolveMemberEntitlements } from './entitlements.js';
 import {
   assertMatrimonyNotBanned,
+  ensureUniqueMatrimonyId,
   getAdminProfileRef,
   getPrefsRef,
   getPrivateRef,
@@ -46,25 +47,40 @@ function buildFirebaseTokenUrl(bucketName: string, objectPath: string, token: st
   return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(objectPath)}?alt=media&token=${encodeURIComponent(token)}`;
 }
 
+let ownerSignBlobUnavailable = false;
+const WARM_OWNER_PHOTO_CACHE = new Map<string, { url: string; expiresAtMs: number }>();
+
 async function resolveOwnerPhotoUrls(paths: string[]): Promise<string[]> {
   if (!paths.length) return [];
   const bucket = getStorage().bucket(MATRIMONY_BUCKET);
-  const expires = Date.now() + 60 * 60 * 1000; // 1 hour
-  const urls: string[] = [];
+  const now = Date.now();
+  const expires = now + 60 * 60 * 1000; // 1 hour
 
-  for (const p of paths) {
-    if (p.startsWith('https://')) {
-      urls.push(p);
-      continue;
-    }
-    const file = bucket.file(p);
-    try {
-      const [signedUrl] = await file.getSignedUrl({
-        action: 'read',
-        expires,
-      });
-      urls.push(signedUrl);
-    } catch (err) {
+  const resolved = await Promise.all(
+    paths.map(async (p): Promise<string | null> => {
+      if (!p) return null;
+      if (p.startsWith('https://') || p.startsWith('http://')) {
+        return p;
+      }
+      const cached = WARM_OWNER_PHOTO_CACHE.get(p);
+      if (cached && cached.expiresAtMs > now + 5 * 60 * 1000) {
+        return cached.url;
+      }
+
+      const file = bucket.file(p);
+      if (!ownerSignBlobUnavailable) {
+        try {
+          const [signedUrl] = await file.getSignedUrl({
+            action: 'read',
+            expires,
+          });
+          WARM_OWNER_PHOTO_CACHE.set(p, { url: signedUrl, expiresAtMs: expires });
+          return signedUrl;
+        } catch {
+          ownerSignBlobUnavailable = true;
+        }
+      }
+
       try {
         const [meta] = await file.getMetadata();
         const existingTokens = String(meta?.metadata?.firebaseStorageDownloadTokens || '')
@@ -81,13 +97,17 @@ async function resolveOwnerPhotoUrls(paths: string[]): Promise<string[]> {
             },
           });
         }
-        urls.push(buildFirebaseTokenUrl(MATRIMONY_BUCKET, p, token));
+        const tokenUrl = buildFirebaseTokenUrl(MATRIMONY_BUCKET, p, token);
+        WARM_OWNER_PHOTO_CACHE.set(p, { url: tokenUrl, expiresAtMs: expires });
+        return tokenUrl;
       } catch (metaErr) {
-        console.warn(`Unable to sign or tokenize photo ${p}:`, err, metaErr);
+        console.warn(`Unable to sign or tokenize photo ${p}:`, metaErr);
+        return null;
       }
-    }
-  }
-  return urls;
+    })
+  );
+
+  return resolved.filter((u): u is string => Boolean(u));
 }
 
 async function syncConsolidatedAdminProfile(uid: string): Promise<void> {
@@ -361,28 +381,28 @@ export const startMatrimonyRegistration = onCall({ invoker: 'public' }, async (r
  * 2. saveMatrimonyDraft
  * Saves a specific section ('consent' | 'details' | 'preferences' | 'photos') safely.
  */
-export const saveMatrimonyDraft = onCall({ invoker: 'public' }, async (request) => {
+export const saveMatrimonyDraft = onCall(
+  { invoker: 'public', cpu: 1, memory: '512MiB', concurrency: 20 },
+  async (request) => {
   const uid = requireAuthUid(request);
   const section = validateDraftSection(request.data?.section);
   const data = (request.data?.data && typeof request.data.data === 'object') ? request.data.data : {};
 
-  const eligibility = await verifyRhemaMemberEligibility(uid);
-  if (!eligibility.eligible) {
-    throw new HttpsError('failed-precondition', 'Member is not eligible for Rhema Matrimony.');
-  }
-
   const db = getFirestore();
-  await assertMatrimonyNotBanned(db, uid);
-
   const profileRef = getProfileRef(db, uid);
   const privateRef = getPrivateRef(db, uid);
   const prefsRef = getPrefsRef(db, uid);
 
-  const [profileSnap, privateSnap, prefsSnap] = await Promise.all([
+  const [eligibility, , profileSnap, privateSnap, prefsSnap] = await Promise.all([
+    verifyRhemaMemberEligibility(uid),
+    assertMatrimonyNotBanned(db, uid),
     profileRef.get(),
     readPrivateSnap(db, uid),
     readPrefsSnap(db, uid),
   ]);
+  if (!eligibility.eligible) {
+    throw new HttpsError('failed-precondition', 'Member is not eligible for Rhema Matrimony.');
+  }
   const now = FieldValue.serverTimestamp();
 
   if (!profileSnap.exists && section !== 'complete') {
@@ -1377,12 +1397,14 @@ export const submitMatrimonyProfile = onCall(
     throw new HttpsError('failed-precondition', 'Profession is required before submitting.');
   }
 
+  const matrimonyId = await ensureUniqueMatrimonyId(db, uid, profile.matrimonyId);
   const now = FieldValue.serverTimestamp();
   const batch = db.batch();
 
   batch.set(
     profileRef,
     {
+      matrimonyId,
       profileStatus: 'pending',
       onboardingStage: 'completed',
       approvalType: 'manual_review',
@@ -1931,7 +1953,7 @@ async function validateMatrimonyPhotoWithAI(params: {
  * and uploads to the dedicated private matrimony bucket.
  */
 export const uploadMatrimonyPhoto = onCall(
-  { invoker: 'public', timeoutSeconds: 60, memory: '512MiB' },
+  { invoker: 'public', cpu: 1, timeoutSeconds: 60, memory: '512MiB', concurrency: 20 },
   async (request) => {
     const uid = requireAuthUid(request);
     const rawBase64 = request.data?.base64;
@@ -1962,9 +1984,10 @@ export const uploadMatrimonyPhoto = onCall(
         : 'jpg';
 
     const db = getFirestore();
-    await assertMatrimonyNotBanned(db, uid);
-
-    const profileSnap = await getProfileRef(db, uid).get();
+    const [, profileSnap] = await Promise.all([
+      assertMatrimonyNotBanned(db, uid),
+      getProfileRef(db, uid).get(),
+    ]);
     if (profileSnap.exists && isMatrimonyProfileInactiveStatus(profileSnap.data()?.profileStatus)) {
       throw new HttpsError(
         'failed-precondition',
@@ -2006,16 +2029,26 @@ export const uploadMatrimonyPhoto = onCall(
       },
     });
 
+    const expires = Date.now() + 60 * 60 * 1000;
     let signedUrl: string | null = null;
-    try {
-      const [url] = await file.getSignedUrl({
-        action: 'read',
-        expires: Date.now() + 60 * 60 * 1000,
-      });
-      signedUrl = url;
-    } catch (signErr) {
-      console.warn('getSignedUrl skipped (signBlob not granted yet), using download token URL:', signErr);
+    if (!ownerSignBlobUnavailable) {
+      try {
+        const [url] = await file.getSignedUrl({
+          action: 'read',
+          expires,
+        });
+        signedUrl = url;
+      } catch (signErr) {
+        ownerSignBlobUnavailable = true;
+        console.warn('getSignedUrl skipped (signBlob not granted yet), using download token URL:', signErr);
+        signedUrl = buildFirebaseTokenUrl(MATRIMONY_BUCKET, storagePath, downloadToken);
+      }
+    } else {
       signedUrl = buildFirebaseTokenUrl(MATRIMONY_BUCKET, storagePath, downloadToken);
+    }
+
+    if (signedUrl) {
+      WARM_OWNER_PHOTO_CACHE.set(storagePath, { url: signedUrl, expiresAtMs: expires });
     }
 
     return {
