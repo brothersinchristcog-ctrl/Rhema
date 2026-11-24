@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -23,6 +23,7 @@ import {
 import { useAuth } from '../../../context/AuthContext';
 import { FONT_STYLE_OPTIONS, useTheme } from '../../../context/ThemeContext';
 import { matrimonyApi } from '../services/matrimonyApi';
+import { matrimonyPerf } from '../services/matrimonyPerf';
 import { MatrimonyMembershipInfo, MemberEntitlements } from '../types/matrimony';
 
 let RazorpayCheckout: any = null;
@@ -112,18 +113,42 @@ export default function MatrimonyUpgradeScreen({ navigation }: any) {
 
   const [selectedPlan, setSelectedPlan] = useState<PlanId>('gold');
   const [paying, setPaying] = useState(false);
-  const [plans, setPlans] = useState<TierPlanSpec[]>(TIER_PLANS);
-  const [entitlements, setEntitlements] = useState<MemberEntitlements | null>(null);
+  const [plans, setPlans] = useState<TierPlanSpec[]>(() => {
+    const cachedPlans = matrimonyApi.getCachedPlans();
+    if (!cachedPlans?.length) return TIER_PLANS;
+    const mapped = cachedPlans
+      .filter((p) => p.isActive !== false)
+      .map((p) => {
+        const fallback = TIER_PLANS.find((f) => f.id === p.tier);
+        return {
+          id: p.tier,
+          name: p.planName || fallback?.name || p.tier,
+          tagline: p.tagline || fallback?.tagline || '',
+          priceInr: p.priceInr,
+          durationLabel: `${p.durationMonths} ${p.durationMonths === 1 ? 'Month' : 'Months'}`,
+          badgeText: p.badgeText || fallback?.badgeText || '',
+          features:
+            Array.isArray(p.benefits) && p.benefits.length > 0
+              ? p.benefits
+              : fallback?.features || [],
+        };
+      });
+    return mapped.length > 0 ? mapped : TIER_PLANS;
+  });
+  const [entitlements, setEntitlements] = useState<MemberEntitlements | null>(() =>
+    matrimonyApi.getCachedEntitlements()
+  );
   const [membership, setMembership] = useState<MatrimonyMembershipInfo | null>(() => {
     const cached = matrimonyApi.getCachedRegistration()?.profile?.membership;
     return cached || null;
   });
 
-  const refreshMembership = useCallback(async () => {
+  const refreshMembership = useCallback(async (force = false) => {
+    const trace = matrimonyPerf.startTrace('upgrade_screen_load', { force });
     const [regRes, plansRes, entRes] = await Promise.allSettled([
-      matrimonyApi.startRegistration({ force: true }),
-      matrimonyApi.getPlans(),
-      matrimonyApi.getMemberEntitlements(),
+      matrimonyApi.startRegistration({ force }),
+      matrimonyApi.getPlans({ force }),
+      matrimonyApi.getMemberEntitlements({ force }),
     ]);
     if (regRes.status === 'fulfilled' && regRes.value?.profile?.membership) {
       setMembership(regRes.value.profile.membership);
@@ -153,6 +178,7 @@ export default function MatrimonyUpgradeScreen({ navigation }: any) {
     if (entRes.status === 'fulfilled' && entRes.value?.entitlements) {
       setEntitlements(entRes.value.entitlements);
     }
+    trace.stop(true);
   }, []);
 
   useEffect(() => {
@@ -171,8 +197,10 @@ export default function MatrimonyUpgradeScreen({ navigation }: any) {
 
   const currentSpec = plans.find((p) => p.id === selectedPlan) || plans[0] || TIER_PLANS[1];
 
+  const payingRef = useRef(false);
+
   const handlePayNow = async () => {
-    if (paying) return;
+    if (payingRef.current || paying) return;
     if (!RazorpayCheckout || typeof RazorpayCheckout.open !== 'function') {
       Alert.alert(
         'Payment Unavailable',
@@ -181,6 +209,7 @@ export default function MatrimonyUpgradeScreen({ navigation }: any) {
       return;
     }
 
+    payingRef.current = true;
     setPaying(true);
     try {
       const orderRes = await matrimonyApi.createUpgradeOrder(selectedPlan);
@@ -268,6 +297,7 @@ export default function MatrimonyUpgradeScreen({ navigation }: any) {
         Alert.alert('Payment Failed', desc || 'Unable to complete membership upgrade.');
       }
     } finally {
+      payingRef.current = false;
       setPaying(false);
     }
   };

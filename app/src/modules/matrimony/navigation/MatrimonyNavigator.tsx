@@ -1,5 +1,12 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
+import { View } from 'react-native';
+import auth from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import MatrimonyBottomTabBar from '../components/MatrimonyBottomTabBar';
+import MatrimonyMenuDrawer from '../components/MatrimonyMenuDrawer';
+import { matrimonyApi } from '../services/matrimonyApi';
 import MatrimonySplashScreen from '../screens/MatrimonySplashScreen';
 import MatrimonyWelcomeScreen from '../screens/MatrimonyWelcomeScreen';
 import MatrimonyBasicDetailsScreen from '../screens/MatrimonyBasicDetailsScreen';
@@ -23,12 +30,139 @@ import MatrimonyChatScreen from '../screens/MatrimonyChatScreen';
 import MatrimonyStatusScreen from '../screens/MatrimonyStatusScreen';
 import MatrimonySubmitApprovalScreen from '../screens/MatrimonySubmitApprovalScreen';
 import MatrimonyUpgradeScreen from '../screens/MatrimonyUpgradeScreen';
+import MatrimonyPrivacySettingsScreen from '../screens/MatrimonyPrivacySettingsScreen';
+import MatrimonyAccountSettingsScreen from '../screens/MatrimonyAccountSettingsScreen';
+import MatrimonyNotificationsScreen from '../screens/MatrimonyNotificationsScreen';
+import MatrimonyNotificationsFeedScreen from '../screens/MatrimonyNotificationsFeedScreen';
+import MatrimonySearchScreen from '../screens/MatrimonySearchScreen';
+import MatrimonyHiddenProfilesScreen from '../screens/MatrimonyHiddenProfilesScreen';
+import MatrimonyDeactivateAccountScreen from '../screens/MatrimonyDeactivateAccountScreen';
+import MatrimonyDeleteProfileScreen from '../screens/MatrimonyDeleteProfileScreen';
 
 const Stack = createNativeStackNavigator();
+const Tab = createBottomTabNavigator();
+
+function MatrimonyMainTabs({ navigation }: any) {
+  return (
+    <View style={{ flex: 1 }}>
+      <Tab.Navigator
+        id="MatrimonyTabs"
+        initialRouteName="MatrimonyHome"
+        screenOptions={{
+          headerShown: false,
+          lazy: true,
+          freezeOnBlur: true,
+        }}
+        tabBar={(props) => <MatrimonyBottomTabBar {...props} />}
+      >
+        <Tab.Screen name="MatrimonyHome" component={MatrimonyHomeScreen} />
+        <Tab.Screen name="MatrimonyMatches" component={MatrimonyMatchesScreen} />
+        <Tab.Screen name="MatrimonyInterestsHub" component={MatrimonyInterestsHubScreen} />
+        <Tab.Screen name="MatrimonyMessages" component={MatrimonyMessagesScreen} />
+      </Tab.Navigator>
+      <MatrimonyMenuDrawer stackNavigation={navigation} />
+    </View>
+  );
+}
 
 export default function MatrimonyNavigator() {
+  const stackNavRef = useRef<any>(null);
+  const sawProfileDocRef = useRef(false);
+  const lastProfileSignatureRef = useRef<string>('');
+
+  useEffect(() => {
+    const uid = auth().currentUser?.uid;
+    if (!uid) return;
+
+    const unsubscribe = firestore()
+      .collection('matrimony_profiles')
+      .doc(uid)
+      .onSnapshot(
+        (snap) => {
+          const nav = stackNavRef.current;
+          const navState = nav?.getState?.();
+          const activeRoute: string | undefined = navState?.routes?.[navState.index]?.name;
+
+          if (!snap.exists) {
+            if (sawProfileDocRef.current && activeRoute && activeRoute !== 'MatrimonySplash' && activeRoute !== 'MatrimonyWelcome') {
+              sawProfileDocRef.current = false;
+              matrimonyApi.clearAllCaches();
+              nav.reset({ index: 0, routes: [{ name: 'MatrimonyWelcome' }] });
+            }
+            return;
+          }
+
+          sawProfileDocRef.current = true;
+          const data = snap.data() || {};
+          const liveStatus = String(data.profileStatus || '');
+          const nextSig = `${liveStatus}|${String(data.visibility || '')}|${String(data.inactiveReason || '')}`;
+
+          if (lastProfileSignatureRef.current !== nextSig) {
+            lastProfileSignatureRef.current = nextSig;
+            matrimonyApi.patchCachedRegistration((prev) => ({
+              ...prev,
+              profile: prev.profile
+                ? {
+                    ...prev.profile,
+                    profileStatus: (liveStatus || prev.profile.profileStatus) as any,
+                    visibility: data.visibility || prev.profile.visibility,
+                    inactiveReason: data.inactiveReason || null,
+                  }
+                : prev.profile,
+            }));
+          }
+
+          if (!activeRoute || activeRoute === 'MatrimonySplash') {
+            return;
+          }
+
+          if (
+            liveStatus === 'inactive' ||
+            liveStatus === 'suspended' ||
+            liveStatus === 'rejected' ||
+            liveStatus === 'correction_requested'
+          ) {
+            if (activeRoute !== 'MatrimonyStatus') {
+              matrimonyApi.clearAllCaches();
+              nav.reset({ index: 0, routes: [{ name: 'MatrimonyStatus' }] });
+            }
+            return;
+          }
+
+          if (liveStatus === 'deleted') {
+            if (activeRoute !== 'MatrimonyWelcome') {
+              matrimonyApi.clearAllCaches();
+              nav.reset({ index: 0, routes: [{ name: 'MatrimonyWelcome' }] });
+            }
+            return;
+          }
+
+          if (liveStatus === 'approved' && activeRoute === 'MatrimonyStatus') {
+            matrimonyApi.clearAllCaches();
+            nav.reset({ index: 0, routes: [{ name: 'MatrimonyMainTabs' }] });
+          }
+        },
+        () => {
+          // Ignore snapshot transient permission errors on sign-out
+        }
+      );
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
   return (
-    <Stack.Navigator id="MatrimonyStack" initialRouteName="MatrimonySplash" screenOptions={{ headerShown: false }}>
+    <Stack.Navigator
+      id="MatrimonyStack"
+      initialRouteName="MatrimonySplash"
+      screenOptions={{ headerShown: false }}
+      screenListeners={({ navigation }) => ({
+        state: () => {
+          stackNavRef.current = navigation;
+        },
+      })}
+    >
       <Stack.Screen name="MatrimonySplash" component={MatrimonySplashScreen} />
       <Stack.Screen name="MatrimonyWelcome" component={MatrimonyWelcomeScreen} />
       <Stack.Screen name="MatrimonyBasicDetails" component={MatrimonyBasicDetailsScreen} />
@@ -43,15 +177,20 @@ export default function MatrimonyNavigator() {
       <Stack.Screen name="MatrimonyMyPhotos" component={MatrimonyMyPhotosScreen} />
       <Stack.Screen name="MatrimonyEditProfile" component={MatrimonyEditProfileScreen} />
       <Stack.Screen name="MatrimonyInterests" component={MatrimonyInterestsScreen} />
-      <Stack.Screen name="MatrimonyInterestsHub" component={MatrimonyInterestsHubScreen} />
-      <Stack.Screen name="MatrimonyHome" component={MatrimonyHomeScreen} />
-      <Stack.Screen name="MatrimonyMatches" component={MatrimonyMatchesScreen} />
+      <Stack.Screen name="MatrimonyMainTabs" component={MatrimonyMainTabs} />
       <Stack.Screen name="MatrimonyMatchDetail" component={MatrimonyMatchDetailScreen} />
-      <Stack.Screen name="MatrimonyMessages" component={MatrimonyMessagesScreen} />
       <Stack.Screen name="MatrimonyChat" component={MatrimonyChatScreen} />
       <Stack.Screen name="MatrimonySubmitApproval" component={MatrimonySubmitApprovalScreen} />
       <Stack.Screen name="MatrimonyStatus" component={MatrimonyStatusScreen} />
       <Stack.Screen name="MatrimonyUpgrade" component={MatrimonyUpgradeScreen} />
+      <Stack.Screen name="MatrimonyPrivacySettings" component={MatrimonyPrivacySettingsScreen} />
+      <Stack.Screen name="MatrimonyAccountSettings" component={MatrimonyAccountSettingsScreen} />
+      <Stack.Screen name="MatrimonyNotifications" component={MatrimonyNotificationsScreen} />
+      <Stack.Screen name="MatrimonyNotificationsFeed" component={MatrimonyNotificationsFeedScreen} />
+      <Stack.Screen name="MatrimonySearch" component={MatrimonySearchScreen} />
+      <Stack.Screen name="MatrimonyHiddenProfiles" component={MatrimonyHiddenProfilesScreen} />
+      <Stack.Screen name="MatrimonyDeactivateAccount" component={MatrimonyDeactivateAccountScreen} />
+      <Stack.Screen name="MatrimonyDeleteProfile" component={MatrimonyDeleteProfileScreen} />
     </Stack.Navigator>
   );
 }

@@ -3,6 +3,7 @@ import type { Database } from 'firebase/database';
 import {
   endAt,
   equalTo,
+  get,
   increment,
   limitToLast,
   onDisconnect,
@@ -92,6 +93,32 @@ function getMatrimonyRtdb(): Database {
 
 export function getMatrimonyRoomId(uidA: string, uidB: string): string {
   return [uidA, uidB].sort().join('_');
+}
+
+function parseChatMessagesSnapshot(
+  val: Record<string, any> | null | undefined,
+  myUid: string
+): MatrimonyChatMessage[] {
+  if (!val) return [];
+  return Object.keys(val)
+    .map((key) => {
+      const m = val[key] || {};
+      return {
+        id: String(m.id || key),
+        senderUid: String(m.senderUid || ''),
+        text: String(m.text || ''),
+        type: (m.type === 'image' ? 'image' : 'text') as 'text' | 'image',
+        imageUrl: m.imageUrl || null,
+        replyTo: m.replyTo || null,
+        createdAt: typeof m.createdAt === 'number' ? m.createdAt : Date.now(),
+        deliveredBy: m.deliveredBy || {},
+        readBy: m.readBy || {},
+        deletedForEveryone: Boolean(m.deletedForEveryone),
+        deletedFor: m.deletedFor || {},
+      };
+    })
+    .filter((m) => !m.deletedFor?.[myUid])
+    .sort((a, b) => a.createdAt - b.createdAt);
 }
 
 export const matrimonyChatService = {
@@ -186,6 +213,9 @@ export const matrimonyChatService = {
             peerPhoto: r.peerPhoto || null,
             peerCode: String(r.peerCode || ''),
             peerAge: typeof r.peerAge === 'number' ? r.peerAge : null,
+            peerHeightCm: typeof r.peerHeightCm === 'number' ? r.peerHeightCm : null,
+            peerOccupation: r.peerOccupation || null,
+            peerGender: r.peerGender || null,
             peerCity: r.peerCity || null,
             contactPhone: r.contactPhone || null,
             lastMessageText: String(r.lastMessageText || ''),
@@ -226,39 +256,48 @@ export const matrimonyChatService = {
   subscribeRoomMessages(
     roomId: string,
     myUid: string,
-    onChange: (messages: MatrimonyChatMessage[]) => void
+    onChange: (messages: MatrimonyChatMessage[]) => void,
+    pageLimit = 50
   ): () => void {
     if (!roomId || !myUid) return () => {};
     const db = getMatrimonyRtdb();
     const msgsQuery = query(
       ref(db, `matrimony_chats/${roomId}/messages`),
       orderByChild('createdAt'),
-      limitToLast(200)
+      limitToLast(pageLimit)
     );
     return onValue(msgsQuery, (snap) => {
-      const val = snap.val() || {};
-      const list: MatrimonyChatMessage[] = Object.keys(val)
-        .map((key) => {
-          const m = val[key] || {};
-          return {
-            id: String(m.id || key),
-            senderUid: String(m.senderUid || ''),
-            text: String(m.text || ''),
-            type: (m.type === 'image' ? 'image' : 'text') as 'text' | 'image',
-            imageUrl: m.imageUrl || null,
-            replyTo: m.replyTo || null,
-            createdAt: typeof m.createdAt === 'number' ? m.createdAt : Date.now(),
-            deliveredBy: m.deliveredBy || {},
-            readBy: m.readBy || {},
-            deletedForEveryone: Boolean(m.deletedForEveryone),
-            deletedFor: m.deletedFor || {},
-          };
-        })
-        .filter((m) => !m.deletedFor?.[myUid])
-        .sort((a, b) => a.createdAt - b.createdAt);
-
+      const list = parseChatMessagesSnapshot(snap.val(), myUid);
       onChange(list);
     });
+  },
+
+  async fetchOlderRoomMessages(
+    roomId: string,
+    myUid: string,
+    beforeCreatedAt: number,
+    pageLimit = 40
+  ): Promise<{ messages: MatrimonyChatMessage[]; hasMore: boolean }> {
+    if (!roomId || !myUid || !beforeCreatedAt) {
+      return { messages: [], hasMore: false };
+    }
+    const db = getMatrimonyRtdb();
+    const msgsQuery = query(
+      ref(db, `matrimony_chats/${roomId}/messages`),
+      orderByChild('createdAt'),
+      endAt(beforeCreatedAt - 1),
+      limitToLast(pageLimit + 1)
+    );
+    const snap = await get(msgsQuery);
+    const raw = snap.val() || {};
+    const rawCount = Object.keys(raw).length;
+    const allSorted = parseChatMessagesSnapshot(raw, myUid);
+    const hasMore = rawCount > pageLimit;
+    const messages =
+      hasMore && allSorted.length > pageLimit
+        ? allSorted.slice(allSorted.length - pageLimit)
+        : allSorted;
+    return { messages, hasMore };
   },
 
   subscribeTyping(

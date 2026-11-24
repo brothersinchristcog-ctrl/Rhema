@@ -38,6 +38,12 @@ export function getBlocksCol(db, uid) {
 export function getUnlockedContactsCol(db, uid) {
     return getProfileRef(db, uid).collection(SUBCOLLECTIONS.UNLOCKED_CONTACTS);
 }
+export function getPhotoRequestsCol(db, uid) {
+    return getProfileRef(db, uid).collection(SUBCOLLECTIONS.PHOTO_REQUESTS);
+}
+export function getSentPhotoRequestsCol(db, uid) {
+    return getProfileRef(db, uid).collection(SUBCOLLECTIONS.PHOTO_REQUESTS_SENT);
+}
 export function getSubscriptionRef(db, uid) {
     return db.collection(COLLECTIONS.SUBSCRIPTIONS).doc(uid);
 }
@@ -231,5 +237,85 @@ export async function purgeMatrimonyUserData(db, targetUid, options = {}) {
             createdAt: now,
         });
     }
+}
+/**
+ * Atomically reserves and persists a guaranteed-unique Matrimony ID (e.g. RM1001)
+ * inside `matrimony_settings/matrimony_id_counter` so no two members can ever receive
+ * a duplicate profile ID, even under concurrent submissions or approvals.
+ */
+export async function ensureUniqueMatrimonyId(db, uid, existingCandidate) {
+    const counterRef = db.collection(COLLECTIONS.SETTINGS).doc('matrimony_id_counter');
+    const assignedCol = counterRef.collection('assigned');
+    const profileRef = getProfileRef(db, uid);
+    return db.runTransaction(async (tx) => {
+        const [profSnap, counterSnap] = await Promise.all([
+            tx.get(profileRef),
+            tx.get(counterRef),
+        ]);
+        const currentRaw = String(profSnap.exists
+            ? profSnap.data()?.matrimonyId || existingCandidate || ''
+            : existingCandidate || '')
+            .replace(/\s+/g, '')
+            .toUpperCase();
+        if (currentRaw) {
+            const existingAssignedRef = assignedCol.doc(currentRaw);
+            const existingAssignedSnap = await tx.get(existingAssignedRef);
+            const ownerUid = existingAssignedSnap.exists
+                ? String(existingAssignedSnap.data()?.uid || '')
+                : '';
+            if (!existingAssignedSnap.exists || ownerUid === uid) {
+                if (!existingAssignedSnap.exists) {
+                    tx.set(existingAssignedRef, {
+                        uid,
+                        matrimonyId: currentRaw,
+                        createdAt: FieldValue.serverTimestamp(),
+                    });
+                }
+                if (profSnap.exists && String(profSnap.data()?.matrimonyId || '') !== currentRaw) {
+                    tx.set(profileRef, { matrimonyId: currentRaw }, { merge: true });
+                }
+                return currentRaw;
+            }
+            // Collision detected against another UID — fall through to allocate a fresh unique ID
+        }
+        let nextSeq = Math.max(1001, Number(counterSnap.data()?.nextSeq || 1001));
+        let chosenId = '';
+        for (let attempt = 0; attempt < 50; attempt += 1) {
+            const candidateId = `RM${String(nextSeq).padStart(4, '0')}`;
+            const assignedRef = assignedCol.doc(candidateId);
+            const [assignedSnap, dupProfileSnap] = await Promise.all([
+                tx.get(assignedRef),
+                tx.get(db
+                    .collection(COLLECTIONS.PROFILES)
+                    .where('matrimonyId', '==', candidateId)
+                    .limit(1)),
+            ]);
+            const ownedByOtherProfile = !dupProfileSnap.empty && dupProfileSnap.docs[0]?.id !== uid;
+            if (!assignedSnap.exists && !ownedByOtherProfile) {
+                chosenId = candidateId;
+                tx.set(assignedRef, {
+                    uid,
+                    matrimonyId: candidateId,
+                    createdAt: FieldValue.serverTimestamp(),
+                });
+                break;
+            }
+            nextSeq += 1;
+        }
+        if (!chosenId) {
+            chosenId = `RM${uid.slice(0, 8).toUpperCase()}`;
+            tx.set(assignedCol.doc(chosenId), {
+                uid,
+                matrimonyId: chosenId,
+                createdAt: FieldValue.serverTimestamp(),
+            }, { merge: true });
+        }
+        tx.set(counterRef, {
+            nextSeq: nextSeq + 1,
+            updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        tx.set(profileRef, { matrimonyId: chosenId }, { merge: true });
+        return chosenId;
+    });
 }
 //# sourceMappingURL=store.js.map

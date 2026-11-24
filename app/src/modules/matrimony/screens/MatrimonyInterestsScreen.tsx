@@ -17,6 +17,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react-native';
 import { useTheme, FONT_STYLE_OPTIONS } from '../../../context/ThemeContext';
 import { INTEREST_CATEGORIES, InterestCategoryConfig } from '../constants/interestsOptions';
 import { matrimonyApi } from '../services/matrimonyApi';
+import { getProfileSubjectFromContext } from '../utils/profileSubject';
 
 const ORANGE = '#EA580C';
 const INITIAL_VISIBLE_COUNT = 14;
@@ -24,6 +25,10 @@ const INITIAL_VISIBLE_COUNT = 14;
 export default function MatrimonyInterestsScreen({ navigation, route }: any) {
   const fromEditProfile = Boolean(route?.params?.fromEditProfile);
   const initialInterests: Record<string, string[]> = route?.params?.initialInterests || {};
+  const subjectCopy = getProfileSubjectFromContext(
+    route?.params?.draftData,
+    route?.params?.initialData
+  );
   const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
   const { colors, isDark, fontStyle, scaleFont } = useTheme();
@@ -38,6 +43,7 @@ export default function MatrimonyInterestsScreen({ navigation, route }: any) {
   const [selectedMap, setSelectedMap] = useState<Record<string, string[]>>(initialInterests);
   const [expandedMap, setExpandedMap] = useState<Record<string, boolean>>({});
   const [submitting, setSubmitting] = useState(false);
+  const submitGuardRef = useRef(false);
 
   const tabScrollRef = useRef<ScrollView>(null);
   const verticalScrollRef = useRef<ScrollView>(null);
@@ -99,17 +105,64 @@ export default function MatrimonyInterestsScreen({ navigation, route }: any) {
   const totalSelected = Object.values(selectedMap).reduce((sum, arr) => sum + arr.length, 0);
 
   const handleFinish = async (skipInterests: boolean) => {
+    if (submitGuardRef.current || submitting) return;
     if (!fromEditProfile && !skipInterests && totalSelected === 0) {
-      Alert.alert(
-        'Select Interests',
-        'Please select at least one hobby or interest before submitting your profile for verification.'
-      );
+      Alert.alert('Select Interests', subjectCopy.interestsEmptyAlert);
+      return;
+    }
+
+    submitGuardRef.current = true;
+
+    if (fromEditProfile) {
+      if (skipInterests) {
+        submitGuardRef.current = false;
+        navigation.goBack();
+        return;
+      }
+
+      const nextInterests = {
+        hobbies: selectedMap.hobbies || [],
+        music: selectedMap.music || [],
+        reading: selectedMap.reading || [],
+        movies: selectedMap.movies || [],
+        sports: selectedMap.sports || [],
+        food: selectedMap.food || [],
+        languages: selectedMap.languages || [],
+      };
+      const prevInterests = matrimonyApi.getCachedRegistration()?.profile?.interests;
+
+      // Instant optimistic cache update + immediate return to Edit Profile
+      matrimonyApi.patchCachedRegistration((prev) => ({
+        ...prev,
+        profile: prev.profile
+          ? {
+              ...prev.profile,
+              interests: nextInterests,
+            }
+          : prev.profile,
+      }));
+      navigation.goBack();
+
+      matrimonyApi.saveDraft('interests', nextInterests).catch((err: any) => {
+        if (prevInterests !== undefined) {
+          matrimonyApi.patchCachedRegistration((prev) => ({
+            ...prev,
+            profile: prev.profile
+              ? {
+                  ...prev.profile,
+                  interests: prevInterests,
+                }
+              : prev.profile,
+          }));
+        }
+        Alert.alert('Save Failed', err?.message || 'Unable to save hobbies & interests.');
+      });
       return;
     }
 
     setSubmitting(true);
     try {
-      if (!skipInterests && (totalSelected > 0 || fromEditProfile)) {
+      if (!skipInterests && totalSelected > 0) {
         const nextInterests = {
           hobbies: selectedMap.hobbies || [],
           music: selectedMap.music || [],
@@ -130,17 +183,14 @@ export default function MatrimonyInterestsScreen({ navigation, route }: any) {
             : prev.profile,
         }));
       }
-      if (fromEditProfile) {
-        navigation.goBack();
-      } else {
-        navigation.navigate('MatrimonySubmitApproval', {
-          initialData: route?.params?.initialData,
-          interestsCount: skipInterests ? 0 : totalSelected,
-        });
-      }
+      navigation.navigate('MatrimonySubmitApproval', {
+        initialData: route?.params?.initialData,
+        interestsCount: skipInterests ? 0 : totalSelected,
+      });
     } catch (err: any) {
       Alert.alert('Error', err?.message || 'Unable to complete registration.');
     } finally {
+      submitGuardRef.current = false;
       setSubmitting(false);
     }
   };
@@ -156,8 +206,21 @@ export default function MatrimonyInterestsScreen({ navigation, route }: any) {
 
       <View style={styles.header}>
         <Text style={[styles.headerTitle, { color: colors.text, fontFamily, fontSize: scaleFont(20) }]}>
-          Select your interests
+          {fromEditProfile ? 'Select your interests' : subjectCopy.interestsTitle}
         </Text>
+        {!fromEditProfile && subjectCopy.forBadgeText ? (
+          <Text
+            style={{
+              color: ORANGE,
+              fontSize: scaleFont(12.5),
+              fontWeight: '700',
+              marginTop: 2,
+              fontFamily,
+            }}
+          >
+            {subjectCopy.forBadgeText}
+          </Text>
+        ) : null}
       </View>
 
       {/* Scrollable Top Tabs */}

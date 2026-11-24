@@ -2,9 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { getFirestore, FieldValue, Firestore, DocumentReference, DocumentSnapshot } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
-import { getMessaging } from 'firebase-admin/messaging';
 import { COLLECTIONS, DEFAULT_CHURCH_ID, MATRIMONY_BUCKET } from './constants.js';
 import { seedMutualMatchChatOnAccept } from './chat.js';
+import {
+  getObjectPronoun,
+  resolveNotificationPhotoUrl,
+  sendMatrimonyNotification,
+} from './notifications.js';
 import {
   getCurrentMonthKey,
   resolveActiveTierFromProfile,
@@ -15,9 +19,11 @@ import {
   assertMatrimonyProfileActive,
   getAdminProfileRef,
   getBlocksCol,
+  getPhotoRequestsCol,
   getPrefsRef,
   getPrivateRef,
   getProfileRef,
+  getSentPhotoRequestsCol,
   getShortlistedByCol,
   getShortlistsCol,
   getUnlockedContactsCol,
@@ -47,6 +53,7 @@ function buildFirebaseTokenUrl(bucketName: string, objectPath: string, token: st
 }
 
 const WARM_PHOTO_URL_CACHE = new Map<string, { url: string; expiresAtMs: number }>();
+let matchSignBlobUnavailable = false;
 
 async function resolveSingleMatchPhotoUrl(
   bucket: ReturnType<ReturnType<typeof getStorage>['bucket']>,
@@ -64,34 +71,38 @@ async function resolveSingleMatchPhotoUrl(
   }
 
   const file = bucket.file(path);
-  try {
-    const [signedUrl] = await file.getSignedUrl({ action: 'read', expires });
-    WARM_PHOTO_URL_CACHE.set(path, { url: signedUrl, expiresAtMs: expires });
-    return signedUrl;
-  } catch {
+  if (!matchSignBlobUnavailable) {
     try {
-      const [meta] = await file.getMetadata();
-      const existingTokens = String(meta?.metadata?.firebaseStorageDownloadTokens || '')
-        .split(',')
-        .map((t) => t.trim())
-        .filter(Boolean);
-      let token = existingTokens[0];
-      if (!token) {
-        token = randomUUID();
-        await file.setMetadata({
-          metadata: {
-            ...(meta?.metadata || {}),
-            firebaseStorageDownloadTokens: token,
-          },
-        });
-      }
-      const tokenUrl = buildFirebaseTokenUrl(MATRIMONY_BUCKET, path, token);
-      WARM_PHOTO_URL_CACHE.set(path, { url: tokenUrl, expiresAtMs: expires });
-      return tokenUrl;
-    } catch (metaErr) {
-      console.warn(`Unable to sign/tokenize match photo ${path}:`, metaErr);
-      return null;
+      const [signedUrl] = await file.getSignedUrl({ action: 'read', expires });
+      WARM_PHOTO_URL_CACHE.set(path, { url: signedUrl, expiresAtMs: expires });
+      return signedUrl;
+    } catch {
+      matchSignBlobUnavailable = true;
     }
+  }
+
+  try {
+    const [meta] = await file.getMetadata();
+    const existingTokens = String(meta?.metadata?.firebaseStorageDownloadTokens || '')
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
+    let token = existingTokens[0];
+    if (!token) {
+      token = randomUUID();
+      await file.setMetadata({
+        metadata: {
+          ...(meta?.metadata || {}),
+          firebaseStorageDownloadTokens: token,
+        },
+      });
+    }
+    const tokenUrl = buildFirebaseTokenUrl(MATRIMONY_BUCKET, path, token);
+    WARM_PHOTO_URL_CACHE.set(path, { url: tokenUrl, expiresAtMs: expires });
+    return tokenUrl;
+  } catch (metaErr) {
+    console.warn(`Unable to sign/tokenize match photo ${path}:`, metaErr);
+    return null;
   }
 }
 
@@ -130,10 +141,133 @@ interface WarmViewerFeedEntry {
   viewerPhoto: string | null;
   viewerPreferencesFilter: Record<string, any>;
   preferencesUpdatedAtMs: number;
+  photoRequestStatusMap?: Map<string, 'pending' | 'approved' | 'declined'>;
   validScored: any[];
 }
 
 const WARM_VIEWER_FEED_CACHE = new Map<string, WarmViewerFeedEntry>();
+const WARM_FEED_TTL_MS = 120_000;
+const WARM_CATALOG_TTL_MS = 45_000;
+
+interface ApprovedCatalogItem {
+  uid: string;
+  candidate: Record<string, any>;
+  candPrefs: Record<string, any>;
+  candPriv: Record<string, any>;
+  gender: BinaryGender | null;
+}
+
+interface ApprovedCatalogEntry {
+  expiresAtMs: number;
+  items: ApprovedCatalogItem[];
+  activeSubTierByUid: Map<string, 'silver' | 'gold' | 'platinum'>;
+}
+
+const WARM_APPROVED_CATALOG_CACHE = new Map<string, ApprovedCatalogEntry>();
+const WARM_CATALOG_INFLIGHT = new Map<string, Promise<ApprovedCatalogEntry>>();
+
+function shuffleHashScore(uid: string, seed: number): number {
+  let h = ((seed | 0) ^ 0x811c9dc5) >>> 0;
+  for (let i = 0; i < uid.length; i += 1) {
+    h ^= uid.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b) >>> 0;
+  h ^= h >>> 13;
+  return h >>> 0;
+}
+
+async function getWarmApprovedCatalog(
+  db: Firestore,
+  churchId: string
+): Promise<ApprovedCatalogEntry> {
+  const now = Date.now();
+  const cached = WARM_APPROVED_CATALOG_CACHE.get(churchId);
+  if (cached && cached.expiresAtMs > now) {
+    return cached;
+  }
+
+  const inflight = WARM_CATALOG_INFLIGHT.get(churchId);
+  if (inflight) return inflight;
+
+  const req = (async (): Promise<ApprovedCatalogEntry> => {
+    const [candidatesSnap, activeSubsSnap] = await Promise.all([
+      db
+        .collection(COLLECTIONS.PROFILES)
+        .where('churchId', '==', churchId)
+        .where('profileStatus', '==', 'approved')
+        .get(),
+      db.collection(COLLECTIONS.SUBSCRIPTIONS).where('status', '==', 'active').get(),
+    ]);
+
+    const activeSubTierByUid = new Map<string, 'silver' | 'gold' | 'platinum'>();
+    const nowCheckMs = Date.now();
+    activeSubsSnap.docs.forEach((sDoc) => {
+      const sData = sDoc.data() || {};
+      const sTier = String(sData.tier || '').toLowerCase();
+      const sEnd = typeof sData.expiryDateMs === 'number' ? sData.expiryDateMs : 0;
+      if (
+        (sTier === 'silver' || sTier === 'gold' || sTier === 'platinum') &&
+        (sEnd === 0 || sEnd > nowCheckMs)
+      ) {
+        activeSubTierByUid.set(String(sData.uid || sDoc.id), sTier);
+      }
+    });
+
+    const visibleDocs = candidatesSnap.docs.filter((doc) => doc.data()?.visibility !== 'hidden');
+    const prefsRefs = visibleDocs.map((d) => getPrefsRef(db, d.id));
+    const privRefs = visibleDocs.map((d) => getPrivateRef(db, d.id));
+    const subDocMap = await batchGetDocMap(db, [...prefsRefs, ...privRefs]);
+
+    const missingLegacyRefs: DocumentReference[] = [];
+    visibleDocs.forEach((d) => {
+      if (!subDocMap.get(getPrefsRef(db, d.id).path)?.exists) {
+        missingLegacyRefs.push(db.collection(COLLECTIONS.PREFERENCES).doc(d.id));
+      }
+      if (!subDocMap.get(getPrivateRef(db, d.id).path)?.exists) {
+        missingLegacyRefs.push(db.collection(COLLECTIONS.PRIVATE).doc(d.id));
+      }
+    });
+    const legacyDocMap =
+      missingLegacyRefs.length > 0
+        ? await batchGetDocMap(db, missingLegacyRefs)
+        : new Map<string, DocumentSnapshot>();
+
+    const items: ApprovedCatalogItem[] = visibleDocs.map((doc) => {
+      const candidate = doc.data();
+      const subPrefs = subDocMap.get(getPrefsRef(db, doc.id).path);
+      const candPrefsSnap = subPrefs?.exists
+        ? subPrefs
+        : legacyDocMap.get(db.collection(COLLECTIONS.PREFERENCES).doc(doc.id).path);
+      const subPriv = subDocMap.get(getPrivateRef(db, doc.id).path);
+      const candPrivSnap = subPriv?.exists
+        ? subPriv
+        : legacyDocMap.get(db.collection(COLLECTIONS.PRIVATE).doc(doc.id).path);
+
+      return {
+        uid: doc.id,
+        candidate,
+        candPrefs: candPrefsSnap?.exists ? candPrefsSnap.data() || {} : {},
+        candPriv: candPrivSnap?.exists ? candPrivSnap.data() || {} : {},
+        gender: normalizeGender(candidate.gender),
+      };
+    });
+
+    const entry: ApprovedCatalogEntry = {
+      expiresAtMs: Date.now() + WARM_CATALOG_TTL_MS,
+      items,
+      activeSubTierByUid,
+    };
+    WARM_APPROVED_CATALOG_CACHE.set(churchId, entry);
+    return entry;
+  })().finally(() => {
+    WARM_CATALOG_INFLIGHT.delete(churchId);
+  });
+
+  WARM_CATALOG_INFLIGHT.set(churchId, req);
+  return req;
+}
 
 async function resolveMatchPhotoUrls(paths: string[]): Promise<string[]> {
   if (!paths.length) return [];
@@ -147,7 +281,7 @@ async function resolveMatchPhotoUrls(paths: string[]): Promise<string[]> {
 
 type BinaryGender = 'male' | 'female';
 
-function normalizeGender(raw: unknown): BinaryGender | null {
+export function normalizeGender(raw: unknown): BinaryGender | null {
   const s = String(raw || '').trim().toLowerCase();
   if (!s) return null;
   if (s === 'male' || s === 'm' || s === 'man' || s === 'groom' || s === 'boy') {
@@ -166,7 +300,7 @@ function normalizeMarital(raw: unknown): string {
   return s;
 }
 
-function normalizeAnyOption(raw: unknown): string {
+export function normalizeAnyOption(raw: unknown): string {
   const s = String(raw || '').trim().toLowerCase();
   if (!s || s === 'any' || s === 'any division' || s === "doesn't matter" || s === 'not specified') {
     return 'any';
@@ -190,7 +324,7 @@ function flattenInterests(interestsObj: Record<string, any> | undefined): string
   return items;
 }
 
-function toTimestampMs(val: any): number {
+export function toTimestampMs(val: any): number {
   if (!val) return 0;
   if (typeof val.toMillis === 'function') return val.toMillis();
   if (typeof val._seconds === 'number') return val._seconds * 1000;
@@ -278,7 +412,7 @@ function findClusterIndex(raw: unknown, clusters: string[][]): number {
   return clusters.findIndex((keywords) => keywords.some((kw) => s.includes(kw)));
 }
 
-function areEducationsClose(aRaw: unknown, bRaw: unknown): 'exact' | 'close' | 'none' {
+export function areEducationsClose(aRaw: unknown, bRaw: unknown): 'exact' | 'close' | 'none' {
   const a = String(aRaw || '').trim().toLowerCase();
   const b = String(bRaw || '').trim().toLowerCase();
   if (!a || !b) return 'none';
@@ -289,7 +423,7 @@ function areEducationsClose(aRaw: unknown, bRaw: unknown): 'exact' | 'close' | '
   return 'none';
 }
 
-function areProfessionsClose(aRaw: unknown, bRaw: unknown): 'exact' | 'close' | 'none' {
+export function areProfessionsClose(aRaw: unknown, bRaw: unknown): 'exact' | 'close' | 'none' {
   const a = String(aRaw || '').trim().toLowerCase();
   const b = String(bRaw || '').trim().toLowerCase();
   if (!a || !b) return 'none';
@@ -324,7 +458,7 @@ function matchesIncomePref(prefRaw: unknown, actualRaw: unknown): boolean {
   return false;
 }
 
-function evaluateCompatibility(
+export function evaluateCompatibility(
   viewer: Record<string, any>,
   viewerPrivate: Record<string, any>,
   viewerPrefs: Record<string, any>,
@@ -1289,6 +1423,36 @@ function buildPartnerPrefComparison(
   return { matchedCount, totalCount, sections };
 }
 
+export function canViewerSeeCandidatePhotos(params: {
+  viewerUid: string;
+  candidate: Record<string, any>;
+  interestStatus: string | null;
+  viewerEntitlements?: ResolvedMemberEntitlements | undefined;
+  photoRequestStatus?: 'pending' | 'approved' | 'declined' | null;
+}): boolean {
+  const { viewerUid, candidate, interestStatus, viewerEntitlements, photoRequestStatus } = params;
+  const mode = String(candidate?.photoVisibility || 'approved_members');
+  if (mode === 'approved_members') return true;
+
+  const allowed: string[] = Array.isArray(candidate?.protectedPhotoAllowedUids)
+    ? candidate.protectedPhotoAllowedUids
+    : [];
+  if (mode === 'protect_photo') {
+    return Boolean(viewerUid && allowed.includes(viewerUid));
+  }
+  if (Boolean(viewerUid && (allowed.includes(viewerUid) || photoRequestStatus === 'approved'))) {
+    return true;
+  }
+
+  if (mode === 'matches_only') return interestStatus === 'accepted';
+  if (mode === 'contacted_and_paid') {
+    const isPaid = Boolean(viewerEntitlements && viewerEntitlements.tier !== 'free');
+    const hasContactedOrResponded = Boolean(interestStatus);
+    return isPaid || hasContactedOrResponded;
+  }
+  return true;
+}
+
 async function formatMatchCandidatePayload(params: {
   candUid: string;
   viewer: Record<string, any>;
@@ -1304,6 +1468,7 @@ async function formatMatchCandidatePayload(params: {
   viewedAtMs?: number;
   viewerEntitlements?: ResolvedMemberEntitlements;
   unlockedContactSet?: Set<string>;
+  photoRequestStatus?: 'pending' | 'approved' | 'declined' | null;
   candidateTierOverride?: 'free' | 'silver' | 'gold' | 'platinum';
   preResolvedPhotoMap?: Map<string, string | null>;
 }) {
@@ -1322,6 +1487,7 @@ async function formatMatchCandidatePayload(params: {
     viewedAtMs = 0,
     viewerEntitlements,
     unlockedContactSet,
+    photoRequestStatus = null,
     candidateTierOverride,
     preResolvedPhotoMap,
   } = params;
@@ -1333,16 +1499,26 @@ async function formatMatchCandidatePayload(params: {
     return resolveMatchPhotoUrls([p]).then((u) => u[0] || null);
   };
 
-  const [signedProfilePhoto, signedGallery] = await Promise.all([
-    candidate.profilePhoto ? lookupPhoto(String(candidate.profilePhoto)) : Promise.resolve(null),
-    Array.isArray(candidate.gallery) && candidate.gallery.length > 0
-      ? Promise.all(
-          candidate.gallery
-            .filter((g: unknown): g is string => typeof g === 'string' && g.length > 0)
-            .map((g: string) => lookupPhoto(g))
-        ).then((arr) => arr.filter((u): u is string => Boolean(u)))
-      : Promise.resolve([]),
-  ]);
+  const canSeePhotos = canViewerSeeCandidatePhotos({
+    viewerUid: String(viewer?.uid || ''),
+    candidate,
+    interestStatus,
+    viewerEntitlements,
+    photoRequestStatus,
+  });
+
+  const [signedProfilePhoto, signedGallery] = canSeePhotos
+    ? await Promise.all([
+        candidate.profilePhoto ? lookupPhoto(String(candidate.profilePhoto)) : Promise.resolve(null),
+        Array.isArray(candidate.gallery) && candidate.gallery.length > 0
+          ? Promise.all(
+              candidate.gallery
+                .filter((g: unknown): g is string => typeof g === 'string' && g.length > 0)
+                .map((g: string) => lookupPhoto(g))
+            ).then((arr) => arr.filter((u): u is string => Boolean(u)))
+          : Promise.resolve([]),
+      ])
+    : [null, []];
 
   const partnerPreferencesComparison = buildPartnerPrefComparison(
     viewer,
@@ -1371,13 +1547,16 @@ async function formatMatchCandidatePayload(params: {
   };
 
   // Contact numbers & exact DOB require active paid subscription AND either Platinum (unlimited) or explicit unlock
+  const isMessagesOnly = candidate.mobilePrivacy === 'messages_only';
   const hasPaidViewer = Boolean(viewerEntitlements && viewerEntitlements.tier !== 'free');
   const isContactUnlocked = Boolean(
-    hasPaidViewer &&
+    !isMessagesOnly &&
+      hasPaidViewer &&
       (viewerEntitlements!.contactNumberLimit < 0 || unlockedContactSet?.has(candUid))
   );
   const canUnlockContact = Boolean(
-    hasPaidViewer &&
+    !isMessagesOnly &&
+      hasPaidViewer &&
       (viewerEntitlements!.contactNumberLimit < 0 || viewerEntitlements!.contactNumbersRemaining > 0)
   );
 
@@ -1407,6 +1586,15 @@ async function formatMatchCandidatePayload(params: {
     contactPhone: isContactUnlocked ? (candPriv?.phoneNumber || null) : null,
     isContactUnlocked,
     canUnlockContact,
+    mobilePrivacy: isMessagesOnly ? 'messages_only' : 'show_all',
+    isPhotoProtected:
+      !canSeePhotos &&
+      Boolean(
+        candidate.profilePhoto ||
+          (Array.isArray(candidate.gallery) && candidate.gallery.length > 0)
+      ),
+    photoRequestStatus,
+    photoVisibility: candidate.photoVisibility || 'approved_members',
     candidateTier,
     isHighlighted,
     visibilityPriority,
@@ -1501,7 +1689,7 @@ function mapViewerPrefsToFilter(viewerPrefs: Record<string, any>): Record<string
  * Returns real verified opposite-gender matches scored by Partner Preferences, Age, & Hobbies/Interests.
  */
 export const getMatrimonyMatches = onCall(
-  { invoker: 'public', cpu: 1, memory: '512MiB', maxInstances: 20 },
+  { invoker: 'public', cpu: 1, memory: '512MiB', concurrency: 20, maxInstances: 20 },
   async (request) => {
   const uid = requireAuthUid(request);
   const db = getFirestore();
@@ -1514,12 +1702,13 @@ export const getMatrimonyMatches = onCall(
   const matchTier: 'regular' | 'prime' = matchTierRaw === 'prime' ? 'prime' : 'regular';
   const sortBy = optionalString(request.data?.sortBy, 30) || 'best_match';
   const offset = optionalNumber(request.data?.offset, 0, 5000, 'offset') ?? 0;
-  const limit = optionalNumber(request.data?.limit, 1, 200, 'limit');
+  const limit = optionalNumber(request.data?.limit, 1, 2000, 'limit');
+  const shuffleSeed = optionalNumber(request.data?.shuffleSeed, 0, 1e15, 'shuffleSeed') ?? 0;
   const rawFilters = (request.data?.filters && typeof request.data.filters === 'object')
     ? request.data.filters
     : {};
 
-  const feedCacheKey = `${uid}|${tab}|${matchBasis}|${matchTier}|${sortBy}|${JSON.stringify(rawFilters)}`;
+  const feedCacheKey = `${uid}|${tab}|${matchBasis}|${matchTier}|${sortBy}|${shuffleSeed}|${JSON.stringify(rawFilters)}`;
   if (offset > 0) {
     const warmFeed = WARM_VIEWER_FEED_CACHE.get(feedCacheKey);
     if (warmFeed && warmFeed.expiresAtMs > Date.now()) {
@@ -1561,6 +1750,7 @@ export const getMatrimonyMatches = onCall(
             viewedAtMs: item.viewedAtMs,
             viewerEntitlements: warmFeed.viewerEntitlements,
             unlockedContactSet: warmFeed.unlockedContactSet,
+            photoRequestStatus: warmFeed.photoRequestStatusMap?.get(item.uid) || null,
             candidateTierOverride: item.candTier,
             preResolvedPhotoMap,
           })
@@ -1647,7 +1837,8 @@ export const getMatrimonyMatches = onCall(
     shortlistedByDocs,
     viewDocs,
     viewedByDocs,
-    activeSubsSnap,
+    sentPhotoReqSnap,
+    approvedCatalog,
   ] = await Promise.all([
     getProfileRef(db, uid).get(),
     readPrivateSnap(db, uid),
@@ -1658,7 +1849,8 @@ export const getMatrimonyMatches = onCall(
     tab === 'shortlisted_you' ? readShortlistedByDocs(db, uid) : Promise.resolve([]),
     tab === 'viewed_by_you' ? readViewDocs(db, uid) : Promise.resolve([]),
     tab === 'viewed_you' ? readViewedByDocs(db, uid) : Promise.resolve([]),
-    db.collection(COLLECTIONS.SUBSCRIPTIONS).where('status', '==', 'active').get(),
+    getSentPhotoRequestsCol(db, uid).get(),
+    getWarmApprovedCatalog(db, DEFAULT_CHURCH_ID),
   ]);
 
   if (!viewerProfSnap.exists) {
@@ -1672,7 +1864,14 @@ export const getMatrimonyMatches = onCall(
     };
   }
 
-  const viewer = viewerProfSnap.data() || {};
+  const viewer: Record<string, any> = { ...(viewerProfSnap.data() || {}), uid };
+  const photoRequestStatusMap = new Map<string, 'pending' | 'approved' | 'declined'>();
+  sentPhotoReqSnap.docs.forEach((d) => {
+    const st = String(d.data()?.status || 'pending');
+    if (st === 'pending' || st === 'approved' || st === 'declined') {
+      photoRequestStatusMap.set(String(d.data()?.targetUid || d.id), st);
+    }
+  });
   const viewerEntitlements = await resolveMemberEntitlements(db, uid, viewer);
   const unlockedContactSet = new Set(viewerEntitlements.unlockedContactUids);
   const viewerPrivate = viewerPrivateSnap.exists ? viewerPrivateSnap.data() || {} : {};
@@ -1742,35 +1941,14 @@ export const getMatrimonyMatches = onCall(
     }
   });
 
-  const candidatesSnap = await db
-    .collection(COLLECTIONS.PROFILES)
-    .where('churchId', '==', DEFAULT_CHURCH_ID)
-    .where('profileStatus', '==', 'approved')
-    .get();
+  const { activeSubTierByUid, items: catalogItems } = approvedCatalog;
 
-  const activeSubTierByUid = new Map<string, 'silver' | 'gold' | 'platinum'>();
-  const nowCheckMs = Date.now();
-  activeSubsSnap.docs.forEach((sDoc) => {
-    const sData = sDoc.data() || {};
-    const sTier = String(sData.tier || '').toLowerCase();
-    const sEnd = typeof sData.expiryDateMs === 'number' ? sData.expiryDateMs : 0;
-    if (
-      (sTier === 'silver' || sTier === 'gold' || sTier === 'platinum') &&
-      (sEnd === 0 || sEnd > nowCheckMs)
-    ) {
-      activeSubTierByUid.set(String(sData.uid || sDoc.id), sTier);
-    }
-  });
-
-  // Filter strictly opposite gender and non-self / non-dismissed before fetching preferences
-  const eligibleDocs = candidatesSnap.docs.filter((doc) => {
-    if (doc.id === uid) return false;
-    if (blockedSet.has(doc.id)) return false;
-    const data = doc.data();
-    if (data.visibility === 'hidden') return false;
-    const candGender = normalizeGender(data.gender);
+  // Filter strictly opposite gender and non-self / non-dismissed using warm catalog
+  const eligibleDocs = catalogItems.filter((item) => {
+    if (item.uid === uid) return false;
+    if (blockedSet.has(item.uid)) return false;
     // Strict opposite-gender requirement: men -> women, women -> men only
-    return candGender === targetGender;
+    return item.gender === targetGender;
   });
 
   const thirtyDaysAgoMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
@@ -1785,24 +1963,24 @@ export const getMatrimonyMatches = onCall(
     ? 'all_filters'
     : matchBasis;
 
-  // Pre-filter cheap metadata & tab membership BEFORE reading subcollections or signing photos
-  const candidatePool = eligibleDocs.filter((doc) => {
-    const candidate = doc.data();
+  // Pre-filter cheap metadata & tab membership
+  const candidatePool = eligibleDocs.filter((item) => {
+    const candidate = item.candidate;
     const profTier = resolveActiveTierFromProfile(candidate);
-    const resolvedTier = profTier !== 'free' ? profTier : activeSubTierByUid.get(doc.id) || 'free';
+    const resolvedTier = profTier !== 'free' ? profTier : activeSubTierByUid.get(item.uid) || 'free';
     if (matchTier === 'prime' && resolvedTier === 'free') {
       return false;
     }
 
-    const isShortlisted = shortlistedSet.has(doc.id);
+    const isShortlisted = shortlistedSet.has(item.uid);
     const createdOrApprovedMs =
       toTimestampMs(candidate.approvedAt) ||
       toTimestampMs(candidate.submittedAt) ||
       toTimestampMs(candidate.createdAt);
 
     if ((tab === 'shortlisted' || tab === 'shortlisted_by_you') && !isShortlisted) return false;
-    if (tab === 'viewed_you' && !viewedByMap.has(doc.id)) return false;
-    if (tab === 'viewed_by_you' && !viewedMap.has(doc.id)) return false;
+    if (tab === 'viewed_you' && !viewedByMap.has(item.uid)) return false;
+    if (tab === 'viewed_by_you' && !viewedMap.has(item.uid)) return false;
     if (tab === 'newly_joined' && createdOrApprovedMs > 0 && createdOrApprovedMs < thirtyDaysAgoMs) {
       return false;
     }
@@ -1815,54 +1993,26 @@ export const getMatrimonyMatches = onCall(
     return true;
   });
 
-  // Batch-read all candidate prefs & private docs in 2 grouped db.getAll RPCs instead of 2N single .get() calls
-  const prefsRefs = candidatePool.map((d) => getPrefsRef(db, d.id));
-  const privRefs = candidatePool.map((d) => getPrivateRef(db, d.id));
-  const [subDocMap, legacyShortlistFlags] = await Promise.all([
-    batchGetDocMap(db, [...prefsRefs, ...privRefs]),
+  const legacyShortlistFlags =
     tab === 'shortlisted_you'
-      ? Promise.all(
-          candidatePool.map(async (d) => {
-            if (shortlistedBySet.has(d.id)) return true;
-            const legacy = await getShortlistsCol(db, d.id).doc(uid).get().catch(() => null);
+      ? await Promise.all(
+          candidatePool.map(async (item) => {
+            if (shortlistedBySet.has(item.uid)) return true;
+            const legacy = await getShortlistsCol(db, item.uid).doc(uid).get().catch(() => null);
             return Boolean(legacy?.exists);
           })
         )
-      : Promise.resolve([] as boolean[]),
-  ]);
-
-  // Fallback legacy collections only for UIDs missing subcollection docs
-  const missingLegacyPrefsRefs: DocumentReference[] = [];
-  const missingLegacyPrivRefs: DocumentReference[] = [];
-  candidatePool.forEach((d) => {
-    const pSnap = subDocMap.get(getPrefsRef(db, d.id).path);
-    if (!pSnap?.exists) missingLegacyPrefsRefs.push(db.collection(COLLECTIONS.PREFERENCES).doc(d.id));
-    const vSnap = subDocMap.get(getPrivateRef(db, d.id).path);
-    if (!vSnap?.exists) missingLegacyPrivRefs.push(db.collection(COLLECTIONS.PRIVATE).doc(d.id));
-  });
-  const legacyDocMap =
-    missingLegacyPrefsRefs.length > 0 || missingLegacyPrivRefs.length > 0
-      ? await batchGetDocMap(db, [...missingLegacyPrefsRefs, ...missingLegacyPrivRefs])
-      : new Map<string, DocumentSnapshot>();
+      : ([] as boolean[]);
 
   // Step 1: Score & evaluate eligibility WITHOUT expensive GCS photo signing or comparison tables
-  const scoredResults = candidatePool.map((doc, idx) => {
-      const candidate = doc.data();
+  const scoredResults = candidatePool.map((item, idx) => {
+      const candidate = item.candidate;
       if (tab === 'shortlisted_you' && !legacyShortlistFlags[idx]) {
         return null;
       }
 
-      const subPrefsSnap = subDocMap.get(getPrefsRef(db, doc.id).path);
-      const candPrefsSnap = subPrefsSnap?.exists
-        ? subPrefsSnap
-        : legacyDocMap.get(db.collection(COLLECTIONS.PREFERENCES).doc(doc.id).path);
-      const subPrivSnap = subDocMap.get(getPrivateRef(db, doc.id).path);
-      const candPrivSnap = subPrivSnap?.exists
-        ? subPrivSnap
-        : legacyDocMap.get(db.collection(COLLECTIONS.PRIVATE).doc(doc.id).path);
-
-      const candPrefs = candPrefsSnap?.exists ? candPrefsSnap.data() || {} : {};
-      const candPriv = candPrivSnap?.exists ? candPrivSnap.data() || {} : {};
+      const candPrefs = item.candPrefs;
+      const candPriv = item.candPriv;
 
       const evaluation = evaluateCompatibility(
         viewer,
@@ -1884,7 +2034,7 @@ export const getMatrimonyMatches = onCall(
         return null;
       }
 
-      const isShortlisted = shortlistedSet.has(doc.id);
+      const isShortlisted = shortlistedSet.has(item.uid);
       const createdOrApprovedMs =
         toTimestampMs(candidate.approvedAt) ||
         toTimestampMs(candidate.submittedAt) ||
@@ -1892,7 +2042,7 @@ export const getMatrimonyMatches = onCall(
       const updatedAtMs = toTimestampMs(candidate.updatedAt) || createdOrApprovedMs;
       const profTier = resolveActiveTierFromProfile(candidate);
       const candTier: 'free' | 'silver' | 'gold' | 'platinum' =
-        profTier !== 'free' ? profTier : activeSubTierByUid.get(doc.id) ?? 'free';
+        profTier !== 'free' ? profTier : activeSubTierByUid.get(item.uid) ?? 'free';
       const visibilityPriority = candTier === 'platinum' ? 2 : candTier === 'gold' ? 1 : 0;
       const hasPhoto = Boolean(candidate.profilePhoto);
       const photoCount =
@@ -1900,21 +2050,21 @@ export const getMatrimonyMatches = onCall(
         (Array.isArray(candidate.gallery) ? candidate.gallery.length : 0);
 
       return {
-        uid: doc.id,
+        uid: item.uid,
         candidate,
         candPriv,
         candPrefs,
         evaluation,
         isShortlisted,
-        interestStatus: interestStatusMap.get(doc.id) || null,
-        interestSentAtMs: interestSentAtMap.get(doc.id) || 0,
+        interestStatus: interestStatusMap.get(item.uid) || null,
+        interestSentAtMs: interestSentAtMap.get(item.uid) || 0,
         joinedAtMs: createdOrApprovedMs,
         updatedAtMs,
         viewedAtMs:
           tab === 'viewed_you'
-            ? viewedByMap.get(doc.id) || 0
+            ? viewedByMap.get(item.uid) || 0
             : tab === 'viewed_by_you'
-            ? viewedMap.get(doc.id) || 0
+            ? viewedMap.get(item.uid) || 0
             : 0,
         age: typeof candidate.age === 'number' ? candidate.age : null,
         location: candidate.location || {},
@@ -1963,7 +2113,17 @@ export const getMatrimonyMatches = onCall(
       if (bActive !== aActive) return bActive - aActive;
       return b.matchScore - a.matchScore;
     }
-    if (sortBy === 'date_created' || sortBy === 'newest' || tab === 'newly_joined') {
+    if (sortBy === 'date_created' || sortBy === 'newest') {
+      if (b.joinedAtMs !== a.joinedAtMs) return b.joinedAtMs - a.joinedAtMs;
+      return b.matchScore - a.matchScore;
+    }
+    if (tab === 'newly_joined' && sortBy === 'best_match') {
+      if (shuffleSeed > 0) {
+        const aTopBand = a.matchScore >= 40 ? 1 : 0;
+        const bTopBand = b.matchScore >= 40 ? 1 : 0;
+        if (bTopBand !== aTopBand) return bTopBand - aTopBand;
+        return shuffleHashScore(a.uid, shuffleSeed) - shuffleHashScore(b.uid, shuffleSeed);
+      }
       if (b.joinedAtMs !== a.joinedAtMs) return b.joinedAtMs - a.joinedAtMs;
       return b.matchScore - a.matchScore;
     }
@@ -1998,6 +2158,34 @@ export const getMatrimonyMatches = onCall(
     // - On PRIME (paid-only): rank by Platinum/Gold tier priority then compatibility score.
     // - On Regular (all paid + free): blend compatibility score with a gentle visibility boost (+6 Platinum, +3 Gold)
     //   so both unpaid (Free) and paid members appear naturally near the top.
+    if (shuffleSeed > 0) {
+      const aBand =
+        matchTier === 'prime'
+          ? a.matchScore >= 40
+            ? a.visibilityPriority > 0
+              ? 2
+              : 1
+            : 0
+          : a.matchScore >= 50
+          ? 2
+          : a.matchScore >= 30
+          ? 1
+          : 0;
+      const bBand =
+        matchTier === 'prime'
+          ? b.matchScore >= 40
+            ? b.visibilityPriority > 0
+              ? 2
+              : 1
+            : 0
+          : b.matchScore >= 50
+          ? 2
+          : b.matchScore >= 30
+          ? 1
+          : 0;
+      if (bBand !== aBand) return bBand - aBand;
+      return shuffleHashScore(a.uid, shuffleSeed) - shuffleHashScore(b.uid, shuffleSeed);
+    }
     if (matchTier === 'prime') {
       const aTierRank = a.matchScore >= 40 ? (a.visibilityPriority ?? 0) : -1;
       const bTierRank = b.matchScore >= 40 ? (b.visibilityPriority ?? 0) : -1;
@@ -2061,6 +2249,7 @@ export const getMatrimonyMatches = onCall(
         viewedAtMs: item.viewedAtMs,
         viewerEntitlements,
         unlockedContactSet,
+        photoRequestStatus: photoRequestStatusMap.get(item.uid) || null,
         candidateTierOverride: item.candTier,
         preResolvedPhotoMap,
       })
@@ -2072,7 +2261,7 @@ export const getMatrimonyMatches = onCall(
 
   if (offset === 0) {
     WARM_VIEWER_FEED_CACHE.set(feedCacheKey, {
-      expiresAtMs: Date.now() + 30_000,
+      expiresAtMs: Date.now() + WARM_FEED_TTL_MS,
       viewer,
       viewerPrivate,
       viewerEntitlements,
@@ -2086,6 +2275,7 @@ export const getMatrimonyMatches = onCall(
       viewerPhoto,
       viewerPreferencesFilter,
       preferencesUpdatedAtMs,
+      photoRequestStatusMap,
       validScored,
     });
     // Cap memory usage for warm container caches
@@ -2112,6 +2302,380 @@ export const getMatrimonyMatches = onCall(
     lockedAdvancedFilters,
   };
 });
+
+/**
+ * 1b. getMatrimonyHomeSummary
+ * Consolidated single-RPC loader for MatrimonyHomeScreen: returns status, registration summary,
+ * entitlements, unread notification count, and all 4 Home preview strips in one Firestore pass.
+ */
+export const getMatrimonyHomeSummary = onCall(
+  { invoker: 'public', cpu: 1, memory: '512MiB', concurrency: 20, maxInstances: 20 },
+  async (request) => {
+    const uid = requireAuthUid(request);
+    const db = getFirestore();
+    await assertMatrimonyProfileActive(db, uid);
+
+    const [
+      viewerProfSnap,
+      viewerPrivateSnap,
+      viewerPrefsSnap,
+      shortlistDocs,
+      blockDocs,
+      sentInterestsSnap,
+      viewDocs,
+      viewedByDocs,
+      sentPhotoReqSnap,
+      notifSnap,
+      approvedCatalog,
+    ] = await Promise.all([
+      getProfileRef(db, uid).get(),
+      readPrivateSnap(db, uid),
+      readPrefsSnap(db, uid),
+      readShortlistDocs(db, uid),
+      readBlockDocs(db, uid),
+      db.collection(COLLECTIONS.INTERESTS).where('senderUid', '==', uid).get(),
+      readViewDocs(db, uid),
+      readViewedByDocs(db, uid),
+      getSentPhotoRequestsCol(db, uid).get(),
+      db.collection(COLLECTIONS.NOTIFICATIONS).where('recipientUid', '==', uid).select('read').get(),
+      getWarmApprovedCatalog(db, DEFAULT_CHURCH_ID),
+    ]);
+
+    if (!viewerProfSnap.exists) {
+      return {
+        success: true,
+        registered: false,
+        profileStatus: 'not_started',
+      };
+    }
+
+    const viewer: Record<string, any> = { ...(viewerProfSnap.data() || {}), uid };
+    const viewerPrivate = viewerPrivateSnap.exists ? viewerPrivateSnap.data() || {} : {};
+    const viewerPrefs = viewerPrefsSnap.exists ? viewerPrefsSnap.data() || {} : {};
+    const viewerEntitlements = await resolveMemberEntitlements(db, uid, viewer);
+    const unlockedContactSet = new Set(viewerEntitlements.unlockedContactUids);
+    const viewerGender = normalizeGender(viewer.gender);
+
+    const unreadNotificationsCount = notifSnap.docs.filter((d) => d.data()?.read !== true).length;
+
+    const photoRequestStatusMap = new Map<string, 'pending' | 'approved' | 'declined'>();
+    sentPhotoReqSnap.docs.forEach((d) => {
+      const st = String(d.data()?.status || 'pending');
+      if (st === 'pending' || st === 'approved' || st === 'declined') {
+        photoRequestStatusMap.set(String(d.data()?.targetUid || d.id), st);
+      }
+    });
+
+    const viewerPhotoPaths: string[] = [];
+    if (typeof viewer.profilePhoto === 'string' && viewer.profilePhoto) {
+      viewerPhotoPaths.push(viewer.profilePhoto);
+    }
+    if (Array.isArray(viewer.gallery)) {
+      viewer.gallery.forEach((g: unknown) => {
+        if (typeof g === 'string' && g) viewerPhotoPaths.push(g);
+      });
+    }
+
+    const shortlistedSet = new Set(shortlistDocs.map((d) => d.id));
+    const blockedSet = new Set(blockDocs.map((d) => d.id));
+    const hiddenCount = blockDocs.filter((d) => d.data()?.type === 'dont_show').length;
+
+    const viewedMap = new Map<string, number>();
+    viewDocs.forEach((d) => {
+      viewedMap.set(d.id, toTimestampMs(d.data()?.viewedAt) || toTimestampMs(d.data()?.updatedAt));
+    });
+    const viewedByMap = new Map<string, number>();
+    viewedByDocs.forEach((d) => {
+      viewedByMap.set(d.id, toTimestampMs(d.data()?.viewedAt) || toTimestampMs(d.data()?.updatedAt));
+    });
+
+    const interestStatusMap = new Map<string, string>();
+    const interestSentAtMap = new Map<string, number>();
+    sentInterestsSnap.docs.forEach((doc) => {
+      const d = doc.data();
+      if (d?.receiverUid) {
+        const targetId = String(d.receiverUid);
+        interestStatusMap.set(targetId, String(d.status || 'pending'));
+        interestSentAtMap.set(targetId, toTimestampMs(d.updatedAt) || toTimestampMs(d.createdAt));
+      }
+    });
+
+    const { activeSubTierByUid, items: catalogItems } = approvedCatalog;
+
+    const targetGender: BinaryGender | null = viewerGender
+      ? viewerGender === 'male'
+        ? 'female'
+        : 'male'
+      : null;
+
+    const eligibleDocs = targetGender
+      ? catalogItems.filter((item) => {
+          if (item.uid === uid) return false;
+          if (blockedSet.has(item.uid)) return false;
+          return item.gender === targetGender;
+        })
+      : [];
+
+    const thirtyDaysAgoMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const allScored: any[] = [];
+    const newScored: any[] = [];
+    const viewedYouScored: any[] = [];
+    const viewedByYouScored: any[] = [];
+
+    for (const item of eligibleDocs) {
+      const candidate = item.candidate;
+      const candPrefs = item.candPrefs;
+      const candPriv = item.candPriv;
+
+      const createdOrApprovedMs =
+        toTimestampMs(candidate.approvedAt) ||
+        toTimestampMs(candidate.submittedAt) ||
+        toTimestampMs(candidate.createdAt);
+      const updatedAtMs = toTimestampMs(candidate.updatedAt) || createdOrApprovedMs;
+      const profTier = resolveActiveTierFromProfile(candidate);
+      const candTier: 'free' | 'silver' | 'gold' | 'platinum' =
+        profTier !== 'free' ? profTier : activeSubTierByUid.get(item.uid) ?? 'free';
+      const visibilityPriority = candTier === 'platinum' ? 2 : candTier === 'gold' ? 1 : 0;
+      const hasPhoto = Boolean(candidate.profilePhoto);
+      const photoCount =
+        (candidate.profilePhoto ? 1 : 0) +
+        (Array.isArray(candidate.gallery) ? candidate.gallery.length : 0);
+
+      const buildItem = (evaluation: ScoreEvaluation, viewedAtMs = 0) => ({
+        uid: item.uid,
+        candidate,
+        candPriv,
+        candPrefs,
+        evaluation,
+        isShortlisted: shortlistedSet.has(item.uid),
+        interestStatus: interestStatusMap.get(item.uid) || null,
+        interestSentAtMs: interestSentAtMap.get(item.uid) || 0,
+        joinedAtMs: createdOrApprovedMs,
+        updatedAtMs,
+        viewedAtMs,
+        age: typeof candidate.age === 'number' ? candidate.age : null,
+        location: candidate.location || {},
+        matchScore: evaluation.score,
+        sharedInterests: evaluation.sharedInterests,
+        candTier,
+        visibilityPriority,
+        photoCount,
+        hasPhoto,
+      });
+
+      const prefEval = evaluateCompatibility(
+        viewer,
+        viewerPrivate,
+        viewerPrefs,
+        candidate,
+        candPriv,
+        candPrefs,
+        {},
+        'partner_preferences'
+      );
+
+      if (prefEval.eligible) {
+        const scoredItem = buildItem(prefEval, 0);
+        allScored.push(scoredItem);
+        if (!(createdOrApprovedMs > 0 && createdOrApprovedMs < thirtyDaysAgoMs)) {
+          newScored.push(scoredItem);
+        }
+      }
+
+      const viewedYouAt = viewedByMap.get(item.uid) || 0;
+      const viewedByYouAt = viewedMap.get(item.uid) || 0;
+      if (viewedYouAt > 0 || viewedByYouAt > 0) {
+        const allEval = prefEval.eligible
+          ? prefEval
+          : evaluateCompatibility(
+              viewer,
+              viewerPrivate,
+              viewerPrefs,
+              candidate,
+              candPriv,
+              candPrefs,
+              {},
+              'all_filters'
+            );
+        if (allEval.eligible) {
+          if (viewedYouAt > 0) viewedYouScored.push(buildItem(allEval, viewedYouAt));
+          if (viewedByYouAt > 0) viewedByYouScored.push(buildItem(allEval, viewedByYouAt));
+        }
+      }
+    }
+
+    allScored.sort((a, b) => {
+      const aBoost = a.matchScore >= 40 ? (a.visibilityPriority ?? 0) * 3 : 0;
+      const bBoost = b.matchScore >= 40 ? (b.visibilityPriority ?? 0) * 3 : 0;
+      const aWeighted = a.matchScore + aBoost;
+      const bWeighted = b.matchScore + bBoost;
+      if (bWeighted !== aWeighted) return bWeighted - aWeighted;
+      if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
+      if (b.sharedInterests.length !== a.sharedInterests.length) {
+        return b.sharedInterests.length - a.sharedInterests.length;
+      }
+      if ((b.hasPhoto ? 1 : 0) !== (a.hasPhoto ? 1 : 0)) {
+        return (b.hasPhoto ? 1 : 0) - (a.hasPhoto ? 1 : 0);
+      }
+      return b.joinedAtMs - a.joinedAtMs;
+    });
+    newScored.sort((a, b) => {
+      if (b.joinedAtMs !== a.joinedAtMs) return b.joinedAtMs - a.joinedAtMs;
+      return b.matchScore - a.matchScore;
+    });
+    viewedYouScored.sort((a, b) => (b.viewedAtMs || 0) - (a.viewedAtMs || 0));
+    viewedByYouScored.sort((a, b) => (b.viewedAtMs || 0) - (a.viewedAtMs || 0));
+
+    const allSlice = allScored.slice(0, 12);
+    const newSlice = newScored.slice(0, 6);
+    const viewedYouSlice = viewedYouScored.slice(0, 5);
+    const viewedByYouSlice = viewedByYouScored.slice(0, 5);
+
+    const uniquePhotoPaths = new Set<string>(viewerPhotoPaths);
+    for (const item of [...allSlice, ...newSlice, ...viewedYouSlice, ...viewedByYouSlice]) {
+      if (item.candidate?.profilePhoto) uniquePhotoPaths.add(String(item.candidate.profilePhoto));
+      if (Array.isArray(item.candidate?.gallery)) {
+        item.candidate.gallery.forEach((g: unknown) => {
+          if (typeof g === 'string' && g) uniquePhotoPaths.add(g);
+        });
+      }
+    }
+
+    const preResolvedPhotoMap = new Map<string, string | null>();
+    if (uniquePhotoPaths.size > 0) {
+      const bucket = getStorage().bucket(MATRIMONY_BUCKET);
+      const expires = Date.now() + 60 * 60 * 1000;
+      await Promise.all(
+        Array.from(uniquePhotoPaths).map(async (p) => {
+          preResolvedPhotoMap.set(p, await resolveSingleMatchPhotoUrl(bucket, p, expires));
+        })
+      );
+    }
+
+    const formatSlice = (slice: any[]) =>
+      Promise.all(
+        slice.map((item) =>
+          formatMatchCandidatePayload({
+            candUid: item.uid,
+            viewer,
+            viewerPrivate,
+            candidate: item.candidate,
+            candPriv: item.candPriv,
+            candPrefs: item.candPrefs,
+            evaluation: item.evaluation,
+            isShortlisted: item.isShortlisted,
+            interestStatus: item.interestStatus,
+            interestSentAtMs: item.interestSentAtMs,
+            joinedAtMs: item.joinedAtMs,
+            viewedAtMs: item.viewedAtMs,
+            viewerEntitlements,
+            unlockedContactSet,
+            photoRequestStatus: photoRequestStatusMap.get(item.uid) || null,
+            candidateTierOverride: item.candTier,
+            preResolvedPhotoMap,
+          })
+        )
+      );
+
+    const [allFormatted, newFormatted, viewedYouFormatted, viewedByYouFormatted] = await Promise.all([
+      formatSlice(allSlice),
+      formatSlice(newSlice),
+      formatSlice(viewedYouSlice),
+      formatSlice(viewedByYouSlice),
+    ]);
+
+    const viewerPhoto = viewer.profilePhoto
+      ? preResolvedPhotoMap.get(String(viewer.profilePhoto)) ?? null
+      : null;
+    const signedGallery = Array.isArray(viewer.gallery)
+      ? viewer.gallery
+          .map((g: unknown) => (typeof g === 'string' ? preResolvedPhotoMap.get(g) : null))
+          .filter((u: string | null | undefined): u is string => Boolean(u))
+      : [];
+
+    const viewerPreferencesFilter = mapViewerPrefsToFilter(viewerPrefs);
+    const preferencesUpdatedAtMs = toTimestampMs(viewerPrefs.updatedAt);
+
+    if (viewerGender && targetGender) {
+      WARM_VIEWER_FEED_CACHE.set(`${uid}|all|partner_preferences|regular|best_match|0|{}`, {
+        expiresAtMs: Date.now() + WARM_FEED_TTL_MS,
+        viewer,
+        viewerPrivate,
+        viewerEntitlements,
+        unlockedContactSet,
+        lockedAdvancedFilters: false,
+        totalMatchedCount: allScored.length,
+        totalAvailableCount: eligibleDocs.length,
+        hiddenCount,
+        viewerGender,
+        targetGender,
+        viewerPhoto,
+        viewerPreferencesFilter,
+        preferencesUpdatedAtMs,
+        photoRequestStatusMap,
+        validScored: allScored,
+      });
+    }
+
+    const wrapFeed = (matches: any[], totalCount: number) => ({
+      success: true,
+      matches,
+      totalCount,
+      hasMore: matches.length < totalCount,
+      nextOffset: matches.length,
+      totalAvailableCount: eligibleDocs.length,
+      hiddenCount,
+      viewerGender,
+      targetGender,
+      viewerPhoto,
+      viewerPreferencesFilter,
+      preferencesUpdatedAtMs,
+      viewerEntitlements,
+      lockedAdvancedFilters: false,
+    });
+
+    const profilePayload = {
+      ...viewer,
+      signedProfilePhoto: viewerPhoto,
+      signedGallery,
+    };
+
+    return {
+      success: true,
+      registered: true,
+      profileStatus: viewer.profileStatus || 'approved',
+      unreadNotificationsCount,
+      viewerEntitlements,
+      status: {
+        success: true,
+        registered: true,
+        profileStatus: viewer.profileStatus || 'approved',
+        verificationStatus: viewer.verificationStatus || 'verified',
+        visibility: viewer.visibility || 'discoverable',
+        profileCompletion: viewer.profileCompletion ?? 70,
+        inactiveReason: viewer.inactiveReason || null,
+        signedProfilePhoto: viewerPhoto,
+        profile: profilePayload,
+      },
+      registration: {
+        success: true,
+        eligible: true,
+        registered: true,
+        registrationId: uid,
+        profile: profilePayload,
+        consent: viewerPrivate.consent || null,
+        profileManager: viewerPrivate.profileManager || null,
+        familyDetails: viewerPrivate.familyDetails || null,
+        incomeDetails: viewerPrivate.incomeDetails || null,
+        preferences: viewerPrefs,
+      },
+      allMatches: wrapFeed(allFormatted, allScored.length),
+      newMatches: wrapFeed(newFormatted, newScored.length),
+      viewedYou: wrapFeed(viewedYouFormatted, viewedYouScored.length),
+      viewedByYou: wrapFeed(viewedByYouFormatted, viewedByYouScored.length),
+    };
+  }
+);
 
 /**
  * 2. toggleMatrimonyShortlist
@@ -2142,9 +2706,12 @@ export const toggleMatrimonyShortlist = onCall(
   }
 
   // Enforce tier-based shortlist cap (Free: 10, Silver: 25, Gold: 50, Platinum: 70)
-  const [entitlements, existingShortlists] = await Promise.all([
+  const [entitlements, existingShortlists, prevReverseSnap, senderSnap, targetSnap] = await Promise.all([
     resolveMemberEntitlements(db, uid),
     readShortlistDocs(db, uid),
+    reverseRef.get(),
+    getProfileRef(db, uid).get(),
+    getProfileRef(db, targetUid).get(),
   ]);
   if (
     entitlements.shortlistLimit >= 0 &&
@@ -2162,6 +2729,18 @@ export const toggleMatrimonyShortlist = onCall(
     );
   }
 
+  const nowMs = Date.now();
+  const prevNotifiedAtMs = Number(prevReverseSnap.data()?.lastNotifiedAtMs || 0);
+  const senderData = senderSnap.exists ? (senderSnap.data() || {}) : {};
+  const targetData = targetSnap.exists ? (targetSnap.data() || {}) : {};
+  const sGender = normalizeGender(senderData.gender);
+  const tGender = normalizeGender(targetData.gender);
+  const shouldNotify =
+    nowMs - prevNotifiedAtMs >= 12 * 60 * 60 * 1000 &&
+    senderSnap.exists &&
+    targetSnap.exists &&
+    Boolean(sGender && tGender && sGender !== tGender);
+
   const now = FieldValue.serverTimestamp();
   await Promise.all([
     ref.set({
@@ -2169,12 +2748,43 @@ export const toggleMatrimonyShortlist = onCall(
       targetUid,
       createdAt: now,
     }),
-    reverseRef.set({
-      viewerUid: uid,
-      uid: targetUid,
-      createdAt: now,
-    }),
+    reverseRef.set(
+      {
+        viewerUid: uid,
+        uid: targetUid,
+        createdAt: prevReverseSnap.exists ? prevReverseSnap.data()?.createdAt || now : now,
+        updatedAt: now,
+        ...(shouldNotify ? { lastNotifiedAtMs: nowMs } : {}),
+      },
+      { merge: true }
+    ),
   ]);
+
+  if (shouldNotify) {
+    const canSeePhoto = canViewerSeeCandidatePhotos({
+      viewerUid: targetUid,
+      candidate: senderData,
+      interestStatus: null,
+    });
+    const thumb =
+      canSeePhoto && senderData.profilePhoto
+        ? await resolveNotificationPhotoUrl(String(senderData.profilePhoto))
+        : null;
+    await sendMatrimonyNotification({
+      db,
+      recipientUid: targetUid,
+      recipientProfile: targetData,
+      senderUid: uid,
+      prefKey: 'shortlist',
+      type: 'PROFILE_SHORTLISTED',
+      title: 'You were shortlisted!',
+      body: `${senderData.displayName || 'A Rhema member'} shortlisted your profile. Take a look!`,
+      imageUrl: thumb,
+      tag: `matrimony_shortlist_${uid}`,
+      data: { targetUid: uid, screen: 'MatrimonyMatches' },
+    });
+  }
+
   return { success: true, shortlisted: true };
 });
 
@@ -2189,27 +2799,81 @@ export const recordMatrimonyProfileView = onCall({ invoker: 'public' }, async (r
 
   const db = getFirestore();
   await assertMatrimonyProfileActive(db, uid);
+
+  const viewedByRef = getViewedByCol(db, targetUid).doc(uid);
+  const [prevViewedBySnap, senderSnap, targetSnap] = await Promise.all([
+    viewedByRef.get(),
+    getProfileRef(db, uid).get(),
+    getProfileRef(db, targetUid).get(),
+  ]);
+
+  const nowMs = Date.now();
+  const prevNotifiedAtMs = Number(prevViewedBySnap.data()?.lastNotifiedAtMs || 0);
+  const senderData = senderSnap.exists ? (senderSnap.data() || {}) : {};
+  const targetData = targetSnap.exists ? (targetSnap.data() || {}) : {};
+  const sGender = normalizeGender(senderData.gender);
+  const tGender = normalizeGender(targetData.gender);
+  const shouldNotify =
+    nowMs - prevNotifiedAtMs >= 12 * 60 * 60 * 1000 &&
+    senderSnap.exists &&
+    targetSnap.exists &&
+    Boolean(sGender && tGender && sGender !== tGender);
+
   const now = FieldValue.serverTimestamp();
   await Promise.all([
     getViewsCol(db, uid).doc(targetUid).set(
       { uid, targetUid, viewedAt: now, updatedAt: now },
       { merge: true }
     ),
-    getViewedByCol(db, targetUid).doc(uid).set(
-      { viewerUid: uid, uid: targetUid, viewedAt: now, updatedAt: now },
+    viewedByRef.set(
+      {
+        viewerUid: uid,
+        uid: targetUid,
+        viewedAt: now,
+        updatedAt: now,
+        ...(shouldNotify ? { lastNotifiedAtMs: nowMs } : {}),
+      },
       { merge: true }
     ),
   ]);
+
+  if (shouldNotify) {
+    const canSeePhoto = canViewerSeeCandidatePhotos({
+      viewerUid: targetUid,
+      candidate: senderData,
+      interestStatus: null,
+    });
+    const thumb =
+      canSeePhoto && senderData.profilePhoto
+        ? await resolveNotificationPhotoUrl(String(senderData.profilePhoto))
+        : null;
+    const pronoun = getObjectPronoun(senderData.gender);
+    await sendMatrimonyNotification({
+      db,
+      recipientUid: targetUid,
+      recipientProfile: targetData,
+      senderUid: uid,
+      prefKey: 'profileViews',
+      type: 'PROFILE_VIEW',
+      title: 'Rhema Matrimony',
+      body: `${senderData.displayName || 'A Rhema member'} viewed your profile. Do you like ${pronoun}?`,
+      imageUrl: thumb,
+      tag: `matrimony_profile_view_${uid}`,
+      data: { targetUid: uid, screen: 'MatrimonyMatches' },
+    });
+  }
 
   return { success: true, recorded: true };
 });
 
 /**
- * 3. dismissMatrimonyMatch ("Don't Show")
+ * 3. dismissMatrimonyMatch ("Don't Show" / Ignored or Blocked)
  */
 export const dismissMatrimonyMatch = onCall({ invoker: 'public' }, async (request) => {
   const uid = requireAuthUid(request);
   const targetUid = assertNonEmptyString(request.data?.targetUid, 'targetUid', 128);
+  const rawType = optionalString(request.data?.type, 20);
+  const blockType: 'dont_show' | 'blocked' = rawType === 'blocked' ? 'blocked' : 'dont_show';
   const db = getFirestore();
   await assertMatrimonyProfileActive(db, uid);
 
@@ -2217,48 +2881,70 @@ export const dismissMatrimonyMatch = onCall({ invoker: 'public' }, async (reques
   batch.set(getBlocksCol(db, uid).doc(targetUid), {
     uid,
     targetUid,
-    type: 'dont_show',
+    type: blockType,
     createdAt: FieldValue.serverTimestamp(),
   });
   batch.delete(getShortlistsCol(db, uid).doc(targetUid));
   batch.delete(db.collection(COLLECTIONS.SHORTLISTS).doc(uid).collection('saved').doc(targetUid));
   await batch.commit();
 
-  return { success: true, dismissed: true };
+  return { success: true, dismissed: true, type: blockType };
 });
 
 /**
- * 3b. restoreMatrimonyMatches (Undo / Restore "Don't Show")
+ * 3b. restoreMatrimonyMatches (Undo / Unignore / Unblock)
  */
 export const restoreMatrimonyMatches = onCall(
-  { invoker: 'public', cpu: 'gcf_gen1', concurrency: 1, maxInstances: 10 },
+  { invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 20, maxInstances: 10 },
   async (request) => {
   const uid = requireAuthUid(request);
   const targetUid = optionalString(request.data?.targetUid, 128);
+  const rawType = optionalString(request.data?.type, 20);
+  const targetType: 'dont_show' | 'blocked' | 'all' =
+    rawType === 'blocked' ? 'blocked' : rawType === 'all' ? 'all' : 'dont_show';
   const db = getFirestore();
-  await assertMatrimonyProfileActive(db, uid);
   const colRef = getBlocksCol(db, uid);
   const legacyColRef = db.collection(COLLECTIONS.BLOCKS).doc(uid).collection('blocked');
 
+  const matchesTargetType = (docType: unknown) => {
+    if (targetType === 'all') return true;
+    if (targetType === 'blocked') return docType === 'blocked';
+    return !docType || docType === 'dont_show';
+  };
+
   if (targetUid) {
     const [docRef, legacyRef] = [colRef.doc(targetUid), legacyColRef.doc(targetUid)];
-    const [snap, legacySnap] = await Promise.all([docRef.get(), legacyRef.get()]);
-    let restored = 0;
-    if (snap.exists && snap.data()?.type === 'dont_show') {
-      await docRef.delete();
-      restored = 1;
+    const [, snap, legacySnap] = await Promise.all([
+      assertMatrimonyProfileActive(db, uid),
+      docRef.get(),
+      legacyRef.get(),
+    ]);
+    const deletes: Promise<unknown>[] = [];
+    if (snap.exists && matchesTargetType(snap.data()?.type)) {
+      deletes.push(docRef.delete());
     }
-    if (legacySnap.exists && legacySnap.data()?.type === 'dont_show') {
-      await legacyRef.delete();
-      restored = 1;
+    if (legacySnap.exists && matchesTargetType(legacySnap.data()?.type)) {
+      deletes.push(legacyRef.delete());
     }
-    return { success: true, restoredCount: restored };
+    if (deletes.length > 0) {
+      await Promise.all(deletes);
+    }
+    invalidateWarmFeedForUid(uid);
+    return { success: true, restoredCount: deletes.length > 0 ? 1 : 0 };
   }
 
-  const [snap, legacySnap] = await Promise.all([
-    colRef.where('type', '==', 'dont_show').get(),
-    legacyColRef.where('type', '==', 'dont_show').get(),
-  ]);
+  const [, snap, legacySnap] =
+    targetType === 'all'
+      ? await Promise.all([
+          assertMatrimonyProfileActive(db, uid),
+          colRef.get(),
+          legacyColRef.get(),
+        ])
+      : await Promise.all([
+          assertMatrimonyProfileActive(db, uid),
+          colRef.where('type', '==', targetType).get(),
+          legacyColRef.where('type', '==', targetType).get(),
+        ]);
   if (snap.empty && legacySnap.empty) {
     return { success: true, restoredCount: 0 };
   }
@@ -2267,8 +2953,100 @@ export const restoreMatrimonyMatches = onCall(
   snap.docs.forEach((d) => batch.delete(d.ref));
   legacySnap.docs.forEach((d) => batch.delete(d.ref));
   await batch.commit();
+  invalidateWarmFeedForUid(uid);
 
   return { success: true, restoredCount: Math.max(snap.size, legacySnap.size) };
+});
+
+/**
+ * 3c. getMatrimonyHiddenProfiles
+ * Returns ignored ('dont_show') or blocked ('blocked') profiles with basic summary for Account Settings.
+ */
+export const getMatrimonyHiddenProfiles = onCall(
+  { invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 20, maxInstances: 10 },
+  async (request) => {
+  const uid = requireAuthUid(request);
+  const rawType = optionalString(request.data?.type, 20);
+  const targetType: 'dont_show' | 'blocked' = rawType === 'blocked' ? 'blocked' : 'dont_show';
+  const db = getFirestore();
+
+  const [, subSnap, legacySnap] = await Promise.all([
+    assertMatrimonyProfileActive(db, uid),
+    getBlocksCol(db, uid).get(),
+    db.collection(COLLECTIONS.BLOCKS).doc(uid).collection('blocked').get(),
+  ]);
+
+  const entryMap = new Map<string, number>();
+  const collect = (docs: FirebaseFirestore.QueryDocumentSnapshot[]) => {
+    docs.forEach((d) => {
+      const data = d.data() || {};
+      const docType = String(data.type || 'dont_show');
+      if (docType !== targetType) return;
+      const tUid = String(data.targetUid || d.id);
+      if (!tUid || tUid === uid) return;
+      const ms = toTimestampMs(data.createdAt);
+      if (!entryMap.has(tUid) || ms > (entryMap.get(tUid) || 0)) {
+        entryMap.set(tUid, ms);
+      }
+    });
+  };
+  collect(subSnap.docs);
+  collect(legacySnap.docs);
+
+  if (entryMap.size === 0) {
+    return { success: true, profiles: [] };
+  }
+
+  const targetUids = Array.from(entryMap.keys());
+  const profRefs = targetUids.map((tUid) => getProfileRef(db, tUid));
+  const profMap = await batchGetDocMap(db, profRefs);
+
+  let bucket: ReturnType<ReturnType<typeof getStorage>['bucket']> | null = null;
+  const expires = Date.now() + 60 * 60 * 1000;
+
+  const profiles = (
+    await Promise.all(
+      targetUids.map(async (targetUid) => {
+        const hiddenAtMs = entryMap.get(targetUid) || 0;
+        const profSnap = profMap.get(getProfileRef(db, targetUid).path);
+        if (!profSnap?.exists) return null;
+        const p = profSnap.data() || {};
+        if (p.profileStatus === 'deleted') return null;
+
+        let signedProfilePhoto: string | null = null;
+        if (p.profilePhoto && p.photoVisibility !== 'protect_photo') {
+          const photoStr = String(p.profilePhoto);
+          if (photoStr.startsWith('https://') || photoStr.startsWith('http://')) {
+            signedProfilePhoto = photoStr;
+          } else {
+            if (!bucket) bucket = getStorage().bucket(MATRIMONY_BUCKET);
+            signedProfilePhoto = await resolveSingleMatchPhotoUrl(bucket, photoStr, expires);
+          }
+        }
+
+        return {
+          uid: targetUid,
+          displayName: String(p.displayName || 'Rhema Member'),
+          profileCode: String(p.matrimonyId || `RM${targetUid.slice(0, 7).toUpperCase()}`),
+          age: typeof p.age === 'number' ? p.age : null,
+          heightCm: typeof p.heightCm === 'number' ? p.heightCm : null,
+          occupation: String(
+            p.career?.profession ||
+              p.career?.occupationCategory ||
+              p.education?.qualification ||
+              ''
+          ).trim(),
+          city: String(p.location?.village || p.location?.city || p.location?.state || '').trim(),
+          signedProfilePhoto,
+          hiddenAtMs,
+        };
+      })
+    )
+  )
+    .filter((x): x is NonNullable<typeof x> => x !== null)
+    .sort((a, b) => (b.hiddenAtMs || 0) - (a.hiddenAtMs || 0));
+
+  return { success: true, profiles };
 });
 
 /**
@@ -2302,6 +3080,18 @@ export const sendMatrimonyInterest = onCall(
 
   const sender = senderSnap.data() || {};
   const target = targetSnap.data() || {};
+  if (sender.selfDeactivated === true) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Your profile is currently deactivated. Reactivate it in Account Settings to contact members.'
+    );
+  }
+  if (target.selfDeactivated === true) {
+    throw new HttpsError(
+      'failed-precondition',
+      'This profile is currently deactivated.'
+    );
+  }
   if (sender.profileStatus !== 'approved' || target.profileStatus !== 'approved') {
     throw new HttpsError(
       'failed-precondition',
@@ -2444,19 +3234,34 @@ export const sendMatrimonyInterest = onCall(
     await seedMutualMatchChatOnAccept(db, uid, targetUid);
   }
 
-  // Best-effort push notification
+  // Best-effort push notification (respects recipient's notificationPreferences & all registered device tokens)
   try {
-    const fcmToken = targetMemberSnap.data()?.fcmToken;
-    if (fcmToken) {
-      await getMessaging().send({
-        token: fcmToken,
-        notification: {
-          title: txResult.isMutual ? 'New Mutual Match!' : 'New Matrimony Interest',
-          body: `${sender.displayName || 'A Rhema member'} expressed interest in your Matrimony profile.`,
-        },
-        data: { type: 'MATRIMONY_INTEREST', module: 'matrimony' },
-      });
-    }
+    void targetMemberSnap;
+    const canSeePhoto = canViewerSeeCandidatePhotos({
+      viewerUid: targetUid,
+      candidate: sender,
+      interestStatus: txResult.status,
+    });
+    const thumb =
+      canSeePhoto && sender.profilePhoto
+        ? await resolveNotificationPhotoUrl(String(sender.profilePhoto))
+        : null;
+    await sendMatrimonyNotification({
+      db,
+      recipientUid: targetUid,
+      recipientProfile: target,
+      senderUid: uid,
+      prefKey: txResult.isMutual ? 'interestAcceptance' : 'request',
+      type: txResult.isMutual ? 'MUTUAL_MATCH' : 'INTEREST_RECEIVED',
+      title: txResult.isMutual ? 'New Mutual Match!' : 'New Matrimony Interest',
+      body: txResult.isMutual
+        ? `${sender.displayName || 'A Rhema member'} also expressed interest in your profile.`
+        : `${sender.displayName || 'A Rhema member'} expressed interest in your Matrimony profile.`,
+      imageUrl: thumb,
+      tag: `matrimony_interest_${uid}`,
+      data: { targetUid: uid, screen: 'MatrimonyInterestsHub' },
+      writeInAppDoc: false,
+    });
   } catch (err) {
     console.warn('sendMatrimonyInterest push warning:', err);
   }
@@ -2491,7 +3296,13 @@ export const unlockMatrimonyContact = onCall(
     }
 
     const db = getFirestore();
-    await assertMatrimonyProfileActive(db, uid);
+    const viewerData = await assertMatrimonyProfileActive(db, uid);
+    if (viewerData.selfDeactivated === true) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Your profile is currently deactivated. Reactivate it in Account Settings to unlock contacts.'
+      );
+    }
 
     const [targetProfSnap, targetPrivSnap, blockAB, blockBA, entitlements] = await Promise.all([
       getProfileRef(db, targetUid).get(),
@@ -2511,6 +3322,16 @@ export const unlockMatrimonyContact = onCall(
     const targetData = targetProfSnap.data() || {};
     if (targetData.profileStatus !== 'approved') {
       throw new HttpsError('failed-precondition', 'Profile is not approved.');
+    }
+    if (targetData.selfDeactivated === true) {
+      throw new HttpsError('failed-precondition', 'This profile is currently deactivated.');
+    }
+    if (targetData.mobilePrivacy === 'messages_only') {
+      throw new HttpsError(
+        'failed-precondition',
+        'This member prefers to be contacted via Messages only.',
+        { reasonCode: 'MOBILE_PRIVACY_MESSAGES_ONLY' }
+      );
     }
 
     if (entitlements.contactNumberLimit === 0 || entitlements.tier === 'free') {
@@ -2645,6 +3466,7 @@ export const getMatrimonyInterestsHub = onCall({ invoker: 'public' }, async (req
     shortlistDocs,
     receivedSnap,
     sentSnap,
+    sentPhotoReqSnap,
   ] = await Promise.all([
     getProfileRef(db, uid).get(),
     readPrivateSnap(db, uid),
@@ -2652,6 +3474,7 @@ export const getMatrimonyInterestsHub = onCall({ invoker: 'public' }, async (req
     readShortlistDocs(db, uid),
     db.collection(COLLECTIONS.INTERESTS).where('receiverUid', '==', uid).get(),
     db.collection(COLLECTIONS.INTERESTS).where('senderUid', '==', uid).get(),
+    getSentPhotoRequestsCol(db, uid).get(),
   ]);
 
   if (!viewerProfSnap.exists) {
@@ -2662,65 +3485,15 @@ export const getMatrimonyInterestsHub = onCall({ invoker: 'public' }, async (req
   const viewerPrivate = viewerPrivSnap.exists ? viewerPrivSnap.data() || {} : {};
   const viewerPrefs = viewerPrefsSnap.exists ? viewerPrefsSnap.data() || {} : {};
   const shortlistedSet = new Set(shortlistDocs.map((d) => d.id));
+  const photoReqStatusMap = new Map<string, 'pending' | 'approved' | 'declined'>();
+  sentPhotoReqSnap.docs.forEach((d) => {
+    const st = String(d.data()?.status || 'pending');
+    if (st === 'pending' || st === 'approved' || st === 'declined') {
+      photoReqStatusMap.set(String(d.data()?.targetUid || d.id), st);
+    }
+  });
   const viewerEntitlements = await resolveMemberEntitlements(db, uid, viewer);
   const unlockedContactSet = new Set(viewerEntitlements.unlockedContactUids);
-
-  const counterpartUids = new Set<string>();
-  receivedSnap.docs.forEach((d) => {
-    const s = d.data()?.senderUid;
-    if (s && s !== uid) counterpartUids.add(String(s));
-  });
-  sentSnap.docs.forEach((d) => {
-    const r = d.data()?.receiverUid;
-    if (r && r !== uid) counterpartUids.add(String(r));
-  });
-
-  const candidateMap = new Map<string, Awaited<ReturnType<typeof formatMatchCandidatePayload>>>();
-
-  await Promise.all(
-    Array.from(counterpartUids).map(async (otherUid) => {
-      const [profSnap, privSnap, prefsSnap] = await Promise.all([
-        getProfileRef(db, otherUid).get(),
-        readPrivateSnap(db, otherUid),
-        readPrefsSnap(db, otherUid),
-      ]);
-      if (!profSnap.exists) return;
-      const candData = profSnap.data() || {};
-      if (candData.profileStatus !== 'approved') return;
-
-      const candPriv = privSnap.exists ? privSnap.data() || {} : {};
-      const candPrefs = prefsSnap.exists ? prefsSnap.data() || {} : {};
-      const evaluation = evaluateCompatibility(
-        viewer,
-        viewerPrivate,
-        viewerPrefs,
-        candData,
-        candPriv,
-        candPrefs,
-        {}
-      );
-      const joinedAtMs =
-        toTimestampMs(candData.approvedAt) ||
-        toTimestampMs(candData.submittedAt) ||
-        toTimestampMs(candData.createdAt);
-
-      const payload = await formatMatchCandidatePayload({
-        candUid: otherUid,
-        viewer,
-        viewerPrivate,
-        candidate: candData,
-        candPriv,
-        candPrefs,
-        evaluation,
-        isShortlisted: shortlistedSet.has(otherUid),
-        interestStatus: null,
-        joinedAtMs,
-        viewerEntitlements,
-        unlockedContactSet,
-      });
-      candidateMap.set(otherUid, payload);
-    })
-  );
 
   const normalizeStatus = (raw: unknown): 'pending' | 'accepted' | 'declined' => {
     const s = String(raw || '').toLowerCase();
@@ -2728,6 +3501,138 @@ export const getMatrimonyInterestsHub = onCall({ invoker: 'public' }, async (req
     if (s === 'declined' || s === 'rejected') return 'declined';
     return 'pending';
   };
+
+  const counterpartUids = new Set<string>();
+  const counterpartStatusMap = new Map<string, string>();
+  receivedSnap.docs.forEach((d) => {
+    const s = d.data()?.senderUid;
+    if (s && s !== uid) {
+      const k = String(s);
+      counterpartUids.add(k);
+      counterpartStatusMap.set(k, normalizeStatus(d.data()?.status));
+    }
+  });
+  sentSnap.docs.forEach((d) => {
+    const r = d.data()?.receiverUid;
+    if (r && r !== uid) {
+      const k = String(r);
+      counterpartUids.add(k);
+      if (!counterpartStatusMap.has(k) || normalizeStatus(d.data()?.status) === 'accepted') {
+        counterpartStatusMap.set(k, normalizeStatus(d.data()?.status));
+      }
+    }
+  });
+
+  const candidateMap = new Map<string, Awaited<ReturnType<typeof formatMatchCandidatePayload>>>();
+  const counterpartUidList = Array.from(counterpartUids);
+
+  if (counterpartUidList.length > 0) {
+    const profRefs = counterpartUidList.map((id) => getProfileRef(db, id));
+    const prefsRefs = counterpartUidList.map((id) => getPrefsRef(db, id));
+    const privRefs = counterpartUidList.map((id) => getPrivateRef(db, id));
+    const subDocMap = await batchGetDocMap(db, [...profRefs, ...prefsRefs, ...privRefs]);
+
+    const missingLegacyRefs: DocumentReference[] = [];
+    counterpartUidList.forEach((id) => {
+      if (!subDocMap.get(getPrefsRef(db, id).path)?.exists) {
+        missingLegacyRefs.push(db.collection(COLLECTIONS.PREFERENCES).doc(id));
+      }
+      if (!subDocMap.get(getPrivateRef(db, id).path)?.exists) {
+        missingLegacyRefs.push(db.collection(COLLECTIONS.PRIVATE).doc(id));
+      }
+    });
+    const legacyDocMap =
+      missingLegacyRefs.length > 0
+        ? await batchGetDocMap(db, missingLegacyRefs)
+        : new Map<string, DocumentSnapshot>();
+
+    const approvedCounterparts: Array<{
+      otherUid: string;
+      candData: Record<string, any>;
+      candPriv: Record<string, any>;
+      candPrefs: Record<string, any>;
+    }> = [];
+    const uniquePhotoPaths = new Set<string>();
+
+    for (const otherUid of counterpartUidList) {
+      const profSnap = subDocMap.get(getProfileRef(db, otherUid).path);
+      if (!profSnap?.exists) continue;
+      const candData = profSnap.data() || {};
+      if (candData.profileStatus !== 'approved') continue;
+
+      const subPrefs = subDocMap.get(getPrefsRef(db, otherUid).path);
+      const prefsSnap = subPrefs?.exists
+        ? subPrefs
+        : legacyDocMap.get(db.collection(COLLECTIONS.PREFERENCES).doc(otherUid).path);
+      const subPriv = subDocMap.get(getPrivateRef(db, otherUid).path);
+      const privSnap = subPriv?.exists
+        ? subPriv
+        : legacyDocMap.get(db.collection(COLLECTIONS.PRIVATE).doc(otherUid).path);
+
+      if (typeof candData.profilePhoto === 'string' && candData.profilePhoto) {
+        uniquePhotoPaths.add(candData.profilePhoto);
+      }
+      if (Array.isArray(candData.gallery)) {
+        candData.gallery.forEach((g: unknown) => {
+          if (typeof g === 'string' && g) uniquePhotoPaths.add(g);
+        });
+      }
+
+      approvedCounterparts.push({
+        otherUid,
+        candData,
+        candPriv: privSnap?.exists ? privSnap.data() || {} : {},
+        candPrefs: prefsSnap?.exists ? prefsSnap.data() || {} : {},
+      });
+    }
+
+    const preResolvedPhotoMap = new Map<string, string | null>();
+    if (uniquePhotoPaths.size > 0) {
+      const bucket = getStorage().bucket(MATRIMONY_BUCKET);
+      const expires = Date.now() + 60 * 60 * 1000;
+      await Promise.all(
+        Array.from(uniquePhotoPaths).map(async (p) => {
+          preResolvedPhotoMap.set(p, await resolveSingleMatchPhotoUrl(bucket, p, expires));
+        })
+      );
+    }
+
+    await Promise.all(
+      approvedCounterparts.map(async ({ otherUid, candData, candPriv, candPrefs }) => {
+        const evaluation = evaluateCompatibility(
+          viewer,
+          viewerPrivate,
+          viewerPrefs,
+          candData,
+          candPriv,
+          candPrefs,
+          {}
+        );
+        const joinedAtMs =
+          toTimestampMs(candData.approvedAt) ||
+          toTimestampMs(candData.submittedAt) ||
+          toTimestampMs(candData.createdAt);
+
+        const payload = await formatMatchCandidatePayload({
+          candUid: otherUid,
+          viewer: { ...viewer, uid },
+          viewerPrivate,
+          candidate: candData,
+          candPriv,
+          candPrefs,
+          evaluation,
+          isShortlisted: shortlistedSet.has(otherUid),
+          interestStatus: counterpartStatusMap.get(otherUid) || 'pending',
+          joinedAtMs,
+          viewerEntitlements,
+          unlockedContactSet,
+          photoRequestStatus: photoReqStatusMap.get(otherUid) || null,
+          preResolvedPhotoMap,
+        });
+        candidateMap.set(otherUid, payload);
+      })
+    );
+  }
 
   const received = receivedSnap.docs
     .map((d) => {
@@ -2855,7 +3760,36 @@ export const respondMatrimonyInterest = onCall(
 
   await batch.commit();
   if (action === 'accept') {
-    await seedMutualMatchChatOnAccept(db, uid, targetUid);
+    const [, accepterSnap, targetSnap] = await Promise.all([
+      seedMutualMatchChatOnAccept(db, uid, targetUid),
+      getProfileRef(db, uid).get(),
+      getProfileRef(db, targetUid).get(),
+    ]);
+    const accepterData = accepterSnap.exists ? (accepterSnap.data() || {}) : {};
+    const targetData = targetSnap.exists ? (targetSnap.data() || {}) : null;
+    const canSeePhoto = canViewerSeeCandidatePhotos({
+      viewerUid: targetUid,
+      candidate: accepterData,
+      interestStatus: 'accepted',
+    });
+    const thumb =
+      canSeePhoto && accepterData.profilePhoto
+        ? await resolveNotificationPhotoUrl(String(accepterData.profilePhoto))
+        : null;
+    await sendMatrimonyNotification({
+      db,
+      recipientUid: targetUid,
+      recipientProfile: targetData,
+      senderUid: uid,
+      prefKey: 'interestAcceptance',
+      type: 'MUTUAL_MATCH',
+      title: 'Interest Accepted!',
+      body: `${accepterData.displayName || 'A Rhema member'} accepted your Matrimony interest.`,
+      imageUrl: thumb,
+      tag: `matrimony_interest_accepted_${uid}`,
+      data: { targetUid: uid, screen: 'MatrimonyInterestsHub' },
+      writeInAppDoc: false,
+    });
   }
   return { success: true, status: nextStatus };
 });
@@ -2967,3 +3901,1154 @@ export const reportMatrimonyProfile = onCall(
     hidden: alsoHide,
   };
 });
+
+function invalidateWarmFeedForUid(uid: string): void {
+  const prefix = `${uid}|`;
+  for (const key of Array.from(WARM_VIEWER_FEED_CACHE.keys())) {
+    if (key.startsWith(prefix)) WARM_VIEWER_FEED_CACHE.delete(key);
+  }
+}
+
+/**
+ * 8. requestMatrimonyPhotoAccess
+ * Requests permission from a member with Protect Photo / restricted photos to view their photo.
+ */
+export const requestMatrimonyPhotoAccess = onCall(
+  { invoker: 'public', cpu: 'gcf_gen1', concurrency: 1, maxInstances: 10 },
+  async (request) => {
+    const uid = requireAuthUid(request);
+    const targetUid = assertNonEmptyString(request.data?.targetUid, 'targetUid', 128);
+    if (uid === targetUid) {
+      throw new HttpsError('invalid-argument', 'Cannot request access to your own photo.');
+    }
+
+    const db = getFirestore();
+    const sender = await assertMatrimonyProfileActive(db, uid);
+    if (sender.selfDeactivated === true) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Your profile is currently deactivated. Reactivate it in Account Settings to send photo requests.'
+      );
+    }
+
+    const [targetSnap, targetMemberSnap, viewerBlocks, targetBlocks] = await Promise.all([
+      getProfileRef(db, targetUid).get(),
+      db
+        .collection('Rhema Church')
+        .doc(DEFAULT_CHURCH_ID)
+        .collection('members')
+        .doc(targetUid)
+        .get(),
+      readBlockDocs(db, uid),
+      readBlockDocs(db, targetUid),
+    ]);
+
+    if (!targetSnap.exists) {
+      throw new HttpsError('not-found', 'Member profile not found.');
+    }
+    const target = targetSnap.data() || {};
+    if (target.profileStatus !== 'approved' || target.selfDeactivated === true) {
+      throw new HttpsError('failed-precondition', 'This profile is currently unavailable.');
+    }
+    if (
+      viewerBlocks.some((d) => d.id === targetUid && d.data()?.type === 'blocked') ||
+      targetBlocks.some((d) => d.id === uid && d.data()?.type === 'blocked')
+    ) {
+      throw new HttpsError('permission-denied', 'Cannot request photo access for this member.');
+    }
+
+    const allowedUids: string[] = Array.isArray(target.protectedPhotoAllowedUids)
+      ? target.protectedPhotoAllowedUids
+      : [];
+    if (allowedUids.includes(uid)) {
+      return { success: true, status: 'approved', alreadyAllowed: true };
+    }
+
+    const now = FieldValue.serverTimestamp();
+    const batch = db.batch();
+    batch.set(
+      getPhotoRequestsCol(db, targetUid).doc(uid),
+      {
+        uid: targetUid,
+        requesterUid: uid,
+        status: 'pending',
+        createdAt: now,
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+    batch.set(
+      getSentPhotoRequestsCol(db, uid).doc(targetUid),
+      {
+        uid,
+        targetUid,
+        status: 'pending',
+        createdAt: now,
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+    batch.set(db.collection(COLLECTIONS.NOTIFICATIONS).doc(), {
+      recipientUid: targetUid,
+      senderUid: uid,
+      type: 'PHOTO_REQUEST_RECEIVED',
+      title: 'Photo Access Request',
+      body: `${sender.displayName || 'A Rhema member'} requested to view your protected photo.`,
+      read: false,
+      createdAt: now,
+    });
+    await batch.commit();
+
+    invalidateWarmFeedForUid(uid);
+
+    try {
+      void targetMemberSnap;
+      const canSeePhoto = canViewerSeeCandidatePhotos({
+        viewerUid: targetUid,
+        candidate: sender,
+        interestStatus: null,
+      });
+      const thumb =
+        canSeePhoto && sender.profilePhoto
+          ? await resolveNotificationPhotoUrl(String(sender.profilePhoto))
+          : null;
+      await sendMatrimonyNotification({
+        db,
+        recipientUid: targetUid,
+        recipientProfile: target,
+        senderUid: uid,
+        prefKey: 'request',
+        type: 'PHOTO_REQUEST_RECEIVED',
+        title: 'Photo Access Request',
+        body: `${sender.displayName || 'A Rhema member'} requested to view your protected photo.`,
+        imageUrl: thumb,
+        tag: `matrimony_photo_req_${uid}`,
+        data: { targetUid: uid, screen: 'MatrimonyPrivacySettings' },
+        writeInAppDoc: false,
+      });
+    } catch (err) {
+      console.warn('requestMatrimonyPhotoAccess push warning:', err);
+    }
+
+    return { success: true, status: 'pending', alreadyAllowed: false };
+  }
+);
+
+/**
+ * 9. getMatrimonyPhotoRequests
+ * Lists incoming photo access requests received by the signed-in member.
+ */
+export const getMatrimonyPhotoRequests = onCall(
+  { invoker: 'public', cpu: 1, memory: '512MiB', concurrency: 10, maxInstances: 10 },
+  async (request) => {
+    const uid = requireAuthUid(request);
+    const db = getFirestore();
+    const viewer = await assertMatrimonyProfileActive(db, uid);
+
+    const [
+      reqSnap,
+      viewerPrivSnap,
+      viewerPrefsSnap,
+      shortlistDocs,
+      receivedIntSnap,
+      sentIntSnap,
+      sentPhotoReqSnap,
+    ] = await Promise.all([
+      getPhotoRequestsCol(db, uid).get(),
+      readPrivateSnap(db, uid),
+      readPrefsSnap(db, uid),
+      readShortlistDocs(db, uid),
+      db.collection(COLLECTIONS.INTERESTS).where('receiverUid', '==', uid).get(),
+      db.collection(COLLECTIONS.INTERESTS).where('senderUid', '==', uid).get(),
+      getSentPhotoRequestsCol(db, uid).get(),
+    ]);
+    if (reqSnap.empty) {
+      return { success: true, requests: [] };
+    }
+
+    const reqEntries = reqSnap.docs
+      .map((d) => {
+        const data = d.data() || {};
+        const requesterUid = String(data.requesterUid || d.id);
+        const statusRaw = String(data.status || 'pending');
+        const status: 'pending' | 'approved' | 'declined' =
+          statusRaw === 'approved' || statusRaw === 'declined' ? statusRaw : 'pending';
+        return {
+          requesterUid,
+          status,
+          createdAtMs: toTimestampMs(data.createdAt),
+          updatedAtMs: toTimestampMs(data.updatedAt),
+        };
+      })
+      .filter((r) => r.requesterUid && r.requesterUid !== uid);
+
+    if (reqEntries.length === 0) {
+      return { success: true, requests: [] };
+    }
+
+    const viewerPrivate = viewerPrivSnap.exists ? viewerPrivSnap.data() || {} : {};
+    const viewerPrefs = viewerPrefsSnap.exists ? viewerPrefsSnap.data() || {} : {};
+    const shortlistedSet = new Set(shortlistDocs.map((d) => d.id));
+    const viewerEntitlements = await resolveMemberEntitlements(db, uid, viewer);
+    const unlockedContactSet = new Set(viewerEntitlements.unlockedContactUids);
+
+    const normalizeStatus = (raw: unknown): 'pending' | 'accepted' | 'declined' => {
+      const s = String(raw || '').toLowerCase();
+      if (s === 'accepted' || s === 'replied') return 'accepted';
+      if (s === 'declined' || s === 'rejected') return 'declined';
+      return 'pending';
+    };
+    const interestStatusByUid = new Map<string, string>();
+    receivedIntSnap.docs.forEach((d) => {
+      const s = String(d.data()?.senderUid || '');
+      if (s) interestStatusByUid.set(s, normalizeStatus(d.data()?.status));
+    });
+    sentIntSnap.docs.forEach((d) => {
+      const r = String(d.data()?.receiverUid || '');
+      const st = normalizeStatus(d.data()?.status);
+      if (r && (!interestStatusByUid.has(r) || st === 'accepted')) {
+        interestStatusByUid.set(r, st);
+      }
+    });
+
+    const sentPhotoReqStatusMap = new Map<string, 'pending' | 'approved' | 'declined'>();
+    sentPhotoReqSnap.docs.forEach((d) => {
+      const st = String(d.data()?.status || 'pending');
+      if (st === 'pending' || st === 'approved' || st === 'declined') {
+        sentPhotoReqStatusMap.set(String(d.data()?.targetUid || d.id), st);
+      }
+    });
+
+    const profMap = await batchGetDocMap(
+      db,
+      reqEntries.map((r) => getProfileRef(db, r.requesterUid))
+    );
+
+    const requests = (
+      await Promise.all(
+        reqEntries.map(async (entry) => {
+          const profSnap = profMap.get(getProfileRef(db, entry.requesterUid).path);
+          if (!profSnap?.exists) return null;
+          const p = profSnap.data() || {};
+          if (p.profileStatus === 'deleted') return null;
+
+          const [candPrivSnap, candPrefsSnap] = await Promise.all([
+            readPrivateSnap(db, entry.requesterUid),
+            readPrefsSnap(db, entry.requesterUid),
+          ]);
+          const candPriv = candPrivSnap.exists ? candPrivSnap.data() || {} : {};
+          const candPrefs = candPrefsSnap.exists ? candPrefsSnap.data() || {} : {};
+          const evaluation = evaluateCompatibility(
+            viewer,
+            viewerPrivate,
+            viewerPrefs,
+            p,
+            candPriv,
+            candPrefs,
+            {}
+          );
+          const joinedAtMs =
+            toTimestampMs(p.approvedAt) ||
+            toTimestampMs(p.submittedAt) ||
+            toTimestampMs(p.createdAt);
+
+          const candidate = await formatMatchCandidatePayload({
+            candUid: entry.requesterUid,
+            viewer: { ...viewer, uid },
+            viewerPrivate,
+            candidate: p,
+            candPriv,
+            candPrefs,
+            evaluation,
+            isShortlisted: shortlistedSet.has(entry.requesterUid),
+            interestStatus: interestStatusByUid.get(entry.requesterUid) || null,
+            joinedAtMs,
+            ...(viewerEntitlements ? { viewerEntitlements } : {}),
+            unlockedContactSet,
+            photoRequestStatus: sentPhotoReqStatusMap.get(entry.requesterUid) || null,
+          });
+
+          return {
+            uid: entry.requesterUid,
+            displayName: candidate.displayName,
+            profileCode: candidate.profileCode,
+            age: candidate.age,
+            heightCm: candidate.heightCm,
+            occupation: String(
+              p.career?.profession ||
+                p.career?.occupationCategory ||
+                p.education?.qualification ||
+                ''
+            ).trim(),
+            city: String(p.location?.village || p.location?.city || p.location?.state || '').trim(),
+            signedProfilePhoto: candidate.signedProfilePhoto,
+            status: entry.status,
+            createdAtMs: entry.createdAtMs,
+            updatedAtMs: entry.updatedAtMs,
+            candidate,
+          };
+        })
+      )
+    )
+      .filter((x): x is NonNullable<typeof x> => x !== null)
+      .sort((a, b) => {
+        if (a.status === 'pending' && b.status !== 'pending') return -1;
+        if (a.status !== 'pending' && b.status === 'pending') return 1;
+        return (b.updatedAtMs || b.createdAtMs) - (a.updatedAtMs || a.createdAtMs);
+      });
+
+    return { success: true, requests };
+  }
+);
+
+/**
+ * 10. respondMatrimonyPhotoRequest
+ * Approves or declines a member's request to view your protected photos.
+ */
+export const respondMatrimonyPhotoRequest = onCall(
+  { invoker: 'public', cpu: 1, memory: '512MiB', concurrency: 10, maxInstances: 10 },
+  async (request) => {
+    const uid = requireAuthUid(request);
+    const requesterUid = assertNonEmptyString(request.data?.requesterUid, 'requesterUid', 128);
+    const actionRaw = assertNonEmptyString(request.data?.action, 'action', 20).toLowerCase();
+    if (actionRaw !== 'approve' && actionRaw !== 'decline') {
+      throw new HttpsError('invalid-argument', 'Action must be approve or decline.');
+    }
+
+    const db = getFirestore();
+    const owner = await assertMatrimonyProfileActive(db, uid);
+    const nextStatus: 'approved' | 'declined' = actionRaw === 'approve' ? 'approved' : 'declined';
+    const now = FieldValue.serverTimestamp();
+
+    const batch = db.batch();
+    batch.set(
+      getPhotoRequestsCol(db, uid).doc(requesterUid),
+      {
+        uid,
+        requesterUid,
+        status: nextStatus,
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+    batch.set(
+      getSentPhotoRequestsCol(db, requesterUid).doc(uid),
+      {
+        uid: requesterUid,
+        targetUid: uid,
+        status: nextStatus,
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+    batch.set(
+      getProfileRef(db, uid),
+      {
+        protectedPhotoAllowedUids:
+          nextStatus === 'approved'
+            ? FieldValue.arrayUnion(requesterUid)
+            : FieldValue.arrayRemove(requesterUid),
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+    batch.set(
+      getAdminProfileRef(db, uid),
+      {
+        protectedPhotoAllowedUids:
+          nextStatus === 'approved'
+            ? FieldValue.arrayUnion(requesterUid)
+            : FieldValue.arrayRemove(requesterUid),
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+    if (nextStatus === 'approved') {
+      batch.set(db.collection(COLLECTIONS.NOTIFICATIONS).doc(), {
+        recipientUid: requesterUid,
+        senderUid: uid,
+        type: 'PHOTO_REQUEST_APPROVED',
+        title: 'Photo Request Approved',
+        body: `${owner.displayName || 'A Rhema member'} allowed you to view their protected photo.`,
+        read: false,
+        createdAt: now,
+      });
+    }
+    await batch.commit();
+
+    invalidateWarmFeedForUid(requesterUid);
+    invalidateWarmFeedForUid(uid);
+
+    if (nextStatus === 'approved') {
+      try {
+        const thumb = owner.profilePhoto
+          ? await resolveNotificationPhotoUrl(String(owner.profilePhoto))
+          : null;
+        await sendMatrimonyNotification({
+          db,
+          recipientUid: requesterUid,
+          senderUid: uid,
+          type: 'PHOTO_REQUEST_APPROVED',
+          title: 'Photo Request Approved',
+          body: `${owner.displayName || 'A Rhema member'} allowed you to view their protected photo.`,
+          imageUrl: thumb,
+          tag: `matrimony_photo_approved_${uid}`,
+          data: { targetUid: uid, screen: 'MatrimonyMatches' },
+          writeInAppDoc: false,
+        });
+      } catch (err) {
+        console.warn('respondMatrimonyPhotoRequest push warning:', err);
+      }
+    }
+
+    return { success: true, status: nextStatus };
+  }
+);
+
+/**
+ * 11. getMatrimonyNotificationsFeed
+ * Returns the signed-in member's Rhema Matrimony in-app notifications inbox,
+ * enriched with viewer-safe sender metadata and hydrated match cards.
+ */
+export const getMatrimonyNotificationsFeed = onCall(
+  { invoker: 'public', cpu: 1, memory: '512MiB', concurrency: 20, maxInstances: 20 },
+  async (request) => {
+    const uid = requireAuthUid(request);
+    const db = getFirestore();
+
+    const [
+      viewerSnap,
+      notifSnap,
+      viewerPrivSnap,
+      viewerPrefsSnap,
+      shortlistDocs,
+      receivedIntSnap,
+      sentIntSnap,
+      sentPhotoReqSnap,
+      photoReqSnap,
+      approvedCatalog,
+    ] = await Promise.all([
+      getProfileRef(db, uid).get(),
+      db.collection(COLLECTIONS.NOTIFICATIONS).where('recipientUid', '==', uid).limit(80).get(),
+      readPrivateSnap(db, uid),
+      readPrefsSnap(db, uid),
+      readShortlistDocs(db, uid),
+      db.collection(COLLECTIONS.INTERESTS).where('receiverUid', '==', uid).get(),
+      db.collection(COLLECTIONS.INTERESTS).where('senderUid', '==', uid).get(),
+      getSentPhotoRequestsCol(db, uid).get(),
+      getPhotoRequestsCol(db, uid).get(),
+      getWarmApprovedCatalog(db, DEFAULT_CHURCH_ID),
+    ]);
+
+    if (notifSnap.empty) {
+      return { success: true, notifications: [], unreadCount: 0 };
+    }
+
+    const viewer = viewerSnap.exists ? { ...(viewerSnap.data() || {}), uid } : { uid };
+    const viewerPrivate = viewerPrivSnap.exists ? viewerPrivSnap.data() || {} : {};
+    const viewerPrefs = viewerPrefsSnap.exists ? viewerPrefsSnap.data() || {} : {};
+    const viewerEntitlements = viewerSnap.exists
+      ? await resolveMemberEntitlements(db, uid, viewer)
+      : undefined;
+    const unlockedContactSet = new Set(viewerEntitlements?.unlockedContactUids || []);
+    const shortlistedSet = new Set(shortlistDocs.map((d) => d.id));
+
+    const normalizeStatus = (raw: unknown): 'pending' | 'accepted' | 'declined' => {
+      const s = String(raw || '').toLowerCase();
+      if (s === 'accepted' || s === 'replied') return 'accepted';
+      if (s === 'declined' || s === 'rejected') return 'declined';
+      return 'pending';
+    };
+    const interestStatusByUid = new Map<string, string>();
+    receivedIntSnap.docs.forEach((d) => {
+      const s = String(d.data()?.senderUid || '');
+      if (s) interestStatusByUid.set(s, normalizeStatus(d.data()?.status));
+    });
+    sentIntSnap.docs.forEach((d) => {
+      const r = String(d.data()?.receiverUid || '');
+      const st = normalizeStatus(d.data()?.status);
+      if (r && (!interestStatusByUid.has(r) || st === 'accepted')) {
+        interestStatusByUid.set(r, st);
+      }
+    });
+
+    const sentPhotoReqStatusMap = new Map<string, 'pending' | 'approved' | 'declined'>();
+    sentPhotoReqSnap.docs.forEach((d) => {
+      const st = String(d.data()?.status || 'pending');
+      if (st === 'pending' || st === 'approved' || st === 'declined') {
+        sentPhotoReqStatusMap.set(String(d.data()?.targetUid || d.id), st);
+      }
+    });
+    const incomingPhotoReqStatusMap = new Map<string, 'pending' | 'approved' | 'declined'>();
+    photoReqSnap.docs.forEach((d) => {
+      const st = String(d.data()?.status || 'pending');
+      if (st === 'pending' || st === 'approved' || st === 'declined') {
+        incomingPhotoReqStatusMap.set(String(d.data()?.requesterUid || d.id), st);
+      }
+    });
+
+    const sortedDocs = notifSnap.docs
+      .map((d) => ({ id: d.id, data: d.data() || {}, createdAtMs: toTimestampMs(d.data()?.createdAt) }))
+      .sort((a, b) => b.createdAtMs - a.createdAtMs)
+      .slice(0, 50);
+
+    const uniqueSenderUids = Array.from(
+      new Set(
+        sortedDocs
+          .map((item) => (typeof item.data.senderUid === 'string' ? item.data.senderUid.trim() : ''))
+          .filter((s) => Boolean(s) && s !== uid)
+      )
+    );
+
+    const candidateByUid = new Map<string, any>();
+    if (uniqueSenderUids.length > 0) {
+      const catalogByUid = new Map(approvedCatalog.items.map((item) => [item.uid, item]));
+      const missingSenderUids = uniqueSenderUids.filter((sUid) => !catalogByUid.has(sUid));
+
+      let missingDocMap = new Map<string, DocumentSnapshot>();
+      if (missingSenderUids.length > 0) {
+        const missingRefs = missingSenderUids.flatMap((sUid) => [
+          getProfileRef(db, sUid),
+          getPrivateRef(db, sUid),
+          getPrefsRef(db, sUid),
+        ]);
+        missingDocMap = await batchGetDocMap(db, missingRefs);
+      }
+
+      const resolvedRecords: Array<{
+        sUid: string;
+        p: Record<string, any>;
+        candPriv: Record<string, any>;
+        candPrefs: Record<string, any>;
+      }> = [];
+      const uniquePhotoPaths = new Set<string>();
+
+      for (const sUid of uniqueSenderUids) {
+        const catItem = catalogByUid.get(sUid);
+        let p: Record<string, any> | null = null;
+        let candPriv: Record<string, any> = {};
+        let candPrefs: Record<string, any> = {};
+        if (catItem) {
+          p = catItem.candidate;
+          candPriv = catItem.candPriv;
+          candPrefs = catItem.candPrefs;
+        } else {
+          const profSnap = missingDocMap.get(getProfileRef(db, sUid).path);
+          if (!profSnap?.exists) continue;
+          p = profSnap.data() || {};
+          const privSnap = missingDocMap.get(getPrivateRef(db, sUid).path);
+          const prefsSnap = missingDocMap.get(getPrefsRef(db, sUid).path);
+          candPriv = privSnap?.exists ? privSnap.data() || {} : {};
+          candPrefs = prefsSnap?.exists ? prefsSnap.data() || {} : {};
+        }
+
+        if (!p || p.profileStatus === 'deleted') continue;
+        if (p.profilePhoto) uniquePhotoPaths.add(String(p.profilePhoto));
+        if (Array.isArray(p.gallery)) {
+          p.gallery.forEach((g: unknown) => {
+            if (typeof g === 'string' && g) uniquePhotoPaths.add(g);
+          });
+        }
+        resolvedRecords.push({ sUid, p, candPriv, candPrefs });
+      }
+
+      const preResolvedPhotoMap = new Map<string, string | null>();
+      if (uniquePhotoPaths.size > 0) {
+        const bucket = getStorage().bucket(MATRIMONY_BUCKET);
+        const expires = Date.now() + 60 * 60 * 1000;
+        await Promise.all(
+          Array.from(uniquePhotoPaths).map(async (photoPath) => {
+            preResolvedPhotoMap.set(
+              photoPath,
+              await resolveSingleMatchPhotoUrl(bucket, photoPath, expires)
+            );
+          })
+        );
+      }
+
+      await Promise.all(
+        resolvedRecords.map(async ({ sUid, p, candPriv, candPrefs }) => {
+          const evaluation = evaluateCompatibility(
+            viewer,
+            viewerPrivate,
+            viewerPrefs,
+            p,
+            candPriv,
+            candPrefs,
+            {}
+          );
+          const joinedAtMs =
+            toTimestampMs(p.approvedAt) ||
+            toTimestampMs(p.submittedAt) ||
+            toTimestampMs(p.createdAt);
+
+          const candidate = await formatMatchCandidatePayload({
+            candUid: sUid,
+            viewer,
+            viewerPrivate,
+            candidate: p,
+            candPriv,
+            candPrefs,
+            evaluation,
+            isShortlisted: shortlistedSet.has(sUid),
+            interestStatus: interestStatusByUid.get(sUid) || null,
+            joinedAtMs,
+            ...(viewerEntitlements ? { viewerEntitlements } : {}),
+            unlockedContactSet,
+            photoRequestStatus:
+              sentPhotoReqStatusMap.get(sUid) ||
+              incomingPhotoReqStatusMap.get(sUid) ||
+              null,
+            preResolvedPhotoMap,
+          });
+          candidateByUid.set(sUid, candidate);
+        })
+      );
+    }
+
+    const INTERACTION_TYPES = new Set([
+      'PROFILE_VIEW',
+      'PROFILE_SHORTLISTED',
+      'INTEREST_RECEIVED',
+      'MUTUAL_MATCH',
+      'PHOTO_REQUEST_RECEIVED',
+      'PHOTO_REQUEST_APPROVED',
+    ]);
+    const URGENT_TYPES = new Set([
+      'INTEREST_RECEIVED',
+      'PHOTO_REQUEST_RECEIVED',
+      'MUTUAL_MATCH',
+      'MEMBERSHIP_OFFERS',
+      'PROFILE_REJECTED',
+      'CORRECTION_REQUESTED',
+    ]);
+
+    let unreadCount = 0;
+    const notifications = sortedDocs.map((entry) => {
+      const d = entry.data;
+      const type = String(d.type || 'GENERAL');
+      const senderUid = typeof d.senderUid === 'string' && d.senderUid.trim() ? d.senderUid.trim() : null;
+      const candidate = senderUid ? candidateByUid.get(senderUid) || null : null;
+      const read = d.read === true;
+      if (!read) unreadCount += 1;
+
+      const isInteraction = INTERACTION_TYPES.has(type);
+      const isUrgent = URGENT_TYPES.has(type);
+
+      let actionType:
+        | 'view_profile'
+        | 'view_matches'
+        | 'view_photo_requests'
+        | 'view_interests'
+        | 'view_offers'
+        | 'view_status' = 'view_matches';
+      let actionLabel = 'View matches';
+
+      if (candidate && (isInteraction || type === 'DAILY_RECOMMENDATION')) {
+        actionType = 'view_profile';
+        actionLabel = 'View profile';
+      } else if (type === 'PHOTO_REQUEST_RECEIVED') {
+        actionType = 'view_photo_requests';
+        actionLabel = 'View request';
+      } else if (type === 'INTEREST_RECEIVED' || type === 'MUTUAL_MATCH') {
+        actionType = 'view_interests';
+        actionLabel = 'View interest';
+      } else if (type === 'MEMBERSHIP_OFFERS') {
+        actionType = 'view_offers';
+        actionLabel = 'View offers';
+      } else if (
+        type === 'PROFILE_APPROVED' ||
+        type === 'PROFILE_REJECTED' ||
+        type === 'CORRECTION_REQUESTED' ||
+        type === 'PROFILE_INACTIVATED'
+      ) {
+        actionType = 'view_status';
+        actionLabel = 'View status';
+      }
+
+      const senderPhoto = candidate
+        ? candidate.signedProfilePhoto || null
+        : typeof d.imageUrl === 'string' && d.imageUrl.startsWith('https://')
+          ? d.imageUrl
+          : null;
+
+      let incomingPhotoRequestStatus: 'pending' | 'approved' | 'declined' | null = null;
+      if (type === 'PHOTO_REQUEST_RECEIVED' && senderUid) {
+        const reqSt = incomingPhotoReqStatusMap.get(senderUid);
+        const allowedList: string[] = Array.isArray((viewer as any).protectedPhotoAllowedUids)
+          ? (viewer as any).protectedPhotoAllowedUids
+          : [];
+        if (allowedList.includes(senderUid)) {
+          incomingPhotoRequestStatus = 'approved';
+        } else if (reqSt === 'approved' || reqSt === 'declined' || reqSt === 'pending') {
+          incomingPhotoRequestStatus = reqSt;
+        } else {
+          incomingPhotoRequestStatus = 'pending';
+        }
+      }
+
+      return {
+        id: entry.id,
+        type,
+        prefKey: typeof d.prefKey === 'string' ? d.prefKey : null,
+        category: isInteraction ? 'interactions' : 'alerts',
+        isUrgent,
+        senderUid,
+        senderName: candidate?.displayName || null,
+        senderGender: candidate?.gender || null,
+        senderPhoto,
+        title: String(d.title || 'Rhema Matrimony'),
+        body: String(d.body || ''),
+        read,
+        createdAtMs: entry.createdAtMs,
+        actionType,
+        actionLabel,
+        incomingPhotoRequestStatus,
+        candidate,
+      };
+    });
+
+    return {
+      success: true,
+      notifications,
+      unreadCount,
+    };
+  }
+);
+
+/**
+ * 12. manageMatrimonyNotification
+ * Marks one or all notifications as read, or deletes a notification owned by the caller.
+ */
+export const manageMatrimonyNotification = onCall(
+  { invoker: 'public' },
+  async (request) => {
+    const uid = requireAuthUid(request);
+    const action = assertNonEmptyString(request.data?.action, 'action', 30).toLowerCase();
+    const notificationId = optionalString(request.data?.notificationId, 128);
+    const db = getFirestore();
+
+    if (action === 'mark_all_read') {
+      const snap = await db
+        .collection(COLLECTIONS.NOTIFICATIONS)
+        .where('recipientUid', '==', uid)
+        .get();
+      const unreadDocs = snap.docs.filter((d) => d.data()?.read !== true);
+      if (unreadDocs.length > 0) {
+        const CHUNK = 400;
+        for (let i = 0; i < unreadDocs.length; i += CHUNK) {
+          const batch = db.batch();
+          unreadDocs.slice(i, i + CHUNK).forEach((d) => {
+            batch.update(d.ref, { read: true, readAt: FieldValue.serverTimestamp() });
+          });
+          await batch.commit();
+        }
+      }
+      return { success: true, updated: unreadDocs.length };
+    }
+
+    if (!notificationId) {
+      throw new HttpsError('invalid-argument', 'notificationId is required.');
+    }
+
+    const ref = db.collection(COLLECTIONS.NOTIFICATIONS).doc(notificationId);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      return { success: true, deleted: action === 'delete', read: action === 'mark_read' };
+    }
+    if (snap.data()?.recipientUid !== uid) {
+      throw new HttpsError('permission-denied', 'Cannot modify another user’s notification.');
+    }
+
+    if (action === 'mark_read') {
+      await ref.update({ read: true, readAt: FieldValue.serverTimestamp() });
+      return { success: true, read: true };
+    }
+    if (action === 'delete') {
+      await ref.delete();
+      return { success: true, deleted: true };
+    }
+
+    throw new HttpsError('invalid-argument', 'Unsupported notification action.');
+  }
+);
+
+/**
+ * 13. getMatrimonyCandidatePhotos
+ * Resolves viewer-authorized signed photo URLs for a single candidate profile
+ * so live unlocks immediately load real images without requiring a full feed refresh.
+ */
+export const getMatrimonyCandidatePhotos = onCall(
+  { invoker: 'public' },
+  async (request) => {
+    const uid = requireAuthUid(request);
+    const targetUid = assertNonEmptyString(request.data?.targetUid, 'targetUid', 128);
+    const db = getFirestore();
+
+    const [viewer, targetSnap, sentIntSnap, recvIntSnap, sentPhotoReqSnap] = await Promise.all([
+      assertMatrimonyProfileActive(db, uid),
+      getProfileRef(db, targetUid).get(),
+      db.collection(COLLECTIONS.INTERESTS).doc(`${uid}_${targetUid}`).get(),
+      db.collection(COLLECTIONS.INTERESTS).doc(`${targetUid}_${uid}`).get(),
+      getSentPhotoRequestsCol(db, uid).doc(targetUid).get(),
+    ]);
+
+    if (!targetSnap.exists) {
+      return {
+        success: true,
+        canSeePhotos: false,
+        signedProfilePhoto: null,
+        signedGallery: [],
+      };
+    }
+
+    const candidate = targetSnap.data() || {};
+    const sentSt = sentIntSnap.exists ? String(sentIntSnap.data()?.status || '') : '';
+    const recvSt = recvIntSnap.exists ? String(recvIntSnap.data()?.status || '') : '';
+    const interestStatus =
+      sentSt === 'accepted' || recvSt === 'accepted'
+        ? 'accepted'
+        : sentSt || recvSt || null;
+    const reqStRaw = sentPhotoReqSnap.exists
+      ? String(sentPhotoReqSnap.data()?.status || '')
+      : '';
+    const photoRequestStatus =
+      reqStRaw === 'pending' || reqStRaw === 'approved' || reqStRaw === 'declined'
+        ? (reqStRaw as 'pending' | 'approved' | 'declined')
+        : null;
+
+    const viewerEntitlements = await resolveMemberEntitlements(db, uid, viewer);
+    const canSee = canViewerSeeCandidatePhotos({
+      viewerUid: uid,
+      candidate,
+      interestStatus,
+      viewerEntitlements,
+      photoRequestStatus,
+    });
+
+    if (!canSee) {
+      return {
+        success: true,
+        canSeePhotos: false,
+        signedProfilePhoto: null,
+        signedGallery: [],
+      };
+    }
+
+    const rawPaths = [
+      typeof candidate.profilePhoto === 'string' ? candidate.profilePhoto : null,
+      ...(Array.isArray(candidate.gallery) ? candidate.gallery : []),
+    ].filter((x): x is string => Boolean(x));
+
+    const resolved = await resolveMatchPhotoUrls(rawPaths);
+    return {
+      success: true,
+      canSeePhotos: true,
+      signedProfilePhoto: resolved[0] || null,
+      signedGallery: resolved.slice(1),
+    };
+  }
+);
+
+/**
+ * 14. searchMatrimonyById
+ * Direct lookup of an approved opposite-gender profile by Matrimony ID (e.g. RMT820)
+ * using the warm approved catalog with full privacy, block, and compatibility evaluation.
+ */
+export const searchMatrimonyById = onCall(
+  { invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 20, maxInstances: 10 },
+  async (request) => {
+    const uid = requireAuthUid(request);
+    const rawCode = assertNonEmptyString(request.data?.profileCode, 'profileCode', 40);
+    const normalizedCode = rawCode.replace(/\s+/g, '').toUpperCase();
+    if (!normalizedCode) {
+      return {
+        success: true,
+        found: false,
+        reason: 'not_found',
+        message: 'Please enter a valid Matrimony ID.',
+      };
+    }
+
+    const numericCandidates = /^\d+$/.test(normalizedCode)
+      ? new Set([
+          `RMT${normalizedCode}`,
+          `RMT${normalizedCode.padStart(3, '0')}`,
+          `RM${normalizedCode}`,
+          `RM${normalizedCode.padStart(4, '0')}`,
+        ])
+      : null;
+    const lookupIds = numericCandidates
+      ? [normalizedCode, ...Array.from(numericCandidates)]
+      : [normalizedCode];
+
+    const db = getFirestore();
+    const warmCatalog = WARM_APPROVED_CATALOG_CACHE.get(DEFAULT_CHURCH_ID);
+    const warmValid = Boolean(warmCatalog && warmCatalog.expiresAtMs > Date.now());
+
+    // Fast path: check in-memory warm catalog (0 extra DB reads) OR run indexed single-profile queries (~30ms)
+    let warmHit = warmValid
+      ? warmCatalog!.items.find((item) => {
+          const storedId = String(item.candidate.matrimonyId || '').replace(/\s+/g, '').toUpperCase();
+          const storedCode = String(item.candidate.profileCode || '').replace(/\s+/g, '').toUpperCase();
+          const fallback7 = `RM${item.uid.slice(0, 7).toUpperCase()}`;
+          const fallback8 = `RM${item.uid.slice(0, 8).toUpperCase()}`;
+          return (
+            storedId === normalizedCode ||
+            storedCode === normalizedCode ||
+            fallback7 === normalizedCode ||
+            fallback8 === normalizedCode ||
+            (numericCandidates !== null &&
+              (numericCandidates.has(storedId) || numericCandidates.has(storedCode)))
+          );
+        })
+      : undefined;
+
+    const assignedCol = db
+      .collection(COLLECTIONS.SETTINGS)
+      .doc('matrimony_id_counter')
+      .collection('assigned');
+
+    const [
+      viewerData,
+      viewerPrivateSnap,
+      viewerPrefsSnap,
+      directMatrimonySnap,
+      directCodeSnap,
+      assignedSnaps,
+    ] = await Promise.all([
+      assertMatrimonyProfileActive(db, uid),
+      readPrivateSnap(db, uid),
+      readPrefsSnap(db, uid),
+      warmHit
+        ? Promise.resolve(null)
+        : db
+            .collection(COLLECTIONS.PROFILES)
+            .where('matrimonyId', 'in', lookupIds.slice(0, 10))
+            .limit(2)
+            .get(),
+      warmHit
+        ? Promise.resolve(null)
+        : db
+            .collection(COLLECTIONS.PROFILES)
+            .where('profileCode', 'in', lookupIds.slice(0, 10))
+            .limit(2)
+            .get(),
+      warmHit
+        ? Promise.resolve([] as DocumentSnapshot[])
+        : Promise.all(lookupIds.slice(0, 5).map((id) => assignedCol.doc(id).get())),
+    ]);
+
+    const viewer: Record<string, any> = { ...(viewerData || {}), uid };
+    const viewerPrivate = viewerPrivateSnap.exists ? viewerPrivateSnap.data() || {} : {};
+    const viewerPrefs = viewerPrefsSnap.exists ? viewerPrefsSnap.data() || {} : {};
+
+    let candUid = warmHit?.uid || '';
+    let candidate: Record<string, any> | null = warmHit ? warmHit.candidate : null;
+    let candPriv: Record<string, any> | null = warmHit ? warmHit.candPriv : null;
+    let candPrefs: Record<string, any> | null = warmHit ? warmHit.candPrefs : null;
+
+    if (!warmHit) {
+      const matchedDoc = directMatrimonySnap?.docs[0] || directCodeSnap?.docs[0];
+      if (matchedDoc) {
+        const dData = matchedDoc.data() || {};
+        if (dData.profileStatus === 'approved' && dData.visibility !== 'hidden') {
+          candUid = matchedDoc.id;
+          candidate = { ...dData, uid: matchedDoc.id };
+        }
+      } else {
+        const regHit = assignedSnaps.find((s) => s?.exists && s.data()?.uid);
+        if (regHit) {
+          const regUid = String(regHit.data()?.uid || '');
+          if (regUid) {
+            const pSnap = await getProfileRef(db, regUid).get();
+            const dData = pSnap.exists ? pSnap.data() || {} : {};
+            if (pSnap.exists && dData.profileStatus === 'approved' && dData.visibility !== 'hidden') {
+              candUid = pSnap.id;
+              candidate = { ...dData, uid: pSnap.id };
+            }
+          }
+        }
+      }
+    }
+
+    if (!candUid || !candidate) {
+      return {
+        success: true,
+        found: false,
+        reason: 'not_found',
+        message: `No approved profile found matching ID "${normalizedCode}".`,
+      };
+    }
+
+    if (candUid === uid) {
+      return {
+        success: true,
+        found: false,
+        reason: 'self',
+        message: 'That is your own Matrimony ID.',
+      };
+    }
+
+    if (candidate.selfDeactivated === true) {
+      return {
+        success: true,
+        found: false,
+        reason: 'not_found',
+        message: `No approved profile found matching ID "${normalizedCode}".`,
+      };
+    }
+
+    const profTier = resolveActiveTierFromProfile(candidate);
+    const needsSubLookup = profTier === 'free' && !warmHit;
+
+    // Fetch only this candidate's private/prefs/block/relationship docs in one parallel round-trip
+    const [
+      viewerBlockSnap,
+      viewerLegacyBlockSnap,
+      revBlockSnap,
+      revLegacyBlockSnap,
+      fetchedCandPrivSnap,
+      fetchedCandPrefsSnap,
+      candActiveSubSnap,
+      viewerEntitlements,
+      shortlistSnap,
+      sentIntSnap,
+      recvIntSnap,
+      sentPhotoReqSnap,
+      viewerPhotoArr,
+    ] = await Promise.all([
+      getBlocksCol(db, uid).doc(candUid).get(),
+      db.collection(COLLECTIONS.BLOCKS).doc(uid).collection('blocked').doc(candUid).get(),
+      getBlocksCol(db, candUid).doc(uid).get(),
+      db.collection(COLLECTIONS.BLOCKS).doc(candUid).collection('blocked').doc(uid).get(),
+      candPriv ? Promise.resolve(null) : readPrivateSnap(db, candUid),
+      candPrefs ? Promise.resolve(null) : readPrefsSnap(db, candUid),
+      needsSubLookup
+        ? db
+            .collection(COLLECTIONS.SUBSCRIPTIONS)
+            .where('uid', '==', candUid)
+            .where('status', '==', 'active')
+            .limit(1)
+            .get()
+        : Promise.resolve(null),
+      resolveMemberEntitlements(db, uid, viewer),
+      getShortlistsCol(db, uid).doc(candUid).get(),
+      db.collection(COLLECTIONS.INTERESTS).doc(`${uid}_${candUid}`).get(),
+      db.collection(COLLECTIONS.INTERESTS).doc(`${candUid}_${uid}`).get(),
+      getSentPhotoRequestsCol(db, uid).doc(candUid).get(),
+      viewer.profilePhoto ? resolveMatchPhotoUrls([String(viewer.profilePhoto)]) : Promise.resolve([]),
+    ]);
+
+    const viewerBlockData = viewerBlockSnap.exists
+      ? viewerBlockSnap.data()
+      : viewerLegacyBlockSnap.exists
+      ? viewerLegacyBlockSnap.data()
+      : null;
+    if (viewerBlockData) {
+      const blockType =
+        String(viewerBlockData?.type || 'dont_show') === 'blocked' ? 'blocked' : 'ignored';
+      return {
+        success: true,
+        found: false,
+        reason: 'hidden_by_you',
+        message: `You have ${blockType} this profile (${normalizedCode}). Restore it from Account Settings to view it again.`,
+      };
+    }
+
+    const reverseBlocked =
+      (revBlockSnap.exists && String(revBlockSnap.data()?.type || 'blocked') === 'blocked') ||
+      (revLegacyBlockSnap.exists && String(revLegacyBlockSnap.data()?.type || 'blocked') === 'blocked');
+    if (reverseBlocked) {
+      return {
+        success: true,
+        found: false,
+        reason: 'not_found',
+        message: `No approved profile found matching ID "${normalizedCode}".`,
+      };
+    }
+
+    const resolvedCandPriv = candPriv || (fetchedCandPrivSnap?.exists ? fetchedCandPrivSnap.data() || {} : {});
+    const resolvedCandPrefs = candPrefs || (fetchedCandPrefsSnap?.exists ? fetchedCandPrefsSnap.data() || {} : {});
+
+    let candTier: 'free' | 'silver' | 'gold' | 'platinum' =
+      profTier !== 'free'
+        ? profTier
+        : warmHit
+        ? warmCatalog!.activeSubTierByUid.get(candUid) ?? 'free'
+        : 'free';
+    if (candTier === 'free' && candActiveSubSnap && !candActiveSubSnap.empty) {
+      const sData = candActiveSubSnap.docs[0]?.data() || {};
+      const sTier = String(sData.tier || '').toLowerCase();
+      const sEnd = typeof sData.expiryDateMs === 'number' ? sData.expiryDateMs : 0;
+      if (
+        (sTier === 'silver' || sTier === 'gold' || sTier === 'platinum') &&
+        (sEnd === 0 || sEnd > Date.now())
+      ) {
+        candTier = sTier;
+      }
+    }
+
+    const sentSt = sentIntSnap.exists ? String(sentIntSnap.data()?.status || '') : '';
+    const recvSt = recvIntSnap.exists ? String(recvIntSnap.data()?.status || '') : '';
+    const interestStatus =
+      sentSt === 'accepted' || recvSt === 'accepted'
+        ? 'accepted'
+        : sentSt || recvSt || null;
+    const interestSentAtMs =
+      (sentIntSnap.exists
+        ? toTimestampMs(sentIntSnap.data()?.updatedAt) || toTimestampMs(sentIntSnap.data()?.createdAt)
+        : 0) ||
+      (recvIntSnap.exists
+        ? toTimestampMs(recvIntSnap.data()?.updatedAt) || toTimestampMs(recvIntSnap.data()?.createdAt)
+        : 0);
+
+    const reqStRaw = sentPhotoReqSnap.exists ? String(sentPhotoReqSnap.data()?.status || '') : '';
+    const photoRequestStatus =
+      reqStRaw === 'pending' || reqStRaw === 'approved' || reqStRaw === 'declined'
+        ? (reqStRaw as 'pending' | 'approved' | 'declined')
+        : null;
+
+    const evaluation = evaluateCompatibility(
+      viewer,
+      viewerPrivate,
+      viewerPrefs,
+      candidate,
+      resolvedCandPriv,
+      resolvedCandPrefs,
+      {},
+      'all_filters'
+    );
+
+    const joinedAtMs =
+      toTimestampMs(candidate.approvedAt) ||
+      toTimestampMs(candidate.submittedAt) ||
+      toTimestampMs(candidate.createdAt);
+
+    const profile = await formatMatchCandidatePayload({
+      candUid,
+      viewer,
+      viewerPrivate,
+      candidate,
+      candPriv: resolvedCandPriv,
+      candPrefs: resolvedCandPrefs,
+      evaluation,
+      isShortlisted: shortlistSnap.exists,
+      interestStatus,
+      interestSentAtMs,
+      joinedAtMs,
+      viewedAtMs: 0,
+      viewerEntitlements,
+      unlockedContactSet: new Set(viewerEntitlements.unlockedContactUids),
+      photoRequestStatus,
+      candidateTierOverride: candTier,
+    });
+
+    return {
+      success: true,
+      found: true,
+      profile,
+      viewerPhoto: viewerPhotoArr[0] || null,
+    };
+  }
+);

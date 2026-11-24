@@ -348,6 +348,13 @@ class NotificationService {
     console.log('🚀 Navigating for notification type:', type);
 
     try {
+      const moduleName = String(rawData.module || '').toLowerCase();
+      if (moduleName === 'matrimony' || type.startsWith('matrimony_')) {
+        console.log('💍 [NotificationService] Routing to Rhema Matrimony:', { type });
+        nav.navigate('Matrimony');
+        return;
+      }
+
       switch (type) {
         case 'sermon': {
           const sermonId = rawData.sermonId || rawData.relatedId || (id ? String(id).replace(/^sermon_/, '') : null);

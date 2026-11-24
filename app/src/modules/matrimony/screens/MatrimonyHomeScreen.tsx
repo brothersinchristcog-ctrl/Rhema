@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, G } from 'react-native-svg';
 import CrackerFirework from '../components/CrackerFirework';
-import MatrimonyMenuDrawer from '../components/MatrimonyMenuDrawer';
+import MatrimonyCachedImage from '../components/MatrimonyCachedImage';
+import { openMatrimonyMenuDrawer } from '../components/MatrimonyMenuDrawer';
+import ProtectedPhotoPlaceholder from '../components/ProtectedPhotoPlaceholder';
 import {
   Bell,
   Menu,
@@ -37,10 +39,12 @@ import { useTheme, FONT_STYLE_OPTIONS } from '../../../context/ThemeContext';
 import {
   computeMatrimonyProfileCompletion,
   hasCompletedMatrimonyFamilyDetails,
+  isMatrimonyInactiveError,
   matrimonyApi,
   resolveMatrimonyEntryRoute,
 } from '../services/matrimonyApi';
 import { matrimonyChatService } from '../services/matrimonyChatService';
+import { matrimonyPerf } from '../services/matrimonyPerf';
 import {
   GetMatrimonyMatchesResponse,
   MatrimonyMatchCandidate,
@@ -57,7 +61,7 @@ const HOME_MATCHES_PARAMS = {
   matchBasis: 'partner_preferences' as const,
   sortBy: 'best_match' as const,
   filters: {},
-  limit: 10,
+  limit: 12,
 };
 const HOME_NEW_MATCHES_PARAMS = {
   tab: 'newly_joined' as const,
@@ -132,73 +136,179 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
   const [viewedByYouData, setViewedByYouData] = useState<GetMatrimonyMatchesResponse | null>(() =>
     matrimonyApi.getCachedMatches(HOME_VIEWED_BY_YOU_PARAMS)
   );
+  const [unreadNotifCount, setUnreadNotifCount] = useState<number>(() =>
+    matrimonyApi.getCachedNotificationsFeed()?.unreadCount || 0
+  );
   const [loadedOnce, setLoadedOnce] = useState(() =>
     Boolean(matrimonyApi.getCachedStatus() || matrimonyApi.getCachedRegistration())
   );
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'Home' | 'Matches' | 'Interests' | 'Messages' | 'Upgrade'>('Home');
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [unreadChatCount, setUnreadChatCount] = useState(0);
-
-  useEffect(() => {
-    const uid = user?.uid;
-    if (!uid) return;
-    const stopPresence = matrimonyChatService.startPresenceTracking(uid, null);
-    const unsubInbox = matrimonyChatService.subscribeInbox(uid, (_, totalUnread) => {
-      setUnreadChatCount(totalUnread);
-    });
-    return () => {
-      unsubInbox();
-      stopPresence();
-    };
-  }, [user?.uid]);
+  const initialLoadRecordedRef = useRef(false);
 
   const loadHomeData = useCallback(
     async (force = false) => {
+      const trace = matrimonyPerf.startTrace(
+        initialLoadRecordedRef.current ? 'home_refresh_load' : 'home_initial_load',
+        { force }
+      );
+      let redirected = false;
       try {
         await matrimonyApi.hydrateCacheFromStorage();
-        const [statusRes, regRes, matchesRes, newMatchesRes, viewedYouRes, viewedByYouRes] =
-          await Promise.all([
-            matrimonyApi.getStatus({ force }).catch(() => null),
-            matrimonyApi.startRegistration({ force }).catch(() => null),
-            matrimonyApi
-              .getMatches(HOME_MATCHES_PARAMS, { force, maxAgeMs: 25_000 })
-              .catch(() => null),
-            matrimonyApi
-              .getMatches(HOME_NEW_MATCHES_PARAMS, { force, maxAgeMs: 25_000 })
-              .catch(() => null),
-            matrimonyApi
-              .getMatches(HOME_VIEWED_YOU_PARAMS, { force, maxAgeMs: 25_000 })
-              .catch(() => null),
-            matrimonyApi
-              .getMatches(HOME_VIEWED_BY_YOU_PARAMS, { force, maxAgeMs: 25_000 })
-              .catch(() => null),
-          ]);
-        if (regRes) {
-          const nextRoute = resolveMatrimonyEntryRoute(regRes);
-          if (nextRoute.screen !== 'MatrimonyHome') {
+
+        // Single consolidated RPC (falls back automatically to parallel RPCs if not yet deployed)
+        try {
+          const summary = await matrimonyApi.getHomeSummary({ force });
+          if (summary?.success) {
+            if (summary.registration) {
+              const nextRoute = resolveMatrimonyEntryRoute(summary.registration);
+              if (nextRoute.screen !== 'MatrimonyHome') {
+                redirected = true;
+                navigation.reset({
+                  index: 0,
+                  routes: [{ name: nextRoute.screen, params: nextRoute.params }],
+                });
+                return;
+              }
+              setRegData(summary.registration);
+            }
+            const liveStatus = summary.status?.profileStatus ?? summary.profileStatus;
+            if (liveStatus && liveStatus !== 'approved') {
+              redirected = true;
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'MatrimonyStatus' }],
+              });
+              return;
+            }
+            if (summary.status) setStatusData(summary.status);
+            if (summary.allMatches) setMatchesData(summary.allMatches);
+            if (summary.newMatches) setNewMatchesData(summary.newMatches);
+            if (summary.viewedYou) setViewedYouData(summary.viewedYou);
+            if (summary.viewedByYou) setViewedByYouData(summary.viewedByYou);
+            if (typeof summary.unreadNotificationsCount === 'number') {
+              setUnreadNotifCount(summary.unreadNotificationsCount);
+            }
+            initialLoadRecordedRef.current = true;
+            trace.stop(true, { mode: 'consolidated_summary' });
+            matrimonyApi.getNotificationsFeed({ force: false }).catch(() => undefined);
+            return;
+          }
+        } catch (summaryErr: any) {
+          if (isMatrimonyInactiveError(summaryErr)) {
+            redirected = true;
             navigation.reset({
               index: 0,
-              routes: [{ name: nextRoute.screen, params: nextRoute.params }],
+              routes: [{ name: 'MatrimonyStatus' }],
             });
             return;
           }
+          const code = String(summaryErr?.code || '').toLowerCase();
+          const msg = String(summaryErr?.message || '').toLowerCase();
+          const isUnimplemented =
+            code.includes('not-found') ||
+            code.includes('unimplemented') ||
+            msg.includes('404') ||
+            msg.includes('not found');
+          if (!isUnimplemented) {
+            console.warn('getMatrimonyHomeSummary fallback:', summaryErr?.message || summaryErr);
+          }
         }
-        const liveStatus = statusRes?.profileStatus;
-        if (liveStatus && liveStatus !== 'approved') {
-          navigation.reset({
-            index: 0,
-            routes: [{ name: 'MatrimonyStatus' }],
-          });
-          return;
-        }
-        if (statusRes) setStatusData(statusRes);
-        if (regRes) setRegData(regRes);
-        if (matchesRes) setMatchesData(matchesRes);
-        if (newMatchesRes) setNewMatchesData(newMatchesRes);
-        if (viewedYouRes) setViewedYouData(viewedYouRes);
-        if (viewedByYouRes) setViewedByYouData(viewedByYouRes);
+
+        // Update each section progressively as soon as its request resolves (never block All Matches on slower sections)
+        const statusPromise = matrimonyApi
+          .getStatus({ force })
+          .then((statusRes) => {
+            if (!statusRes || redirected) return;
+            const liveStatus = statusRes.profileStatus;
+            if (liveStatus && liveStatus !== 'approved') {
+              redirected = true;
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'MatrimonyStatus' }],
+              });
+              return;
+            }
+            setStatusData(statusRes);
+            setLoadedOnce(true);
+          })
+          .catch(() => null);
+
+        const regPromise = matrimonyApi
+          .startRegistration({ force })
+          .then((regRes) => {
+            if (!regRes || redirected) return;
+            const nextRoute = resolveMatrimonyEntryRoute(regRes);
+            if (nextRoute.screen !== 'MatrimonyHome') {
+              redirected = true;
+              navigation.reset({
+                index: 0,
+                routes: [{ name: nextRoute.screen, params: nextRoute.params }],
+              });
+              return;
+            }
+            setRegData(regRes);
+            setLoadedOnce(true);
+          })
+          .catch(() => null);
+
+        const matchesPromise = matrimonyApi
+          .getMatches(HOME_MATCHES_PARAMS, { force })
+          .then((matchesRes) => {
+            if (matchesRes && !redirected) {
+              setMatchesData(matchesRes);
+              setLoadedOnce(true);
+            }
+          })
+          .catch(() => null);
+
+        const newMatchesPromise = matrimonyApi
+          .getMatches(HOME_NEW_MATCHES_PARAMS, { force })
+          .then((newMatchesRes) => {
+            if (newMatchesRes && !redirected) setNewMatchesData(newMatchesRes);
+          })
+          .catch(() => null);
+
+        const viewedYouPromise = matrimonyApi
+          .getMatches(HOME_VIEWED_YOU_PARAMS, { force })
+          .then((viewedYouRes) => {
+            if (viewedYouRes && !redirected) setViewedYouData(viewedYouRes);
+          })
+          .catch(() => null);
+
+        const viewedByYouPromise = matrimonyApi
+          .getMatches(HOME_VIEWED_BY_YOU_PARAMS, { force })
+          .then((viewedByYouRes) => {
+            if (viewedByYouRes && !redirected) setViewedByYouData(viewedByYouRes);
+          })
+          .catch(() => null);
+
+        const notifPromise = matrimonyApi
+          .getNotificationsFeed({ force })
+          .then((notifFeedRes) => {
+            if (
+              !redirected &&
+              notifFeedRes &&
+              typeof notifFeedRes.unreadCount === 'number'
+            ) {
+              setUnreadNotifCount(notifFeedRes.unreadCount);
+            }
+          })
+          .catch(() => null);
+
+        await Promise.allSettled([
+          statusPromise,
+          regPromise,
+          matchesPromise,
+          newMatchesPromise,
+          viewedYouPromise,
+          viewedByYouPromise,
+          notifPromise,
+        ]);
+
+        initialLoadRecordedRef.current = true;
+        trace.stop(true);
       } catch (err) {
+        trace.stop(false);
         console.warn('MatrimonyHome loadStatus error:', err);
       } finally {
         setLoadedOnce(true);
@@ -209,8 +319,10 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
   );
 
   useEffect(() => {
-    loadHomeData(true);
-    matrimonyApi.prefetchMatrimonyWorkspace().catch(() => undefined);
+    loadHomeData(false);
+    const prefetchTimer = setTimeout(() => {
+      matrimonyApi.prefetchMatrimonyWorkspace().catch(() => undefined);
+    }, 600);
     const unsub = navigation.addListener('focus', () => {
       const cachedStatus = matrimonyApi.getCachedStatus();
       const cachedReg = matrimonyApi.getCachedRegistration();
@@ -218,15 +330,20 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
       const cachedNewMatches = matrimonyApi.getCachedMatches(HOME_NEW_MATCHES_PARAMS);
       const cachedViewedYou = matrimonyApi.getCachedMatches(HOME_VIEWED_YOU_PARAMS);
       const cachedViewedByYou = matrimonyApi.getCachedMatches(HOME_VIEWED_BY_YOU_PARAMS);
+      const cachedNotifs = matrimonyApi.getCachedNotificationsFeed();
       if (cachedStatus) setStatusData(cachedStatus);
       if (cachedReg) setRegData(cachedReg);
       if (cachedMatches) setMatchesData(cachedMatches);
       if (cachedNewMatches) setNewMatchesData(cachedNewMatches);
       if (cachedViewedYou) setViewedYouData(cachedViewedYou);
       if (cachedViewedByYou) setViewedByYouData(cachedViewedByYou);
-      loadHomeData(true);
+      if (cachedNotifs) setUnreadNotifCount(cachedNotifs.unreadCount);
+      loadHomeData(false);
     });
-    return unsub;
+    return () => {
+      clearTimeout(prefetchTimer);
+      unsub();
+    };
   }, [loadHomeData, navigation]);
 
   const onRefresh = () => {
@@ -295,10 +412,6 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
   const showPhotosCard = loadedOnce && !hasThreeOrMorePhotos;
   const hasVisibleActionCards = showFamilyCard || showInterestsCard || showPhotosCard;
 
-  const handleComingSoon = (feature: string) => {
-    Alert.alert(feature, `${feature} is coming in the next phase of Rhema Matrimony!`);
-  };
-
   const handleBackToChurchApp = () => {
     const parentNav = navigation.getParent();
     if (parentNav) {
@@ -347,19 +460,50 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
             <View style={styles.topRightIcons}>
               <TouchableOpacity
                 style={styles.iconBtn}
-                onPress={() => handleComingSoon('Search Profiles')}
+                onPress={() => navigation.navigate('MatrimonySearch')}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Search size={21} color={colors.text} />
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.iconBtn}
-                onPress={() => handleComingSoon('Notifications')}
+                style={[styles.iconBtn, { position: 'relative' }]}
+                onPress={() => navigation.navigate('MatrimonyNotificationsFeed')}
               >
                 <Bell size={21} color={colors.text} />
+                {unreadNotifCount > 0 && (
+                  <View
+                    style={{
+                      position: 'absolute',
+                      top: -1,
+                      right: -2,
+                      minWidth: 16,
+                      height: 16,
+                      borderRadius: 8,
+                      backgroundColor: ORANGE,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      paddingHorizontal: 3,
+                      borderWidth: 1.5,
+                      borderColor: '#FFFFFF',
+                    }}
+                  >
+                    <Text style={{ color: '#FFFFFF', fontSize: 9.5, fontWeight: '800' }}>
+                      {unreadNotifCount > 99 ? '99+' : unreadNotifCount}
+                    </Text>
+                  </View>
+                )}
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.iconBtn}
-                onPress={() => setMenuOpen(true)}
+                onPress={() =>
+                  openMatrimonyMenuDrawer({
+                    displayName,
+                    profileCode,
+                    membershipLabel,
+                    avatarUri,
+                  })
+                }
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Menu size={21} color={colors.text} />
               </TouchableOpacity>
@@ -844,10 +988,18 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
                           ]}
                         >
                           {candidate.signedProfilePhoto ? (
-                            <Image
-                              source={{ uri: candidate.signedProfilePhoto }}
+                            <MatrimonyCachedImage
+                              uri={candidate.signedProfilePhoto}
+                              recyclingKey={candidate.uid}
                               style={styles.matchPreviewImg}
                               resizeMode="cover"
+                            />
+                          ) : candidate.isPhotoProtected ? (
+                            <ProtectedPhotoPlaceholder
+                              gender={candidate.gender}
+                              compact
+                              requestStatus={candidate.photoRequestStatus}
+                              fontFamily={fontFamily}
                             />
                           ) : (
                             <View style={styles.matchPreviewPlaceholder}>
@@ -958,107 +1110,6 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
           });
         })()}
       </ScrollView>
-
-      {/* Bottom Tab Bar */}
-      <View
-        style={[
-          styles.bottomNav,
-          {
-            backgroundColor: colors.surface,
-            borderTopColor: colors.border,
-            paddingBottom: Math.max(insets.bottom, 10),
-          },
-        ]}
-      >
-        {[
-          { key: 'Home' as const, label: 'Home', Icon: Home, onPress: () => setActiveTab('Home') },
-          {
-            key: 'Matches' as const,
-            label: 'Matches',
-            Icon: Users,
-            onPress: () => navigation.navigate('MatrimonyMatches'),
-          },
-          {
-            key: 'Interests' as const,
-            label: 'Interests',
-            Icon: Heart,
-            onPress: () => navigation.navigate('MatrimonyInterestsHub'),
-          },
-          {
-            key: 'Messages' as const,
-            label: 'Messages',
-            Icon: MessageCircle,
-            onPress: () => navigation.navigate('MatrimonyMessages'),
-          },
-          {
-            key: 'Upgrade' as const,
-            label: 'Upgrade',
-            Icon: Crown,
-            onPress: () => navigation.navigate('MatrimonyUpgrade'),
-          },
-        ].map(({ key, label, Icon, onPress }) => {
-          const isActive = activeTab === key;
-          const badge = key === 'Messages' ? unreadChatCount : 0;
-          return (
-            <TouchableOpacity key={key} style={styles.navItem} onPress={onPress} activeOpacity={0.8}>
-              <View style={{ position: 'relative' }}>
-                <Icon size={20} color={isActive ? ORANGE : colors.textSecondary} />
-                {badge > 0 && (
-                  <View
-                    style={{
-                      position: 'absolute',
-                      top: -5,
-                      right: -9,
-                      minWidth: 16,
-                      height: 16,
-                      borderRadius: 8,
-                      paddingHorizontal: 3,
-                      backgroundColor: '#00A884',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Text style={{ color: '#FFFFFF', fontSize: 9.5, fontWeight: '800' }}>
-                      {badge > 9 ? '9+' : badge}
-                    </Text>
-                  </View>
-                )}
-              </View>
-              <Text
-                style={[
-                  styles.navLabel,
-                  {
-                    color: isActive ? ORANGE : colors.textSecondary,
-                    fontWeight: isActive ? '800' : '600',
-                    fontFamily,
-                  },
-                ]}
-              >
-                {label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      <MatrimonyMenuDrawer
-        visible={menuOpen}
-        onClose={() => setMenuOpen(false)}
-        displayName={displayName}
-        profileCode={profileCode}
-        membershipLabel={membershipLabel}
-        avatarUri={avatarUri}
-        isDark={isDark}
-        colors={colors}
-        fontFamily={fontFamily}
-        onUpgrade={() => navigation.navigate('MatrimonyUpgrade')}
-        onEditProfile={() => navigation.navigate('MatrimonyEditProfile')}
-        onEditPreferences={() =>
-          navigation.navigate('MatrimonyEditProfile', { focusSection: 'partnerPreference' })
-        }
-        onVerifyProfile={() => navigation.navigate('MatrimonyStatus')}
-        onUploadPhotos={() => navigation.navigate('MatrimonyMyPhotos')}
-      />
     </View>
   );
 }

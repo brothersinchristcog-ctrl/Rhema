@@ -26,6 +26,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { useTheme, FONT_STYLE_OPTIONS } from '../../../context/ThemeContext';
 import { matrimonyApi } from '../services/matrimonyApi';
 import { StartRegistrationResponse } from '../types/matrimony';
+import { getProfileSubjectFromContext } from '../utils/profileSubject';
 
 const ORANGE = '#EA580C';
 
@@ -105,7 +106,7 @@ export default function MatrimonyPhotoUploadScreen({ navigation, route }: any) {
       }
       result = await ImagePicker.launchCameraAsync({
         allowsEditing: false,
-        quality: 0.55,
+        quality: 0.35,
         base64: true,
       });
     } else {
@@ -117,7 +118,7 @@ export default function MatrimonyPhotoUploadScreen({ navigation, route }: any) {
       result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: false,
-        quality: 0.55,
+        quality: 0.35,
         base64: true,
       });
     }
@@ -125,6 +126,16 @@ export default function MatrimonyPhotoUploadScreen({ navigation, route }: any) {
     const asset = result.assets?.[0];
     if (result.canceled || (!asset?.base64 && !asset?.uri)) return;
     const localUri = asset.uri;
+    const prevPrimaryUri = primaryPhotoUri;
+    const prevPrimaryPath = primaryStoragePath;
+    const prevGalleryUris = galleryUris;
+    const prevGalleryPaths = galleryPaths;
+
+    if (isPrimary) {
+      setPrimaryPhotoUri(localUri);
+    } else {
+      setGalleryUris([...prevGalleryUris, localUri].slice(0, 2));
+    }
 
     setUploading(true);
     try {
@@ -139,10 +150,6 @@ export default function MatrimonyPhotoUploadScreen({ navigation, route }: any) {
         setPrimaryPhotoUri(nextPrimaryUri);
         setPrimaryStoragePath(storagePath);
         setAvoidHighlight(null);
-        await matrimonyApi.saveDraft('photos', {
-          profilePhoto: storagePath,
-          gallery: galleryPaths,
-        });
         matrimonyApi.patchCachedRegistration((prev) => ({
           ...prev,
           profile: prev.profile
@@ -150,21 +157,28 @@ export default function MatrimonyPhotoUploadScreen({ navigation, route }: any) {
                 ...prev.profile,
                 profilePhoto: storagePath,
                 signedProfilePhoto: nextPrimaryUri,
-                gallery: galleryPaths,
-                signedGallery: galleryUris,
+                gallery: prevGalleryPaths,
+                signedGallery: prevGalleryUris,
               }
             : prev.profile,
         }));
+        setUploading(false);
+        matrimonyApi
+          .saveDraft('photos', {
+            profilePhoto: storagePath,
+            gallery: prevGalleryPaths,
+          })
+          .catch((saveErr: any) => {
+            setPrimaryPhotoUri(prevPrimaryUri);
+            setPrimaryStoragePath(prevPrimaryPath);
+            Alert.alert('Save Failed', saveErr?.message || 'Could not save uploaded photo.');
+          });
       } else {
-        const nextUris = [...galleryUris, signedUrl || localUri].slice(0, 2);
-        const nextPaths = [...galleryPaths, storagePath].slice(0, 2);
+        const nextUris = [...prevGalleryUris, signedUrl || localUri].slice(0, 2);
+        const nextPaths = [...prevGalleryPaths, storagePath].slice(0, 2);
         setGalleryUris(nextUris);
         setGalleryPaths(nextPaths);
         setAvoidHighlight(null);
-        await matrimonyApi.saveDraft('photos', {
-          profilePhoto: primaryStoragePath || undefined,
-          gallery: nextPaths,
-        });
         matrimonyApi.patchCachedRegistration((prev) => ({
           ...prev,
           profile: prev.profile
@@ -175,8 +189,21 @@ export default function MatrimonyPhotoUploadScreen({ navigation, route }: any) {
               }
             : prev.profile,
         }));
+        setUploading(false);
+        matrimonyApi
+          .saveDraft('photos', {
+            profilePhoto: prevPrimaryPath || undefined,
+            gallery: nextPaths,
+          })
+          .catch((saveErr: any) => {
+            setGalleryUris(prevGalleryUris);
+            setGalleryPaths(prevGalleryPaths);
+            Alert.alert('Save Failed', saveErr?.message || 'Could not save uploaded photo.');
+          });
       }
     } catch (err: any) {
+      setPrimaryPhotoUri(prevPrimaryUri);
+      setGalleryUris(prevGalleryUris);
       const msg = err?.message || 'Could not upload photo.';
       const cat = classifyAvoidCategory(err);
       setAvoidHighlight(cat);
@@ -241,7 +268,10 @@ export default function MatrimonyPhotoUploadScreen({ navigation, route }: any) {
   };
 
   const goToInterests = () => {
-    navigation.navigate('MatrimonyInterests', { initialData });
+    navigation.navigate('MatrimonyInterests', {
+      initialData,
+      draftData: route?.params?.draftData,
+    });
   };
 
   const renderAvoidGuidelinesCard = () => (
@@ -318,8 +348,21 @@ export default function MatrimonyPhotoUploadScreen({ navigation, route }: any) {
           /* STATE A: No primary photo uploaded yet */
           <>
             <View style={styles.titleBlock}>
+              {getProfileSubjectFromContext(route?.params?.draftData, initialData).forBadgeText ? (
+                <Text
+                  style={{
+                    color: ORANGE,
+                    fontSize: scaleFont(12.5),
+                    fontWeight: '700',
+                    marginBottom: 4,
+                    fontFamily,
+                  }}
+                >
+                  {getProfileSubjectFromContext(route?.params?.draftData, initialData).forBadgeText}
+                </Text>
+              ) : null}
               <Text style={[styles.title, { color: colors.text, fontFamily, fontSize: scaleFont(22) }]}>
-                Upload your profile photo
+                {getProfileSubjectFromContext(route?.params?.draftData, initialData).photoUploadTitle}
               </Text>
               <Text style={[styles.subtitle, { color: colors.textSecondary, fontFamily, fontSize: scaleFont(13.5) }]}>
                 Profiles with photos get up to <Text style={{ fontWeight: '800', color: colors.text }}>10 times</Text> more responses
@@ -350,7 +393,8 @@ export default function MatrimonyPhotoUploadScreen({ navigation, route }: any) {
             <View style={styles.privacyRow}>
               <Lock size={14} color={colors.textSecondary} />
               <Text style={[styles.privacyText, { color: colors.textSecondary, fontFamily }]}>
-                <Text style={{ fontWeight: '800', color: colors.text }}>100%</Text> Privacy and you control who can view your photo
+                <Text style={{ fontWeight: '800', color: colors.text }}>100%</Text>{' '}
+                {getProfileSubjectFromContext(route?.params?.draftData, initialData).photoPrivacyNote}
               </Text>
             </View>
           </>
@@ -362,7 +406,7 @@ export default function MatrimonyPhotoUploadScreen({ navigation, route }: any) {
                 Add up to 3 photos to get more responses
               </Text>
               <Text style={[styles.subtitle, { color: colors.textSecondary, fontFamily, fontSize: scaleFont(13.5) }]}>
-                More photos help matches know you better
+                {getProfileSubjectFromContext(route?.params?.draftData, initialData).photoMoreSubtitle}
               </Text>
             </View>
 

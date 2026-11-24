@@ -22,6 +22,7 @@ export declare const startMatrimonyRegistration: import("firebase-functions/v2/h
     familyDetails?: never;
     incomeDetails?: never;
     preferences?: never;
+    profileManager?: never;
 } | {
     success: boolean;
     eligible: boolean;
@@ -56,7 +57,9 @@ export declare const startMatrimonyRegistration: import("firebase-functions/v2/h
         gallery: never[];
         signedProfilePhoto: null;
         signedGallery: never[];
+        mobilePrivacy: string;
         photoVisibility: string;
+        protectedPhotoAllowedUids: never[];
         profileStatus: string;
         onboardingStage: string;
         verificationStatus: string;
@@ -90,6 +93,7 @@ export declare const startMatrimonyRegistration: import("firebase-functions/v2/h
             openToRelocation: boolean;
         };
     };
+    profileManager?: never;
 } | {
     success: boolean;
     eligible: boolean;
@@ -118,12 +122,15 @@ export declare const startMatrimonyRegistration: import("firebase-functions/v2/h
         faithSummary?: never;
         profilePhoto?: never;
         gallery?: never;
+        mobilePrivacy?: never;
         photoVisibility?: never;
+        protectedPhotoAllowedUids?: never;
         profileStatus?: never;
         verificationStatus?: never;
         visibility?: never;
     };
     consent: any;
+    profileManager: any;
     familyDetails: any;
     incomeDetails: any;
     preferences: FirebaseFirestore.DocumentData;
@@ -138,7 +145,7 @@ export declare const saveMatrimonyDraft: import("firebase-functions/v2/https").C
     saved: boolean;
 } | {
     success: boolean;
-    section: "location" | "preferences" | "basic" | "personal" | "religious" | "professional" | "additional" | "interests" | "consent" | "details" | "photos";
+    section: "notifications" | "location" | "preferences" | "basic" | "personal" | "religious" | "professional" | "additional" | "interests" | "consent" | "details" | "photos" | "privacy";
     saved: boolean;
 }>, unknown>;
 /**
@@ -157,6 +164,27 @@ export declare const submitMatrimonyProfile: import("firebase-functions/v2/https
 export declare const resetMatrimonyProfile: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
     success: boolean;
     profileStatus: string;
+}>, unknown>;
+/**
+ * 3c. deactivateMyMatrimonyAccount
+ * Temporarily hides the member's profile from matches and disables outbound contact
+ * while allowing them to browse matches and reactivate anytime.
+ */
+export declare const deactivateMyMatrimonyAccount: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
+    success: boolean;
+    selfDeactivated: boolean;
+    visibility: any;
+}>, unknown>;
+/**
+ * 3d. deleteMyMatrimonyAccount
+ * Saves the member's deletion reason on their Church member record and audit log,
+ * then completely deletes their Firebase Matrimony profile & associated data
+ * (without banning them) so they can immediately create a new profile for themselves or family.
+ */
+export declare const deleteMyMatrimonyAccount: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
+    success: boolean;
+    deleted: boolean;
+    deletionReason: string;
 }>, unknown>;
 /**
  * 4. getMatrimonyStatus

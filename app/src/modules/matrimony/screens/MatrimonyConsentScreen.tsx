@@ -16,6 +16,7 @@ import { useTheme, FONT_STYLE_OPTIONS } from '../../../context/ThemeContext';
 import MatrimonyProgressBar from '../components/MatrimonyProgressBar';
 import { matrimonyApi } from '../services/matrimonyApi';
 import { MatrimonyPendingRegistrationDraft, StartRegistrationResponse } from '../types/matrimony';
+import { getProfileSubjectFromContext } from '../utils/profileSubject';
 
 const ORANGE = '#EA580C';
 
@@ -26,6 +27,7 @@ export default function MatrimonyConsentScreen({ navigation, route }: any) {
 
   const initialData: StartRegistrationResponse | undefined = route?.params?.initialData;
   const draftData: MatrimonyPendingRegistrationDraft = route?.params?.draftData || {};
+  const subjectCopy = getProfileSubjectFromContext(draftData, initialData);
 
   const [profilePublication, setProfilePublication] = useState(
     Boolean(initialData?.consent?.profilePublication ?? true)
@@ -56,7 +58,10 @@ export default function MatrimonyConsentScreen({ navigation, route }: any) {
           profilePublication,
           matchmaking,
           communication,
-          managedBy: 'self',
+          managedBy: draftData?.welcome?.managedBy || 'self',
+          ...(draftData?.welcome?.createdFor
+            ? { createdFor: draftData.welcome.createdFor }
+            : {}),
         },
       });
 
@@ -64,6 +69,13 @@ export default function MatrimonyConsentScreen({ navigation, route }: any) {
         ? {
             ...initialData,
             registered: true,
+            profileManager: {
+              type: draftData?.welcome?.managedBy || 'self',
+              ...(draftData?.welcome?.createdFor
+                ? { createdFor: draftData.welcome.createdFor }
+                : {}),
+              guardianUid: null,
+            },
             profile: initialData.profile
               ? {
                   ...initialData.profile,
@@ -80,7 +92,7 @@ export default function MatrimonyConsentScreen({ navigation, route }: any) {
           }
         : initialData;
 
-      navigation.navigate('MatrimonyProfileSuccess', { initialData: updatedInitialData });
+      navigation.navigate('MatrimonyProfileSuccess', { initialData: updatedInitialData, draftData });
     } catch (err: any) {
       Alert.alert(
         'Unable to Create Profile',
@@ -117,12 +129,12 @@ export default function MatrimonyConsentScreen({ navigation, route }: any) {
             Privacy & Consent
           </Text>
           <Text style={[styles.cardSub, { color: colors.textSecondary, fontFamily }]}>
-            Your existing Rhema profile (name, age, gender, city, baptism status) is reused automatically. Phone, email, and exact DOB stay private.
+            {subjectCopy.consentSubtitle}
           </Text>
 
           <View style={styles.switchRow}>
             <Text style={[styles.switchLabel, { color: colors.text, fontFamily }]}>
-              Publish my approved Matrimony profile to eligible Rhema members
+              {subjectCopy.consentPublishLabel}
             </Text>
             <Switch
               value={profilePublication}
@@ -134,7 +146,7 @@ export default function MatrimonyConsentScreen({ navigation, route }: any) {
 
           <View style={styles.switchRow}>
             <Text style={[styles.switchLabel, { color: colors.text, fontFamily }]}>
-              Use my preferences for reciprocal compatibility matching
+              {subjectCopy.consentMatchLabel}
             </Text>
             <Switch
               value={matchmaking}
@@ -146,7 +158,7 @@ export default function MatrimonyConsentScreen({ navigation, route }: any) {
 
           <View style={styles.switchRow}>
             <Text style={[styles.switchLabel, { color: colors.text, fontFamily }]}>
-              Allow interest requests and match chat after mutual acceptance
+              {subjectCopy.consentCommLabel}
             </Text>
             <Switch
               value={communication}
