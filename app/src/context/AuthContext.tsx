@@ -263,46 +263,47 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           try {
             console.log('🔐 [Auth] User Logged In:', userState.uid);
 
-            // Check Super Admin Status via 'platform_admins' collection
-            try {
-              const isSuper = await checkSuperAdminStatus(userState.uid);
-              setIsPlatformSuperAdmin(isSuper);
-              if (isSuper) {
-                const notifSvc = require('../services/NotificationService').default;
-                notifSvc.subscribeToSuperAdminTopic().catch(() => {});
-              }
-
-              // Set up live listener for platform_admins changes
-              if (superAdminListenerRef.current) superAdminListenerRef.current();
-              superAdminListenerRef.current = firestore()
-                .collection('platform_admins')
-                .doc(userState.uid)
-                .onSnapshot(
-                  (snap) => {
-                    if (snap && snap.exists) {
-                      const data = snap.data();
-                      const hasSuper = (
-                        data?.superadmin === true ||
-                        String(data?.role || '').toLowerCase().replace(/\s+/g, '') === 'superadmin' ||
-                        String(data?.role || '').toLowerCase().includes('super')
-                      );
-                      setIsPlatformSuperAdmin(hasSuper);
-                    }
-                  },
-                  () => {}
-                );
-            } catch (err) {
-              console.warn('⚠️ [Auth] Error verifying Super Admin status:', err);
-              setIsPlatformSuperAdmin(false);
-            }
-
             // Refresh token in background when online (never block startup)
             userState.getIdToken(true).catch((tokenErr) => {
               console.warn('⚠️ [Auth] Token refresh skipped (offline?):', tokenErr);
             });
 
-            // Fetch member profile from Rhema Church
-            let globalUser = await FirestoreService.getGlobalUser(userState.uid);
+            // Fetch Super Admin status and global member profile in parallel to eliminate sequential waterfall
+            const [isSuperResult, globalUserResult] = await Promise.all([
+              checkSuperAdminStatus(userState.uid).catch((err) => {
+                console.warn('⚠️ [Auth] Error verifying Super Admin status:', err);
+                return false;
+              }),
+              FirestoreService.getGlobalUser(userState.uid),
+            ]);
+
+            setIsPlatformSuperAdmin(isSuperResult);
+            if (isSuperResult) {
+              const notifSvc = require('../services/NotificationService').default;
+              notifSvc.subscribeToSuperAdminTopic().catch(() => {});
+            }
+
+            // Set up live listener for platform_admins changes
+            if (superAdminListenerRef.current) superAdminListenerRef.current();
+            superAdminListenerRef.current = firestore()
+              .collection('platform_admins')
+              .doc(userState.uid)
+              .onSnapshot(
+                (snap) => {
+                  if (snap && snap.exists) {
+                    const data = snap.data();
+                    const hasSuper = (
+                      data?.superadmin === true ||
+                      String(data?.role || '').toLowerCase().replace(/\s+/g, '') === 'superadmin' ||
+                      String(data?.role || '').toLowerCase().includes('super')
+                    );
+                    setIsPlatformSuperAdmin(hasSuper);
+                  }
+                },
+                () => {}
+              );
+
+            let globalUser = globalUserResult;
 
             if (!globalUser && userState.phoneNumber) {
               console.log('🔄 [Auth] Looking up member by phone...', userState.phoneNumber);

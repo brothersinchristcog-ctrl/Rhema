@@ -29,6 +29,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { formatDateDisplay, formatDateMonthYear, formatSermonDuration, formatTimeTo12Hour } from '../utils/DateUtils';
+import { readInstantCache, writeInstantCache } from '../utils/instantCache';
 import { FloatingChatFab } from '../modules/church_chat';
 import { 
   Bell, 
@@ -2826,6 +2827,8 @@ export default function HomeScreen() {
     }
   };
 
+  const lastHomeFocusRefreshAtRef = useRef<number>(0);
+
   useEffect(() => {
     fetchLiveCelebrations();
   }, [activeChurch?.id, member]);
@@ -2835,53 +2838,72 @@ export default function HomeScreen() {
       // Refresh current time on focus to unlock new time-based cards immediately
       setCurrentTime(new Date());
 
-      // Always re-fetch the latest server daily promise on screen focus to ensure zero stale cache
-      FirestoreService.getDailyPromise(true).then((fresh) => {
-        if (fresh) {
-          cachedPromise = fresh;
-          setPromise(fresh);
-          AsyncStorage.setItem('@cached_daily_promise', JSON.stringify(fresh));
-          cachedPromiseThumbnail = fresh.imageUrl || null;
-          setPromiseThumbnail(fresh.imageUrl || null);
-        }
-      }).catch(() => {});
+      const nowMs = Date.now();
+      const shouldRevalidate = nowMs - lastHomeFocusRefreshAtRef.current >= 25_000;
 
-      // Always re-fetch the latest published sermons on screen focus to ensure zero stale cache
-      FirestoreService.getLatestSermons(2).then((fresh) => {
-        if (fresh && fresh.length > 0) {
-          cachedLatestSermons = fresh;
-          setLatestSermons(fresh);
-        }
-      }).catch(() => {});
+      if (shouldRevalidate) {
+        lastHomeFocusRefreshAtRef.current = nowMs;
+        const churchKey = activeChurch?.id || 'rhema';
 
-      // Always re-fetch today's 4 daily verses on screen focus to guarantee immediate sync
-      VerseNotificationService.getTodayVerses(true).then((freshVerses) => {
-        if (freshVerses && freshVerses.length >= 4) {
-          cachedTodayFourVerses = freshVerses;
-          setTodayFourVerses(freshVerses);
-          if (language !== 'en') {
-            VerseNotificationService.localizeVerses(freshVerses, language as any).then(lv => {
-              if (lv) {
-                cachedTodayFourVerses = lv;
-                setTodayFourVerses(lv);
-              }
+        // Re-fetch latest daily promise on focus when cooldown elapsed
+        FirestoreService.getDailyPromise(true).then((fresh) => {
+          if (fresh) {
+            cachedPromise = fresh;
+            setPromise(fresh);
+            AsyncStorage.setItem('@cached_daily_promise', JSON.stringify(fresh)).catch(() => {});
+            cachedPromiseThumbnail = fresh.imageUrl || null;
+            setPromiseThumbnail(fresh.imageUrl || null);
+          }
+        }).catch(() => {});
+
+        // Re-fetch latest published sermons and update instant cache
+        FirestoreService.getLatestSermons(2).then((fresh) => {
+          if (fresh && fresh.length > 0) {
+            cachedLatestSermons = fresh;
+            setLatestSermons(fresh);
+            writeInstantCache(`home_latest_sermons_${churchKey}_v1`, fresh).catch(() => {});
+          }
+        }).catch(() => {});
+
+        // Re-fetch today's 4 daily verses and update instant cache
+        VerseNotificationService.getTodayVerses(true).then((freshVerses) => {
+          if (freshVerses && freshVerses.length >= 4) {
+            const today = new Date();
+            const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+            cachedTodayFourVerses = freshVerses;
+            setTodayFourVerses(freshVerses);
+            writeInstantCache(`home_today_verses_${language}_v1`, {
+              date: todayStr,
+              verses: freshVerses,
             }).catch(() => {});
+            if (language !== 'en') {
+              VerseNotificationService.localizeVerses(freshVerses, language as any).then(lv => {
+                if (lv) {
+                  cachedTodayFourVerses = lv;
+                  setTodayFourVerses(lv);
+                  writeInstantCache(`home_today_verses_${language}_v1`, {
+                    date: todayStr,
+                    verses: lv,
+                  }).catch(() => {});
+                }
+              }).catch(() => {});
+            }
           }
-        }
-      }).catch(() => {});
+        }).catch(() => {});
 
-      refreshHomeLiveStream();
+        refreshHomeLiveStream();
 
-      const curPeriod = getCurrentPeriod();
-      VerseNotificationService.getVerseForDate(new Date(), curPeriod, true).then(v => {
-        if (v) {
-          if (language !== 'en') {
-            VerseNotificationService.localizeVerse(v, language as any).then(lv => setTodayVerse(lv));
-          } else {
-            setTodayVerse(v);
+        const curPeriod = getCurrentPeriod();
+        VerseNotificationService.getVerseForDate(new Date(), curPeriod, true).then(v => {
+          if (v) {
+            if (language !== 'en') {
+              VerseNotificationService.localizeVerse(v, language as any).then(lv => setTodayVerse(lv));
+            } else {
+              setTodayVerse(v);
+            }
           }
-        }
-      }).catch(() => {});
+        }).catch(() => {});
+      }
 
       if (liveCelebrations.length === 0 || !activeChurch?.id) return;
 
@@ -3266,14 +3288,17 @@ export default function HomeScreen() {
 
   const fetchData = async () => {
     try {
-      // 1. Try to load cached promise for instant rendering on cold boot
+      const churchKey = activeChurch?.id || 'rhema';
+      const today = new Date();
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      lastHomeFocusRefreshAtRef.current = Date.now();
+
+      // 1. Hydrate Home cards from local phone cache immediately on cold boot (0ms perceived load)
       if (!promise) {
         AsyncStorage.getItem('@cached_daily_promise').then(val => {
           if (val && !promise) {
             try {
               const cached = JSON.parse(val);
-              const today = new Date();
-              const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
               if (cached.date === todayStr) {
                 setPromise(cached);
                 if (cached.imageUrl) setPromiseThumbnail(cached.imageUrl);
@@ -3285,15 +3310,71 @@ export default function HomeScreen() {
         }).catch(() => {});
       }
 
-      // 2. Fetch Member Details non-blocking
-      if (user?.phoneNumber) {
+      if (cachedTodayEvents.length === 0) {
+        readInstantCache<ScheduleEvent[]>(`home_today_events_${churchKey}_v1`).then(cached => {
+          if (cached?.data && cachedTodayEvents.length === 0) {
+            cachedTodayEvents = cached.data;
+            setTodayEvents(cached.data);
+          }
+        }).catch(() => {});
+      }
+
+      if (cachedEvents.length === 0) {
+        readInstantCache<ScheduleEvent[]>(`home_upcoming_events_${churchKey}_v1`).then(cached => {
+          if (cached?.data && cachedEvents.length === 0) {
+            cachedEvents = cached.data;
+            setEvents(cached.data);
+          }
+        }).catch(() => {});
+      }
+
+      if (cachedLatestSermons.length === 0) {
+        readInstantCache<Sermon[]>(`home_latest_sermons_${churchKey}_v1`).then(cached => {
+          if (cached?.data?.length && cachedLatestSermons.length === 0) {
+            cachedLatestSermons = cached.data;
+            setLatestSermons(cached.data);
+          }
+        }).catch(() => {});
+      }
+
+      if (cachedTodayFourVerses.length === 0) {
+        readInstantCache<{ date: string; verses: DailyVerse[] }>(`home_today_verses_${language}_v1`).then(cached => {
+          if (cached?.data?.date === todayStr && cached.data.verses?.length && cachedTodayFourVerses.length === 0) {
+            cachedTodayFourVerses = cached.data.verses;
+            setTodayFourVerses(cached.data.verses);
+          }
+        }).catch(() => {});
+      }
+
+      // 2. Fetch Member Details non-blocking (reuse AuthContext member immediately to skip duplicate phone scans)
+      const knownMemberId = authMember?.id || member?.id;
+      if (knownMemberId) {
+        FirestoreService.updateLastAppOpened(knownMemberId);
+        FirestoreService.getPrayerRequests({
+          contactId: knownMemberId,
+          ownOnly: true,
+          skipComments: true,
+          limit: 20,
+        }).then((prayers: any[]) => {
+          if (prayers && prayers.length > 0) {
+            cachedLatestPrayer = prayers[0];
+            cachedPrayerCount = prayers.length;
+            setLatestPrayer(cachedLatestPrayer);
+            setPrayerCount(cachedPrayerCount);
+          }
+        }).catch(() => {});
+      } else if (user?.phoneNumber) {
         FirestoreService.checkContactExists(user.phoneNumber).then((res: any) => {
           if (res?.exists && res?.member) {
             setMember(res.member);
             const mId = res.member.id;
             FirestoreService.updateLastAppOpened(mId);
-            // Fetch Latest Prayer async
-            FirestoreService.getPrayerRequests({ contactId: mId }).then((prayers: any[]) => {
+            FirestoreService.getPrayerRequests({
+              contactId: mId,
+              ownOnly: true,
+              skipComments: true,
+              limit: 20,
+            }).then((prayers: any[]) => {
               if (prayers && prayers.length > 0) {
                 cachedLatestPrayer = prayers[0];
                 cachedPrayerCount = prayers.length;
@@ -3310,7 +3391,7 @@ export default function HomeScreen() {
         if (prom) {
           cachedPromise = prom;
           setPromise(prom);
-          AsyncStorage.setItem('@cached_daily_promise', JSON.stringify(prom));
+          AsyncStorage.setItem('@cached_daily_promise', JSON.stringify(prom)).catch(() => {});
           if (prom.imageUrl) {
             cachedPromiseThumbnail = prom.imageUrl;
             setPromiseThumbnail(prom.imageUrl);
@@ -3321,22 +3402,30 @@ export default function HomeScreen() {
         } else {
           cachedPromise = null;
           setPromise(null);
-          AsyncStorage.removeItem('@cached_daily_promise');
+          AsyncStorage.removeItem('@cached_daily_promise').catch(() => {});
           cachedPromiseThumbnail = null;
           setPromiseThumbnail(null);
         }
       }).catch(() => {});
 
-      // 3b. Fetch Today's 4 Verses for Carousel (Force refresh from Firestore to prevent stale verses)
+      // 3b. Fetch Today's 4 Verses for Carousel
       VerseNotificationService.getTodayVerses(true).then((verses: DailyVerse[]) => {
         if (verses && verses.length > 0) {
           cachedTodayFourVerses = verses;
           setTodayFourVerses(verses);
+          writeInstantCache(`home_today_verses_${language}_v1`, {
+            date: todayStr,
+            verses,
+          }).catch(() => {});
           if (language !== 'en') {
             VerseNotificationService.localizeVerses(verses, language as any).then(lv => {
               if (lv) {
                 cachedTodayFourVerses = lv;
                 setTodayFourVerses(lv);
+                writeInstantCache(`home_today_verses_${language}_v1`, {
+                  date: todayStr,
+                  verses: lv,
+                }).catch(() => {});
               }
             }).catch(() => {});
           }
@@ -3347,12 +3436,14 @@ export default function HomeScreen() {
       FirestoreService.getTodayEvents().then((ev: any) => {
         cachedTodayEvents = ev || [];
         setTodayEvents(cachedTodayEvents);
+        writeInstantCache(`home_today_events_${churchKey}_v1`, cachedTodayEvents).catch(() => {});
       }).catch(() => {});
 
       // 5. Fetch Upcoming Events non-blocking
       FirestoreService.getUpcomingEvents(3).then((ev: any) => {
         cachedEvents = ev || [];
         setEvents(cachedEvents);
+        writeInstantCache(`home_upcoming_events_${churchKey}_v1`, cachedEvents).catch(() => {});
       }).catch(() => {});
 
       // 6. Fetch Latest Sermons non-blocking
@@ -3360,6 +3451,7 @@ export default function HomeScreen() {
         if (s && s.length > 0) {
           cachedLatestSermons = s;
           setLatestSermons(cachedLatestSermons);
+          writeInstantCache(`home_latest_sermons_${churchKey}_v1`, cachedLatestSermons).catch(() => {});
         }
       }).catch(() => {});
 

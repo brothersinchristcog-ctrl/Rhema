@@ -248,7 +248,7 @@ export const ensureMatrimonyChatRoom = onCall({ invoker: 'public' }, async (requ
  * Ensures RTDB chat rooms & inbox entries exist for all Mutual Matches of the viewer.
  * Respects viewer's contact unlock entitlement and exposes messageAccess status.
  */
-export const getMatrimonyChatContacts = onCall({ invoker: 'public', cpu: 'gcf_gen1', concurrency: 1, maxInstances: 10 }, async (request) => {
+export const getMatrimonyChatContacts = onCall({ invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 40, maxInstances: 10 }, async (request) => {
     const uid = requireAuthUid(request);
     const db = getFirestore();
     await assertMatrimonyProfileActive(db, uid);

@@ -29,17 +29,26 @@ import {
 import FirestoreService, { ScheduleEvent } from '../services/FirestoreService';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { getInstantMemory, readInstantCache, writeInstantCache } from '../utils/instantCache';
 
 const { width } = Dimensions.get('window');
 const PAST_EVENTS_PAGE_SIZE = 5;
+const UPCOMING_EVENTS_CACHE_KEY = 'events_upcoming_v1';
+const PAST_EVENTS_P1_CACHE_KEY = 'events_past_p1_v1';
 
 export default function EventsScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const { isDark, colors } = useTheme();
   const { t } = useLanguage();
-  const [upcomingEvents, setUpcomingEvents] = useState<ScheduleEvent[]>([]);
-  const [pastEvents, setPastEvents] = useState<ScheduleEvent[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [upcomingEvents, setUpcomingEvents] = useState<ScheduleEvent[]>(
+    () => getInstantMemory<ScheduleEvent[]>(UPCOMING_EVENTS_CACHE_KEY) || []
+  );
+  const [pastEvents, setPastEvents] = useState<ScheduleEvent[]>(
+    () => getInstantMemory<ScheduleEvent[]>(PAST_EVENTS_P1_CACHE_KEY) || []
+  );
+  const [loading, setLoading] = useState(
+    () => getInstantMemory<ScheduleEvent[]>(UPCOMING_EVENTS_CACHE_KEY) === null
+  );
   const [pastLoading, setPastLoading] = useState(false);
   const [loadingMorePast, setLoadingMorePast] = useState(false);
   const [hasMorePast, setHasMorePast] = useState(false);
@@ -158,7 +167,17 @@ export default function EventsScreen({ navigation }: any) {
     }
   };
 
-  const fetchUpcomingEvents = useCallback(async () => {
+  const fetchUpcomingEvents = useCallback(async (isRefresh: boolean = false) => {
+    let hasCached = Boolean(getInstantMemory<ScheduleEvent[]>(UPCOMING_EVENTS_CACHE_KEY));
+    if (!isRefresh && !hasCached) {
+      const diskCached = await readInstantCache<ScheduleEvent[]>(UPCOMING_EVENTS_CACHE_KEY);
+      if (diskCached?.data) {
+        setUpcomingEvents(diskCached.data);
+        setLoading(false);
+        hasCached = true;
+      }
+    }
+
     try {
       const upcomingRes = await FirestoreService.getUpcomingEvents(50).catch(() => []);
       const seenIds = new Set<string>();
@@ -180,6 +199,7 @@ export default function EventsScreen({ navigation }: any) {
       });
 
       setUpcomingEvents(upcoming);
+      writeInstantCache(UPCOMING_EVENTS_CACHE_KEY, upcoming).catch(() => {});
     } catch (error) {
       console.error('Error fetching upcoming events:', error);
     } finally {
@@ -194,7 +214,16 @@ export default function EventsScreen({ navigation }: any) {
       setLoadingMorePast(true);
     } else {
       pastCursorRef.current = null;
-      setPastLoading(true);
+      const hasPastRam = Boolean(getInstantMemory<ScheduleEvent[]>(PAST_EVENTS_P1_CACHE_KEY));
+      if (!hasPastRam) {
+        const diskPast = await readInstantCache<ScheduleEvent[]>(PAST_EVENTS_P1_CACHE_KEY);
+        if (diskPast?.data?.length) {
+          setPastEvents(diskPast.data);
+          setPastLoading(false);
+        } else {
+          setPastLoading(true);
+        }
+      }
     }
 
     try {
@@ -207,6 +236,7 @@ export default function EventsScreen({ navigation }: any) {
 
       if (reset) {
         setPastEvents(result.events);
+        writeInstantCache(PAST_EVENTS_P1_CACHE_KEY, result.events).catch(() => {});
       } else {
         setPastEvents(prev => {
           const existingIds = new Set(prev.map(e => e.id));
@@ -236,7 +266,7 @@ export default function EventsScreen({ navigation }: any) {
     const refreshTask =
       activeTab === 'past'
         ? fetchPastEventsPage(true)
-        : fetchUpcomingEvents().then(() => {
+        : fetchUpcomingEvents(true).then(() => {
             if (pastLoadedRef.current) {
               pastLoadedRef.current = false;
               pastCursorRef.current = null;

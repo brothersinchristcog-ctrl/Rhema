@@ -246,7 +246,7 @@ async function mirrorCompletedChurchDonation(db, churchId, docId, donationData, 
  * Member Giving: Create a Razorpay Order in asia-south1.
  * Reads Razorpay Key ID & Key Secret from secure backend env vars only.
  */
-export const createRazorpayOrder = onCall({ region: 'asia-south1', cors: true, invoker: 'public' }, async (request) => {
+export const createRazorpayOrder = onCall({ region: 'asia-south1', cors: true, invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 40, maxInstances: 3 }, async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {
         throw new HttpsError('unauthenticated', 'Please sign in to make a donation.');
@@ -333,7 +333,7 @@ export const createRazorpayOrder = onCall({ region: 'asia-south1', cors: true, i
  * Member Giving: Verify Razorpay Checkout HMAC-SHA256 signature on backend
  * and mark church_donations + church-scoped donations completed atomically.
  */
-export const verifyRazorpayPayment = onCall({ region: 'asia-south1', cors: true, invoker: 'public' }, async (request) => {
+export const verifyRazorpayPayment = onCall({ region: 'asia-south1', cors: true, invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 40, maxInstances: 3 }, async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {
         throw new HttpsError('unauthenticated', 'Authentication is required to verify payment.');
@@ -417,7 +417,7 @@ export const verifyRazorpayPayment = onCall({ region: 'asia-south1', cors: true,
 /**
  * Legacy donation callable aliases in asia-south1 kept compatible with backend env credentials.
  */
-export const createRazorpayDonationOrderV6 = onCall({ region: 'asia-south1', cors: true, invoker: 'public' }, async (request) => {
+export const createRazorpayDonationOrderV6 = onCall({ region: 'asia-south1', cors: true, invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 40, maxInstances: 3 }, async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {
         throw new HttpsError('unauthenticated', 'User must be signed in to donate.');
@@ -451,7 +451,7 @@ export const createRazorpayDonationOrderV6 = onCall({ region: 'asia-south1', cor
         throw new HttpsError('internal', error?.message || 'Unable to create Razorpay donation order.');
     }
 });
-export const verifyRazorpayDonationV6 = onCall({ region: 'asia-south1', cors: true, invoker: 'public' }, async (request) => {
+export const verifyRazorpayDonationV6 = onCall({ region: 'asia-south1', cors: true, invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 40, maxInstances: 3 }, async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {
         throw new HttpsError('unauthenticated', 'User must be authenticated.');
@@ -579,7 +579,7 @@ export const verifyRazorpaySubscriptionV3 = onCall({ cors: true, invoker: 'publi
 /**
  * Razorpay Webhook endpoint for asynchronous capture / failure reconciliation.
  */
-export const razorpayWebhookV1 = onRequest({ invoker: 'public' }, async (req, res) => {
+export const razorpayWebhookV1 = onRequest({ invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 40, maxInstances: 10 }, async (req, res) => {
     const webhookSecret = (process.env.RAZORPAY_GIVING_WEBHOOK_SECRET ||
         process.env.RAZORPAY_WEBHOOK_SECRET ||
         '').trim();
@@ -739,7 +739,7 @@ export const razorpayWebhookV1 = onRequest({ invoker: 'public' }, async (req, re
 /**
  * Member Recurring Giving: Create Razorpay Plan (cached) + Razorpay Subscription with explicit member consent.
  */
-export const createRazorpayRecurringDonation = onCall({ region: 'asia-south1', cors: true, invoker: 'public' }, async (request) => {
+export const createRazorpayRecurringDonation = onCall({ region: 'asia-south1', cors: true, invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 40, maxInstances: 3 }, async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {
         throw new HttpsError('unauthenticated', 'Please sign in to set up recurring donations.');
@@ -875,7 +875,7 @@ export const createRazorpayRecurringDonation = onCall({ region: 'asia-south1', c
  * Member Recurring Giving: Verify Razorpay Subscription Checkout authorization signature
  * (`razorpay_payment_id | razorpay_subscription_id`) and record Cycle #1 receipt.
  */
-export const verifyRazorpaySubscriptionDonation = onCall({ region: 'asia-south1', cors: true, invoker: 'public' }, async (request) => {
+export const verifyRazorpaySubscriptionDonation = onCall({ region: 'asia-south1', cors: true, invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 40, maxInstances: 3 }, async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {
         throw new HttpsError('unauthenticated', 'Authentication is required.');
@@ -952,7 +952,7 @@ export const verifyRazorpaySubscriptionDonation = onCall({ region: 'asia-south1'
 /**
  * Member / Admin Recurring Control: Pause, Resume, or Cancel an authorized Razorpay Subscription mandate.
  */
-export const manageRazorpayRecurringDonation = onCall({ region: 'asia-south1', cors: true, invoker: 'public' }, async (request) => {
+export const manageRazorpayRecurringDonation = onCall({ region: 'asia-south1', cors: true, invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 40, maxInstances: 3 }, async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {
         throw new HttpsError('unauthenticated', 'Authentication required.');

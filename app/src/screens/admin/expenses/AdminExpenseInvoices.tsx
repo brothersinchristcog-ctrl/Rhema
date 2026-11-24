@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { 
-  StyleSheet, View, Text, ScrollView, TouchableOpacity, 
+import {
+  StyleSheet, View, Text, ScrollView, TouchableOpacity,
   Modal, Platform, TextInput, KeyboardAvoidingView, Alert
 } from 'react-native';
-import { 
+import {
   FileText, Check, ChevronRight, CalendarDays, Receipt, ChevronLeft, Share2, Download, Trash2
 } from 'lucide-react-native';
 import {
@@ -46,7 +46,7 @@ export default function AdminExpenseInvoices({
 
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [combinedPreview, setCombinedPreview] = useState<{entries: any[], label: string, invNo?: string} | null>(null);
+  const [combinedPreview, setCombinedPreview] = useState<{ entries: any[], label: string, invNo?: string } | null>(null);
   const [preparedBy, setPreparedBy] = useState('');
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [showAdminSelector, setShowAdminSelector] = useState(false);
@@ -124,7 +124,7 @@ export default function AdminExpenseInvoices({
             pdfName = `${combinedPreview.label.replace(/[^a-zA-Z0-9]/g, '')}_invoice-${churchLowerSlug}`;
           }
         }
-        
+
         const safeName = pdfName.replace(/[^a-zA-Z0-9-]/g, '_');
 
         const dataUri = await captureRef(invoiceRef.current, { format: 'png', quality: 1, result: 'data-uri' });
@@ -136,14 +136,14 @@ export default function AdminExpenseInvoices({
           </html>
         `;
         const { uri } = await Print.printToFileAsync({ html, width: 612, height: 792 });
-        
+
         const sourceFile = new File(uri);
         const targetFile = new File(Paths.cache, `${safeName}.pdf`);
-        
+
         if (targetFile.exists) {
           targetFile.delete();
         }
-        
+
         await sourceFile.copy(targetFile);
 
         if (await Sharing.isAvailableAsync()) {
@@ -166,7 +166,7 @@ export default function AdminExpenseInvoices({
       if (e.invoiceNumbers && Array.isArray(e.invoiceNumbers)) {
         e.invoiceNumbers.forEach((i: string) => invs.add(i));
       }
-      
+
       invs.forEach(inv => {
         if (!map[inv]) map[inv] = [];
         map[inv].push(e);
@@ -187,10 +187,10 @@ export default function AdminExpenseInvoices({
   useEffect(() => {
     if (pendingInvoiceEntries && pendingInvoiceEntries.length > 0) {
       const invNo = pendingInvoiceEntries[0].invoiceNumber;
-      let label = pendingInvoiceEntries.length === 1 
-        ? (pendingInvoiceEntries[0].eventName ? `Event — ${pendingInvoiceEntries[0].eventName}` : "Normal Expense") 
+      let label = pendingInvoiceEntries.length === 1
+        ? (pendingInvoiceEntries[0].eventName ? `Event — ${pendingInvoiceEntries[0].eventName}` : "Normal Expense")
         : "Multiple Expenses";
-      
+
       setCombinedPreview({ entries: pendingInvoiceEntries, label, invNo });
       if (clearPendingInvoice) clearPendingInvoice();
     }
@@ -225,13 +225,13 @@ export default function AdminExpenseInvoices({
           {invoicedGroups.map(({ invNo, list }: any) => {
             const e = list[0];
             const sum = list.reduce((s: number, exp: any) => s + exp.items.reduce((s2: number, i: any) => s2 + Number(i.amount), 0), 0);
-            const label = list.length === 1 
-              ? (e.eventName || 'Normal Expense') 
+            const label = list.length === 1
+              ? (e.eventName || 'Normal Expense')
               : (list.every((ex: any) => ex.eventName === e.eventName) ? (e.eventName || 'Normal Expenses') : 'Multiple Expenses');
-            
+
             const approvedBys = [...new Set(list.map((exp: any) => exp.approvedBy).filter(Boolean))];
             const approvedByStr = approvedBys.length > 0 ? approvedBys.join(', ') : null;
-            
+
             return (
               <TouchableOpacity
                 key={invNo}
@@ -292,9 +292,11 @@ export default function AdminExpenseInvoices({
                             "This will un-group these expenses and remove the invoice number.",
                             [
                               { text: "Cancel", style: "cancel" },
-                              { text: "Delete", style: "destructive", onPress: () => {
-                                if (onDeleteInvoice) onDeleteInvoice(invNo);
-                              }}
+                              {
+                                text: "Delete", style: "destructive", onPress: () => {
+                                  if (onDeleteInvoice) onDeleteInvoice(invNo);
+                                }
+                              }
                             ]
                           );
                         }}
@@ -302,7 +304,7 @@ export default function AdminExpenseInvoices({
                         <Trash2 size={13} color="#EF4444" />
                       </TouchableOpacity>
                     </View>
-                    
+
                     <View style={styles.invoiceCardRightBottom}>
                       <CalendarDays size={12} color={secondaryText} />
                       <Text style={[styles.invoiceCardDate, { color: secondaryText }]}>
@@ -345,7 +347,7 @@ export default function AdminExpenseInvoices({
                   const isSingle = combinedPreview.entries.length === 1;
                   const invNo = formatInvoiceNoDisplay(combinedPreview.invNo) || 'Inv_RGM0001';
                   const invDate = isSingle ? formatDateToDDMMYYYY(combinedPreview.entries[0].date || todayISO()) : new Date().toLocaleDateString('en-GB').replace(/\//g, '-');
-                  
+
                   const eventNames = [...new Set(combinedPreview.entries.map((e: any) => e.eventName).filter(Boolean))];
                   const normalCount = combinedPreview.entries.filter((e: any) => !e.eventName).length;
                   const types = [...eventNames];
@@ -359,7 +361,7 @@ export default function AdminExpenseInvoices({
                   const payMethod = payMethods.length > 0 ? payMethods.join(', ') : '—';
 
                   const refNo = isSingle ? combinedPreview.entries[0].reference : '';
-                  
+
                   const approvedBys = [...new Set(combinedPreview.entries.map((e: any) => e.approvedBy).filter(Boolean))];
                   const derivedApprovedBy = approvedBys.length > 0 ? approvedBys.join(', ') : '';
                   const isRejected = combinedPreview.entries.some((e: any) => e.status === 'Rejected');
@@ -376,7 +378,7 @@ export default function AdminExpenseInvoices({
                           </View>
                         </View>
                       )}
-                      
+
                       {/* Printable Invoice Document */}
                       <View style={styles.invoiceDoc} ref={invoiceRef} collapsable={false}>
                         <View style={styles.watermarkContainer} pointerEvents="none">
@@ -384,7 +386,7 @@ export default function AdminExpenseInvoices({
                         </View>
                         <Text style={styles.invoiceDocTitle}>{churchDisplayUpper}</Text>
                         <Text style={styles.invoiceDocSub}>Official Invoice</Text>
-                        
+
                         <View style={styles.detailGrid}>
                           <View style={styles.detailRow}>
                             <View style={styles.detailCell}>
@@ -421,7 +423,7 @@ export default function AdminExpenseInvoices({
                             </View>
                           </View>
                         </View>
-                        
+
                         {/* Summary List */}
                         <View style={{ marginTop: 16 }}>
                           <View style={styles.invoiceTableHeader}>
@@ -448,7 +450,7 @@ export default function AdminExpenseInvoices({
                             });
                           })}
                         </View>
-                        
+
                         <View style={styles.ledgerTotalRow}>
                           <Text style={styles.ledgerTotalLabel}>Grand Total</Text>
                           <Text style={styles.ledgerTotalAmt}>
