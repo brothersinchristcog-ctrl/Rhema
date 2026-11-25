@@ -59,6 +59,7 @@ const resolveUpdateIcon = (type?: string) => {
     case 'prayer':
       return Heart;
     case 'celebration':
+    case 'baptism_anniversary':
     case 'testimony_admin':
     case 'testimony_published':
     case 'testimony_member_status':
@@ -834,11 +835,23 @@ export default function UpdatesScreen({ navigation, route }: any) {
       icon = Droplets;
       color = '#0284c7';
       resolvedType = 'baptism';
-    } else if (data.title?.includes('🎂') || data.content?.includes('Birthday') || data.type === 'birthday') {
+    } else if (data.type === 'birthday') {
       icon = Gift;
       color = '#d97706';
       resolvedType = 'birthday';
-    } else if (data.title?.includes('🎉') || data.title?.includes('🕊️') || data.content?.includes('Baptism') || data.title?.includes('Baptism') || data.type === 'baptism' || data.type === 'celebration') {
+    } else if (data.type === 'baptism_anniversary' || data.type === 'celebration' || (data.type === 'baptism' && data.isCelebration)) {
+      icon = Sparkles;
+      color = '#3b82f6';
+      resolvedType = 'celebration';
+    } else if (data.type === 'anniversary') {
+      icon = Heart;
+      color = '#be185d';
+      resolvedType = 'anniversary';
+    } else if (data.title?.includes('🎂') || data.content?.includes('Birthday')) {
+      icon = Gift;
+      color = '#d97706';
+      resolvedType = 'birthday';
+    } else if (data.title?.includes('🎉') || data.title?.includes('🕊️') || data.content?.includes('Baptism') || data.title?.includes('Baptism') || data.type === 'baptism') {
       icon = Sparkles;
       color = '#3b82f6';
       resolvedType = 'celebration';
@@ -854,7 +867,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
       icon = Sparkles;
       color = '#3B82F6';
       resolvedType = 'testimony_member_status';
-    } else if (data.title?.includes('💐') || data.content?.includes('Anniversary') || data.title?.includes('Anniversary') || data.type === 'anniversary') {
+    } else if (data.title?.includes('💐') || data.content?.includes('Anniversary') || data.title?.includes('Anniversary')) {
       icon = Heart;
       color = '#be185d';
       resolvedType = 'anniversary';
@@ -1304,7 +1317,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
           color: '#be185d'
         });
         setHasAutoOpened(true);
-      } else if (highlightType === 'baptism' || highlightType === 'celebration') {
+      } else if (highlightType === 'baptism_anniversary' || highlightType === 'baptism' || highlightType === 'celebration') {
         setSelectedUpdate({
           id: 'temp-cel',
           title: t('updates.baptismTitle'),

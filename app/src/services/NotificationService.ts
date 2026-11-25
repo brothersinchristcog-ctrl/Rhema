@@ -480,13 +480,21 @@ class NotificationService {
           break;
         case 'birthday':
         case 'anniversary':
+        case 'baptism_anniversary':
         case 'celebration':
         case 'emergency':
-          nav.navigate('Updates', { highlightId: id, highlightType: type });
+          nav.navigate('Updates', {
+            highlightId: id,
+            highlightType: type === 'baptism_anniversary' ? 'celebration' : type,
+          });
           break;
         case 'baptism_request_admin':
         case 'baptism_request':
         case 'baptism': {
+          if (rawData.isCelebration === 'true' || rawData.isCelebration === true) {
+            nav.navigate('Updates', { highlightId: id, highlightType: 'celebration' });
+            break;
+          }
           const reqId = rawData.requestId || rawData.id || id;
           console.log('💧 [NotificationService] Routing to Admin Baptism tab:', { reqId });
           nav.navigate('AdminRoot', {

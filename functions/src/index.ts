@@ -1984,3 +1984,10 @@ export {
   sendPledgeRemindersScheduled,
   triggerPledgeRemindersManual,
 } from './pledgeReminders.js';
+
+export {
+  sendDailyBirthdayPushScheduled,
+  sendDailyBaptismAnniversaryPushScheduled,
+  sendDailyWeddingAnniversaryPushScheduled,
+  triggerCelebrationPushManual,
+} from './celebrationPushScheduler.js';
