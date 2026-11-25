@@ -753,11 +753,11 @@ export default function AdminCelebrations({ navigation }: any) {
     </>
   );
 
-  const dashboardFooter = (
+  const dashboardFooter = activeChurch?.name?.trim() ? (
     <Text style={styles.footerText}>
-      <Text style={{ color: '#1D4ED8', fontWeight: 'bold' }}>WeChristian</Text> - {activeChurch?.name?.toUpperCase() || ''}
+      {activeChurch.name.trim().toUpperCase()}
     </Text>
-  );
+  ) : null;
 
   return (
     <View style={[styles.container, { flex: 1 }]}>

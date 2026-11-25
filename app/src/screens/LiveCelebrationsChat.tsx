@@ -35,6 +35,12 @@ import {
   getInstantMemory,
   writeInstantCache,
 } from '../utils/instantCache';
+import FirestoreService from '../services/FirestoreService';
+import {
+  getIstCalendarParts,
+  extractTodaysCelebrants,
+  matchesIstCelebrationDay,
+} from '../utils/celebrationDateHelper';
 
 const WISH_DICTIONARY: Record<string, string[]> = {
   'Birthday': [
@@ -48,8 +54,13 @@ const WISH_DICTIONARY: Record<string, string[]> = {
     "God bless your marriage! 🙏"
   ],
   'Baptism': [
-    "Congratulations on your Baptism! 🕊️",
-    "Welcome to God's family! 🙏",
+    "Happy Baptism Anniversary! 🕊️",
+    "May God continue to bless your walk in Christ! 🙏",
+    "God bless you on this special day! ✨"
+  ],
+  'Baptism Anniversary': [
+    "Happy Baptism Anniversary! 🕊️",
+    "May God continue to bless your walk in Christ! 🙏",
     "God bless you on this special day! ✨"
   ],
   'General': [
@@ -110,9 +121,14 @@ const AnimatedSpikes = () => {
 export default function LiveCelebrationsChat({ navigation, route }: any) {
   const { activeChurch } = useChurch();
   const { member, user } = useAuth();
+  const targetChurchId = route.params?.churchId || activeChurch?.id || member?.churchId || 'rhema';
+  const istParts = getIstCalendarParts();
+  const todayStr = route.params?.dateStr || istParts.dateStr;
+  const dateFormatted = istParts.displayDate;
+
   const celebMsgsCacheKey = React.useMemo(
-    () => makeScopedCacheKey('live_celebrations_chat_v1', activeChurch?.id, user?.uid || member?.id),
-    [activeChurch?.id, user?.uid, member?.id]
+    () => makeScopedCacheKey('live_celebrations_chat_v1', targetChurchId, user?.uid || member?.id),
+    [targetChurchId, user?.uid, member?.id]
   );
   const initialCelebMsgs = React.useMemo(() => getInstantMemory<any[]>(celebMsgsCacheKey), [celebMsgsCacheKey]);
 
@@ -129,7 +145,9 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
   const soundRef = useRef<Audio.Sound | null>(null);
   const recordingWaveAnim = useRef(new Animated.Value(0)).current;
   const flatListRef = useRef<FlatList>(null);
-  const celebrations = route.params?.celebrations || [];
+  const [celebrations, setCelebrations] = useState<any[]>(() =>
+    Array.isArray(route.params?.celebrations) ? route.params.celebrations : []
+  );
 
   const [mentionQuery, setMentionQuery] = useState('');
   const [showMentionPopup, setShowMentionPopup] = useState(false);
@@ -150,6 +168,41 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
   const [e2eeModalMode, setE2eeModalMode] = useState<ChatEncryptionModalMode | null>(null);
 
   useEffect(() => {
+    const paramCelebrations = Array.isArray(route.params?.celebrations) ? route.params.celebrations : [];
+    if (paramCelebrations.length > 0) {
+      const ist = getIstCalendarParts();
+      const normalized = paramCelebrations.every((c: any) => Boolean(c.celebrationType))
+        ? paramCelebrations
+        : extractTodaysCelebrants(paramCelebrations, ist);
+      setCelebrations(normalized.length > 0 ? normalized : paramCelebrations);
+      return;
+    }
+
+    let active = true;
+    const loadCelebrantsFallback = async () => {
+      try {
+        const allCelebs = await FirestoreService.getAllCelebrations(targetChurchId);
+        const todays = extractTodaysCelebrants(allCelebs, getIstCalendarParts());
+        if (active) {
+          setCelebrations(todays);
+          if (route.params?.celebrantId) {
+            const match = todays.find(
+              (c: any) => c.id === route.params.celebrantId || c.memberId === route.params.celebrantId || c.Id === route.params.celebrantId
+            );
+            if (match) setSelectedCardCeleb(match);
+          }
+        }
+      } catch (err) {
+        console.warn('[LiveCelebrationsChat] Failed loading today celebrants fallback:', err);
+      }
+    };
+    loadCelebrantsFallback();
+    return () => {
+      active = false;
+    };
+  }, [route.params?.celebrations, route.params?.celebrantId, targetChurchId]);
+
+  useEffect(() => {
     setE2eeState(e2eeService.getState());
     const unsub = e2eeService.subscribeState(setE2eeState);
     return () => unsub();
@@ -161,29 +214,30 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
       setInitialLastReadTime(lastRead ? parseInt(lastRead, 10) : 0);
     };
     fetchLastRead();
-  }, []);
+  }, [todayStr]);
 
   useEffect(() => {
     if (messages.length > 0) {
       AsyncStorage.setItem(`@lastReadCeleb_${todayStr}`, Date.now().toString());
     }
-  }, [messages.length]);
+  }, [messages.length, todayStr]);
 
   const updateTypingStatus = async (isTyping: boolean) => {
-    if (!activeChurch?.id || !member) return;
+    const myId = member?.id || user?.uid;
+    if (!targetChurchId || !myId) return;
     try {
       const typingRef = firestore()
         .collection('Rhema Church')
-        .doc(activeChurch.id)
+        .doc(targetChurchId)
         .collection('live_celebrations')
         .doc(todayStr)
         .collection('presence')
         .doc('typing');
 
       if (isTyping) {
-        await typingRef.set({ [member.id]: member.name || user?.displayName || 'Someone' }, { merge: true });
+        await typingRef.set({ [myId]: member?.name || user?.displayName || 'Someone' }, { merge: true });
       } else {
-        await typingRef.update({ [member.id]: firestore.FieldValue.delete() });
+        await typingRef.update({ [myId]: firestore.FieldValue.delete() });
       }
     } catch (e) {
       // ignore
@@ -245,10 +299,6 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
     return name.includes(mentionQuery);
   });
 
-  const todayStr = new Date().toISOString().split('T')[0];
-  // Simple format for the header date (e.g., "13 August 2026")
-  const dateFormatted = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', (e) => {
       setKeyboardVisible(true);
@@ -269,9 +319,9 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
   }, []);
 
   useEffect(() => {
-    if (!activeChurch?.id) return;
+    if (!targetChurchId) return;
 
-    const churchId = activeChurch.id;
+    const churchId = targetChurchId;
     const celebrationDocRef = firestore()
       .collection('Rhema Church')
       .doc(churchId)
@@ -398,15 +448,16 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
       envelopesUnsubscribe();
       unsubState();
     };
-  }, [activeChurch?.id, e2eeUid]);
+  }, [targetChurchId, todayStr, e2eeUid]);
 
   const sendMessage = async (text: string) => {
     const cleanText = text.trim();
-    if (!cleanText || !activeChurch?.id || !member) return;
+    const senderId = member?.id || user?.uid || '';
+    if (!cleanText || !targetChurchId || !senderId) return;
 
     const ctx = {
       scope: 'celebrations' as const,
-      churchId: activeChurch.id,
+      churchId: targetChurchId,
       dateId: todayStr,
     };
 
@@ -434,7 +485,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
       if (editingMsgId) {
         await firestore()
           .collection('Rhema Church')
-          .doc(activeChurch.id)
+          .doc(targetChurchId)
           .collection('live_celebrations')
           .doc(todayStr)
           .collection('messages')
@@ -449,7 +500,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
         const batch = firestore().batch();
         const msgRef = firestore()
           .collection('Rhema Church')
-          .doc(activeChurch.id)
+          .doc(targetChurchId)
           .collection('live_celebrations')
           .doc(todayStr)
           .collection('messages')
@@ -458,15 +509,15 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
         batch.set(msgRef, {
           text: storedText,
           encrypted: true,
-          userId: member.id,
-          userName: member.name || user?.displayName || 'Unknown',
+          userId: senderId,
+          userName: member?.name || user?.displayName || 'Unknown',
           userPhoto:
-            (member as any).profilePhoto ||
-            (member as any).photoURL ||
-            (member as any).photoUrl ||
-            (member as any).profileImageUrl ||
-            (member as any).PhotoUrl ||
-            (member as any).Photo ||
+            (member as any)?.profilePhoto ||
+            (member as any)?.photoURL ||
+            (member as any)?.photoUrl ||
+            (member as any)?.profileImageUrl ||
+            (member as any)?.PhotoUrl ||
+            (member as any)?.Photo ||
             user?.photoURL ||
             null,
           createdAt: firestore.FieldValue.serverTimestamp(),
@@ -477,21 +528,27 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
         });
 
         if (selectedCelebrantId) {
+          const matchedCeleb =
+            selectedCardCeleb ||
+            celebrations.find((c: any) => (c.id || c.uid || c.Id) === selectedCelebrantId) ||
+            {};
           const celebRef = firestore()
             .collection('Rhema Church')
-            .doc(activeChurch.id)
+            .doc(targetChurchId)
             .collection('live_celebrations')
             .doc(todayStr)
             .collection('celebrants')
             .doc(selectedCelebrantId);
 
-          const tokens = selectedCardCeleb?.fcmTokens || [];
-          if (selectedCardCeleb?.fcmToken) tokens.push(selectedCardCeleb.fcmToken);
+          const tokens = [...(matchedCeleb?.fcmTokens || [])];
+          if (matchedCeleb?.fcmToken) tokens.push(matchedCeleb.fcmToken);
 
           batch.set(celebRef, {
+            memberId: matchedCeleb?.memberId || matchedCeleb?.Id || selectedCelebrantId,
+            name: matchedCeleb?.Name || matchedCeleb?.name || selectedCelebrantName || 'Member',
             unnotifiedWishes: firestore.FieldValue.increment(1),
             totalWishes: firestore.FieldValue.increment(1),
-            type: getCelebrationType(selectedCardCeleb || {}),
+            type: getCelebrationType(matchedCeleb),
             fcmTokens: Array.from(new Set(tokens))
           }, { merge: true });
         }
@@ -506,7 +563,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
   };
 
   const handleMessageLongPress = (item: any) => {
-    if (item.userId !== member?.id) return;
+    if (item.userId !== (member?.id || user?.uid)) return;
     setLongPressedMessage(item);
   };
 
@@ -514,7 +571,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
     try {
       await firestore()
         .collection('Rhema Church')
-        .doc(activeChurch?.id)
+        .doc(targetChurchId)
         .collection('live_celebrations')
         .doc(todayStr)
         .collection('messages')
@@ -575,7 +632,8 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
   };
 
   const stopAndSendRecording = async () => {
-    if (!recordingObj || !activeChurch?.id || !member) return;
+    const senderId = member?.id || user?.uid || '';
+    if (!recordingObj || !targetChurchId || !senderId) return;
     // Don't set isRecording to false yet, wait for upload to finish
 
     recordingWaveAnim.stopAnimation();
@@ -593,14 +651,14 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
       }
 
       const fileName = `audio_${Date.now()}.m4a`;
-      const ref = storage().ref(`Rhema Church/${activeChurch.id}/live_celebrations/${todayStr}/${fileName}`);
+      const ref = storage().ref(`Rhema Church/${targetChurchId}/live_celebrations/${todayStr}/${fileName}`);
       await ref.putFile(uri);
       const audioUrl = await ref.getDownloadURL();
 
       const batch = firestore().batch();
       const msgRef = firestore()
         .collection('Rhema Church')
-        .doc(activeChurch.id)
+        .doc(targetChurchId)
         .collection('live_celebrations')
         .doc(todayStr)
         .collection('messages')
@@ -608,30 +666,36 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
 
       batch.set(msgRef, {
         audioUrl,
-        userId: member.id,
-        userName: member.name || user?.displayName || 'Unknown',
-        userPhoto: (member as any).profilePhoto || (member as any).photoURL || (member as any).photoUrl || (member as any).profileImageUrl || (member as any).PhotoUrl || (member as any).Photo || user?.photoURL || null,
+        userId: senderId,
+        userName: member?.name || user?.displayName || 'Unknown',
+        userPhoto: (member as any)?.profilePhoto || (member as any)?.photoURL || (member as any)?.photoUrl || (member as any)?.profileImageUrl || (member as any)?.PhotoUrl || (member as any)?.Photo || user?.photoURL || null,
         createdAt: firestore.FieldValue.serverTimestamp(),
         reactions: {},
         ...(selectedCelebrantId ? { targetCelebrantId: selectedCelebrantId, targetCelebrantName: selectedCelebrantName } : {})
       });
 
       if (selectedCelebrantId) {
+        const matchedCeleb =
+          selectedCardCeleb ||
+          celebrations.find((c: any) => (c.id || c.uid || c.Id) === selectedCelebrantId) ||
+          {};
         const celebRef = firestore()
           .collection('Rhema Church')
-          .doc(activeChurch.id)
+          .doc(targetChurchId)
           .collection('live_celebrations')
           .doc(todayStr)
           .collection('celebrants')
           .doc(selectedCelebrantId);
 
-        const tokens = selectedCardCeleb?.fcmTokens || [];
-        if (selectedCardCeleb?.fcmToken) tokens.push(selectedCardCeleb.fcmToken);
+        const tokens = [...(matchedCeleb?.fcmTokens || [])];
+        if (matchedCeleb?.fcmToken) tokens.push(matchedCeleb.fcmToken);
 
         batch.set(celebRef, {
+          memberId: matchedCeleb?.memberId || matchedCeleb?.Id || selectedCelebrantId,
+          name: matchedCeleb?.Name || matchedCeleb?.name || selectedCelebrantName || 'Member',
           unnotifiedWishes: firestore.FieldValue.increment(1),
           totalWishes: firestore.FieldValue.increment(1),
-          type: getCelebrationType(selectedCardCeleb || {}),
+          type: getCelebrationType(matchedCeleb),
           fcmTokens: Array.from(new Set(tokens))
         }, { merge: true });
       }
@@ -687,28 +751,18 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
   };
 
   const getCelebrationType = (celeb: any) => {
+    if (celeb.celebrationType && celeb.celebrationType !== 'Celebration') return celeb.celebrationType;
     if (celeb.type && celeb.type !== 'Celebration') return celeb.type;
     if (celeb.title && celeb.title !== 'Celebration') return celeb.title;
 
-    const today = new Date();
-    const m = today.getMonth() + 1;
-    const d = today.getDate();
+    const ist = getIstCalendarParts();
+    const bDate = celeb.Birthdate || celeb.dob || celeb.birthdate || celeb.dateOfBirth || celeb.birthday;
+    const aDate = celeb.Anniversary_Date__c || celeb.anniversaryDate || celeb.marriageDate || celeb.weddingAnniversary || celeb.anniversary;
+    const bapDate = celeb.Baptism_Date__c || celeb.baptismDate || celeb.baptism;
 
-    const checkDate = (dateStr: string) => {
-      if (!dateStr) return false;
-      const parts = dateStr.split(/[-/T]/);
-      if (parts.length >= 3) {
-        let mm, dd;
-        if (parts[0].length === 4) { mm = parseInt(parts[1], 10); dd = parseInt(parts[2], 10); }
-        else { dd = parseInt(parts[0], 10); mm = parseInt(parts[1], 10); }
-        return mm === m && dd === d;
-      }
-      return false;
-    };
-
-    if (checkDate(celeb.dob)) return 'Birthday';
-    if (checkDate(celeb.anniversaryDate)) return 'Wedding Anniversary';
-    if (checkDate(celeb.baptismDate)) return 'Baptism';
+    if (matchesIstCelebrationDay(bDate, ist)) return 'Birthday';
+    if (matchesIstCelebrationDay(aDate, ist)) return 'Wedding Anniversary';
+    if (matchesIstCelebrationDay(bapDate, ist)) return 'Baptism Anniversary';
 
     return 'Birthday'; // Default fallback
   };
@@ -720,12 +774,19 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
   const displayedMessages = selectedCardCeleb
     ? messages.filter(m => {
       const celebId = selectedCardCeleb?.id || selectedCardCeleb?.uid || selectedCardCeleb?.Id;
+      const celebMemberId = selectedCardCeleb?.memberId || selectedCardCeleb?.Id;
       const celebName = selectedCardCeleb?.Name || selectedCardCeleb?.name || '';
-      return m.targetCelebrantId === celebId || (m.targetCelebrantName && m.targetCelebrantName.toLowerCase() === celebName.toLowerCase());
+      if (m.targetCelebrantId) {
+        return (
+          m.targetCelebrantId === celebId ||
+          (celebMemberId && m.targetCelebrantId === celebMemberId)
+        );
+      }
+      return Boolean(m.targetCelebrantName && m.targetCelebrantName.toLowerCase() === celebName.toLowerCase());
     })
     : messages;
 
-  const currentUserId = member?.id;
+  const currentUserId = member?.id || user?.uid;
   const participantCount = displayedMessages.length > 0 ? [...new Set(displayedMessages.map(m => m.userId))].length : 0;
 
   const celebrationTypes = new Set(
@@ -737,7 +798,9 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
 
   if (celebrationTypes.has('Birthday')) dynamicQuickWishes.push(...WISH_DICTIONARY['Birthday']);
   if (celebrationTypes.has('Wedding Anniversary')) dynamicQuickWishes.push(...WISH_DICTIONARY['Wedding Anniversary']);
-  if (celebrationTypes.has('Baptism')) dynamicQuickWishes.push(...WISH_DICTIONARY['Baptism']);
+  if (celebrationTypes.has('Baptism') || celebrationTypes.has('Baptism Anniversary')) {
+    dynamicQuickWishes.push(...WISH_DICTIONARY['Baptism Anniversary']);
+  }
 
   if (dynamicQuickWishes.length === 0) {
     dynamicQuickWishes = WISH_DICTIONARY['General'];
@@ -754,18 +817,25 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
       {/* Top App Bar */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <MaterialIcons name="arrow-back" color={COLORS.onBackground} size={24} />
+          <MaterialIcons name="arrow-back" color={COLORS.onBackground} size={22} />
         </TouchableOpacity>
 
         <View style={styles.headerCenter}>
           <View style={styles.headerTitleRow}>
             <Text style={styles.headerEmoji}>🎉</Text>
-            <Text style={styles.headerTitle}>Today's Celebrations</Text>
+            <Text
+              style={styles.headerTitle}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.78}
+            >
+              Today's Celebrations
+            </Text>
           </View>
-          <Text style={styles.headerDate}>{dateFormatted}</Text>
+          <Text style={styles.headerDate} numberOfLines={1}>{dateFormatted}</Text>
         </View>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <View style={styles.headerRightBadges}>
           <TouchableOpacity
             onPress={() =>
               setE2eeModalMode(
@@ -773,20 +843,10 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
               )
             }
             activeOpacity={0.8}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 4,
-              paddingHorizontal: 8,
-              paddingVertical: 4,
-              borderRadius: 12,
-              backgroundColor: 'rgba(255, 200, 128, 0.14)',
-              borderWidth: 1,
-              borderColor: 'rgba(255, 200, 128, 0.35)',
-            }}
+            style={styles.e2eeBadge}
           >
-            <MaterialIcons name="lock" size={12} color={COLORS.primary} />
-            <Text style={{ color: COLORS.primary, fontSize: 10.5, fontWeight: '700' }}>
+            <MaterialIcons name="lock" size={11} color={COLORS.primary} />
+            <Text style={styles.e2eeBadgeText}>
               {e2eeState.status === 'needs_pin_unlock' ? 'PIN' : 'E2EE'}
             </Text>
           </TouchableOpacity>
@@ -824,8 +884,17 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
               {celebrations.map((celeb: any, idx: number) => {
                 const photo = getPhotoUrl(celeb);
                 const celebId = celeb.id || celeb.uid || celeb.Id;
+                const celebMemberId = celeb.memberId || celeb.Id;
                 const celebName = celeb.Name || celeb.name || 'Member';
-                const wishCount = messages.filter(m => m.targetCelebrantId === celebId || (m.targetCelebrantName && m.targetCelebrantName.toLowerCase() === celebName.toLowerCase())).length;
+                const wishCount = messages.filter(m => {
+                  if (m.targetCelebrantId) {
+                    return (
+                      m.targetCelebrantId === celebId ||
+                      (celebMemberId && m.targetCelebrantId === celebMemberId)
+                    );
+                  }
+                  return Boolean(m.targetCelebrantName && m.targetCelebrantName.toLowerCase() === celebName.toLowerCase());
+                }).length;
                 return (
                   <TouchableOpacity key={idx} style={[styles.celebCard, selectedCardCeleb && (selectedCardCeleb.id || selectedCardCeleb.uid || selectedCardCeleb.Id) === celebId && { borderColor: COLORS.primary, borderWidth: 1 }]} onPress={() => {
                     const currentSelectedId = selectedCardCeleb?.id || selectedCardCeleb?.uid || selectedCardCeleb?.Id;
@@ -1108,7 +1177,9 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
                         style={styles.mentionItem}
                         onPress={() => selectMention(celeb)}
                       >
-                        <Text style={styles.mentionItemText}>{celeb.Name || celeb.name || 'Member'}</Text>
+                        <Text style={styles.mentionItemText}>
+                          {celeb.Name || celeb.name || 'Member'} · {getCelebrationIcon(getCelebrationType(celeb))} {getCelebrationType(celeb)}
+                        </Text>
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
@@ -1233,52 +1304,79 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(82, 69, 52, 0.3)',
     backgroundColor: COLORS.background,
     zIndex: 10,
   },
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: COLORS.secondaryContainer,
     justifyContent: 'center',
     alignItems: 'center',
+    flexShrink: 0,
   },
   headerCenter: {
-    alignItems: 'center',
+    flex: 1,
+    minWidth: 0,
+    alignItems: 'flex-start',
   },
   headerTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 5,
+    maxWidth: '100%',
   },
   headerEmoji: {
-    fontSize: 20,
+    fontSize: 16,
   },
   headerTitle: {
     color: COLORS.onBackground,
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: '700',
+    flexShrink: 1,
   },
   headerDate: {
     color: COLORS.onSurfaceVariant,
-    fontSize: 14,
-    opacity: 0.7,
-    marginTop: 2,
+    fontSize: 12,
+    opacity: 0.75,
+    marginTop: 1,
+  },
+  headerRightBadges: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    flexShrink: 0,
+  },
+  e2eeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 200, 128, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 200, 128, 0.35)',
+  },
+  e2eeBadgeText: {
+    color: COLORS.primary,
+    fontSize: 10,
+    fontWeight: '700',
   },
   liveBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 14,
     backgroundColor: 'rgba(31, 209, 91, 0.1)',
     borderWidth: 1,
     borderColor: 'rgba(31, 209, 91, 0.3)',
