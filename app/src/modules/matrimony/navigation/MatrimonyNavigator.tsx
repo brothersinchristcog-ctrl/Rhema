@@ -8,6 +8,7 @@ import { useAuth } from '../../../context/AuthContext';
 import MatrimonyBottomTabBar from '../components/MatrimonyBottomTabBar';
 import MatrimonyMenuDrawer from '../components/MatrimonyMenuDrawer';
 import { matrimonyApi } from '../services/matrimonyApi';
+import { matrimonyChatService } from '../services/matrimonyChatService';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -124,6 +125,36 @@ export default function MatrimonyNavigator() {
       unsubscribe();
     };
   }, [uid]);
+
+  useEffect(() => {
+    let stopRootPresence: (() => void) | null = null;
+    let activeUid: string | null = null;
+
+    const syncForUser = (nextUid: string | null) => {
+      if (activeUid === nextUid) return;
+      if (stopRootPresence) {
+        stopRootPresence();
+        stopRootPresence = null;
+      }
+      activeUid = nextUid;
+      if (nextUid) {
+        stopRootPresence = matrimonyChatService.startRootPresenceSession(nextUid);
+      }
+    };
+
+    syncForUser(auth().currentUser?.uid || null);
+    const unsubAuth = auth().onAuthStateChanged((u) => {
+      syncForUser(u?.uid || null);
+    });
+
+    return () => {
+      unsubAuth();
+      if (stopRootPresence) {
+        stopRootPresence();
+        stopRootPresence = null;
+      }
+    };
+  }, []);
 
   return (
     <Stack.Navigator

@@ -12,20 +12,15 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
-  CheckCircle2,
-  ChevronLeft,
+  ArrowLeft,
   ChevronRight,
-  Clock,
   Crown,
   Flag,
   HeartHandshake,
-  PauseCircle,
-  RefreshCw,
   Search,
   User,
-  Users,
   X,
   XCircle,
 } from 'lucide-react-native';
@@ -174,9 +169,12 @@ export default function AdminMatrimonyScreen({ navigation }: any) {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return profiles;
     return profiles.filter((p: any) => {
+      const fallbackCode = `RM${String(p.uid || '').slice(0, 7).toUpperCase()}`;
       const haystack = [
         p.uid,
+        p.matrimonyId,
         p.profileCode,
+        fallbackCode,
         p.displayName,
         p.location?.city,
         p.location?.village,
@@ -239,6 +237,11 @@ export default function AdminMatrimonyScreen({ navigation }: any) {
     const photoUrl = item.signedProfilePhoto || item.signedPhoto || null;
     const statusMeta = getStatusMeta(item.profileStatus);
     const totalPhotos = (photoUrl ? 1 : 0) + (item.gallery?.length || 0);
+    const profileCode = String(
+      item.matrimonyId || item.profileCode || `RM${item.uid.slice(0, 7).toUpperCase()}`
+    )
+      .trim()
+      .toUpperCase();
     const baptizedLabel =
       item.faithSummary?.baptized === true
         ? 'Baptized: Yes'
@@ -259,17 +262,29 @@ export default function AdminMatrimonyScreen({ navigation }: any) {
         onPress={() =>
           navigation.navigate('AdminMatrimonyProfileDetail', {
             targetUid: item.uid,
+            profileCode,
           })
         }
       >
         <View style={styles.cardTopRow}>
-          {photoUrl ? (
-            <CachedImage uri={photoUrl} style={styles.avatar} resizeMode="cover" />
-          ) : (
-            <View style={[styles.avatarPlaceholder, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
-              <User size={26} color={secondaryText} />
-            </View>
-          )}
+          <View style={styles.avatarCol}>
+            {photoUrl ? (
+              <CachedImage uri={photoUrl} style={styles.avatar} resizeMode="cover" />
+            ) : (
+              <View style={[styles.avatarPlaceholder, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                <User size={26} color={secondaryText} />
+              </View>
+            )}
+            <Text
+              style={[
+                styles.profileCodeText,
+                { color: secondaryText, fontFamily: appFontFamily },
+              ]}
+              numberOfLines={1}
+            >
+              {profileCode}
+            </Text>
+          </View>
 
           <View style={styles.cardInfoCol}>
             <View style={styles.cardTitleRow}>
@@ -282,11 +297,13 @@ export default function AdminMatrimonyScreen({ navigation }: any) {
               >
                 {item.displayName || 'Rhema Member'}
               </Text>
-              <View style={[styles.statusBadge, { backgroundColor: statusMeta.bg }]}>
-                <Text style={[styles.statusBadgeText, { color: statusMeta.color }]}>
-                  {statusMeta.label}
-                </Text>
-              </View>
+              {item.profileStatus !== 'approved' ? (
+                <View style={[styles.statusBadge, { backgroundColor: statusMeta.bg }]}>
+                  <Text style={[styles.statusBadgeText, { color: statusMeta.color }]}>
+                    {statusMeta.label}
+                  </Text>
+                </View>
+              ) : null}
             </View>
 
             <Text
@@ -391,101 +408,54 @@ export default function AdminMatrimonyScreen({ navigation }: any) {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: screenBg }]} edges={['top']}>
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
       <StatusBar barStyle={barStyle} backgroundColor={screenBg} />
 
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: borderColor }]}>
-        <TouchableOpacity
-          style={[styles.iconBtn, { backgroundColor: cardSurface, borderColor }]}
-          onPress={handleBackPress}
+        <View style={styles.headerSideLeft}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={handleBackPress}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <ArrowLeft size={22} color={primaryText} />
+          </TouchableOpacity>
+        </View>
+
+        <Text
+          style={[
+            styles.headerTitle,
+            {
+              flex: 1,
+              textAlign: 'center',
+              color: primaryText,
+              fontFamily: appFontFamily,
+              fontSize: scaleFont(17.5),
+            },
+          ]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
         >
-          <ChevronLeft size={22} color={primaryText} />
-        </TouchableOpacity>
+          Rhema Matrimony
+        </Text>
 
-        <View style={styles.headerCenter}>
-          <HeartHandshake size={20} color={CORAL} />
-          <Text
-            style={[
-              styles.headerTitle,
-              { color: primaryText, fontFamily: appFontFamily, fontSize: scaleFont(18) },
-            ]}
-          >
-            Rhema Matrimony
-          </Text>
-        </View>
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={styles.headerSideRight}>
           <TouchableOpacity
-            style={[
-              styles.iconBtn,
-              { backgroundColor: cardSurface, borderColor, width: 'auto', paddingHorizontal: 10, flexDirection: 'row', gap: 5 },
-            ]}
+            activeOpacity={0.85}
             onPress={() => setPlansModalVisible(true)}
+            style={styles.plansBtnShadow}
           >
-            <Crown size={16} color={AMBER} />
-            <Text style={{ color: primaryText, fontSize: 12, fontWeight: '800', fontFamily: appFontFamily }}>
-              Plans
-            </Text>
+            <LinearGradient
+              colors={['#8A1F52', CORAL]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.plansBtnGradient}
+            >
+              <Crown size={15} color="#FDE047" />
+              <Text style={[styles.plansBtnTxt, { fontFamily: appFontFamily }]}>Plans</Text>
+            </LinearGradient>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.iconBtn, { backgroundColor: cardSurface, borderColor }]}
-            onPress={() => fetchProfiles(filter)}
-          >
-            <RefreshCw size={18} color={primaryText} />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Summary Counts Strip */}
-      <View style={styles.statsGrid}>
-        <View style={[styles.statCard, { backgroundColor: cardSurface, borderColor }]}>
-          <Users size={18} color="#2563EB" />
-          <Text style={[styles.statNum, { color: primaryText, fontFamily: appFontFamily }]}>
-            {counts.total}
-          </Text>
-          <Text style={[styles.statLbl, { color: secondaryText, fontFamily: appFontFamily }]}>
-            Total Profiles
-          </Text>
-        </View>
-
-        <View style={[styles.statCard, { backgroundColor: cardSurface, borderColor }]}>
-          <CheckCircle2 size={18} color={GREEN} />
-          <Text style={[styles.statNum, { color: GREEN, fontFamily: appFontFamily }]}>
-            {counts.verified}
-          </Text>
-          <Text style={[styles.statLbl, { color: secondaryText, fontFamily: appFontFamily }]}>
-            Verified
-          </Text>
-        </View>
-
-        <View style={[styles.statCard, { backgroundColor: cardSurface, borderColor }]}>
-          <Clock size={18} color={AMBER} />
-          <Text style={[styles.statNum, { color: AMBER, fontFamily: appFontFamily }]}>
-            {counts.pending}
-          </Text>
-          <Text style={[styles.statLbl, { color: secondaryText, fontFamily: appFontFamily }]}>
-            Pending
-          </Text>
-        </View>
-
-        <View style={[styles.statCard, { backgroundColor: cardSurface, borderColor }]}>
-          {(counts.openReports ?? 0) > 0 ? (
-            <Flag size={18} color={RED} />
-          ) : (
-            <PauseCircle size={18} color={AMBER} />
-          )}
-          <Text
-            style={[
-              styles.statNum,
-              { color: (counts.openReports ?? 0) > 0 ? RED : AMBER, fontFamily: appFontFamily },
-            ]}
-          >
-            {(counts.openReports ?? 0) > 0 ? counts.reported : counts.inactive}
-          </Text>
-          <Text style={[styles.statLbl, { color: secondaryText, fontFamily: appFontFamily }]}>
-            {(counts.openReports ?? 0) > 0 ? 'Reported' : 'Inactive'}
-          </Text>
         </View>
       </View>
 
@@ -544,7 +514,7 @@ export default function AdminMatrimonyScreen({ navigation }: any) {
         <Search size={17} color={secondaryText} />
         <TextInput
           style={[styles.searchInput, { color: primaryText, fontFamily: appFontFamily }]}
-          placeholder="Search by name, city, profession, language..."
+          placeholder="Search by name, profile ID, city, profession..."
           placeholderTextColor={secondaryText}
           value={searchQuery}
           onChangeText={setSearchQuery}
@@ -617,7 +587,7 @@ export default function AdminMatrimonyScreen({ navigation }: any) {
           />
         );
       })()}
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -627,53 +597,48 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 14,
+    paddingTop: 6,
+    paddingBottom: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  iconBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+  headerSideLeft: {
+    minWidth: 78,
+    alignItems: 'flex-start',
   },
-  headerCenter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  headerSideRight: {
+    minWidth: 78,
+    alignItems: 'flex-end',
+  },
+  backBtn: {
+    padding: 4,
   },
   headerTitle: {
     fontWeight: '800',
   },
-  statsGrid: {
+  plansBtnShadow: {
+    borderRadius: 20,
+    shadowColor: '#8A1F52',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.24,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  plansBtnGradient: {
     flexDirection: 'row',
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingTop: 14,
-  },
-  statCard: {
-    flex: 1,
-    borderRadius: 14,
-    borderWidth: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 10,
     alignItems: 'center',
-    gap: 3,
+    gap: 6,
+    paddingHorizontal: 13,
+    paddingVertical: 7.5,
+    borderRadius: 20,
   },
-  statNum: {
-    fontSize: 20,
+  plansBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 12.5,
     fontWeight: '800',
-    marginTop: 2,
-  },
-  statLbl: {
-    fontSize: 11.5,
-    fontWeight: '600',
-    textAlign: 'center',
+    letterSpacing: 0.2,
   },
   tabRowWrap: {
-    marginTop: 12,
     borderBottomWidth: 1,
   },
   tabRowScroll: {
@@ -733,6 +698,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
+  avatarCol: {
+    width: 68,
+    alignItems: 'center',
+    gap: 4,
+  },
   avatar: {
     width: 60,
     height: 60,
@@ -744,6 +714,11 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  profileCodeText: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   cardInfoCol: {
     flex: 1,

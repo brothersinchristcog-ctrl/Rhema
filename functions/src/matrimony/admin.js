@@ -326,6 +326,7 @@ export const getMatrimonyPendingProfiles = onCall({ invoker: 'public', cpu: 1, m
             }
             const haystack = [
                 doc.id,
+                data.matrimonyId,
                 data.profileCode,
                 data.displayName,
                 data.location?.city,

@@ -14,6 +14,7 @@ import {
 import {
   getAdminProfileRef,
   getEntitlementRef,
+  getPrivateRef,
   getProfileRef,
   getSubscriptionRef,
 } from './store.js';
@@ -54,6 +55,65 @@ export const adminGetMatrimonyPlansAndSubs = onCall({ invoker: 'public' }, async
     .filter((p) => Boolean(p && p.planId))
     .sort((a, b) => (a.sortOrder ?? 99) - (b.sortOrder ?? 99));
 
+  // Hydrate member Name, Matrimony Profile ID, Village/City, and Mobile Number for Subscribers & Payments
+  const uidSet = new Set<string>();
+  subsSnap.docs.forEach((d) => {
+    const uid = String(d.data()?.uid || d.id || '').trim();
+    if (uid) uidSet.add(uid);
+  });
+  paymentsSnap.docs.forEach((d) => {
+    const uid = String(d.data()?.uid || '').trim();
+    if (uid) uidSet.add(uid);
+  });
+
+  const memberMetaMap = new Map<
+    string,
+    {
+      memberName: string | null;
+      memberProfileCode: string | null;
+      memberCity: string | null;
+      memberPhone: string | null;
+    }
+  >();
+  const uniqueUids = Array.from(uidSet);
+  if (uniqueUids.length > 0) {
+    const profRefs = uniqueUids.map((u) => getProfileRef(db, u));
+    const privRefs = uniqueUids.map((u) => getPrivateRef(db, u));
+    const [profSnaps, privSnaps] = await Promise.all([
+      db.getAll(...profRefs),
+      db.getAll(...privRefs),
+    ]);
+    uniqueUids.forEach((u, idx) => {
+      const pData = profSnaps[idx]?.exists ? profSnaps[idx].data() || {} : {};
+      const prData = privSnaps[idx]?.exists ? privSnaps[idx].data() || {} : {};
+      const memberName =
+        String(pData.displayName || prData.fullLegalName || '').trim() || null;
+      const memberProfileCode = String(
+        pData.matrimonyId || pData.profileCode || `RM${u.slice(0, 7).toUpperCase()}`
+      )
+        .trim()
+        .toUpperCase();
+      const locParts = [
+        pData.location?.village,
+        pData.location?.city,
+        pData.location?.state,
+        prData.address?.village,
+        prData.address?.city,
+      ]
+        .map((val) => String(val || '').trim())
+        .filter((val, pos, arr) => Boolean(val) && arr.indexOf(val) === pos);
+      const memberCity = locParts.slice(0, 2).join(', ') || null;
+      const memberPhone =
+        String(prData.phoneNumber || pData.phoneNumber || '').trim() || null;
+      memberMetaMap.set(u, {
+        memberName,
+        memberProfileCode,
+        memberCity,
+        memberPhone,
+      });
+    });
+  }
+
   const nowMs = Date.now();
   let activeCount = 0;
   let expiredCount = 0;
@@ -64,6 +124,8 @@ export const adminGetMatrimonyPlansAndSubs = onCall({ invoker: 'public' }, async
   const subscriptions = subsSnap.docs
     .map((d) => {
       const data = d.data() || {};
+      const subUid = String(data.uid || d.id);
+      const meta = memberMetaMap.get(subUid);
       const endMs = typeof data.expiryDateMs === 'number' ? data.expiryDateMs : null;
       const effectiveStatus =
         data.status === 'active' && endMs && endMs <= nowMs ? 'expired' : String(data.status || 'expired');
@@ -77,7 +139,11 @@ export const adminGetMatrimonyPlansAndSubs = onCall({ invoker: 'public' }, async
         expiredCount++;
       }
       return {
-        uid: String(data.uid || d.id),
+        uid: subUid,
+        memberName: meta?.memberName || null,
+        memberProfileCode: meta?.memberProfileCode || null,
+        memberCity: meta?.memberCity || null,
+        memberPhone: meta?.memberPhone || null,
         subscriptionId: String(data.subscriptionId || d.id),
         planId: String(data.planId || tier),
         planName: String(data.planName || tier),
@@ -98,21 +164,49 @@ export const adminGetMatrimonyPlansAndSubs = onCall({ invoker: 'public' }, async
   const paymentHistory = paymentsSnap.docs
     .map((d) => {
       const data = d.data() || {};
+      const payUid = String(data.uid || '');
+      const meta = memberMetaMap.get(payUid);
       const amt = Number(data.amountInr || 0);
       if (data.status === 'captured' && amt > 0) {
         totalRevenueInr += amt;
       }
+      const createdTsMs =
+        typeof data.createdAtMs === 'number'
+          ? data.createdAtMs
+          : typeof data.startDateMs === 'number'
+          ? data.startDateMs
+          : typeof data.createdAt?.toMillis === 'function'
+          ? data.createdAt.toMillis()
+          : 0;
+      const startMs =
+        typeof data.startDateMs === 'number' ? data.startDateMs : createdTsMs || null;
+      const expiryMs =
+        typeof data.validUntilMs === 'number'
+          ? data.validUntilMs
+          : typeof data.expiryDateMs === 'number'
+          ? data.expiryDateMs
+          : null;
+      const tier = String(data.tier || data.plan || data.planId || '').toLowerCase();
       return {
         id: d.id,
-        uid: String(data.uid || ''),
-        planId: String(data.planId || ''),
-        tier: String(data.tier || ''),
+        uid: payUid,
+        memberName: meta?.memberName || null,
+        memberProfileCode: meta?.memberProfileCode || null,
+        memberCity: meta?.memberCity || null,
+        memberPhone: meta?.memberPhone || null,
+        planId: String(data.planId || tier),
+        planName: data.planName ? String(data.planName) : null,
+        tier,
+        durationMonths: Number(data.durationMonths || 0) || null,
         amountInr: amt,
         status: String(data.status || ''),
-        source: String(data.source || 'razorpay'),
+        source: String(data.source || (data.type === 'razorpay_subscription' ? 'razorpay' : 'razorpay')),
         paymentId: data.paymentId ? String(data.paymentId) : null,
         orderId: data.orderId ? String(data.orderId) : null,
-        createdAtMs: typeof data.createdAtMs === 'number' ? data.createdAtMs : 0,
+        note: data.note ? String(data.note) : null,
+        startDateMs: startMs,
+        expiryDateMs: expiryMs,
+        createdAtMs: createdTsMs,
       };
     })
     .sort((a, b) => b.createdAtMs - a.createdAtMs);
@@ -234,17 +328,61 @@ export const adminUpsertMatrimonyPlan = onCall({ invoker: 'public' }, async (req
   return { success: true, plan: updatedPlan };
 });
 
+async function resolveMatrimonyTargetByUidOrCode(
+  db: FirebaseFirestore.Firestore,
+  rawInput: string
+): Promise<string | null> {
+  const clean = rawInput.trim();
+  if (!clean) return null;
+
+  // 1. Direct Firebase UID match
+  const directSnap = await getProfileRef(db, clean).get();
+  if (directSnap.exists) {
+    return directSnap.id;
+  }
+
+  // 2. Exact Rhema Matrimony Profile ID (matrimonyId / profileCode) match
+  const upperCode = clean.toUpperCase();
+  const [byMatIdSnap, byCodeSnap] = await Promise.all([
+    db.collection(COLLECTIONS.PROFILES).where('matrimonyId', '==', upperCode).limit(1).get(),
+    db.collection(COLLECTIONS.PROFILES).where('profileCode', '==', upperCode).limit(1).get(),
+  ]);
+  if (!byMatIdSnap.empty && byMatIdSnap.docs[0]) return byMatIdSnap.docs[0].id;
+  if (!byCodeSnap.empty && byCodeSnap.docs[0]) return byCodeSnap.docs[0].id;
+
+  // 3. Fallback RM<first 7 chars of uid> match for profiles without stored matrimonyId
+  if (upperCode.startsWith('RM')) {
+    const allSnap = await db.collection(COLLECTIONS.PROFILES).get();
+    for (const doc of allSnap.docs) {
+      const data = doc.data() || {};
+      const code = String(
+        data.matrimonyId || data.profileCode || `RM${doc.id.slice(0, 7).toUpperCase()}`
+      )
+        .trim()
+        .toUpperCase();
+      if (code === upperCode) {
+        return doc.id;
+      }
+    }
+  }
+
+  return null;
+}
+
 export const adminGrantComplimentarySubscription = onCall(
   { invoker: 'public' },
   async (request) => {
     const adminUid = await requireMatrimonyAdmin(request);
-    const targetUid = assertNonEmptyString(request.data?.targetUid, 'targetUid', 128);
+    const rawTarget = assertNonEmptyString(request.data?.targetUid, 'targetUid', 128);
     const action = optionalString(request.data?.action, 20) || 'grant';
 
     const db = getFirestore();
-    const profSnap = await getProfileRef(db, targetUid).get();
-    if (!profSnap.exists) {
-      throw new HttpsError('not-found', 'Matrimony profile not found for this user.');
+    const targetUid = await resolveMatrimonyTargetByUidOrCode(db, rawTarget);
+    if (!targetUid) {
+      throw new HttpsError(
+        'not-found',
+        'No Matrimony member found for that Name, Profile ID, or UID.'
+      );
     }
 
     if (action === 'revoke') {
@@ -349,6 +487,7 @@ export const adminGrantComplimentarySubscription = onCall(
       uid: targetUid,
       subscriptionId,
       planId: plan.planId,
+      planName: plan.planName,
       tier: plan.tier,
       durationMonths,
       amountInr: 0,
@@ -357,6 +496,8 @@ export const adminGrantComplimentarySubscription = onCall(
       source: 'admin_complimentary',
       grantedBy: adminUid,
       note,
+      startDateMs: nowMs,
+      validUntilMs,
       createdAtMs: nowMs,
       createdAt: now,
     });

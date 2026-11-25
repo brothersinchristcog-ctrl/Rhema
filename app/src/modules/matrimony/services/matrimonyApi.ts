@@ -96,6 +96,17 @@ interface MatrimonyMemoryStore {
 
 let store: MatrimonyMemoryStore | null = null;
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
+const planUpdateListeners = new Set<(plans: MatrimonyPlanSpec[]) => void>();
+
+function notifyPlanUpdateListeners(plans: MatrimonyPlanSpec[]): void {
+  planUpdateListeners.forEach((listener) => {
+    try {
+      listener(plans);
+    } catch {
+      // Ignore subscriber errors
+    }
+  });
+}
 
 function getStore(): MatrimonyMemoryStore {
   const currentUid = auth().currentUser?.uid || 'anon';
@@ -725,6 +736,32 @@ export const matrimonyApi = {
 
   getCachedPlans(): MatrimonyPlanSpec[] | null {
     return getStore().plans?.data || null;
+  },
+
+  getPlatinumDiscountPercent(plans?: MatrimonyPlanSpec[] | null): number {
+    const list = plans ?? getStore().plans?.data ?? [];
+    const platinum = list.find(
+      (p) =>
+        p.isActive !== false &&
+        (String(p.tier || '').toLowerCase() === 'platinum' ||
+          String(p.planId || '').toLowerCase() === 'platinum')
+    );
+    if (!platinum) return 0;
+    const explicitPct = Number(platinum.discountPercentage || 0);
+    const computedPct =
+      platinum.originalPriceInr && platinum.originalPriceInr > platinum.priceInr
+        ? Math.round(
+            ((platinum.originalPriceInr - platinum.priceInr) / platinum.originalPriceInr) * 100
+          )
+        : 0;
+    return Math.max(explicitPct, computedPct);
+  },
+
+  subscribePlansUpdated(listener: (plans: MatrimonyPlanSpec[]) => void): () => void {
+    planUpdateListeners.add(listener);
+    return () => {
+      planUpdateListeners.delete(listener);
+    };
   },
 
   getCachedEntitlements(): MemberEntitlements | null {
@@ -2108,14 +2145,19 @@ export const matrimonyApi = {
 
   async respondInterest(
     targetUid: string,
-    action: 'accept' | 'decline' | 'withdraw'
+    action: 'accept' | 'decline' | 'withdraw' | 'withdraw_accept'
   ): Promise<{ success: boolean; status: string }> {
     const res = await callMatrimonyFunction<{ success: boolean; status: string }>(
       'respondMatrimonyInterest',
       { targetUid, action }
     );
     const s = getStore();
-    const nextMatchStatus = action === 'withdraw' ? null : action === 'accept' ? 'accepted' : 'declined';
+    const nextMatchStatus =
+      action === 'withdraw' || action === 'withdraw_accept'
+        ? null
+        : action === 'accept'
+        ? 'accepted'
+        : 'declined';
     s.matchesByKey.forEach((entry) => {
       if (entry.data?.matches) {
         entry.data = {
@@ -2125,7 +2167,9 @@ export const matrimonyApi = {
               ? {
                   ...m,
                   interestStatus: nextMatchStatus as any,
-                  ...(action === 'withdraw' ? { interestSentAtMs: undefined } : {}),
+                  ...(action === 'withdraw' || action === 'withdraw_accept'
+                    ? { interestSentAtMs: undefined }
+                    : {}),
                 }
               : m
           ),
@@ -2139,6 +2183,25 @@ export const matrimonyApi = {
           data: {
             ...s.interestsHub.data,
             sent: (s.interestsHub.data.sent || []).filter((e) => e.candidate?.uid !== targetUid),
+          },
+        };
+      } else if (action === 'withdraw_accept') {
+        s.interestsHub = {
+          ...s.interestsHub,
+          data: {
+            ...s.interestsHub.data,
+            sent: (s.interestsHub.data.sent || []).filter(
+              (e) => !(e.candidate?.uid === targetUid && e.status === 'accepted')
+            ),
+            received: (s.interestsHub.data.received || []).map((e) =>
+              e.candidate?.uid === targetUid
+                ? {
+                    ...e,
+                    status: 'pending',
+                    candidate: { ...e.candidate, interestStatus: 'pending' },
+                  }
+                : e
+            ),
           },
         };
       } else {
@@ -2160,7 +2223,7 @@ export const matrimonyApi = {
         };
       }
     }
-    invalidateCache({ chatContacts: action === 'accept' });
+    invalidateCache({ chatContacts: action === 'accept' || action === 'withdraw_accept' });
     return res;
   },
 
@@ -2241,6 +2304,7 @@ export const matrimonyApi = {
       if (Array.isArray(res?.plans)) {
         s.plans = { data: res.plans, fetchedAt: Date.now() };
         persistSnapshotToDisk();
+        notifyPlanUpdateListeners(res.plans);
       }
       return res;
     })().finally(() => {
@@ -2449,7 +2513,25 @@ export const matrimonyApi = {
       'adminUpsertMatrimonyPlan',
       payload
     );
-    invalidateCache({ plans: true });
+    const s = getStore();
+    if (res?.plan) {
+      const existing = s.plans?.data || [];
+      const idx = existing.findIndex(
+        (p) => p.planId === res.plan.planId || p.tier === res.plan.tier
+      );
+      const nextPlans = (
+        idx >= 0
+          ? existing.map((p, i) => (i === idx ? res.plan : p))
+          : [...existing, res.plan]
+      ).sort((a, b) => (a.sortOrder ?? 99) - (b.sortOrder ?? 99));
+      s.plans = { data: nextPlans, fetchedAt: Date.now() };
+      s.inflight.delete('getPlans');
+      writeSnapshotToDiskNow();
+      notifyPlanUpdateListeners(nextPlans);
+    } else {
+      invalidateCache({ plans: true });
+    }
+    invalidateCache({ entitlements: true });
     return res;
   },
 

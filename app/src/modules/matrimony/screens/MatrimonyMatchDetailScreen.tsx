@@ -56,7 +56,12 @@ import MatrimonyReportModal from '../components/MatrimonyReportModal';
 import ProtectedPhotoPlaceholder from '../components/ProtectedPhotoPlaceholder';
 import VerifiedRibbonBadge from '../components/VerifiedRibbonBadge';
 import { matrimonyApi } from '../services/matrimonyApi';
-import { MatrimonyMatchCandidate, MemberEntitlements } from '../types/matrimony';
+import { matrimonyChatService } from '../services/matrimonyChatService';
+import {
+  MatrimonyMatchCandidate,
+  MatrimonyPresenceState,
+  MemberEntitlements,
+} from '../types/matrimony';
 
 const CORAL_RED = '#E04B5A';
 const DARK_GREEN = '#0B4F3E';
@@ -73,15 +78,41 @@ function formatCompactHeight(cm?: number | null): string | null {
   return `${feet}'${inches}"`;
 }
 
-function formatRecencyLabel(joinedAtMs: number): string {
-  if (!joinedAtMs) return 'Verified Member';
-  const diffHours = Math.max(0, Math.floor((Date.now() - joinedAtMs) / (1000 * 60 * 60)));
-  if (diffHours < 24) return 'Joined today';
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays <= 7) return `Joined ${diffDays}d ago`;
-  const diffWeeks = Math.floor(diffDays / 7);
-  if (diffWeeks <= 4) return `Joined ${diffWeeks}w ago`;
-  return 'Verified Member';
+function formatLastSeenStatus(
+  presence: MatrimonyPresenceState | null,
+  updatedAtMs?: number,
+  joinedAtMs?: number
+): { label: string; isOnline: boolean } {
+  if (presence?.online === true) {
+    return { label: 'Online', isOnline: true };
+  }
+  const ts = Math.max(presence?.lastSeen || 0, updatedAtMs || 0, joinedAtMs || 0);
+  if (!ts || ts <= 0) {
+    return { label: 'Verified Member', isOnline: false };
+  }
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const target = new Date(ts);
+  const targetStart = new Date(
+    target.getFullYear(),
+    target.getMonth(),
+    target.getDate()
+  ).getTime();
+  const diffCalendarDays = Math.round((todayStart - targetStart) / (24 * 60 * 60 * 1000));
+
+  if (diffCalendarDays <= 0) {
+    return { label: 'Last seen today', isOnline: false };
+  }
+  if (diffCalendarDays === 1) {
+    return { label: 'Last seen yesterday', isOnline: false };
+  }
+  if (diffCalendarDays <= 14) {
+    return { label: 'Last seen few days ago', isOnline: false };
+  }
+  if (diffCalendarDays <= 35) {
+    return { label: 'Last seen few weeks ago', isOnline: false };
+  }
+  return { label: 'Last seen over a month ago', isOnline: false };
 }
 
 function isFemaleGender(raw?: string): boolean {
@@ -203,6 +234,42 @@ export default function MatrimonyMatchDetailScreen({ navigation, route }: any) {
 
   const candidate = matchList[currentIndex] || null;
   const activeCandidateUid = candidate?.uid || null;
+  const [candidatePresence, setCandidatePresence] = useState<MatrimonyPresenceState | null>(null);
+  const onlineBlink = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    setCandidatePresence(null);
+    if (!activeCandidateUid) return;
+    const unsub = matrimonyChatService.subscribePresence(activeCandidateUid, (state) => {
+      setCandidatePresence(state);
+    });
+    return () => unsub();
+  }, [activeCandidateUid]);
+
+  useEffect(() => {
+    if (candidatePresence?.online !== true) {
+      onlineBlink.setValue(1);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(onlineBlink, {
+          toValue: 0.2,
+          duration: 600,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(onlineBlink, {
+          toValue: 1,
+          duration: 600,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [candidatePresence?.online, onlineBlink]);
 
   useEffect(() => {
     if (!activeCandidateUid || viewedUidsRef.current.has(activeCandidateUid)) return;
@@ -1367,9 +1434,50 @@ export default function MatrimonyMatchDetailScreen({ navigation, route }: any) {
           <Text style={[styles.memberName, { color: colors.text, fontFamily, fontSize: scaleFont(22) }]}>
             {candidate.displayName}
           </Text>
-          <Text style={[styles.memberSubLine, { color: colors.textSecondary, fontFamily }]}>
-            {candidate.profileCode}  •  {formatRecencyLabel(candidate.joinedAtMs)}
-          </Text>
+          {(() => {
+            const presenceStatus = formatLastSeenStatus(
+              candidatePresence,
+              candidate.updatedAtMs,
+              candidate.joinedAtMs
+            );
+            const onlineColor = isDark ? '#22C55E' : '#16A34A';
+            return (
+              <View style={styles.memberSubRow}>
+                <Text style={[styles.memberSubLine, { color: colors.textSecondary, fontFamily }]}>
+                  {candidate.profileCode}  •{'  '}
+                </Text>
+                <Text
+                  style={[
+                    styles.memberSubLine,
+                    presenceStatus.isOnline
+                      ? { color: onlineColor, fontWeight: '700', fontFamily }
+                      : { color: colors.textSecondary, fontFamily },
+                  ]}
+                >
+                  {presenceStatus.label}
+                </Text>
+                {presenceStatus.isOnline ? (
+                  <Animated.View
+                    style={[
+                      styles.onlineDot,
+                      {
+                        backgroundColor: onlineColor,
+                        opacity: onlineBlink,
+                        transform: [
+                          {
+                            scale: onlineBlink.interpolate({
+                              inputRange: [0.2, 1],
+                              outputRange: [0.85, 1.15],
+                            }),
+                          },
+                        ],
+                      },
+                    ]}
+                  />
+                ) : null}
+              </View>
+            );
+          })()}
           <Text style={[styles.memberDotSummary, { color: colors.text, fontFamily, fontSize: scaleFont(14.5) }]}>
             {summaryBits.join('  •  ')}
           </Text>
@@ -1851,7 +1959,12 @@ export default function MatrimonyMatchDetailScreen({ navigation, route }: any) {
               <TouchableOpacity
                 style={styles.recSeeAllBtn}
                 activeOpacity={0.75}
-                onPress={() => navigation.navigate('MatrimonyMatches', { initialTab: 'all' })}
+                onPress={() =>
+                  navigation.navigate('MatrimonyMainTabs', {
+                    screen: 'MatrimonyMatches',
+                    params: { initialTab: 'all' },
+                  })
+                }
               >
                 <Text style={[styles.recSeeAllText, { fontFamily }]}>See all</Text>
                 <ChevronRight size={14} color={UPGRADE_AMBER} strokeWidth={2.4} />
@@ -2513,6 +2626,17 @@ const styles = StyleSheet.create({
   },
   memberName: {
     fontWeight: '800',
+  },
+  memberSubRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  onlineDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginLeft: 6,
   },
   memberSubLine: {
     fontSize: 13,

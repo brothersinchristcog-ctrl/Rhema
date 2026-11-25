@@ -50,6 +50,7 @@ import MatrimonyMatchesFilterModal, {
   countActiveMatrimonyFilters,
 } from '../components/MatrimonyMatchesFilterModal';
 import MatrimonyMatchesMoreModal, { MORE_TAB_TITLES } from '../components/MatrimonyMatchesMoreModal';
+import MatrimonyUpgradePromptModal from '../components/MatrimonyUpgradePromptModal';
 import { isMatrimonyInactiveError, matrimonyApi } from '../services/matrimonyApi';
 import { matrimonyChatService } from '../services/matrimonyChatService';
 import { matrimonyPerf } from '../services/matrimonyPerf';
@@ -449,6 +450,8 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
 
   const [galleryPreviewPhotos, setGalleryPreviewPhotos] = useState<string[]>([]);
   const [galleryIndex, setGalleryIndex] = useState(0);
+  const [upgradePromptCandidate, setUpgradePromptCandidate] =
+    useState<MatrimonyMatchCandidate | null>(null);
 
   const loadNextPage = useCallback(async () => {
     if (!prefsHydrated || loading || loadingMoreRef.current || !hasMore) return;
@@ -986,21 +989,14 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
 
   const handleCallCard = useCallback(
     (candidate: MatrimonyMatchCandidate) => {
+      if (!entitlements || entitlements.tier === 'free' || !entitlements.callAccess) {
+        setUpgradePromptCandidate(candidate);
+        return;
+      }
       if (candidate.mobilePrivacy === 'messages_only') {
         Alert.alert(
           'Messages Only',
           `${candidate.displayName} has restricted phone calls to Messages only.`
-        );
-        return;
-      }
-      if (!entitlements || entitlements.tier === 'free' || !entitlements.callAccess) {
-        Alert.alert(
-          'Upgrade to Call',
-          'Calling members directly is unlocked for Silver, Gold, and Platinum members.',
-          [
-            { text: 'Not Now', style: 'cancel' },
-            { text: 'Upgrade Plan', onPress: () => navigation.navigate('MatrimonyUpgrade') },
-          ]
         );
         return;
       }
@@ -1069,6 +1065,13 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
 
   const handleSendMessageCard = useCallback(
     (candidate: MatrimonyMatchCandidate) => {
+      const hasPaidPlan = Boolean(
+        entitlements && entitlements.tier !== 'free' && entitlements.messageAccess
+      );
+      if (!hasPaidPlan) {
+        setUpgradePromptCandidate(candidate);
+        return;
+      }
       if (candidate.interestStatus !== 'accepted') {
         Alert.alert(
           'Send Message',
@@ -1076,45 +1079,31 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
         );
         return;
       }
-      const openChat = () => {
-        navigation.navigate('MatrimonyChat', {
-          targetUid: candidate.uid,
-          peer: {
-            uid: candidate.uid,
-            displayName: candidate.displayName,
-            profileCode: candidate.profileCode,
-            signedProfilePhoto: candidate.signedProfilePhoto || null,
-            age: candidate.age ?? null,
-            heightCm: candidate.heightCm ?? null,
-            occupation:
-              candidate.career?.profession ||
-              candidate.career?.occupationCategory ||
-              candidate.career?.employmentType ||
-              candidate.education?.qualification ||
-              null,
-            gender: candidate.gender || null,
-            isVerified: true,
-            city:
-              candidate.location?.village ||
-              candidate.location?.city ||
-              candidate.location?.state ||
-              '',
-            contactPhone: candidate.contactPhone || null,
-          },
-        });
-      };
-      if (entitlements && !entitlements.messageAccess) {
-        Alert.alert(
-          'Upgrade to Send Messages',
-          'Sending personalised messages requires an active Silver, Gold, or Platinum membership.',
-          [
-            { text: 'View History', style: 'cancel', onPress: openChat },
-            { text: 'Upgrade Plan', onPress: () => navigation.navigate('MatrimonyUpgrade') },
-          ]
-        );
-        return;
-      }
-      openChat();
+      navigation.navigate('MatrimonyChat', {
+        targetUid: candidate.uid,
+        peer: {
+          uid: candidate.uid,
+          displayName: candidate.displayName,
+          profileCode: candidate.profileCode,
+          signedProfilePhoto: candidate.signedProfilePhoto || null,
+          age: candidate.age ?? null,
+          heightCm: candidate.heightCm ?? null,
+          occupation:
+            candidate.career?.profession ||
+            candidate.career?.occupationCategory ||
+            candidate.career?.employmentType ||
+            candidate.education?.qualification ||
+            null,
+          gender: candidate.gender || null,
+          isVerified: true,
+          city:
+            candidate.location?.village ||
+            candidate.location?.city ||
+            candidate.location?.state ||
+            '',
+          contactPhone: candidate.contactPhone || null,
+        },
+      });
     },
     [entitlements, navigation]
   );
@@ -2194,6 +2183,24 @@ export default function MatrimonyMatchesScreen({ navigation, route }: any) {
           />
         </View>
       </Modal>
+
+      <MatrimonyUpgradePromptModal
+        visible={Boolean(upgradePromptCandidate)}
+        candidate={upgradePromptCandidate}
+        viewerPhoto={
+          viewerPhoto ||
+          matrimonyApi.getCachedStatus()?.signedProfilePhoto ||
+          matrimonyApi.getCachedRegistration()?.profile?.signedProfilePhoto ||
+          (user as any)?.photoURL ||
+          null
+        }
+        fontFamily={fontFamily}
+        onClose={() => setUpgradePromptCandidate(null)}
+        onContinue={() => {
+          setUpgradePromptCandidate(null);
+          navigation.navigate('MatrimonyUpgrade');
+        }}
+      />
     </SafeAreaView>
   );
 }
