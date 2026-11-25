@@ -198,11 +198,6 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
     }
 
-    // 14. Vouchers
-    match /vouchers/{voucherCode} {
-      allow read, write: if isAuthenticated();
-    }
-
     // 15. Bible Quizzes
     match /bibleQuizzes/{quizId} {
       allow read: if isAuthenticated();
