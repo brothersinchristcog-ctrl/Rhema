@@ -31,9 +31,11 @@ import {
   CheckCircle2,
 } from 'lucide-react-native';
 import firestore from '@react-native-firebase/firestore';
+import { CachedImage } from '../components/CachedImage';
 import { useChurch } from '../context/ChurchContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useAdminTheme, createAdminThemedStyles } from '../utils/adminThemeHelper';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey, writeInstantCache } from '../utils/instantCache';
 import {
   findActiveLiveStream,
   getChannelId,
@@ -126,20 +128,33 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
   const paramUrl = route?.params?.url || route?.params?.channelUrl || configuredChannelUrl;
   const paramTitle = route?.params?.title || '';
 
-  const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
-  const [streamTitle, setStreamTitle] = useState<string>(paramTitle || 'Church Live Stream');
-  const [streamStatus, setStreamStatus] = useState<'loading' | 'live' | 'completed' | 'none'>('loading');
-  const [isLive, setIsLive] = useState<boolean>(false);
-  const [loading, setLoading] = useState<boolean>(true);
+  const liveCacheKey = makeScopedCacheKey('youtube_live_state_v1', churchId, paramVideoId);
+  const initialLiveCache = getInstantMemory<{
+    activeVideoId: string | null;
+    streamTitle: string;
+    streamStatus: 'loading' | 'live' | 'completed' | 'none';
+    isLive: boolean;
+  }>(liveCacheKey);
+
+  const [activeVideoId, setActiveVideoId] = useState<string | null>(() => initialLiveCache?.activeVideoId || null);
+  const [streamTitle, setStreamTitle] = useState<string>(() => paramTitle || initialLiveCache?.streamTitle || 'Church Live Stream');
+  const [streamStatus, setStreamStatus] = useState<'loading' | 'live' | 'completed' | 'none'>(() => initialLiveCache?.streamStatus || 'loading');
+  const [isLive, setIsLive] = useState<boolean>(() => initialLiveCache?.isLive || false);
+  const [loading, setLoading] = useState<boolean>(() => !initialLiveCache);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [playing, setPlaying] = useState<boolean>(true);
   const [resolvedChannelId, setResolvedChannelId] = useState<string | null>(null);
 
-  // Pulse animation for LIVE badge
+  // Pulse animation runs ONLY while stream is live and stops cleanly
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const expectedChannelIdRef = useRef<{ target: string; id: string } | null>(null);
 
   useEffect(() => {
-    Animated.loop(
+    if (!isLive) {
+      pulseAnim.setValue(1);
+      return;
+    }
+    const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
           toValue: 0.35,
@@ -152,15 +167,22 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
           useNativeDriver: true,
         }),
       ])
-    ).start();
-  }, [pulseAnim]);
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulseAnim, isLive]);
 
   const resolveExpectedChannelId = useCallback(async () => {
     const target = resolveRhemaYoutubeUrl(channelHomeUrl || configuredChannelUrl || RHEMA_YOUTUBE_CHANNEL_URL);
     if (target.toLowerCase().includes('rhemaglobalministries') || (churchId || 'rhema') === 'rhema') {
       return RHEMA_YOUTUBE_CHANNEL_ID;
     }
-    return (await getChannelId(target)) || RHEMA_YOUTUBE_CHANNEL_ID;
+    if (expectedChannelIdRef.current?.target === target) {
+      return expectedChannelIdRef.current.id;
+    }
+    const resolved = (await getChannelId(target)) || RHEMA_YOUTUBE_CHANNEL_ID;
+    expectedChannelIdRef.current = { target, id: resolved };
+    return resolved;
   }, [channelHomeUrl, configuredChannelUrl, churchId]);
 
   /**
@@ -244,8 +266,28 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
 
   const resolveLiveStream = useCallback(
     async (isManualRefresh = false) => {
+      const memHit = getInstantMemory<{
+        activeVideoId: string | null;
+        streamTitle: string;
+        streamStatus: 'loading' | 'live' | 'completed' | 'none';
+        isLive: boolean;
+      }>(liveCacheKey);
       if (isManualRefresh) setRefreshing(true);
-      else setLoading(true);
+      else if (!memHit) setLoading(true);
+
+      const cacheResult = (
+        vid: string | null,
+        title: string,
+        status: 'live' | 'completed' | 'none',
+        liveFlag: boolean
+      ) => {
+        writeInstantCache(liveCacheKey, {
+          activeVideoId: vid,
+          streamTitle: title,
+          streamStatus: status,
+          isLive: liveFlag,
+        }).catch(() => { });
+      };
 
       try {
         // Rule: Quick Access YouTube Live should ONLY play active streams
@@ -260,17 +302,20 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
           const vCheck = await checkVideoLiveStatus(paramVideoId, expectedChannelId);
           if (!vCheck.channelMismatch) {
             if (vCheck.status === 'live' || vCheck.isLiveNow) {
+              const title = paramTitle || vCheck.title || streamTitle;
               setActiveVideoId(paramVideoId);
               setIsLive(true);
               setStreamStatus('live');
               if (paramTitle || vCheck.title) setStreamTitle(paramTitle || vCheck.title);
+              cacheResult(paramVideoId, title, 'live', true);
               return;
             } else if (vCheck.status === 'completed' || vCheck.hasEnded) {
-              // Live stream has ended: per rule, do NOT play recorded video in Quick Access YouTube Live
+              const title = paramTitle || vCheck.title || streamTitle;
               setActiveVideoId(null);
               setIsLive(false);
               setStreamStatus('completed');
               if (paramTitle || vCheck.title) setStreamTitle(paramTitle || vCheck.title);
+              cacheResult(null, title, 'completed', false);
               return;
             }
           }
@@ -292,15 +337,18 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
             const vCheck = await checkVideoLiveStatus(liveVid, expectedChannelId);
             if (!vCheck.channelMismatch) {
               if (vCheck.status === 'live' || vCheck.isLiveNow) {
+                const title = lData.title || vCheck.title || streamTitle;
                 setActiveVideoId(liveVid);
                 setIsLive(true);
                 setStreamStatus('live');
                 if (lData.title || vCheck.title) setStreamTitle(lData.title || vCheck.title);
+                cacheResult(liveVid, title, 'live', true);
                 return;
               } else if (vCheck.status === 'completed' || vCheck.hasEnded) {
                 setActiveVideoId(null);
                 setIsLive(false);
                 setStreamStatus('completed');
+                cacheResult(null, streamTitle, 'completed', false);
                 return;
               }
             }
@@ -310,27 +358,30 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
         // Step 3: Check official church channel handle/URL using YouTubeService (never a raw watch paramUrl)
         const targetChannelUrl = resolveRhemaYoutubeUrl(
           configuredChannelUrl ||
-            churchData?.socialLinks?.youtube ||
-            churchData?.youtubeChannelUrl ||
-            churchData?.youtubeLiveUrl ||
-            RHEMA_YOUTUBE_CHANNEL_URL
+          churchData?.socialLinks?.youtube ||
+          churchData?.youtubeChannelUrl ||
+          churchData?.youtubeLiveUrl ||
+          RHEMA_YOUTUBE_CHANNEL_URL
         );
 
         if (targetChannelUrl) {
           const liveResult = await findActiveLiveStream(targetChannelUrl, expectedChannelId);
           if (liveResult.status === 'live' && liveResult.isLiveNow && liveResult.videoId) {
+            const title = liveResult.title || streamTitle;
             setActiveVideoId(liveResult.videoId);
             if (liveResult.title) setStreamTitle(liveResult.title);
             setIsLive(true);
             setStreamStatus('live');
             setPlaying(true);
+            cacheResult(liveResult.videoId, title, 'live', true);
             return;
           } else if (liveResult.status === 'completed' || liveResult.hasEnded) {
-            // Stream ended: do NOT play recorded video in Quick Access YouTube Live
+            const title = liveResult.title || streamTitle;
             setActiveVideoId(null);
             setIsLive(false);
             setStreamStatus('completed');
             if (liveResult.title) setStreamTitle(liveResult.title);
+            cacheResult(null, title, 'completed', false);
             return;
           }
         }
@@ -339,6 +390,7 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
         setIsLive(false);
         setActiveVideoId(null);
         setStreamStatus('none');
+        cacheResult(null, streamTitle, 'none', false);
       } catch (err) {
         console.warn('[YouTubeLiveScreen] resolveLiveStream error:', err);
         setIsLive(false);
@@ -349,7 +401,7 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
         setRefreshing(false);
       }
     },
-    [churchId, configuredChannelUrl, paramTitle, paramVideoId, resolveExpectedChannelId]
+    [churchId, configuredChannelUrl, paramTitle, paramVideoId, resolveExpectedChannelId, liveCacheKey]
   );
 
   useEffect(() => {
@@ -595,7 +647,7 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
           <View style={[styles.churchRow, { borderTopColor: adminBorderColor }]}>
             <View style={styles.churchAvatarBox}>
               {churchAvatar ? (
-                <Image
+                <CachedImage
                   source={{ uri: churchAvatar }}
                   style={styles.churchAvatar}
                   resizeMode="cover"

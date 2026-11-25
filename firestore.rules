@@ -17,9 +17,13 @@ service cloud.firestore {
     function isSuperAdmin() {
       return request.auth != null && (
         (exists(path('/databases/' + database + '/documents/platform_admins/' + request.auth.uid)) &&
-         get(path('/databases/' + database + '/documents/platform_admins/' + request.auth.uid)).data.superadmin == true) ||
+         (get(path('/databases/' + database + '/documents/platform_admins/' + request.auth.uid)).data.superadmin == true ||
+          get(path('/databases/' + database + '/documents/platform_admins/' + request.auth.uid)).data.get('role', '') in ['Super Admin', 'super_admin', 'superadmin', 'SuperAdmin'])) ||
         (exists(path('/databases/' + database + '/documents/Rhema Church/rhema/members/' + request.auth.uid)) &&
-         get(path('/databases/' + database + '/documents/Rhema Church/rhema/members/' + request.auth.uid)).data.get('userType', '') in ['Super Admin', 'super_admin', 'superadmin'])
+         (get(path('/databases/' + database + '/documents/Rhema Church/rhema/members/' + request.auth.uid)).data.get('userType', '') in ['Super Admin', 'super_admin', 'superadmin', 'SuperAdmin'] ||
+          get(path('/databases/' + database + '/documents/Rhema Church/rhema/members/' + request.auth.uid)).data.get('role', '') in ['Super Admin', 'super_admin', 'superadmin', 'SuperAdmin'] ||
+          get(path('/databases/' + database + '/documents/Rhema Church/rhema/members/' + request.auth.uid)).data.get('isSuperAdmin', false) == true ||
+          get(path('/databases/' + database + '/documents/Rhema Church/rhema/members/' + request.auth.uid)).data.get('superadmin', false) == true))
       );
     }
 
@@ -194,11 +198,6 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
     }
 
-    // 14. Vouchers
-    match /vouchers/{voucherCode} {
-      allow read, write: if isAuthenticated();
-    }
-
     // 15. Bible Quizzes
     match /bibleQuizzes/{quizId} {
       allow read: if isAuthenticated();
@@ -218,9 +217,9 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
     }
 
-    // 17b. Ledger Expenses
+    // 17b. Ledger Expenses - Strictly Super Admin Only
     match /ledger_expenses/{docId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isSuperAdmin();
     }
 
     // 18. Church Donations (Online member donations)
@@ -479,6 +478,18 @@ service cloud.firestore {
         match /celebrants/{celebId} {
           allow read, write: if isAuthenticated();
         }
+
+        match /e2eeMeta/{docId} {
+          allow read, write: if isAuthenticated();
+        }
+
+        match /keyEnvelopes/{docId} {
+          allow read, write: if isAuthenticated();
+        }
+
+        match /keyRequests/{uid} {
+          allow read, write: if isAuthenticated();
+        }
       }
 
       // Attendance Requests & Responses
@@ -528,12 +539,49 @@ service cloud.firestore {
         allow read, write: if isAuthenticated();
       }
 
+      // Strictly Super Admin Only
       match /ledger_expenses/{docId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isSuperAdmin();
       }
 
       match /church_donations/{docId} {
         allow read, write: if isAuthenticated();
+      }
+
+      // Member Pledges (Non-donation commitments; server verifies payment fulfillment)
+      match /pledges/{pledgeId} {
+        allow read: if isAuthenticated() && (
+          resource.data.memberUid == request.auth.uid || isChurchAdmin()
+        );
+        allow create: if isAuthenticated() &&
+          request.resource.data.memberUid == request.auth.uid &&
+          request.resource.data.receivedAmount == 0 &&
+          request.resource.data.consentConfirmed == true;
+        allow update: if isChurchAdmin() || (
+          isAuthenticated() &&
+          resource.data.memberUid == request.auth.uid &&
+          request.resource.data.receivedAmount == resource.data.receivedAmount &&
+          request.resource.data.pledgeAmount == resource.data.pledgeAmount
+        );
+        allow delete: if isChurchAdmin() || (
+          isAuthenticated() &&
+          resource.data.memberUid == request.auth.uid &&
+          resource.data.receivedAmount == 0
+        );
+      }
+
+      // Razorpay Recurring Subscription Mandates (Written only by Cloud Functions)
+      match /recurring_mandates/{subscriptionId} {
+        allow read: if isAuthenticated() && (
+          resource.data.memberUid == request.auth.uid || isChurchAdmin()
+        );
+        allow write: if false;
+      }
+
+      // Razorpay cached plans
+      match /razorpay_plans/{planKey} {
+        allow read: if isChurchAdmin();
+        allow write: if false;
       }
 
       // Care Cells Management Module
@@ -804,6 +852,49 @@ service cloud.firestore {
         allow read, write: if isAuthenticated();
       }
 
+      // --- RHEMA CHURCH CHAT & GROUP MESSAGING (Strict auth: no debug bypass) ---
+      function isRealChurchMember() {
+        return request.auth != null &&
+          request.auth.token.firebase.sign_in_provider != 'anonymous' &&
+          exists(/databases/$(database)/documents/$(churchCollection)/$(churchId)/members/$(request.auth.uid));
+      }
+
+      function isRhemaChatAdmin() {
+        return isChurchAdmin() || (
+          isRealChurchMember() &&
+          get(/databases/$(database)/documents/$(churchCollection)/$(churchId)/members/$(request.auth.uid)).data.get('userType', '') in ['Pastor', 'pastor', 'Admin', 'admin', 'Super Admin', 'super_admin', 'superadmin']
+        );
+      }
+
+      match /chat_groups/{groupId} {
+        allow read: if isRealChurchMember() && (
+          isRhemaChatAdmin() ||
+          request.auth.uid in resource.data.get('participantIds', [])
+        );
+        allow create: if isRhemaChatAdmin() &&
+          request.resource.data.createdBy == request.auth.uid;
+        allow update: if isRealChurchMember() && (
+          isRhemaChatAdmin() ||
+          request.auth.uid in resource.data.get('adminIds', []) ||
+          (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participantIds', 'adminIds', 'updatedAt']) &&
+            request.auth.uid in resource.data.get('participantIds', []) &&
+            !(request.auth.uid in request.resource.data.get('participantIds', []))
+          )
+        );
+        allow delete: if isRhemaChatAdmin();
+      }
+
+      match /chat_blocks/{blockerUid}/blocked/{targetUid} {
+        allow read, write: if isRealChurchMember() && request.auth.uid == blockerUid;
+      }
+
+      match /chat_reports/{reportId} {
+        allow create: if isRealChurchMember() &&
+          request.resource.data.reporterUid == request.auth.uid;
+        allow read, update, delete: if isRhemaChatAdmin();
+      }
+
       // Any other church subcollection: authenticated members can read, admins can write
       match /{subcollection}/{docId} {
         allow read: if isAuthenticated();
@@ -956,6 +1047,16 @@ service cloud.firestore {
     match /matrimony_payment_history/{paymentId} {
       allow read: if matrimonySignedIn() && resource.data.uid == request.auth.uid;
       allow write: if false;
+    }
+
+    // End-to-End Encryption Identity Public Keys & Encrypted Private Key Backups
+    match /user_e2ee_keys/{uid} {
+      allow read: if request.auth != null && request.auth.token.firebase.sign_in_provider != 'anonymous';
+      allow write: if request.auth != null && request.auth.uid == uid;
+
+      match /private/{docId} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
     }
   }
 }

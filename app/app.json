@@ -52,14 +52,36 @@
       },
       "notificationChannels": [
         {
+          "name": "Church Live & Updates",
+          "importance": "MAX",
+          "showBadge": true,
+          "sound": "default",
+          "id": "church_alerts"
+        },
+        {
           "name": "Daily Verse",
           "importance": "HIGH",
           "showBadge": true,
           "sound": "default",
           "id": "daily_verse"
+        },
+        {
+          "name": "Daily Bible Quiz",
+          "importance": "HIGH",
+          "showBadge": true,
+          "sound": "default",
+          "id": "daily_quiz"
+        },
+        {
+          "name": "Church Messages & Groups",
+          "importance": "MAX",
+          "showBadge": true,
+          "sound": "default",
+          "id": "church_chat"
         }
       ],
       "permissions": [
+        "android.permission.POST_NOTIFICATIONS",
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.READ_EXTERNAL_STORAGE",
@@ -121,7 +143,20 @@
       [
         "expo-av",
         {
-          "microphonePermission": "Allow Rhema to access your microphone to create events via voice."
+          "microphonePermission": "Allow Rhema to access your microphone to record voice messages and create events via voice."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Rhema to access your camera to take photos and videos in chat."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Rhema to access your photos and videos to share in church chat.",
+          "cameraPermission": "Allow Rhema to access your camera to capture photos and videos in chat."
         }
       ],
       [

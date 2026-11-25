@@ -1,24 +1,98 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, StatusBar, Platform, ActivityIndicator, Modal, PanResponder, Animated, Dimensions, Linking, Alert, Image, BackHandler, Clipboard, ToastAndroid } from 'react-native';
-import { ChevronLeft, ArrowLeft, Bell, Calendar, Info, MessageCircle, AlertTriangle, X, Gift, Heart, Sparkles, Droplets, Trash2, Tv, BookOpen, Music, Mic , Video, Layers, UserCheck, Zap, HeartHandshake, Briefcase, CheckCircle2 } from 'lucide-react-native';
+import { StyleSheet, View, Text, ScrollView, FlatList, TouchableOpacity, StatusBar, Platform, ActivityIndicator, Modal, PanResponder, Animated, Dimensions, Linking, Alert, Image, BackHandler, Clipboard, ToastAndroid } from 'react-native';
+import { ChevronLeft, ArrowLeft, Bell, Calendar, Info, MessageCircle, AlertTriangle, X, Gift, Heart, Sparkles, Droplets, Trash2, Tv, BookOpen, Music, Mic, Video, Layers, UserCheck, Zap, HeartHandshake, Briefcase, CheckCircle2, Wallet } from 'lucide-react-native';
 import { openZoomMeeting } from '../utils/ZoomLauncher';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import firestore, { 
-  getFirestore, 
-  collection, 
-  query, 
+import firestore, {
+  getFirestore,
+  collection,
+  query,
   where,
-  orderBy, 
-  limit, 
-  onSnapshot 
+  orderBy,
+  limit,
+  onSnapshot
 } from '@react-native-firebase/firestore';
 import { useAuth } from '../context/AuthContext';
+import { isSuperAdminMember } from '../utils/roleUtils';
 import { formatDateDisplay } from '../utils/DateUtils';
 import { useChurch } from '../context/ChurchContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  readInstantCache,
+  writeInstantCache,
+  readScopedDeletedNotifIds,
+  writeScopedDeletedNotifIds,
+} from '../utils/instantCache';
+
+const resolveUpdateIcon = (type?: string) => {
+  switch (type) {
+    case 'online_meeting':
+    case 'online_meeting_scheduled':
+      return Video;
+    case 'service_assignment':
+      return UserCheck;
+    case 'service_responsibility_broadcast':
+      return Zap;
+    case 'rehearsal_alert':
+    case 'song':
+      return Music;
+    case 'sermon':
+      return Mic;
+    case 'promise':
+      return BookOpen;
+    case 'birthday':
+      return Gift;
+    case 'baptism':
+    case 'baptism_request':
+    case 'baptism_request_admin':
+    case 'baptism_request_member':
+      return Droplets;
+    case 'anniversary':
+    case 'prayer_request':
+    case 'prayer_request_admin':
+    case 'prayer_request_member':
+    case 'prayer':
+      return Heart;
+    case 'celebration':
+    case 'testimony_admin':
+    case 'testimony_published':
+    case 'testimony_member_status':
+      return Sparkles;
+    case 'youtube_live':
+      return Tv;
+    case 'job_opportunity_new':
+    case 'job_application_admin':
+    case 'job_application_member':
+      return Briefcase;
+    case 'volunteer_application_admin':
+    case 'volunteer_application_member':
+    case 'volunteer_assignment':
+    case 'volunteer_event_change':
+    case 'volunteer_post_new':
+      return HeartHandshake;
+    case 'donation':
+    case 'expense_approval':
+    case 'expense_approved':
+    case 'expense_rejected':
+    case 'invoice':
+      return Wallet;
+    default:
+      return Bell;
+  }
+};
+
+const hydrateUpdateIcons = (items: any[]) =>
+  Array.isArray(items)
+    ? items.map((item) => ({
+      ...item,
+      icon: typeof item?.icon === 'function' ? item.icon : resolveUpdateIcon(item?.type),
+    }))
+    : [];
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.35;
@@ -138,8 +212,22 @@ export default function UpdatesScreen({ navigation, route }: any) {
   const { colors, isDark } = useTheme();
   const { highlightId, highlightType, filterCategory, filterTitle } = route?.params || {};
   const { t } = useLanguage();
+  const { user, member, isPlatformSuperAdmin } = useAuth();
+  const { activeChurch } = useChurch();
+  const scopedChurchId = activeChurch?.id || member?.churchId || 'rhema';
+  const scopedUid = user?.uid || member?.id || 'guest';
+  const updatesCacheKey = React.useMemo(
+    () => makeScopedCacheKey('updates_feed_v1', scopedChurchId, scopedUid),
+    [scopedChurchId, scopedUid]
+  );
+  const initialCachedUpdates = React.useMemo(() => {
+    const mem = getInstantMemory<any[]>(updatesCacheKey);
+    return mem && mem.length > 0 ? hydrateUpdateIcons(mem) : null;
+  }, [updatesCacheKey]);
 
   const getTypeName = (type: string) => {
+    if (type === 'online_meeting') return 'LIVE MEETING';
+    if (type === 'online_meeting_scheduled') return 'MEETING SCHEDULED';
     if (type === 'testimony_admin') return 'TESTIMONY REVIEW';
     if (type === 'testimony_published') return 'NEW TESTIMONY';
     if (type === 'testimony_member_status') return 'TESTIMONY UPDATE';
@@ -164,6 +252,10 @@ export default function UpdatesScreen({ navigation, route }: any) {
     if (type === 'registration_request_admin') return 'REGISTRATION APPROVAL';
     if (type === 'registration_approved') return 'REGISTRATION APPROVED';
     if (type === 'registration_rejected') return 'REGISTRATION UPDATE';
+    if (type === 'expense_approval') return 'EXPENSE APPROVAL';
+    if (type === 'expense_approved') return 'EXPENSE APPROVED';
+    if (type === 'expense_rejected') return 'EXPENSE REJECTED';
+    if (type === 'invoice') return 'INVOICE';
     if (type === 'kids_check_in') return 'KIDS CHECK-IN';
     if (type === 'kids_check_out') return 'KIDS CHECK-OUT';
     if (type === 'kids_absent') return 'KIDS ATTENDANCE';
@@ -173,15 +265,36 @@ export default function UpdatesScreen({ navigation, route }: any) {
     return trans && trans !== `updates.types.${type}` ? trans.toUpperCase() : type.toUpperCase();
   };
 
-  const [dynamicUpdates, setDynamicUpdates] = useState<any[]>([]);
+  const [dynamicUpdates, setDynamicUpdates] = useState<any[]>(initialCachedUpdates || []);
   const [broadcastsList, setBroadcastsList] = useState<any[]>([]);
   const [churchNotifsList, setChurchNotifsList] = useState<any[]>([]);
   const [meetingsList, setMeetingsList] = useState<any[]>([]);
   const [memberNotifsList, setMemberNotifsList] = useState<any[]>([]);
+  const hasLiveSnapshotRef = React.useRef(false);
 
   useEffect(() => {
-    const combined = [...broadcastsList, ...churchNotifsList, ...meetingsList, ...memberNotifsList].sort((a, b) => (b.rawDate || 0) - (a.rawDate || 0));
+    let active = true;
+    hasLiveSnapshotRef.current = false;
+    const mem = getInstantMemory<any[]>(updatesCacheKey);
+    if (mem && mem.length > 0) {
+      setDynamicUpdates(hydrateUpdateIcons(mem));
+      setLoading(false);
+    } else {
+      readInstantCache<any[]>(updatesCacheKey).then((cached) => {
+        if (!active || hasLiveSnapshotRef.current || !cached?.data?.length) return;
+        setDynamicUpdates(hydrateUpdateIcons(cached.data));
+        setLoading(false);
+      });
+    }
+    return () => {
+      active = false;
+    };
+  }, [updatesCacheKey]);
+
+  useEffect(() => {
+    const combined = [...churchNotifsList, ...broadcastsList, ...meetingsList, ...memberNotifsList].sort((a, b) => (b.rawDate || 0) - (a.rawDate || 0));
     const seenIds = new Set<string>();
+    const seenMeetingKeys = new Set<string>();
     const seenVolunteerKeys = new Set<string>();
     const seenRosterAlertKeys = new Set<string>();
     const seenLiveStreams = new Set<string>();
@@ -192,6 +305,15 @@ export default function UpdatesScreen({ navigation, route }: any) {
         return false;
       }
       seenIds.add(item.id);
+
+      // Deduplicate online meeting notifications by event kind + meetingId
+      if (item.type === 'online_meeting' || item.type === 'online_meeting_scheduled') {
+        const mKey = `${item.type}|${item.meetingId || item.id}`;
+        if (seenMeetingKeys.has(mKey)) {
+          return false;
+        }
+        seenMeetingKeys.add(mKey);
+      }
 
       // Deduplicate Bible Quiz updates (e.g. Daily Bible Quiz logged across both broadcasts & notifications)
       if (item.type === 'quiz' || item.type === 'bible_quiz' || item.type === 'quiz_scheduled') {
@@ -233,9 +355,14 @@ export default function UpdatesScreen({ navigation, route }: any) {
       return true;
     });
     setDynamicUpdates(deduplicated);
-  }, [broadcastsList, churchNotifsList, meetingsList, memberNotifsList]);
+    if (deduplicated.length > 0 || hasLiveSnapshotRef.current) {
+      hasLiveSnapshotRef.current = true;
+      const serializable = deduplicated.map(({ icon, sourceRef, ...rest }) => rest);
+      writeInstantCache(updatesCacheKey, serializable).catch(() => { });
+    }
+  }, [broadcastsList, churchNotifsList, meetingsList, memberNotifsList, updatesCacheKey]);
   const [selectedUpdate, setSelectedUpdate] = useState<any | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(() => !(initialCachedUpdates && initialCachedUpdates.length > 0));
   const [clearingAll, setClearingAll] = useState(false);
   const [showClearConfirmModal, setShowClearConfirmModal] = useState(false);
   const [showClearSuccessModal, setShowClearSuccessModal] = useState(false);
@@ -243,10 +370,9 @@ export default function UpdatesScreen({ navigation, route }: any) {
   const [hasAutoOpened, setHasAutoOpened] = useState(false);
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const [clearedBeforeTimestamp, setClearedBeforeTimestamp] = useState<number>(0);
-  const { user, member } = useAuth();
-  const { activeChurch } = useChurch();
   const adminRoleStr = `${member?.userType || ''} ${(member as any)?.role || ''}`.toUpperCase();
-  const isAdmin = adminRoleStr.includes('ADMIN') || adminRoleStr.includes('SUPER') || adminRoleStr.includes('PASTOR');
+  const isSuperAdmin = isSuperAdminMember(member, isPlatformSuperAdmin);
+  const isAdmin = isSuperAdmin || adminRoleStr.includes('ADMIN') || adminRoleStr.includes('PASTOR');
 
   const handleBack = () => {
     if (selectedUpdate) {
@@ -282,9 +408,9 @@ export default function UpdatesScreen({ navigation, route }: any) {
   useEffect(() => {
     const loadDeletedIds = async () => {
       try {
-        const stored = await AsyncStorage.getItem('@deleted_notification_ids');
-        if (stored) {
-          setDeletedIds(JSON.parse(stored));
+        const storedIds = await readScopedDeletedNotifIds(scopedChurchId, scopedUid);
+        if (storedIds.length > 0) {
+          setDeletedIds(storedIds);
         }
         const userKey = user?.uid || member?.id || 'guest';
         const storedClearedAt = await AsyncStorage.getItem(`@notifications_cleared_at_${userKey}`);
@@ -296,7 +422,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
       }
     };
     loadDeletedIds();
-  }, [user?.uid, member?.id]);
+  }, [scopedChurchId, scopedUid, user?.uid, member?.id]);
 
   /**
    * Permanently delete notification document(s) from Firebase across notifications, broadcasts,
@@ -378,9 +504,9 @@ export default function UpdatesScreen({ navigation, route }: any) {
       setMeetingsList((prev) => prev.filter((i) => !deleteSet.has(String(i.id))));
       setDynamicUpdates((prev) => prev.filter((i) => !deleteSet.has(String(i.id))));
 
-      await AsyncStorage.setItem('@deleted_notification_ids', JSON.stringify(updated));
+      await writeScopedDeletedNotifIds(scopedChurchId, scopedUid, updated);
       await markJobCircleNotificationsRead(idsToRemove);
-      permanentlyDeleteFromFirebase(idsToRemove, refsToRemove).catch(() => {});
+      permanentlyDeleteFromFirebase(idsToRemove, refsToRemove).catch(() => { });
     } catch (e) {
       console.error('Error deleting notification:', e);
     }
@@ -459,10 +585,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
       setSelectedUpdate(null);
 
       // 2. Persist state in AsyncStorage
-      await AsyncStorage.setItem(
-        '@deleted_notification_ids',
-        JSON.stringify(updatedDeletedIds)
-      );
+      await writeScopedDeletedNotifIds(scopedChurchId, scopedUid, updatedDeletedIds);
       if (!filterCategory) {
         await AsyncStorage.setItem(
           `@notifications_cleared_at_${userKey}`,
@@ -511,6 +634,11 @@ export default function UpdatesScreen({ navigation, route }: any) {
       return null;
     }
 
+    // SECURITY: Expense approvals, decisions & platform super-admin notices are strictly Super Admin only
+    if ((data.targetRole === 'super_admin' || data.type === 'expense_approval' || data.type === 'expense_approved' || data.type === 'expense_rejected' || data.type === 'invoice' || data.type === 'new_church') && !isSuperAdmin) {
+      return null;
+    }
+
     // SECURITY: If broadcast/notification is targeted to a specific user, skip it if not for this user
     const targetIdVal = data.targetMemberId || data.targetUid || data.recipientId;
     const isPhoneTargeted = data.targetPhone && typeof data.targetPhone === 'string' && data.targetPhone.trim().length > 0;
@@ -550,8 +678,12 @@ export default function UpdatesScreen({ navigation, route }: any) {
 
     if (data.type === 'online_meeting') {
       icon = Video;
-      color = '#3b82f6';
+      color = '#ef4444';
       resolvedType = 'online_meeting';
+    } else if (data.type === 'online_meeting_scheduled') {
+      icon = Calendar;
+      color = '#2563EB';
+      resolvedType = 'online_meeting_scheduled';
     } else if (data.type === 'youtube_live' || data.type === 'live' || (data.title?.includes('🎥') && !data.title?.toLowerCase().includes('online meeting') && !data.title?.toLowerCase().includes('google meet') && !data.title?.toLowerCase().includes('zoom'))) {
       icon = Tv;
       color = '#ef4444';
@@ -641,6 +773,18 @@ export default function UpdatesScreen({ navigation, route }: any) {
       icon = AlertTriangle;
       color = '#EF4444';
       resolvedType = 'registration_rejected';
+    } else if (data.type === 'expense_approved') {
+      icon = CheckCircle2;
+      color = '#10B981';
+      resolvedType = 'expense_approved';
+    } else if (data.type === 'expense_rejected') {
+      icon = AlertTriangle;
+      color = '#EF4444';
+      resolvedType = 'expense_rejected';
+    } else if (data.type === 'expense_approval' || data.type === 'invoice') {
+      icon = Wallet;
+      color = '#F43F5E';
+      resolvedType = data.type;
     } else if (data.type === 'admin_roster_alert' || data.title?.includes('Response Deadline Expired') || data.title?.includes('No Volunteers:') || data.title?.includes('All Volunteers Declined') || data.title?.includes('Unfilled Dut')) {
       icon = Layers;
       color = '#DC2626';
@@ -674,17 +818,17 @@ export default function UpdatesScreen({ navigation, route }: any) {
       color = '#7C3AED';
       resolvedType = 'prayer_request_admin';
     } else if (
-      data.type === 'prayer_request_member' || 
-      data.title?.includes('Prayer Request Approved') || 
+      data.type === 'prayer_request_member' ||
+      data.title?.includes('Prayer Request Approved') ||
       data.title?.includes('Pastoral Prayer Response')
     ) {
       icon = Heart;
       color = '#7C3AED';
       resolvedType = 'prayer_request_member';
     } else if (
-      data.type === 'baptism_request_member' || 
-      data.type === 'baptism_request' || 
-      data.title?.includes('Baptism Request Update') || 
+      data.type === 'baptism_request_member' ||
+      data.type === 'baptism_request' ||
+      data.title?.includes('Baptism Request Update') ||
       data.title?.includes('Baptism Request Approved')
     ) {
       icon = Droplets;
@@ -755,7 +899,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
     }
 
     let dateStr = '';
-    
+
     // Extract and format exact publication date & time from createdAt
     if (data.createdAt && typeof data.createdAt.toDate === 'function') {
       const dt = data.createdAt.toDate();
@@ -819,7 +963,18 @@ export default function UpdatesScreen({ navigation, route }: any) {
       type: resolvedType,
       icon: icon,
       color: color,
-      url: data.url || '',
+      url: data.url || data.meetingLink || '',
+      meetingId: data.meetingId || null,
+      meetingLink: data.meetingLink || data.url || '',
+      provider: data.provider || data.meetingType || null,
+      password: data.password || null,
+      teacherName: data.teacherName || data.teacher || null,
+      meetingDate: data.date || null,
+      startTimeLabel: data.startTimeLabel || null,
+      endTimeLabel: data.endTimeLabel || null,
+      topic: data.topic || null,
+      bibleBook: data.bibleBook || null,
+      meetingStatus: data.status || null,
       videoId: data.videoId || null,
       imageUrl: data.imageUrl || null,
       sermonId: data.sermonId || (resolvedType === 'sermon' && data.id && !String(data.id).startsWith('sermon_') ? data.id : null) || data.relatedId || (resolvedType === 'sermon' ? docId.replace(/^sermon_/, '') : null),
@@ -899,7 +1054,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
 
     // Query church notifications directly without a 12-item `where('type', 'in', ...)`
     // (which exceeded Firestore's 10-element `in` filter limit and threw a synchronous error)
-    let unsubscribeChurchNotifs = () => {};
+    let unsubscribeChurchNotifs = () => { };
     try {
       const qChurchNotifs = query(
         collection(db, 'Rhema Church', churchToQuery, 'notifications'),
@@ -972,10 +1127,10 @@ export default function UpdatesScreen({ navigation, route }: any) {
           }
         );
         memberUnsubs.push(unsubMem);
-      } catch (_) {}
+      } catch (_) { }
     }
 
-    let unsubscribeMeetings = () => {};
+    let unsubscribeMeetings = () => { };
     try {
       const qMeetings = query(
         collection(db, 'Rhema Church', churchToQuery, 'online_meetings'),
@@ -987,33 +1142,62 @@ export default function UpdatesScreen({ navigation, route }: any) {
         qMeetings,
         (snapshot) => {
           if (snapshot) {
-            const list = snapshot.docs.map((doc) => {
-              const data = doc.data();
-              let dateStr = new Date().toISOString().split('T')[0];
-              if (data.startTime && typeof data.startTime.toDate === 'function') {
-                const dt = data.startTime.toDate();
-                dateStr =
-                  dt.toLocaleDateString() +
-                  ' • ' +
-                  dt.toLocaleTimeString('en-US', {
-                    hour: 'numeric',
-                    minute: '2-digit',
-                    hour12: true,
-                  });
-              }
+            const list = snapshot.docs
+              .map((doc) => ({ id: doc.id, data: doc.data() }))
+              .filter(
+                ({ data }) =>
+                  data.status === 'live' ||
+                  data.status === 'LIVE' ||
+                  data.liveNotified === true
+              )
+              .map(({ id, data }) => {
+                let dateStr = new Date().toISOString().split('T')[0];
+                if (data.startedAt && typeof data.startedAt.toDate === 'function') {
+                  const dt = data.startedAt.toDate();
+                  dateStr =
+                    dt.toLocaleDateString() +
+                    ' • ' +
+                    dt.toLocaleTimeString('en-US', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true,
+                    });
+                } else if (data.startTime && typeof data.startTime.toDate === 'function') {
+                  const dt = data.startTime.toDate();
+                  dateStr =
+                    dt.toLocaleDateString() +
+                    ' • ' +
+                    dt.toLocaleTimeString('en-US', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true,
+                    });
+                }
 
-              return {
-                id: doc.id,
-                title: t('updates.newOnlineMeeting'),
-                content: `${data.title || ''} ${t('updates.meetingScheduled')}`.trim(),
-                date: dateStr,
-                type: 'online_meeting',
-                icon: Video,
-                color: '#3B82F6',
-                url: data.meetingLink || '',
-                rawDate: data.createdAt?.toMillis?.() || 0,
-              };
-            });
+                return {
+                  id: `meeting_live_${id}`,
+                  meetingId: id,
+                  title: `🔴 Live Now: ${data.title || t('updates.newOnlineMeeting')}`,
+                  content: `${data.provider === 'google_meet' ? 'Google Meet' : 'Zoom Meeting'} is now live. Tap to join now.`.trim(),
+                  date: dateStr,
+                  type: 'online_meeting',
+                  icon: Video,
+                  color: '#EF4444',
+                  url: data.meetingLink || data.url || '',
+                  meetingLink: data.meetingLink || data.url || '',
+                  provider: data.provider || data.meetingType || 'google_meet',
+                  password: data.password || '',
+                  teacherName: data.teacherName || data.teacher || '',
+                  meetingDate: data.date || '',
+                  startTimeLabel: data.startTimeLabel || '',
+                  endTimeLabel: data.endTimeLabel || '',
+                  topic: data.topic || '',
+                  bibleBook: data.bibleBook || '',
+                  meetingStatus: 'live',
+                  churchId: churchToQuery,
+                  rawDate: data.startedAt?.toMillis?.() || data.createdAt?.toMillis?.() || 0,
+                };
+              });
             setMeetingsList(list);
           }
         },
@@ -1021,7 +1205,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
           console.error('Error fetching meetings:', error);
         }
       );
-    } catch (_) {}
+    } catch (_) { }
 
     return () => {
       unsubscribe();
@@ -1032,26 +1216,28 @@ export default function UpdatesScreen({ navigation, route }: any) {
   }, [activeChurch?.id, member?.churchId, user?.phoneNumber, member?.phone, member?.id, user?.uid, isAdmin]);
   const allUpdates = dynamicUpdates;
   const deletedSet = React.useMemo(() => new Set(deletedIds.map(String)), [deletedIds]);
-  const visibleUpdates = allUpdates.filter(update => {
-    if (!update || !update.id) return false;
-    if (deletedSet.has(String(update.id))) return false;
-    if (clearedBeforeTimestamp > 0 && update.rawDate && update.rawDate <= clearedBeforeTimestamp) {
-      return false;
-    }
-    if (filterCategory === 'job_circle') {
-      const isJobCircle =
-        update.type === 'job_opportunity_new' ||
-        update.type === 'job_application_admin' ||
-        update.type === 'job_application_member' ||
-        update.opportunityId ||
-        update.applicationId ||
-        update.title?.includes('Ministry Opportunity') ||
-        update.title?.includes('Ministry Application') ||
-        update.title?.includes('Ministry Interview');
-      return isJobCircle;
-    }
-    return true;
-  });
+  const visibleUpdates = React.useMemo(() => {
+    return allUpdates.filter(update => {
+      if (!update || !update.id) return false;
+      if (deletedSet.has(String(update.id))) return false;
+      if (clearedBeforeTimestamp > 0 && update.rawDate && update.rawDate <= clearedBeforeTimestamp) {
+        return false;
+      }
+      if (filterCategory === 'job_circle') {
+        const isJobCircle =
+          update.type === 'job_opportunity_new' ||
+          update.type === 'job_application_admin' ||
+          update.type === 'job_application_member' ||
+          update.opportunityId ||
+          update.applicationId ||
+          update.title?.includes('Ministry Opportunity') ||
+          update.title?.includes('Ministry Application') ||
+          update.title?.includes('Ministry Interview');
+        return isJobCircle;
+      }
+      return true;
+    });
+  }, [allUpdates, deletedSet, clearedBeforeTimestamp, filterCategory]);
 
   const markJobCircleNotificationsRead = React.useCallback(
     async (idsToMark: string[]) => {
@@ -1138,7 +1324,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
         barStyle={isDark ? 'light-content' : 'dark-content'}
         backgroundColor={isDark ? colors.background : '#FAF7F2'}
       />
-      
+
       {/* ── Page Header Hero Card ── */}
       {/* ── Screen Header (Clean circular back button, title & Clear All button) ── */}
       <View
@@ -1195,9 +1381,18 @@ export default function UpdatesScreen({ navigation, route }: any) {
         )}
       </View>
 
-      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-        <View style={styles.content}>
-          {loading && visibleUpdates.length === 0 ? (
+      <FlatList
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        data={visibleUpdates}
+        keyExtractor={(item) => String(item.id)}
+        showsVerticalScrollIndicator={false}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={7}
+        removeClippedSubviews={Platform.OS === 'android'}
+        ListHeaderComponent={
+          loading && visibleUpdates.length === 0 ? (
             <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 100 }}>
               <ActivityIndicator size="large" color="#f0b429" />
               <Text style={{ marginTop: 16, fontSize: 14, color: '#94a3b8' }}>{t('updates.loadingUpdates')}</Text>
@@ -1207,205 +1402,252 @@ export default function UpdatesScreen({ navigation, route }: any) {
               <ActivityIndicator size="small" color={isDark ? '#E4E4E7' : '#1a2d5a'} />
               <Text style={[styles.loadingTxt, isDark && { color: colors.textSecondary }]}>{t('updates.syncingAlerts')}</Text>
             </View>
-          ) : null}
-
-          {visibleUpdates.map((update) => (
-            <SwipeableRow key={update.id} onDelete={() => handleDeleteUpdate(update.id, update)}>
-              <TouchableOpacity 
-                style={[
-                  styles.updateCard,
-                  isDark && { backgroundColor: colors.surface, borderColor: colors.border },
-                ]}
-                activeOpacity={0.7}
-                onPress={() => {
-                  if (update.type === 'song') {
-                    navigation.navigate('Songs', { songId: update.relatedId });
-                  } else if (update.type === 'promise') {
-                    navigation.navigate('Tabs', { screen: 'Promise' });
-                  } else if (update.type === 'sermon') {
-                    const sId = update.sermonId || update.relatedId || (update.id && !update.id.startsWith('sermon_') ? update.id : null);
-                    navigation.navigate('SermonVideo', { 
-                      sermonId: sId,
-                      sermonTitle: update.title,
-                      title: update.title
-                    });
-                  } else if (
-                    update.type === 'quiz' ||
-                    update.type === 'quiz_scheduled' ||
-                    update.type === 'bible_quiz' ||
-                    update.screen === 'BibleQuizDetail' ||
-                    update.quizId
-                  ) {
-                    const qId = update.quizId || update.relatedId || update.id;
-                    navigation.navigate('BibleQuizDetail', { quizId: qId, churchId: update.churchId });
-                  } else if (update.type === 'event') {
-                    if (update.eventId) {
-                      navigation.navigate('EventDetails', { eventId: update.eventId, id: update.eventId });
-                    } else {
-                      navigation.navigate('Events');
-                    }
-                  } else if (update.type === 'admin_roster_alert') {
-                    navigation.navigate('AdminRoot', {
-                      targetTab: 'Service Roster',
-                      serviceId: update.serviceId,
-                      roleId: update.roleId,
-                      timestamp: Date.now(),
-                    });
-                  } else if (update.type === 'service_roster' || update.type === 'rehearsal_alert') {
-                    navigation.navigate('MyService', {
-                      serviceId: update.serviceId,
-                      initialTab: 'roster',
-                    });
-                  } else if (
-                    update.type === 'service_assignment' ||
-                    update.type === 'service_responsibility_broadcast' ||
-                    update.type === 'service_reminder'
-                  ) {
-                    navigation.navigate('MyService', {
-                      serviceId: update.serviceId,
-                      initialTab: 'responsibilities',
-                    });
-                  } else if (update.type === 'volunteer_application_admin') {
-                    const appId = update.applicationId || update.relatedId || update.id;
-                    navigation.navigate('AdminRoot', {
-                      targetTab: 'Volunteer Management',
-                      applicationId: appId,
-                      subType: update.volunteerType || 'general',
-                      timestamp: Date.now(),
-                    });
-                  } else if (update.type === 'volunteer_post_new') {
-                    const postId = String(update.postId || update.referenceId || update.id || '').replace(/^vol_post_/, '');
-                    if (postId) {
-                      navigation.navigate('Volunteer', { postId });
-                    } else {
-                      navigation.navigate('Volunteer');
-                    }
-                  } else if (
-                    update.type === 'volunteer_application_member' ||
-                    update.type === 'volunteer_assignment' ||
-                    update.type === 'volunteer_event_change' ||
-                    update.type === 'volunteer_reminder'
-                  ) {
-                    if (update.eventId) {
-                      navigation.navigate('EventDetails', { eventId: update.eventId, id: update.eventId });
-                    } else {
-                      navigation.navigate('Volunteer');
-                    }
-                  } else if (
-                    update.type === 'baptism_request_admin' ||
-                    update.type === 'baptism_request' ||
-                    update.type === 'baptism'
-                  ) {
-                    const reqId = update.requestId || update.id;
-                    if (isAdmin) {
-                      navigation.navigate('AdminRoot', { targetTab: 'Baptism', requestId: reqId, timestamp: Date.now() });
-                    } else {
-                      navigation.navigate('BaptismRequest', { requestId: reqId });
-                    }
-                  } else if (update.type === 'prayer_request_admin' || update.type === 'prayer_request' || update.type === 'prayer' || update.type === 'prayer_request_member') {
-                    const pId = update.prayerId || update.requestId || update.id;
-                    if (isAdmin && update.type !== 'prayer_request_member') {
-                      navigation.navigate('AdminRoot', { targetTab: 'Prayers', prayerId: pId, requestId: pId, timestamp: Date.now() });
-                    } else {
-                      navigation.navigate('PrayerWall', { prayerId: pId });
-                    }
-                  } else if (update.type === 'attendance') {
-                    navigation.navigate('AttendanceScreen');
-                  } else if (update.type === 'testimony_admin') {
-                    const tId = update.testimonyId || update.relatedId || update.id;
-                    navigation.navigate('AdminRoot', {
-                      targetTab: 'Testimonies',
-                      testimonyId: tId,
-                      timestamp: Date.now(),
-                    });
-                  } else if (update.type === 'testimony_published' || update.type === 'testimony_member_status' || update.type === 'testimony') {
-                    const tId = update.testimonyId || update.relatedId || update.id;
-                    if (tId) {
-                      navigation.navigate('TestimonyDetail', {
-                        testimonyId: tId,
-                        churchId: update.churchId || activeChurch?.id || member?.churchId || 'rhema',
-                      });
-                    } else {
-                      navigation.navigate('Testimonies', { initialTab: 'mine' });
-                    }
-                  } else if (update.type === 'registration_request_admin') {
-                    navigation.navigate('AdminRoot', {
-                      targetTab: 'Approvals',
-                      requestId: update.requestId || update.referenceId || update.id,
-                      timestamp: Date.now(),
-                    });
-                  } else if (
-                    update.type === 'kids_check_in' ||
-                    update.type === 'kids_check_out' ||
-                    update.type === 'kids_absent' ||
-                    update.type === 'kids_teacher_enrollment'
-                  ) {
-                    navigation.navigate('KidsMinistry', {
-                      initialCategory:
-                        update.initialCategory ||
-                        (update.type === 'kids_teacher_enrollment' ? 'consent' : 'attendance'),
-                      childDocId: update.childDocId || undefined,
-                      programSessionId: update.programSessionId || undefined,
-                    });
-                  } else if (update.type === 'job_opportunity_new') {
-                    markJobCircleNotificationsRead([String(update.id)]);
-                    if (update.opportunityId) {
-                      navigation.navigate('OpportunityDetailScreen', { opportunityId: update.opportunityId });
-                    } else {
-                      navigation.navigate('JobCircle', { skipSplash: true });
-                    }
-                  } else if (update.type === 'job_application_admin') {
-                    markJobCircleNotificationsRead([String(update.id)]);
-                    navigation.navigate('AdminRoot', {
-                      targetTab: 'Job Circle',
-                      applicationId: update.applicationId,
-                      timestamp: Date.now(),
-                    });
-                  } else if (update.type === 'job_application_member') {
-                    markJobCircleNotificationsRead([String(update.id)]);
-                    if (update.opportunityId) {
-                      navigation.navigate('OpportunityDetailScreen', {
-                        opportunityId: update.opportunityId,
-                        applicationId: update.applicationId,
-                        timestamp: Date.now(),
-                      });
-                    } else {
-                      navigation.navigate('JobCircle', {
-                        skipSplash: true,
-                        initialTab: 'applications',
-                        applicationId: update.applicationId,
-                        timestamp: Date.now(),
-                      });
-                    }
-                  } else {
-                    setSelectedUpdate(update);
-                  }
-                }}
-              >
-                <View style={[styles.iconBox, { backgroundColor: update.color + '15' }]}>
-                  <update.icon size={22} color={update.color} />
-                </View>
-                <View style={styles.updateInfo}>
-                  <View style={styles.metaRow}>
-                    <Text style={[styles.typeTag, { color: update.color }]}>{getTypeName(update.type)}</Text>
-                    <Text style={[styles.dateTxt, isDark && { color: colors.textSecondary }]}>{formatDateDisplay(update.date)}</Text>
-                  </View>
-                  <Text style={[styles.updateTitle, isDark && { color: colors.text }]}>{update.title}</Text>
-                  <Text style={[styles.updateContent, isDark && { color: colors.textSecondary }]} numberOfLines={2}>{update.content}</Text>
-                </View>
-              </TouchableOpacity>
-            </SwipeableRow>
-          ))}
-
-          {visibleUpdates.length === 0 && !loading && (
+          ) : null
+        }
+        ListEmptyComponent={
+          !loading ? (
             <View style={styles.emptyContainer}>
               <Bell size={48} color={isDark ? '#64748B' : '#94a3b8'} style={{ marginBottom: 12 }} />
               <Text style={[styles.emptyText, { color: colors.text }]}>{t('updates.allCaughtUp')}</Text>
               <Text style={[styles.emptySubText, { color: colors.textSecondary }]}>{t('updates.emptySub')}</Text>
             </View>
-          )}
-        </View>
-      </ScrollView>
+          ) : null
+        }
+        renderItem={({ item: update }) => (
+          <SwipeableRow onDelete={() => handleDeleteUpdate(update.id, update)}>
+            <TouchableOpacity
+              style={[
+                styles.updateCard,
+                isDark && { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+              activeOpacity={0.7}
+              onPress={() => {
+                if (update.type === 'song') {
+                  navigation.navigate('Songs', { songId: update.relatedId });
+                } else if (update.type === 'promise') {
+                  navigation.navigate('Tabs', { screen: 'Promise' });
+                } else if (update.type === 'sermon') {
+                  const sId = update.sermonId || update.relatedId || (update.id && !update.id.startsWith('sermon_') ? update.id : null);
+                  navigation.navigate('SermonVideo', {
+                    sermonId: sId,
+                    sermonTitle: update.title,
+                    title: update.title
+                  });
+                } else if (
+                  update.type === 'quiz' ||
+                  update.type === 'quiz_scheduled' ||
+                  update.type === 'bible_quiz' ||
+                  update.screen === 'BibleQuizDetail' ||
+                  update.quizId
+                ) {
+                  const qId = update.quizId || update.relatedId || update.id;
+                  navigation.navigate('BibleQuizDetail', { quizId: qId, churchId: update.churchId });
+                } else if (update.type === 'event') {
+                  if (update.eventId) {
+                    navigation.navigate('EventDetails', { eventId: update.eventId, id: update.eventId });
+                  } else {
+                    navigation.navigate('Events');
+                  }
+                } else if (update.type === 'admin_roster_alert') {
+                  navigation.navigate('AdminRoot', {
+                    targetTab: 'Service Roster',
+                    serviceId: update.serviceId,
+                    roleId: update.roleId,
+                    timestamp: Date.now(),
+                  });
+                } else if (update.type === 'service_roster' || update.type === 'rehearsal_alert') {
+                  navigation.navigate('MyService', {
+                    serviceId: update.serviceId,
+                    initialTab: 'roster',
+                  });
+                } else if (
+                  update.type === 'service_assignment' ||
+                  update.type === 'service_responsibility_broadcast' ||
+                  update.type === 'service_reminder'
+                ) {
+                  navigation.navigate('MyService', {
+                    serviceId: update.serviceId,
+                    initialTab: 'responsibilities',
+                  });
+                } else if (update.type === 'volunteer_application_admin') {
+                  const appId = update.applicationId || update.relatedId || update.id;
+                  navigation.navigate('AdminRoot', {
+                    targetTab: 'Volunteer Management',
+                    applicationId: appId,
+                    subType: update.volunteerType || 'general',
+                    timestamp: Date.now(),
+                  });
+                } else if (update.type === 'volunteer_post_new') {
+                  const postId = String(update.postId || update.referenceId || update.id || '').replace(/^vol_post_/, '');
+                  if (postId) {
+                    navigation.navigate('Volunteer', { postId });
+                  } else {
+                    navigation.navigate('Volunteer');
+                  }
+                } else if (
+                  update.type === 'volunteer_application_member' ||
+                  update.type === 'volunteer_assignment' ||
+                  update.type === 'volunteer_event_change' ||
+                  update.type === 'volunteer_reminder'
+                ) {
+                  if (update.eventId) {
+                    navigation.navigate('EventDetails', { eventId: update.eventId, id: update.eventId });
+                  } else {
+                    navigation.navigate('Volunteer');
+                  }
+                } else if (
+                  update.type === 'baptism_request_admin' ||
+                  update.type === 'baptism_request' ||
+                  update.type === 'baptism'
+                ) {
+                  const reqId = update.requestId || update.id;
+                  if (isAdmin) {
+                    navigation.navigate('AdminRoot', { targetTab: 'Baptism', requestId: reqId, timestamp: Date.now() });
+                  } else {
+                    navigation.navigate('BaptismRequest', { requestId: reqId });
+                  }
+                } else if (update.type === 'prayer_request_admin' || update.type === 'prayer_request' || update.type === 'prayer' || update.type === 'prayer_request_member') {
+                  const pId = update.prayerId || update.requestId || update.id;
+                  if (isAdmin && update.type !== 'prayer_request_member') {
+                    navigation.navigate('AdminRoot', { targetTab: 'Prayers', prayerId: pId, requestId: pId, timestamp: Date.now() });
+                  } else {
+                    navigation.navigate('PrayerWall', { prayerId: pId });
+                  }
+                } else if (update.type === 'attendance') {
+                  navigation.navigate('AttendanceScreen');
+                } else if (update.type === 'testimony_admin') {
+                  const tId = update.testimonyId || update.relatedId || update.id;
+                  navigation.navigate('AdminRoot', {
+                    targetTab: 'Testimonies',
+                    testimonyId: tId,
+                    timestamp: Date.now(),
+                  });
+                } else if (update.type === 'testimony_published' || update.type === 'testimony_member_status' || update.type === 'testimony') {
+                  const tId = update.testimonyId || update.relatedId || update.id;
+                  if (tId) {
+                    navigation.navigate('TestimonyDetail', {
+                      testimonyId: tId,
+                      churchId: update.churchId || activeChurch?.id || member?.churchId || 'rhema',
+                    });
+                  } else {
+                    navigation.navigate('Testimonies', { initialTab: 'mine' });
+                  }
+                } else if (update.type === 'registration_request_admin') {
+                  navigation.navigate('AdminRoot', {
+                    targetTab: 'Approvals',
+                    requestId: update.requestId || update.referenceId || update.id,
+                    timestamp: Date.now(),
+                  });
+                } else if ((update.type === 'expense_approval' || update.type === 'expense_approved' || update.type === 'expense_rejected' || update.type === 'invoice') && isSuperAdmin) {
+                  const approvalSubTab =
+                    update.type === 'expense_approved'
+                      ? 'approved'
+                      : update.type === 'expense_rejected'
+                        ? 'rejected'
+                        : 'pending';
+                  navigation.navigate('AdminRoot', {
+                    targetTab: 'Expense',
+                    innerTab: update.type === 'invoice' ? 'invoice' : 'approvals',
+                    approvalSubTab,
+                    expenseId: update.expenseId || update.relatedId || update.id,
+                    timestamp: Date.now(),
+                  });
+                } else if (
+                  update.type === 'kids_check_in' ||
+                  update.type === 'kids_check_out' ||
+                  update.type === 'kids_absent' ||
+                  update.type === 'kids_teacher_enrollment'
+                ) {
+                  navigation.navigate('KidsMinistry', {
+                    initialCategory:
+                      update.initialCategory ||
+                      (update.type === 'kids_teacher_enrollment' ? 'consent' : 'attendance'),
+                    childDocId: update.childDocId || undefined,
+                    programSessionId: update.programSessionId || undefined,
+                  });
+                } else if (update.type === 'job_opportunity_new') {
+                  markJobCircleNotificationsRead([String(update.id)]);
+                  if (update.opportunityId) {
+                    navigation.navigate('OpportunityDetailScreen', { opportunityId: update.opportunityId });
+                  } else {
+                    navigation.navigate('JobCircle', { skipSplash: true });
+                  }
+                } else if (update.type === 'job_application_admin') {
+                  markJobCircleNotificationsRead([String(update.id)]);
+                  navigation.navigate('AdminRoot', {
+                    targetTab: 'Job Circle',
+                    applicationId: update.applicationId,
+                    timestamp: Date.now(),
+                  });
+                } else if (update.type === 'job_application_member') {
+                  markJobCircleNotificationsRead([String(update.id)]);
+                  if (update.opportunityId) {
+                    navigation.navigate('OpportunityDetailScreen', {
+                      opportunityId: update.opportunityId,
+                      applicationId: update.applicationId,
+                      timestamp: Date.now(),
+                    });
+                  } else {
+                    navigation.navigate('JobCircle', {
+                      skipSplash: true,
+                      initialTab: 'applications',
+                      applicationId: update.applicationId,
+                      timestamp: Date.now(),
+                    });
+                  }
+                } else if (update.type === 'online_meeting' || update.type === 'online_meeting_scheduled') {
+                  const targetChurchId = update.churchId || activeChurch?.id || member?.churchId || 'rhema';
+                  const rawMeetingId =
+                    update.meetingId ||
+                    String(update.id || '')
+                      .replace(/^meeting_live_/, '')
+                      .replace(/^meeting_sched_/, '');
+                  if (rawMeetingId) {
+                    navigation.navigate('OnlineMeetingDetail', {
+                      meetingId: rawMeetingId,
+                      churchId: targetChurchId,
+                      meeting: {
+                        id: rawMeetingId,
+                        churchId: targetChurchId,
+                        title: update.title?.replace(/^🔴 Live Now:\s*/i, '').replace(/^New Meeting Scheduled:\s*/i, '') || 'Online Meeting',
+                        meetingLink: update.meetingLink || update.url || '',
+                        meetingUrl: update.meetingLink || update.url || '',
+                        url: update.meetingLink || update.url || '',
+                        provider: update.provider || 'google_meet',
+                        meetingType: update.provider || 'google_meet',
+                        password: update.password || '',
+                        date: update.meetingDate || '',
+                        startTimeLabel: update.startTimeLabel || '',
+                        endTimeLabel: update.endTimeLabel || '',
+                        teacherName: update.teacherName || '',
+                        topic: update.topic || '',
+                        bibleBook: update.bibleBook || '',
+                        status: update.type === 'online_meeting' ? 'live' : 'scheduled',
+                      },
+                    });
+                  } else {
+                    navigation.navigate('OnlineMeetings');
+                  }
+                } else {
+                  setSelectedUpdate(update);
+                }
+              }}
+            >
+              <View style={[styles.iconBox, { backgroundColor: update.color + '15' }]}>
+                <update.icon size={22} color={update.color} />
+              </View>
+              <View style={styles.updateInfo}>
+                <View style={styles.metaRow}>
+                  <Text style={[styles.typeTag, { color: update.color }]}>{getTypeName(update.type)}</Text>
+                  <Text style={[styles.dateTxt, isDark && { color: colors.textSecondary }]}>{formatDateDisplay(update.date)}</Text>
+                </View>
+                <Text style={[styles.updateTitle, isDark && { color: colors.text }]}>{update.title}</Text>
+                <Text style={[styles.updateContent, isDark && { color: colors.textSecondary }]} numberOfLines={2}>{update.content}</Text>
+              </View>
+            </TouchableOpacity>
+          </SwipeableRow>
+        )}
+      />
 
       {/* ── Visual Celebration & Details Modal ── */}
       <Modal
@@ -1414,13 +1656,13 @@ export default function UpdatesScreen({ navigation, route }: any) {
         animationType="fade"
         onRequestClose={() => setSelectedUpdate(null)}
       >
-        <TouchableOpacity 
-          style={styles.modalOverlay} 
-          activeOpacity={1} 
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
           onPress={() => setSelectedUpdate(null)}
         >
-          <TouchableOpacity 
-            activeOpacity={1} 
+          <TouchableOpacity
+            activeOpacity={1}
             style={[
               styles.modalCard,
               isDark && { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
@@ -1431,19 +1673,19 @@ export default function UpdatesScreen({ navigation, route }: any) {
             ]}
           >
             {/* Modal Close Button */}
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[
                 styles.modalCloseBtn,
                 isDark &&
-                  selectedUpdate?.type !== 'birthday' &&
-                  selectedUpdate?.type !== 'anniversary' && { backgroundColor: colors.background },
+                selectedUpdate?.type !== 'birthday' &&
+                selectedUpdate?.type !== 'anniversary' && { backgroundColor: colors.background },
                 (selectedUpdate?.type === 'birthday' || selectedUpdate?.type === 'anniversary') && styles.modalCloseBtnGold
-              ]} 
+              ]}
               onPress={() => setSelectedUpdate(null)}
             >
               <X size={20} color={
                 selectedUpdate?.type === 'birthday' ? '#b45309' :
-                selectedUpdate?.type === 'anniversary' ? '#be185d' : (isDark ? colors.textSecondary : '#475569')
+                  selectedUpdate?.type === 'anniversary' ? '#be185d' : (isDark ? colors.textSecondary : '#475569')
               } />
             </TouchableOpacity>
 
@@ -1460,7 +1702,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
                 <Text style={styles.celebrationTitleEn}>{t('updates.birthdayGreeting')}</Text>
                 <Text style={styles.celebrationTitleTe}>{t('updates.birthdaySubGreeting')}</Text>
                 <View style={styles.dividerGold} />
-                
+
                 <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
                   <Text style={styles.celebrationGreeting}>
                     {selectedUpdate?.content}
@@ -1526,7 +1768,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
               <View style={styles.standardModalContainer}>
                 <View style={styles.standardModalHeader}>
                   <View style={[
-                    styles.stdIconBox, 
+                    styles.stdIconBox,
                     (selectedUpdate?.type === 'emergency' || selectedUpdate?.title?.includes('🚨') || selectedUpdate?.type === 'youtube_live' || selectedUpdate?.type === 'admin_roster_alert') && styles.stdIconBoxEmergency,
                     (selectedUpdate?.type === 'service_roster' || selectedUpdate?.type === 'volunteer_application_member' || selectedUpdate?.type === 'service_reminder') && { backgroundColor: '#ECFDF5' },
                     (selectedUpdate?.type === 'service_assignment' || selectedUpdate?.type === 'service_responsibility_broadcast' || selectedUpdate?.type === 'volunteer_assignment') && { backgroundColor: '#EFF6FF' },
@@ -1623,7 +1865,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     onPress={() => {
                       const sId = selectedUpdate?.sermonId || selectedUpdate?.relatedId || (selectedUpdate?.id && !selectedUpdate?.id.startsWith('sermon_') ? selectedUpdate?.id : null);
                       setSelectedUpdate(null);
-                      navigation.navigate('SermonVideo', { 
+                      navigation.navigate('SermonVideo', {
                         sermonId: sId,
                         sermonTitle: selectedUpdate?.title,
                         title: selectedUpdate?.title
@@ -1789,51 +2031,94 @@ export default function UpdatesScreen({ navigation, route }: any) {
                   </TouchableOpacity>
                 )}
 
-                {(selectedUpdate?.type === 'volunteer_application_member' ||
-                  selectedUpdate?.type === 'volunteer_assignment' ||
-                  selectedUpdate?.type === 'volunteer_event_change' ||
-                  selectedUpdate?.type === 'volunteer_reminder' ||
-                  selectedUpdate?.type === 'volunteer_post_new') && (
+                {(selectedUpdate?.type === 'expense_approval' || selectedUpdate?.type === 'expense_approved' || selectedUpdate?.type === 'expense_rejected' || selectedUpdate?.type === 'invoice') && isSuperAdmin && (
                   <TouchableOpacity
                     style={[
                       styles.joinLiveBtn,
                       {
                         backgroundColor:
-                          selectedUpdate?.volunteerStatus === 'rejected' || selectedUpdate?.volunteerStatus === 'declined'
-                            ? '#475569'
-                            : selectedUpdate?.type === 'volunteer_assignment'
-                            ? '#2563EB'
-                            : '#059669',
+                          selectedUpdate?.type === 'expense_approved'
+                            ? '#10B981'
+                            : selectedUpdate?.type === 'expense_rejected'
+                              ? '#EF4444'
+                              : '#F43F5E',
                         marginTop: 16,
                       },
                     ]}
                     onPress={() => {
-                      const evId = selectedUpdate?.eventId;
-                      const postId = String(selectedUpdate?.postId || selectedUpdate?.referenceId || '').replace(/^vol_post_/, '');
+                      const expId = selectedUpdate?.expenseId || selectedUpdate?.relatedId || selectedUpdate?.id;
+                      const innerTab = selectedUpdate?.type === 'invoice' ? 'invoice' : 'approvals';
+                      const approvalSubTab =
+                        selectedUpdate?.type === 'expense_approved'
+                          ? 'approved'
+                          : selectedUpdate?.type === 'expense_rejected'
+                            ? 'rejected'
+                            : 'pending';
                       setSelectedUpdate(null);
-                      if (evId) {
-                        navigation.navigate('EventDetails', { eventId: evId, id: evId });
-                      } else if (selectedUpdate?.type === 'volunteer_post_new' && postId) {
-                        navigation.navigate('Volunteer', { postId });
-                      } else {
-                        navigation.navigate('Volunteer');
-                      }
+                      navigation.navigate('AdminRoot', {
+                        targetTab: 'Expense',
+                        innerTab,
+                        approvalSubTab,
+                        expenseId: expId,
+                        timestamp: Date.now(),
+                      });
                     }}
                   >
                     <Text style={styles.joinLiveBtnTxt}>
-                      {selectedUpdate?.eventId
-                        ? '📅 View Event Volunteer Details'
-                        : selectedUpdate?.type === 'volunteer_post_new'
-                        ? '🤝 Apply to Volunteer'
-                        : '🤝 Open Volunteer Portal'}
+                      {selectedUpdate?.type === 'expense_approved'
+                        ? '✅ View Approved Expense'
+                        : selectedUpdate?.type === 'expense_rejected'
+                          ? '❌ View Rejected Expense'
+                          : '💼 Review Expense Approval'}
                     </Text>
                   </TouchableOpacity>
                 )}
 
-                {selectedUpdate?.type === 'online_meeting' && (
-                  <View style={{ marginTop: 14 }}>
+                {(selectedUpdate?.type === 'volunteer_application_member' ||
+                  selectedUpdate?.type === 'volunteer_assignment' ||
+                  selectedUpdate?.type === 'volunteer_event_change' ||
+                  selectedUpdate?.type === 'volunteer_reminder' ||
+                  selectedUpdate?.type === 'volunteer_post_new') && (
+                    <TouchableOpacity
+                      style={[
+                        styles.joinLiveBtn,
+                        {
+                          backgroundColor:
+                            selectedUpdate?.volunteerStatus === 'rejected' || selectedUpdate?.volunteerStatus === 'declined'
+                              ? '#475569'
+                              : selectedUpdate?.type === 'volunteer_assignment'
+                                ? '#2563EB'
+                                : '#059669',
+                          marginTop: 16,
+                        },
+                      ]}
+                      onPress={() => {
+                        const evId = selectedUpdate?.eventId;
+                        const postId = String(selectedUpdate?.postId || selectedUpdate?.referenceId || '').replace(/^vol_post_/, '');
+                        setSelectedUpdate(null);
+                        if (evId) {
+                          navigation.navigate('EventDetails', { eventId: evId, id: evId });
+                        } else if (selectedUpdate?.type === 'volunteer_post_new' && postId) {
+                          navigation.navigate('Volunteer', { postId });
+                        } else {
+                          navigation.navigate('Volunteer');
+                        }
+                      }}
+                    >
+                      <Text style={styles.joinLiveBtnTxt}>
+                        {selectedUpdate?.eventId
+                          ? '📅 View Event Volunteer Details'
+                          : selectedUpdate?.type === 'volunteer_post_new'
+                            ? '🤝 Apply to Volunteer'
+                            : '🤝 Open Volunteer Portal'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                {(selectedUpdate?.type === 'online_meeting' || selectedUpdate?.type === 'online_meeting_scheduled') && (
+                  <View style={{ marginTop: 14, gap: 10 }}>
                     {selectedUpdate?.password ? (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F1F5F9', padding: 10, borderRadius: 10, marginBottom: 10, borderWidth: 1, borderColor: '#CBD5E1' }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F1F5F9', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#CBD5E1' }}>
                         <Text style={{ fontSize: 13, color: '#1E293B', fontWeight: '600' }}>
                           🔑 Passcode: <Text style={{ color: '#2563EB', fontWeight: '800' }}>{selectedUpdate.password}</Text>
                         </Text>
@@ -1852,65 +2137,109 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     ) : null}
 
                     <TouchableOpacity
-                      style={[styles.joinLiveBtn, { backgroundColor: '#10B981' }]}
-                      onPress={async () => {
-                        const rawLink = selectedUpdate.url || selectedUpdate.meetingLink || selectedUpdate.link || '';
-                        const pwd = selectedUpdate.password || '';
+                      style={[styles.joinLiveBtn, { backgroundColor: '#1a2d5a' }]}
+                      onPress={() => {
+                        const targetChurchId = selectedUpdate?.churchId || activeChurch?.id || member?.churchId || 'rhema';
+                        const rawMeetingId =
+                          selectedUpdate?.meetingId ||
+                          String(selectedUpdate?.id || '')
+                            .replace(/^meeting_live_/, '')
+                            .replace(/^meeting_sched_/, '');
+                        const snapshotUpdate = selectedUpdate;
                         setSelectedUpdate(null);
-
-                        if (!rawLink || !rawLink.trim()) {
-                          Alert.alert('No Meeting Link', 'Meeting link is not available.');
-                          return;
-                        }
-
-                        let cleanUrl = rawLink.trim();
-                        if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
-                          cleanUrl = `https://${cleanUrl}`;
-                        }
-
-                        const churchId = activeChurch?.id || selectedUpdate.churchId || member?.churchId;
-                        const attendeeId = user?.uid || member?.id;
-                        if (churchId && selectedUpdate.meetingId && attendeeId) {
-                          firestore()
-                            .collection('Rhema Church')
-                            .doc(churchId)
-                            .collection('online_meetings')
-                            .doc(selectedUpdate.meetingId)
-                            .collection('attendees')
-                            .doc(attendeeId)
-                            .set({
-                              name: member?.name || user?.displayName || 'Church Member',
-                              profilePhoto: (member as any)?.profilePhoto || (member as any)?.photoURL || user?.photoURL || null,
-                              joinedAt: firestore.FieldValue.serverTimestamp()
-                            }, { merge: true })
-                            .catch(() => {});
-                        }
-
-                        const isZoom = cleanUrl.includes('zoom.us') || selectedUpdate.provider === 'zoom' || selectedUpdate.meetingType === 'zoom';
-                        try {
-                          if (isZoom) {
-                            await openZoomMeeting({
-                              meetingLink: cleanUrl,
-                              meetingId: selectedUpdate.meetingId,
-                              password: pwd,
-                              userName: (member?.name || user?.displayName) || undefined
-                            });
-                          } else {
-                            const canOpen = await Linking.canOpenURL(cleanUrl).catch(() => true);
-                            if (canOpen) {
-                              await Linking.openURL(cleanUrl);
-                            } else {
-                              Alert.alert('Error', `Cannot open meeting link: ${cleanUrl}`);
-                            }
-                          }
-                        } catch (err) {
-                          console.error('Could not open meeting link', err);
-                          Alert.alert('Error', 'Could not open meeting link. Please make sure Google Meet or a browser is installed.');
+                        if (rawMeetingId) {
+                          navigation.navigate('OnlineMeetingDetail', {
+                            meetingId: rawMeetingId,
+                            churchId: targetChurchId,
+                            meeting: {
+                              id: rawMeetingId,
+                              churchId: targetChurchId,
+                              title: snapshotUpdate?.title || 'Online Meeting',
+                              meetingLink: snapshotUpdate?.meetingLink || snapshotUpdate?.url || '',
+                              url: snapshotUpdate?.meetingLink || snapshotUpdate?.url || '',
+                              provider: snapshotUpdate?.provider || 'google_meet',
+                              meetingType: snapshotUpdate?.provider || 'google_meet',
+                              password: snapshotUpdate?.password || '',
+                              date: snapshotUpdate?.meetingDate || '',
+                              startTimeLabel: snapshotUpdate?.startTimeLabel || '',
+                              endTimeLabel: snapshotUpdate?.endTimeLabel || '',
+                              teacherName: snapshotUpdate?.teacherName || '',
+                              topic: snapshotUpdate?.topic || '',
+                              bibleBook: snapshotUpdate?.bibleBook || '',
+                              status: snapshotUpdate?.type === 'online_meeting' ? 'live' : 'scheduled',
+                            },
+                          });
+                        } else {
+                          navigation.navigate('OnlineMeetings');
                         }
                       }}
                     >
-                      <Text style={styles.joinLiveBtnTxt}>🎥 ● Join Live Stream</Text>
+                      <Text style={styles.joinLiveBtnTxt}>View Meeting Details</Text>
                     </TouchableOpacity>
+
+                    {selectedUpdate?.type === 'online_meeting' ? (
+                      <TouchableOpacity
+                        style={[styles.joinLiveBtn, { backgroundColor: '#10B981' }]}
+                        onPress={async () => {
+                          const rawLink = selectedUpdate.url || selectedUpdate.meetingLink || selectedUpdate.link || '';
+                          const pwd = selectedUpdate.password || '';
+                          const targetMId = selectedUpdate.meetingId;
+                          const churchId = activeChurch?.id || selectedUpdate.churchId || member?.churchId;
+                          setSelectedUpdate(null);
+
+                          if (!rawLink || !rawLink.trim()) {
+                            Alert.alert('No Meeting Link', 'Meeting link is not available.');
+                            return;
+                          }
+
+                          let cleanUrl = rawLink.trim();
+                          if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+                            cleanUrl = `https://${cleanUrl}`;
+                          }
+
+                          const attendeeId = user?.uid || member?.id;
+                          if (churchId && targetMId && attendeeId) {
+                            firestore()
+                              .collection('Rhema Church')
+                              .doc(churchId)
+                              .collection('online_meetings')
+                              .doc(targetMId)
+                              .collection('attendees')
+                              .doc(attendeeId)
+                              .set({
+                                name: member?.name || user?.displayName || 'Church Member',
+                                profilePhoto: (member as any)?.profilePhoto || (member as any)?.photoURL || user?.photoURL || null,
+                                joinedAt: firestore.FieldValue.serverTimestamp()
+                              }, { merge: true })
+                              .catch(() => { });
+                          }
+
+                          const isZoom = cleanUrl.includes('zoom.us') || selectedUpdate.provider === 'zoom' || selectedUpdate.meetingType === 'zoom';
+                          try {
+                            if (isZoom) {
+                              await openZoomMeeting({
+                                meetingLink: cleanUrl,
+                                meetingId: targetMId,
+                                password: pwd,
+                                userName: (member?.name || user?.displayName) || undefined
+                              });
+                            } else {
+                              const canOpen = await Linking.canOpenURL(cleanUrl).catch(() => true);
+                              if (canOpen) {
+                                await Linking.openURL(cleanUrl);
+                              } else {
+                                Alert.alert('Error', `Cannot open meeting link: ${cleanUrl}`);
+                              }
+                            }
+                          } catch (err) {
+                            console.error('Could not open meeting link', err);
+                            Alert.alert('Error', 'Could not open meeting link. Please make sure Google Meet or a browser is installed.');
+                          }
+                        }}
+                      >
+                        <Text style={styles.joinLiveBtnTxt}>🎥 ● Join Live Meeting</Text>
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
                 )}
               </View>
@@ -2250,7 +2579,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FAF7F2' },
-    headerRow: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -2373,10 +2702,10 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
   headerSub: { color: 'rgba(255,255,255,0.65)', fontSize: 11, fontWeight: '500' },
-  
+
   scroll: { flex: 1 },
   content: { padding: 16, gap: 16 },
-  
+
   loadingBox: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 10 },
   loadingTxt: { fontSize: 12, color: '#475569', fontWeight: '500' },
 

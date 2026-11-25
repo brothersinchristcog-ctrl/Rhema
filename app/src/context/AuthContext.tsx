@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { InteractionManager } from 'react-native';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import messaging from '@react-native-firebase/messaging';
@@ -116,6 +117,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     let subscriber: (() => void) | undefined;
+    let lastActiveUid: string | null = null;
     // Safety fallback so loading can NEVER hang on splash screen due to slow network/Firestore
     const safetyTimer = setTimeout(() => {
       setLoading(false);
@@ -248,6 +250,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(userState);
 
         if (!userState.isAnonymous) {
+          if (lastActiveUid && lastActiveUid !== userState.uid) {
+            await require('../utils/cacheReset').resetAllClientCaches('account_switch');
+          }
+          lastActiveUid = userState.uid;
           // Persist user session so user is NEVER asked to log in again unless they tap Sign Out
           const persistentUser = {
             uid: userState.uid,
@@ -262,46 +268,47 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           try {
             console.log('🔐 [Auth] User Logged In:', userState.uid);
 
-            // Check Super Admin Status via 'platform_admins' collection
-            try {
-              const isSuper = await checkSuperAdminStatus(userState.uid);
-              setIsPlatformSuperAdmin(isSuper);
-              if (isSuper) {
-                const notifSvc = require('../services/NotificationService').default;
-                notifSvc.subscribeToSuperAdminTopic().catch(() => {});
-              }
-
-              // Set up live listener for platform_admins changes
-              if (superAdminListenerRef.current) superAdminListenerRef.current();
-              superAdminListenerRef.current = firestore()
-                .collection('platform_admins')
-                .doc(userState.uid)
-                .onSnapshot(
-                  (snap) => {
-                    if (snap && snap.exists) {
-                      const data = snap.data();
-                      const hasSuper = (
-                        data?.superadmin === true ||
-                        String(data?.role || '').toLowerCase().replace(/\s+/g, '') === 'superadmin' ||
-                        String(data?.role || '').toLowerCase().includes('super')
-                      );
-                      setIsPlatformSuperAdmin(hasSuper);
-                    }
-                  },
-                  () => {}
-                );
-            } catch (err) {
-              console.warn('⚠️ [Auth] Error verifying Super Admin status:', err);
-              setIsPlatformSuperAdmin(false);
-            }
-
             // Refresh token in background when online (never block startup)
             userState.getIdToken(true).catch((tokenErr) => {
               console.warn('⚠️ [Auth] Token refresh skipped (offline?):', tokenErr);
             });
 
-            // Fetch member profile from Rhema Church
-            let globalUser = await FirestoreService.getGlobalUser(userState.uid);
+            // Fetch Super Admin status and global member profile in parallel to eliminate sequential waterfall
+            const [isSuperResult, globalUserResult] = await Promise.all([
+              checkSuperAdminStatus(userState.uid).catch((err) => {
+                console.warn('⚠️ [Auth] Error verifying Super Admin status:', err);
+                return false;
+              }),
+              FirestoreService.getGlobalUser(userState.uid),
+            ]);
+
+            setIsPlatformSuperAdmin(isSuperResult);
+            if (isSuperResult) {
+              const notifSvc = require('../services/NotificationService').default;
+              notifSvc.subscribeToSuperAdminTopic().catch(() => {});
+            }
+
+            // Set up live listener for platform_admins changes
+            if (superAdminListenerRef.current) superAdminListenerRef.current();
+            superAdminListenerRef.current = firestore()
+              .collection('platform_admins')
+              .doc(userState.uid)
+              .onSnapshot(
+                (snap) => {
+                  if (snap && snap.exists) {
+                    const data = snap.data();
+                    const hasSuper = (
+                      data?.superadmin === true ||
+                      String(data?.role || '').toLowerCase().replace(/\s+/g, '') === 'superadmin' ||
+                      String(data?.role || '').toLowerCase().includes('super')
+                    );
+                    setIsPlatformSuperAdmin(hasSuper);
+                  }
+                },
+                () => {}
+              );
+
+            let globalUser = globalUserResult;
 
             if (!globalUser && userState.phoneNumber) {
               console.log('🔄 [Auth] Looking up member by phone...', userState.phoneNumber);
@@ -323,21 +330,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             let memberProfile = await FirestoreService.getMemberProfile(targetChurchId, userState.uid);
 
             const searchPhone = userState.phoneNumber || globalUser?.phone || memberProfile?.phone || cachedMemberObj?.phone;
-            if (searchPhone) {
+            const needsContactMerge =
+              Boolean(searchPhone) &&
+              (!memberProfile ||
+                memberProfile.isGuest === true ||
+                !(memberProfile.firstName || memberProfile.name || memberProfile.displayName));
+
+            if (needsContactMerge && searchPhone) {
               try {
-                // First sync any unmerged admin contact by phone
+                // Only run phone merge/sync when profile isn't already linked cleanly
                 const synced = await FirestoreService.syncMemberByPhone(targetChurchId, searchPhone, userState.uid);
                 if (synced) {
                   memberProfile = { ...(memberProfile || {}), ...synced };
                   globalUser = { ...(globalUser || {}), ...synced } as any;
                 }
 
-                const contactCheck = await FirestoreService.checkContactExists(searchPhone);
-                if (contactCheck?.exists && contactCheck.member) {
-                  if (contactCheck.member.id !== userState.uid) {
-                    await FirestoreService.syncMember(targetChurchId, contactCheck.member.id, userState.uid);
+                if (!memberProfile || memberProfile.isGuest === true) {
+                  const contactCheck = await FirestoreService.checkContactExists(searchPhone);
+                  if (contactCheck?.exists && contactCheck.member) {
+                    if (contactCheck.member.id !== userState.uid) {
+                      await FirestoreService.syncMember(targetChurchId, contactCheck.member.id, userState.uid);
+                    }
+                    memberProfile = { ...memberProfile, ...contactCheck.member, id: userState.uid } as AppMember;
                   }
-                  memberProfile = { ...memberProfile, ...contactCheck.member, id: userState.uid } as AppMember;
                 }
               } catch (e) {
                 console.warn('⚠️ [Auth] checkContactExists failed during login:', e);
@@ -353,7 +368,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               )
             );
 
-            if (!hasValidMemberProfile && !isPlatformSuperAdmin) {
+            if (!hasValidMemberProfile && !isSuperResult) {
               // If the user is actively completing OTP + saving registration details, let VerifyOtp finish
               // persisting formData to Firestore & AsyncStorage before switching to ApprovalPending.
               if (isCompletingSignUpRef.current) {
@@ -444,6 +459,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               if (isSuperRole) {
                 setIsPlatformSuperAdmin(true);
                 AsyncStorage.setItem('@cached_is_super_admin', JSON.stringify(true)).catch(() => {});
+                require('../services/NotificationService').default.subscribeToSuperAdminTopic().catch(() => {});
               }
             }
 
@@ -454,25 +470,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             (async () => {
               try {
                 const NotificationService = require('../services/NotificationService').default;
+                await NotificationService.setupCategoriesAndChannels().catch(() => {});
                 await NotificationService.requestUserPermission().catch(() => {});
                 const token = await messaging().getToken().catch(() => null);
                 if (token) {
-                  await require('../services/firebaseConfig').firestore()
-                    .collection('Rhema Church').doc(targetChurchId)
-                    .collection('members').doc(userState.uid).set({
-                      fcmToken: token
-                    }, { merge: true });
-
-                  await NotificationService.subscribeToChurchTopic(targetChurchId);
+                  await NotificationService.saveTokenToFirestore(token);
                 }
+                await NotificationService.subscribeToChurchTopic(targetChurchId);
 
                 messaging().onTokenRefresh(async (newToken) => {
-                  await require('../services/firebaseConfig').firestore()
-                    .collection('Rhema Church').doc(targetChurchId)
-                    .collection('members').doc(userState.uid).set({
-                      fcmToken: newToken
-                    }, { merge: true });
-
+                  await NotificationService.saveTokenToFirestore(newToken);
                   await NotificationService.subscribeToChurchTopic(targetChurchId);
                 });
               } catch (err) {
@@ -557,6 +564,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
+  useEffect(() => {
+    if (loading) return;
+    if (user?.uid && !user.isAnonymous) {
+      let cancelled = false;
+      let interactionHandle: { cancel?: () => void } | null = null;
+      const timer = setTimeout(() => {
+        interactionHandle = InteractionManager.runAfterInteractions(() => {
+          if (cancelled) return;
+          const { e2eeService } = require('../services/e2eeService');
+          e2eeService.initializeForUser(user.uid).catch((err: any) => {
+            console.warn('⚠️ [Auth] E2EE init warning:', err);
+          });
+        });
+      }, 3500);
+      return () => {
+        cancelled = true;
+        clearTimeout(timer);
+        interactionHandle?.cancel?.();
+      };
+    }
+    const { roomKeyManager } = require('../services/roomKeyManager');
+    const { e2eeService } = require('../services/e2eeService');
+    roomKeyManager.clearCache();
+    e2eeService.clearSessionMemory();
+  }, [loading, user?.uid, user?.isAnonymous]);
+
   const signInAnonymously = async () => {
     try {
       const cred = await auth().signInAnonymously();
@@ -582,6 +615,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (auth().currentUser) {
         await auth().signOut().catch(() => {});
       }
+      await require('../utils/cacheReset').resetAllClientCaches('logout');
       await AsyncStorage.multiRemove([
         '@cached_member', 
         '@cached_user', 

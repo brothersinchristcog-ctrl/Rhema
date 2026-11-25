@@ -12,9 +12,7 @@ import {
   Modal,
   Image,
   Platform,
-  TextInput,
   ActivityIndicator,
-  KeyboardAvoidingView,
 } from 'react-native';
 import {
   ArrowRight,
@@ -31,7 +29,6 @@ import {
   X,
   Trash2,
   Crown,
-  Ticket,
   Sparkles,
 } from 'lucide-react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -51,6 +48,14 @@ import firestoreService, { SubscriptionPlan, GlobalUser } from '../services/Fire
 import { firestore, functions } from '../services/firebaseConfig';
 import { useNavigation } from '@react-navigation/native';
 import ChurchService from '../services/ChurchService';
+import { RHEMA_CHURCH_NAME } from '../constants/ChurchConfig';
+import { CachedImage } from './CachedImage';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  readInstantCache,
+  writeInstantCache,
+} from '../utils/instantCache';
 
 const { width } = Dimensions.get('window');
 
@@ -75,15 +80,28 @@ export default function SubscriptionTab({ member }: { member?: any }) {
   const { activeChurch, setChurchId } = useChurch();
   const navigation = useNavigation<any>();
   const backgroundColor = activeChurch?.theme?.primaryColor || colors.background;
+  const subCacheKey = useMemo(
+    () => makeScopedCacheKey('subscription_tab_v1', activeChurch?.id, user?.uid),
+    [activeChurch?.id, user?.uid]
+  );
+  const initialSubCache = useMemo(
+    () =>
+      getInstantMemory<{
+        plans: SubscriptionPlan[];
+        globalUser: GlobalUser | null;
+        subscriptionHistory: any[];
+      }>(subCacheKey),
+    [subCacheKey]
+  );
   
   const receiptRef = useRef<View>(null);
   const [currentStep, setCurrentStep] = useState(1);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('annual');
   const [paymentMethod, setPaymentMethod] = useState('upi');
 
-  const [loading, setLoading] = useState(true);
-  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
-  const [globalUser, setGlobalUser] = useState<GlobalUser | null>(null);
+  const [loading, setLoading] = useState(!initialSubCache);
+  const [plans, setPlans] = useState<SubscriptionPlan[]>(initialSubCache?.plans || []);
+  const [globalUser, setGlobalUser] = useState<GlobalUser | null>(initialSubCache?.globalUser || null);
   const [viewReceiptModalVisible, setViewReceiptModalVisible] = useState(false);
   const [downloadSuccessModalVisible, setDownloadSuccessModalVisible] = useState(false);
   const [planSelectModalVisible, setPlanSelectModalVisible] = useState(false);
@@ -91,19 +109,8 @@ export default function SubscriptionTab({ member }: { member?: any }) {
   const [receiptTxnId, setReceiptTxnId] = useState('');
   const [isPaymentSuccessful, setIsPaymentSuccessful] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
-  const [subscriptionHistory, setSubscriptionHistory] = useState<any[]>([]);
+  const [subscriptionHistory, setSubscriptionHistory] = useState<any[]>(initialSubCache?.subscriptionHistory || []);
   const [timeLeft, setTimeLeft] = useState({ days: '00', hours: '00', minutes: '00', seconds: '00' });
-  
-  // Voucher Code States
-  const [voucherModalVisible, setVoucherModalVisible] = useState(false);
-  const [voucherCodeInput, setVoucherCodeInput] = useState('');
-  const [redeemingVoucher, setRedeemingVoucher] = useState(false);
-  const [redemptionSuccessData, setRedemptionSuccessData] = useState<{
-    code: string;
-    message: string;
-    validUntil?: string;
-    durationDays?: number;
-  } | null>(null);
 
   // Delete Payment Record Card States
   const [deleteTargetInvoice, setDeleteTargetInvoice] = useState<any | null>(null);
@@ -147,27 +154,64 @@ export default function SubscriptionTab({ member }: { member?: any }) {
   }, [activeChurch]);
 
   React.useEffect(() => {
+    let active = true;
     const fetchData = async () => {
-      setLoading(true);
+      const mem = getInstantMemory<{
+        plans: SubscriptionPlan[];
+        globalUser: GlobalUser | null;
+        subscriptionHistory: any[];
+      }>(subCacheKey);
+      if (mem) {
+        setPlans(mem.plans || []);
+        setGlobalUser(mem.globalUser || null);
+        setSubscriptionHistory(mem.subscriptionHistory || []);
+        setLoading(false);
+      } else {
+        readInstantCache<{
+          plans: SubscriptionPlan[];
+          globalUser: GlobalUser | null;
+          subscriptionHistory: any[];
+        }>(subCacheKey).then((cached) => {
+          if (!active || !cached?.data) return;
+          setPlans(cached.data.plans || []);
+          setGlobalUser(cached.data.globalUser || null);
+          setSubscriptionHistory(cached.data.subscriptionHistory || []);
+          setLoading(false);
+        });
+      }
+
       try {
-        const fetchedPlans = await firestoreService.getSubscriptionPlans();
+        const [fetchedPlans, u, hist] = await Promise.all([
+          firestoreService.getSubscriptionPlans(),
+          user?.uid ? firestoreService.getGlobalUser(user.uid) : Promise.resolve(null),
+          user?.uid && activeChurch?.id
+            ? firestoreService.getChurchSubscriptionHistory(activeChurch.id)
+            : Promise.resolve([]),
+        ]);
+        if (!active) return;
         setPlans(fetchedPlans);
         if (user?.uid) {
-          const u = await firestoreService.getGlobalUser(user.uid);
           setGlobalUser(u);
           if (activeChurch?.id) {
-            const hist = await firestoreService.getChurchSubscriptionHistory(activeChurch.id);
             setSubscriptionHistory(hist);
           }
         }
+        writeInstantCache(subCacheKey, {
+          plans: fetchedPlans,
+          globalUser: u,
+          subscriptionHistory: hist,
+        });
       } catch (error) {
         console.error('Error fetching data:', error);
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
     fetchData();
-  }, [user?.uid]);
+    return () => {
+      active = false;
+    };
+  }, [user?.uid, activeChurch?.id, subCacheKey]);
 
   const twoMonthsFromNow = new Date();
   twoMonthsFromNow.setMonth(twoMonthsFromNow.getMonth() + 2);
@@ -177,7 +221,7 @@ export default function SubscriptionTab({ member }: { member?: any }) {
     try {
       const churchLogoHtml = activeChurch?.theme?.logoUrl 
         ? `<img src="${activeChurch.theme.logoUrl}" class="church-logo" />` 
-        : `<div style="width: 60px; height: 60px; border-radius: 10px; margin-right: 15px; background: #f0f0f0; text-align: center; line-height: 60px; font-size: 24px; font-weight: bold; color: #999; display: inline-block;">${activeChurch?.name?.charAt(0) || 'C'}</div>`;
+        : `<div style="width: 60px; height: 60px; border-radius: 10px; margin-right: 15px; background: #f0f0f0; text-align: center; line-height: 60px; font-size: 24px; font-weight: bold; color: #999; display: inline-block;">${activeChurch?.name?.charAt(0) || 'R'}</div>`;
 
       const html = `
         <!DOCTYPE html>
@@ -288,7 +332,7 @@ export default function SubscriptionTab({ member }: { member?: any }) {
             <div class="header">
               <div class="logo-container">
                 ${churchLogoHtml}
-                <h2 class="church-name">${activeChurch?.name || 'Church Name'}</h2>
+                <h2 class="church-name">${activeChurch?.name || RHEMA_CHURCH_NAME}</h2>
               </div>
               <div class="receipt-title">Receipt</div>
             </div>
@@ -329,7 +373,7 @@ export default function SubscriptionTab({ member }: { member?: any }) {
             
             <div class="footer">
               <p>Thank you for your continued support!</p>
-              <p>Generated by WeChristian App</p>
+              <p>Generated by ${activeChurch?.name || RHEMA_CHURCH_NAME}</p>
             </div>
           </div>
         </body>
@@ -500,54 +544,6 @@ export default function SubscriptionTab({ member }: { member?: any }) {
     }
   };
 
-  const handleRedeemVoucher = async () => {
-    const code = voucherCodeInput.trim().toUpperCase().replace(/\s+/g, '');
-    if (!code) {
-      Alert.alert('Required', 'Please enter your voucher code.');
-      return;
-    }
-    if (!activeChurch?.id) {
-      Alert.alert('Error', 'No active church selected.');
-      return;
-    }
-
-    setRedeemingVoucher(true);
-    try {
-      const resData = await firestoreService.redeemVoucher({
-        code,
-        churchId: activeChurch.id,
-        churchName: activeChurch.name,
-        userId: user?.uid,
-        userName: member?.firstName ? `${member.firstName} ${member.lastName || ''}` : (user?.displayName || 'Church Admin')
-      });
-
-      // Force ChurchContext reload to update active church validity across the whole app
-      setIsPaymentSuccessful(true);
-      await setChurchId(activeChurch.id);
-
-      // Re-fetch church subscription history ledger
-      const hist = await firestoreService.getChurchSubscriptionHistory(activeChurch.id);
-      setSubscriptionHistory(hist);
-
-      setVoucherModalVisible(false);
-      setVoucherCodeInput('');
-
-      // Show beautiful custom celebration success card
-      setRedemptionSuccessData({
-        code,
-        message: resData?.message || '1 Year subscription has been activated successfully! All church members now have full access.',
-        validUntil: resData?.validUntil,
-        durationDays: resData?.durationDays || 365,
-      });
-    } catch (error: any) {
-      console.error('Voucher Redemption Error:', error);
-      const msg = error?.message || 'Failed to redeem voucher code. Please check the code and try again.';
-      Alert.alert('Redemption Failed', msg);
-    } finally {
-      setRedeemingVoucher(false);
-    }
-  };
-
   const downloadReceipt = async () => {
     try {
       const { status } = await MediaLibrary.requestPermissionsAsync(true);
@@ -696,7 +692,7 @@ export default function SubscriptionTab({ member }: { member?: any }) {
                 </Text>
               </View>
             </View>
-            <Text style={{ color: '#f8fafc', fontSize: 20, fontWeight: '600', marginBottom: 16, marginTop: 4, width: '70%' }} numberOfLines={2} adjustsFontSizeToFit>{activeChurch?.name || 'Church of GOD'}</Text>
+            <Text style={{ color: '#f8fafc', fontSize: 20, fontWeight: '600', marginBottom: 16, marginTop: 4, width: '70%' }} numberOfLines={2} adjustsFontSizeToFit>{activeChurch?.name || RHEMA_CHURCH_NAME}</Text>
             
             <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', rowGap: 4, marginBottom: 12 }}>
               <View style={{ flexDirection: 'row', alignItems: 'baseline', marginRight: 10 }}>
@@ -755,23 +751,13 @@ export default function SubscriptionTab({ member }: { member?: any }) {
             </TouchableOpacity>
             
             {ChurchService.isSubscriptionExpired(activeChurch) && (
-              <View style={{ gap: 10 }}>
-                <TouchableOpacity 
-                  onPress={() => setPlanSelectModalVisible(true)}
-                  style={{ backgroundColor: '#ef4444', borderRadius: 12, paddingVertical: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}
-                >
-                  <CreditCard size={20} color="#f8fafc" style={{ marginRight: 8 }} />
-                  <Text style={{ color: '#f8fafc', fontSize: 16, fontWeight: '700' }}>Renew Subscription</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  onPress={() => setVoucherModalVisible(true)}
-                  style={{ backgroundColor: '#059669', borderRadius: 12, paddingVertical: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}
-                >
-                  <Ticket size={20} color="#f8fafc" style={{ marginRight: 8 }} />
-                  <Text style={{ color: '#f8fafc', fontSize: 16, fontWeight: '700' }}>Redeem Voucher Code</Text>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity 
+                onPress={() => setPlanSelectModalVisible(true)}
+                style={{ backgroundColor: '#ef4444', borderRadius: 12, paddingVertical: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}
+              >
+                <CreditCard size={20} color="#f8fafc" style={{ marginRight: 8 }} />
+                <Text style={{ color: '#f8fafc', fontSize: 16, fontWeight: '700' }}>Renew Subscription</Text>
+              </TouchableOpacity>
             )}
           </View>
         </View>
@@ -1037,7 +1023,7 @@ export default function SubscriptionTab({ member }: { member?: any }) {
               </View>
             </View>
             
-            <Text style={{ color: '#f8fafc', fontSize: 22, fontWeight: '600', marginBottom: 20, marginTop: -8 }}>{activeChurch?.name || 'Church of GOD'}</Text>
+            <Text style={{ color: '#f8fafc', fontSize: 22, fontWeight: '600', marginBottom: 20, marginTop: -8 }}>{activeChurch?.name || RHEMA_CHURCH_NAME}</Text>
             
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
               <Text style={{ color: '#64748b', fontSize: 28, textDecorationLine: 'line-through', marginRight: 12 }}>₹999</Text>
@@ -1085,322 +1071,10 @@ export default function SubscriptionTab({ member }: { member?: any }) {
               <Crown size={20} color="#171e2e" style={{ marginRight: 8 }} />
               <Text style={{ color: '#171e2e', fontSize: 18, fontWeight: '700' }}>Pay Subscription (₹199/yr)</Text>
             </TouchableOpacity>
-
-            {/* Divider */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 16 }}>
-              <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.15)' }} />
-              <Text style={{ color: '#94a3b8', fontSize: 12, fontWeight: '700', marginHorizontal: 12, textTransform: 'uppercase', letterSpacing: 1.2 }}>OR</Text>
-              <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.15)' }} />
-            </View>
-
-            {/* Option 2: Redeem Voucher Code */}
-            <TouchableOpacity 
-              style={{ 
-                backgroundColor: 'transparent', 
-                borderRadius: 12, 
-                borderWidth: 1.5, 
-                borderColor: '#10b981', 
-                paddingVertical: 14, 
-                alignItems: 'center', 
-                flexDirection: 'row', 
-                justifyContent: 'center' 
-              }}
-              onPress={() => setVoucherModalVisible(true)}
-            >
-              <Ticket size={20} color="#10b981" style={{ marginRight: 8 }} />
-              <Text style={{ color: '#10b981', fontSize: 17, fontWeight: '700' }}>Redeem Voucher Code</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </View>
       ) : null}
-
-      {/* ── Voucher Code Redemption Modal ── */}
-      <Modal visible={voucherModalVisible} animationType="fade" transparent onRequestClose={() => setVoucherModalVisible(false)}>
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
-          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', alignItems: 'center', padding: 24 }}
-        >
-          <View style={{ width: '100%', maxWidth: 400, backgroundColor: '#171e2e', borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', padding: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.35, shadowRadius: 16 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: '#059669', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                  <Ticket size={20} color="#ffffff" />
-                </View>
-                <Text style={{ color: '#f8fafc', fontSize: 18, fontWeight: '800' }}>Redeem Voucher</Text>
-              </View>
-              <TouchableOpacity onPress={() => setVoucherModalVisible(false)} style={{ padding: 6, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.08)' }}>
-                <X size={18} color="#cbd5e1" />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={{ color: '#94a3b8', fontSize: 13, lineHeight: 18, marginBottom: 20 }}>
-              Enter your voucher code to activate a 1-year church subscription. The subscription duration will be added to your account immediately.
-            </Text>
-
-            <View style={{ marginBottom: 20 }}>
-              <Text style={{ color: '#cbd5e1', fontSize: 12, fontWeight: '600', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Voucher Code</Text>
-              <TextInput
-                value={voucherCodeInput}
-                onChangeText={(text) => setVoucherCodeInput(text.toUpperCase())}
-                placeholder="e.g. 7K8N2XP"
-                placeholderTextColor="#64748b"
-                autoCapitalize="characters"
-                autoCorrect={false}
-                style={{
-                  backgroundColor: '#0f172a',
-                  borderWidth: 1.5,
-                  borderColor: voucherCodeInput.trim() ? '#10b981' : 'rgba(255,255,255,0.15)',
-                  borderRadius: 12,
-                  paddingHorizontal: 16,
-                  paddingVertical: 14,
-                  color: '#f8fafc',
-                  fontSize: 16,
-                  fontWeight: '700',
-                  letterSpacing: 1.5,
-                }}
-              />
-            </View>
-
-            <TouchableOpacity
-              onPress={handleRedeemVoucher}
-              disabled={redeemingVoucher || !voucherCodeInput.trim()}
-              style={{
-                backgroundColor: voucherCodeInput.trim() ? '#10b981' : '#334155',
-                borderRadius: 12,
-                paddingVertical: 14,
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexDirection: 'row',
-                opacity: redeemingVoucher ? 0.7 : 1
-              }}
-            >
-              {redeemingVoucher ? (
-                <>
-                  <ActivityIndicator size="small" color="#ffffff" style={{ marginRight: 8 }} />
-                  <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '700' }}>Validating Code...</Text>
-                </>
-              ) : (
-                <>
-                  <CheckCircle size={18} color="#ffffff" style={{ marginRight: 8 }} />
-                  <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '700' }}>Apply Voucher</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* ── 🌟 GORGEOUS CELEBRATION SUCCESS MODAL CARD ── */}
-      <Modal 
-        visible={!!redemptionSuccessData} 
-        animationType="fade" 
-        transparent 
-        onRequestClose={() => setRedemptionSuccessData(null)}
-      >
-        <View style={{
-          flex: 1,
-          backgroundColor: 'rgba(5, 10, 20, 0.82)',
-          justifyContent: 'center',
-          alignItems: 'center',
-          padding: 20,
-        }}>
-          <View style={{
-            width: '100%',
-            maxWidth: 390,
-            backgroundColor: '#0f172a',
-            borderRadius: 28,
-            borderWidth: 1.5,
-            borderColor: 'rgba(16, 185, 129, 0.45)',
-            padding: 24,
-            alignItems: 'center',
-            shadowColor: '#10b981',
-            shadowOffset: { width: 0, height: 12 },
-            shadowOpacity: 0.35,
-            shadowRadius: 28,
-            elevation: 24,
-          }}>
-            {/* Glowing Dual Halo Rings with Check Icon */}
-            <View style={{
-              width: 80,
-              height: 80,
-              borderRadius: 40,
-              backgroundColor: 'rgba(16, 185, 129, 0.12)',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: 16,
-              borderWidth: 1.5,
-              borderColor: 'rgba(16, 185, 129, 0.3)',
-            }}>
-              <View style={{
-                width: 58,
-                height: 58,
-                borderRadius: 29,
-                backgroundColor: '#10b981',
-                alignItems: 'center',
-                justifyContent: 'center',
-                shadowColor: '#10b981',
-                shadowOffset: { width: 0, height: 6 },
-                shadowOpacity: 0.5,
-                shadowRadius: 12,
-                elevation: 10,
-              }}>
-                <CheckCircle size={34} color="#ffffff" strokeWidth={2.6} />
-              </View>
-            </View>
-
-            {/* Glowing Status Pill */}
-            <View style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              backgroundColor: 'rgba(16, 185, 129, 0.16)',
-              paddingHorizontal: 12,
-              paddingVertical: 5,
-              borderRadius: 20,
-              marginBottom: 12,
-              borderWidth: 1,
-              borderColor: 'rgba(16, 185, 129, 0.35)',
-            }}>
-              <Sparkles size={13} color="#10b981" style={{ marginRight: 6 }} />
-              <Text style={{ color: '#10b981', fontSize: 11.5, fontWeight: '800', letterSpacing: 0.8, textTransform: 'uppercase' }}>
-                Subscription Activated
-              </Text>
-            </View>
-
-            {/* Heading */}
-            <Text style={{
-              color: '#f8fafc',
-              fontSize: 22,
-              fontWeight: '800',
-              textAlign: 'center',
-              marginBottom: 6,
-              letterSpacing: 0.3,
-            }}>
-              Voucher Redeemed!
-            </Text>
-
-            <Text style={{
-              color: '#94a3b8',
-              fontSize: 13,
-              textAlign: 'center',
-              lineHeight: 19,
-              marginBottom: 20,
-              paddingHorizontal: 10,
-            }}>
-              {redemptionSuccessData?.message}
-            </Text>
-
-            {/* Detailed Ticket Card Box */}
-            <View style={{
-              width: '100%',
-              backgroundColor: '#090e1a',
-              borderRadius: 18,
-              padding: 16,
-              borderWidth: 1,
-              borderColor: '#1e293b',
-              marginBottom: 22,
-            }}>
-              {/* Voucher Code Row */}
-              <View style={{
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                paddingBottom: 12,
-                borderBottomWidth: 1,
-                borderBottomColor: 'rgba(255,255,255,0.08)',
-                marginBottom: 12,
-              }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Ticket size={16} color="#f0b429" style={{ marginRight: 8 }} />
-                  <Text style={{ color: '#64748b', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 }}>
-                    Voucher Code
-                  </Text>
-                </View>
-                <Text style={{
-                  color: '#f0b429',
-                  fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-                  fontSize: 15,
-                  fontWeight: '800',
-                  letterSpacing: 1.2,
-                }}>
-                  {redemptionSuccessData?.code}
-                </Text>
-              </View>
-
-              {/* Added Access */}
-              <View style={{
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: 10,
-              }}>
-                <Text style={{ color: '#94a3b8', fontSize: 13 }}>Added Access</Text>
-                <Text style={{ color: '#38bdf8', fontSize: 13.5, fontWeight: '700' }}>
-                  +{redemptionSuccessData?.durationDays || 365} Days (1 Year)
-                </Text>
-              </View>
-
-              {/* Church */}
-              <View style={{
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: 10,
-              }}>
-                <Text style={{ color: '#94a3b8', fontSize: 13 }}>Church</Text>
-                <Text style={{ color: '#f8fafc', fontSize: 13.5, fontWeight: '600' }} numberOfLines={1}>
-                  {activeChurch?.name || 'Your Church'}
-                </Text>
-              </View>
-
-              {/* Active Until Date */}
-              {redemptionSuccessData?.validUntil ? (
-                <View style={{
-                  flexDirection: 'row',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  paddingTop: 10,
-                  borderTopWidth: 1,
-                  borderTopColor: 'rgba(255,255,255,0.08)',
-                }}>
-                  <Text style={{ color: '#10b981', fontSize: 13, fontWeight: '600' }}>Active Until</Text>
-                  <Text style={{ color: '#10b981', fontSize: 14, fontWeight: '700' }}>
-                    {new Date(redemptionSuccessData.validUntil).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-
-            {/* Done CTA Button */}
-            <TouchableOpacity
-              onPress={() => setRedemptionSuccessData(null)}
-              style={{
-                width: '100%',
-                backgroundColor: '#10b981',
-                paddingVertical: 14,
-                borderRadius: 14,
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexDirection: 'row',
-                shadowColor: '#10b981',
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.35,
-                shadowRadius: 10,
-                elevation: 6,
-              }}
-            >
-              <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '800', marginRight: 6 }}>
-                Awesome, Got It!
-              </Text>
-              <Check size={18} color="#ffffff" strokeWidth={3} />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
 
       {/* ── Delete Payment Confirmation Modal Card ── */}
       <Modal
@@ -1766,7 +1440,7 @@ export default function SubscriptionTab({ member }: { member?: any }) {
         <View style={styles.modalOverlay}>
           <View style={styles.receiptModalContent}>
             <View style={styles.receiptHeader}>
-              <Image source={{ uri: activeChurch?.theme?.logoUrl || 'https://cdn-icons-png.flaticon.com/512/8662/8662584.png' }} style={styles.receiptLogo} />
+              <CachedImage source={{ uri: activeChurch?.theme?.logoUrl || 'https://cdn-icons-png.flaticon.com/512/8662/8662584.png' }} style={styles.receiptLogo} resizeMode="contain" />
               <Text style={styles.receiptChurchName}>{activeChurch?.name || 'Bethesda Pentecostal Church'}</Text>
               <Text style={styles.receiptChurchDetails}>{activeChurch?.address || '123 Faith Avenue, Blessing City'} • {activeChurch?.contactEmail || 'contact@church.org'}</Text>
             </View>
@@ -1832,9 +1506,9 @@ export default function SubscriptionTab({ member }: { member?: any }) {
         <View collapsable={false} ref={receiptRef} style={{ width: 600, backgroundColor: '#ffffff', padding: 40 }}>
           <View style={{ alignItems: 'center', marginBottom: 40, borderBottomWidth: 2, borderBottomColor: '#e2e8f0', paddingBottom: 20 }}>
             {activeChurch?.theme?.logoUrl ? (
-              <Image source={{ uri: activeChurch.theme.logoUrl }} style={{ width: 80, height: 80, marginBottom: 10 }} resizeMode="contain" />
+              <CachedImage source={{ uri: activeChurch.theme.logoUrl }} style={{ width: 80, height: 80, marginBottom: 10 }} resizeMode="contain" />
             ) : (
-              <Image source={{ uri: 'https://cdn-icons-png.flaticon.com/512/8662/8662584.png' }} style={{ width: 80, height: 80, marginBottom: 10 }} resizeMode="contain" />
+              <CachedImage source={{ uri: 'https://cdn-icons-png.flaticon.com/512/8662/8662584.png' }} style={{ width: 80, height: 80, marginBottom: 10 }} resizeMode="contain" />
             )}
             <Text style={{ fontSize: 28, fontWeight: 'bold', color: '#1e293b', marginBottom: 5 }}>{activeChurch?.name || 'We Christian'}</Text>
             <Text style={{ fontSize: 14, color: '#64748b' }}>{activeChurch?.address || 'City'} • {activeChurch?.contactEmail || 'contact'}</Text>
@@ -1934,7 +1608,7 @@ export default function SubscriptionTab({ member }: { member?: any }) {
           <View style={{ backgroundColor: '#F7F3E9', borderRadius: 20, padding: 0, overflow: 'hidden' }}>
             <View style={{ padding: 24, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E4DDC8', alignItems: 'center' }}>
               {activeChurch?.theme?.logoUrl ? (
-                <Image source={{ uri: activeChurch.theme.logoUrl }} style={{ width: 64, height: 64, marginBottom: 16 }} resizeMode="contain" />
+                <CachedImage source={{ uri: activeChurch.theme.logoUrl }} style={{ width: 64, height: 64, marginBottom: 16 }} resizeMode="contain" />
               ) : (
                 <View style={{ width: 64, height: 64, backgroundColor: '#F1EADA', borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
                   <Building size={32} color="#C98A3E" />

@@ -29,10 +29,12 @@ import { QuizDifficulty, MemberCategoryProgress } from '../../types/Quiz';
 import { BibleQuizBank } from '../../services/BibleQuizBank';
 import { QUIZ_CATEGORIES } from '../../constants/BibleQuizCategories';
 import { useAuth } from '../../context/AuthContext';
+import { useChurch } from '../../context/ChurchContext';
 import { useQuizLanguage } from '../../context/QuizLanguageContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 import { getQuizStrings } from '../../constants/BibleQuizTranslations';
+import { CachedImageBackground } from '../../components/CachedImage';
 import QuizLanguageModal from './QuizLanguageModal';
 import QuizAlertModal from './QuizAlertModal';
 
@@ -42,6 +44,7 @@ export default function BibleQuizStagesScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const { user } = useAuth();
+  const { activeChurch } = useChurch();
   const { quizLanguage, quizLanguageOption } = useQuizLanguage();
   const { isDark } = useTheme();
 
@@ -77,19 +80,14 @@ export default function BibleQuizStagesScreen() {
   };
   const diffCfg = difficultyConfig[difficulty];
 
-  useFocusEffect(
-    React.useCallback(() => {
-      loadProgress();
-    }, [category, difficulty, user?.uid])
-  );
-
   const loadProgress = async () => {
     try {
       if (!progress) setLoading(true);
       const data = await BibleQuizBank.getMemberCategoryProgress(
         user?.uid || 'guest',
         category,
-        difficulty
+        difficulty,
+        activeChurch?.id
       );
       setProgress(data);
     } catch (e) {
@@ -98,6 +96,12 @@ export default function BibleQuizStagesScreen() {
       setLoading(false);
     }
   };
+
+  useFocusEffect(
+    React.useCallback(() => {
+      loadProgress();
+    }, [category, difficulty, user?.uid, activeChurch?.id])
+  );
 
   const handleSelectLevel = (lvlNum: number) => {
     const isUnlocked = BibleQuizBank.isLevelUnlocked(lvlNum, progress);
@@ -209,7 +213,7 @@ export default function BibleQuizStagesScreen() {
       >
         {/* Hero with progress */}
         <View style={styles.curvedHeroWrapper}>
-          <ImageBackground
+          <CachedImageBackground
             source={{
               uri: categoryImage || 'https://images.unsplash.com/photo-1511895426328-dc8714191300?w=800',
             }}
@@ -267,7 +271,7 @@ export default function BibleQuizStagesScreen() {
                 </Text>
               </View>
             </LinearGradient>
-          </ImageBackground>
+          </CachedImageBackground>
         </View>
 
         {/* Stage section label */}

@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { 
-  StyleSheet, 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  ScrollView, 
+import {
+  StyleSheet,
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
   StatusBar,
   Dimensions,
   Alert,
@@ -20,8 +20,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Speech from 'expo-speech';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { useAuth } from '../context/AuthContext';
+import { useChurch } from '../context/ChurchContext';
 import { SupportedLanguage } from '../locales';
 import { BibleService } from '../services/BibleService';
+import {
+  appendScopedPersonalNote,
+  readScopedBibleProgress,
+  writeScopedBibleProgress,
+} from '../utils/instantCache';
 
 const { width } = Dimensions.get('window');
 
@@ -30,6 +37,8 @@ export default function BibleReaderScreen({ route, navigation }: any) {
   const { bookName, chapter, lang: paramLang, bookIndex: paramBookIndex, targetVerse } = route.params || {};
   const { isDark, colors } = useTheme();
   const { language, t } = useLanguage();
+  const { user } = useAuth();
+  const { activeChurch } = useChurch();
   const [savedBibleLang, setSavedBibleLang] = useState<SupportedLanguage | null>(null);
 
   React.useEffect(() => {
@@ -50,7 +59,7 @@ export default function BibleReaderScreen({ route, navigation }: any) {
   const [verses, setVerses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successModalType, setSuccessModalType] = useState<'saved' | 'copied' | 'read'>('saved');
   const [showVerseOptionsModal, setShowVerseOptionsModal] = useState(false);
@@ -64,14 +73,16 @@ export default function BibleReaderScreen({ route, navigation }: any) {
   const [isChapterRead, setIsChapterRead] = useState(false);
 
   const scrollViewRef = React.useRef<ScrollView>(null);
-  const [verseLayouts, setVerseLayouts] = useState<{ [key: number]: number }>({});
+  // Store verse Y positions in a ref so mounting long chapters (up to 176 verses) causes 0 cascading re-renders
+  const verseLayoutsRef = React.useRef<{ [key: number]: number }>({});
+  const scrolledToTargetRef = React.useRef<string>('');
 
   // Audio state
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [speakingVerse, setSpeakingVerse] = useState<number | null>(null);
   const isSpeakingRef = React.useRef(false);
   const currentVerseIndexRef = React.useRef(0);
-  
+
   // Voice selection state
   const [selectedVoice, setSelectedVoice] = useState<'male' | 'female'>('female');
   const selectedVoiceRef = React.useRef<'male' | 'female'>('female');
@@ -90,44 +101,31 @@ export default function BibleReaderScreen({ route, navigation }: any) {
       }
     });
 
+    verseLayoutsRef.current = {};
+    scrolledToTargetRef.current = '';
     fetchVerses();
-    setVerseLayouts({});
     // Exit selection mode when chapter changes
     setSelectionMode(false);
     setSelectedVerses(new Set());
-    
+
     // Check read status
     const checkReadStatus = async () => {
       try {
-        const stored = await AsyncStorage.getItem('@BibleReadProgress');
-        if (stored) {
-          const progress = JSON.parse(stored);
-          const key = `${bookIndex}-${chapter}`;
-          setIsChapterRead(progress.includes(key));
-        } else {
-          setIsChapterRead(false);
-        }
+        const progress = await readScopedBibleProgress(activeChurch?.id, user?.uid);
+        const key = `${bookIndex}-${chapter}`;
+        setIsChapterRead(progress.includes(key));
       } catch (e) {
         console.error('Error checking read status', e);
       }
     };
     checkReadStatus();
-    
+
     return () => {
       // Cleanup speech on unmount or chapter change
       isSpeakingRef.current = false;
       Speech.stop();
     };
   }, [bookName, chapter, activeLang, bookIndex]);
-
-  React.useEffect(() => {
-    if (targetVerse && verseLayouts[targetVerse] !== undefined) {
-      scrollViewRef.current?.scrollTo({
-        y: Math.max(0, verseLayouts[targetVerse] - 20),
-        animated: true
-      });
-    }
-  }, [targetVerse, verseLayouts]);
 
   const fetchVerses = async () => {
     try {
@@ -159,15 +157,16 @@ export default function BibleReaderScreen({ route, navigation }: any) {
       setSpeakingVerse(null);
       return;
     }
-    
+
     currentVerseIndexRef.current = index;
     const v = verses[index];
     setSpeakingVerse(v.verse);
-    
+
     // Auto-scroll to the speaking verse
-    if (verseLayouts[v.verse] !== undefined) {
+    const targetY = verseLayoutsRef.current[v.verse];
+    if (targetY !== undefined) {
       scrollViewRef.current?.scrollTo({
-        y: Math.max(0, verseLayouts[v.verse] - 20),
+        y: Math.max(0, targetY - 20),
         animated: true
       });
     }
@@ -175,10 +174,10 @@ export default function BibleReaderScreen({ route, navigation }: any) {
     const textToSpeak = v.text;
     const speechLang = BibleService.getTTSLanguageCode(activeLang);
     const currentVoice = selectedVoiceRef.current;
-    
+
     // 0.55 pitch guarantees a deep, masculine sound
-    const pitchValue = currentVoice === 'male' ? 0.55 : 1.1; 
-    
+    const pitchValue = currentVoice === 'male' ? 0.55 : 1.1;
+
     Speech.speak(textToSpeak, {
       language: speechLang,
       rate: currentVoice === 'male' ? 0.65 : 0.75, // Slower, more contemplative reading speed
@@ -235,9 +234,6 @@ export default function BibleReaderScreen({ route, navigation }: any) {
   const saveMultipleVersesToNotes = async () => {
     if (selectedVerses.size === 0) return;
     try {
-      const stored = await AsyncStorage.getItem('@SermonPersonalNotes');
-      const notes = stored ? JSON.parse(stored) : [];
-
       const dateStr = new Date().toLocaleDateString('en-US', {
         month: 'short', day: 'numeric', year: 'numeric',
         hour: '2-digit', minute: '2-digit'
@@ -268,8 +264,7 @@ export default function BibleReaderScreen({ route, navigation }: any) {
         timestamp: dateStr
       };
 
-      notes.unshift(newNote);
-      await AsyncStorage.setItem('@SermonPersonalNotes', JSON.stringify(notes));
+      await appendScopedPersonalNote(activeChurch?.id, user?.uid, newNote);
 
       setSavedVerseCount(sortedVerseNums.length);
       cancelSelection();
@@ -289,7 +284,7 @@ export default function BibleReaderScreen({ route, navigation }: any) {
       const rangeLabel = isContiguous && sortedVerseNums.length > 1
         ? `${sortedVerseNums[0]}-${sortedVerseNums[sortedVerseNums.length - 1]}`
         : sortedVerseNums.join(',');
-      
+
       const content = sortedVerseNums
         .map(vNum => {
           const v = verses.find((v: any) => Number(v.verse) === vNum);
@@ -300,7 +295,7 @@ export default function BibleReaderScreen({ route, navigation }: any) {
 
       const ref = `${englishBookName} ${chapter}:${rangeLabel}`;
       const textToCopy = `"${content}"\n- ${ref}`;
-      
+
       await Clipboard.setStringAsync(textToCopy);
       setSavedVerseCount(sortedVerseNums.length);
       cancelSelection();
@@ -323,9 +318,6 @@ export default function BibleReaderScreen({ route, navigation }: any) {
   const saveToSermonNotes = async (item: any) => {
     setShowVerseOptionsModal(false);
     try {
-      const stored = await AsyncStorage.getItem('@SermonPersonalNotes');
-      const notes = stored ? JSON.parse(stored) : [];
-      
       const dateStr = new Date().toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
@@ -341,8 +333,7 @@ export default function BibleReaderScreen({ route, navigation }: any) {
         timestamp: dateStr
       };
 
-      notes.unshift(newNote);
-      await AsyncStorage.setItem('@SermonPersonalNotes', JSON.stringify(notes));
+      await appendScopedPersonalNote(activeChurch?.id, user?.uid, newNote);
       setSavedVerseCount(1);
       setSuccessModalType('saved');
       setShowSuccessModal(true);
@@ -355,7 +346,7 @@ export default function BibleReaderScreen({ route, navigation }: any) {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar barStyle={colors.barStyle} backgroundColor={colors.background} />
-      
+
       {/* ── Screen Header (Clean back button & title) ── */}
       <View
         style={[
@@ -392,24 +383,24 @@ export default function BibleReaderScreen({ route, navigation }: any) {
         </TouchableOpacity>
       </View>
 
-      <ScrollView 
+      <ScrollView
         ref={scrollViewRef}
-        style={styles.scroll} 
+        style={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.readerContent}>
           {loading ? (
             <View style={styles.loadingContainer}>
-               <Text style={{ color: isDark ? '#FFFFFF' : '#000000', fontWeight: '800', fontSize: 16 }}>
-                 {t('bible.readNow')}...
-               </Text>
+              <Text style={{ color: isDark ? '#FFFFFF' : '#000000', fontWeight: '800', fontSize: 16 }}>
+                {t('bible.readNow')}...
+              </Text>
             </View>
           ) : error ? (
             <View style={styles.loadingContainer}>
-               <Text style={{ color: '#c0392b', fontWeight: '700', textAlign: 'center' }}>{error}</Text>
-               <TouchableOpacity style={styles.retryBtn} onPress={fetchVerses}>
-                 <Text style={styles.retryText}>Tap to Retry</Text>
-               </TouchableOpacity>
+              <Text style={{ color: '#c0392b', fontWeight: '700', textAlign: 'center' }}>{error}</Text>
+              <TouchableOpacity style={styles.retryBtn} onPress={fetchVerses}>
+                <Text style={styles.retryText}>Tap to Retry</Text>
+              </TouchableOpacity>
             </View>
           ) : (
             verses.map((item: any, index: number) => {
@@ -430,7 +421,14 @@ export default function BibleReaderScreen({ route, navigation }: any) {
                     ]}
                     onLayout={(e) => {
                       const y = e.nativeEvent.layout.y;
-                      setVerseLayouts(prev => ({...prev, [item.verse]: y}));
+                      verseLayoutsRef.current[item.verse] = y;
+                      if (targetVerse === item.verse) {
+                        const targetKey = `${bookIndex}_${chapter}_${targetVerse}`;
+                        if (scrolledToTargetRef.current !== targetKey) {
+                          scrolledToTargetRef.current = targetKey;
+                          scrollViewRef.current?.scrollTo({ y: Math.max(0, y - 20), animated: true });
+                        }
+                      }
                     }}
                   >
                     {/* Checkbox indicator */}
@@ -455,7 +453,14 @@ export default function BibleReaderScreen({ route, navigation }: any) {
                   style={[styles.highlightedCard, isDark ? styles.highlightedCardDark : styles.highlightedCardLight]}
                   onLayout={(e) => {
                     const y = e.nativeEvent.layout.y;
-                    setVerseLayouts(prev => ({...prev, [item.verse]: y}));
+                    verseLayoutsRef.current[item.verse] = y;
+                    if (targetVerse === item.verse) {
+                      const targetKey = `${bookIndex}_${chapter}_${targetVerse}`;
+                      if (scrolledToTargetRef.current !== targetKey) {
+                        scrolledToTargetRef.current = targetKey;
+                        scrollViewRef.current?.scrollTo({ y: Math.max(0, y - 20), animated: true });
+                      }
+                    }
                   }}
                 >
                   <Text style={[styles.quoteDecor, { color: isDark ? 'rgba(253,224,71,0.35)' : 'rgba(217,119,6,0.2)' }]}>“</Text>
@@ -482,41 +487,40 @@ export default function BibleReaderScreen({ route, navigation }: any) {
                     speakingVerse === item.verse && { backgroundColor: isDark ? 'rgba(250, 204, 21, 0.1)' : 'rgba(250, 204, 21, 0.15)', borderRadius: 8, marginHorizontal: -4, paddingHorizontal: 4, paddingVertical: 4 }
                   ]}
                   onLayout={(e) => {
-                    const y = e.nativeEvent.layout.y;
-                    setVerseLayouts(prev => ({...prev, [item.verse]: y}));
+                    verseLayoutsRef.current[item.verse] = e.nativeEvent.layout.y;
                   }}
                 >
                   <Text style={[styles.verseNumber, { color: isDark ? '#94a3b8' : '#1a2d5a' }]}>{item.verse}</Text>
                   <Text style={[
-                  styles.verseText,
-                  // Default text color
-                  { color: isDark ? '#f8fafc' : '#334155' },
-                  // Highlighted text AND background color
-                  speakingVerse === item.verse && { 
-                    backgroundColor: isDark ? 'rgba(250, 204, 21, 0.25)' : 'rgba(250, 204, 21, 0.35)', 
-                    color: isDark ? '#ffffff' : '#000000', // Change text color!
-                    borderRadius: 8, 
-                    marginHorizontal: -4, 
-                    paddingHorizontal: 4, 
-                    paddingVertical: 4,
-                    fontWeight: '800' // Make it bold so it stands out even more
-                  }
-                ]}>
+                    styles.verseText,
+                    // Default text color
+                    { color: isDark ? '#f8fafc' : '#334155' },
+                    // Highlighted text AND background color
+                    speakingVerse === item.verse && {
+                      backgroundColor: isDark ? 'rgba(250, 204, 21, 0.25)' : 'rgba(250, 204, 21, 0.35)',
+                      color: isDark ? '#ffffff' : '#000000', // Change text color!
+                      borderRadius: 8,
+                      marginHorizontal: -4,
+                      paddingHorizontal: 4,
+                      paddingVertical: 4,
+                      fontWeight: '800' // Make it bold so it stands out even more
+                    }
+                  ]}>
                     {item.text}
                   </Text>
                 </TouchableOpacity>
               );
             })
           )}
-          
+
           {!loading && verses.length > 0 && (
             <View style={styles.chapterEnd}>
               <View style={styles.divider} />
               <Text style={styles.endText}>End of Chapter {chapter}</Text>
-              
-              <TouchableOpacity 
+
+              <TouchableOpacity
                 style={[
-                  styles.markReadBtn, 
+                  styles.markReadBtn,
                   {
                     backgroundColor: isChapterRead
                       ? (isDark ? '#27272A' : '#FFFFFF')
@@ -529,18 +533,17 @@ export default function BibleReaderScreen({ route, navigation }: any) {
                 ]}
                 onPress={async () => {
                   try {
-                    const stored = await AsyncStorage.getItem('@BibleReadProgress');
-                    let progress = stored ? JSON.parse(stored) : [];
+                    let progress = await readScopedBibleProgress(activeChurch?.id, user?.uid);
                     const key = `${bookIndex}-${chapter}`;
-                    
+
                     if (isChapterRead) {
                       progress = progress.filter((item: string) => item !== key);
-                      await AsyncStorage.setItem('@BibleReadProgress', JSON.stringify(progress));
+                      await writeScopedBibleProgress(activeChurch?.id, user?.uid, progress);
                       setIsChapterRead(false);
                     } else {
                       if (!progress.includes(key)) {
-                        progress.push(key);
-                        await AsyncStorage.setItem('@BibleReadProgress', JSON.stringify(progress));
+                        progress = [...progress, key];
+                        await writeScopedBibleProgress(activeChurch?.id, user?.uid, progress);
                       }
                       setIsChapterRead(true);
                       setSuccessModalType('read'); setShowSuccessModal(true);
@@ -551,11 +554,11 @@ export default function BibleReaderScreen({ route, navigation }: any) {
                 }}
               >
                 <CheckCircle2 color={isChapterRead ? (isDark ? '#FFFFFF' : '#000000') : '#fff'} size={18} />
-                <Text style={{ 
-                  color: isChapterRead ? (isDark ? '#FFFFFF' : '#000000') : '#fff', 
-                  fontSize: 14, 
-                  fontWeight: '800', 
-                  marginLeft: 8 
+                <Text style={{
+                  color: isChapterRead ? (isDark ? '#FFFFFF' : '#000000') : '#fff',
+                  fontSize: 14,
+                  fontWeight: '800',
+                  marginLeft: 8
                 }}>
                   {isChapterRead ? 'Unmark as Read' : 'Mark as Read'}
                 </Text>
@@ -582,7 +585,7 @@ export default function BibleReaderScreen({ route, navigation }: any) {
 
       {/* Bottom Bar — switches between nav and selection action bar */}
       {selectionMode ? (
-        <LinearGradient 
+        <LinearGradient
           colors={isDark ? ['#FFFFFF', '#FFFFFF'] : ['#000000', '#000000']}
           start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
           style={styles.selectionBar}
@@ -603,7 +606,7 @@ export default function BibleReaderScreen({ route, navigation }: any) {
             >
               <Copy color={isDark ? '#000000' : '#FFFFFF'} size={18} />
             </TouchableOpacity>
-            
+
             <TouchableOpacity
               style={[styles.selectionSaveBtn, { backgroundColor: isDark ? '#000000' : '#27272A' }, selectedVerses.size === 0 && { opacity: 0.4 }]}
               onPress={saveMultipleVersesToNotes}
@@ -615,19 +618,19 @@ export default function BibleReaderScreen({ route, navigation }: any) {
           </View>
         </LinearGradient>
       ) : (
-        <LinearGradient 
+        <LinearGradient
           colors={isDark ? ['#FFFFFF', '#FFFFFF'] : ['#000000', '#000000']}
           start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
           style={styles.bottomBar}
         >
-          <TouchableOpacity 
-            style={[styles.barAction, chapter <= 1 && { opacity: 0.3 }, { backgroundColor: 'transparent' }]} 
+          <TouchableOpacity
+            style={[styles.barAction, chapter <= 1 && { opacity: 0.3 }, { backgroundColor: 'transparent' }]}
             onPress={() => chapter > 1 && navigation.push('BibleReader', { bookIndex, bookName: localizedBookName, chapter: chapter - 1, lang: activeLang })}
             disabled={chapter <= 1}
           >
             <ChevronLeft color={isDark ? '#000000' : '#FFFFFF'} size={24} />
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.barMain}
             onPress={() => navigation.navigate('BibleChapters', { bookIndex, bookName: localizedBookName, lang: activeLang })}
           >
@@ -635,7 +638,7 @@ export default function BibleReaderScreen({ route, navigation }: any) {
               {t('bible.chapters')} {chapter} / {totalChapters}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.barAction, chapter >= totalChapters && { opacity: 0.3 }, { backgroundColor: 'transparent' }]}
             onPress={() => chapter < totalChapters && navigation.push('BibleReader', { bookIndex, bookName: localizedBookName, chapter: chapter + 1, lang: activeLang })}
             disabled={chapter >= totalChapters}
@@ -652,9 +655,9 @@ export default function BibleReaderScreen({ route, navigation }: any) {
         animationType="slide"
         onRequestClose={() => setShowVerseOptionsModal(false)}
       >
-        <TouchableOpacity 
-          style={styles.optionsOverlay} 
-          activeOpacity={1} 
+        <TouchableOpacity
+          style={styles.optionsOverlay}
+          activeOpacity={1}
           onPress={() => setShowVerseOptionsModal(false)}
         >
           <View style={[styles.optionsSheet, { backgroundColor: isDark ? '#1e293b' : '#ffffff' }]}>
@@ -719,7 +722,7 @@ export default function BibleReaderScreen({ route, navigation }: any) {
           <View style={[styles.optionsSheet, { backgroundColor: isDark ? '#1e293b' : '#ffffff' }]}>
             <View style={styles.optionsHandle} />
             <Text style={[styles.modalTitle, { color: isDark ? '#f8fafc' : '#0f172a', marginBottom: 20 }]}>Select Voice</Text>
-            
+
             <View style={{ gap: 12 }}>
               <TouchableOpacity
                 style={[styles.optionsActionBtn, selectedVoice === 'female' ? { backgroundColor: '#1a2d5a' } : { backgroundColor: isDark ? '#334155' : '#FAF7F2' }]}
@@ -764,8 +767,8 @@ export default function BibleReaderScreen({ route, navigation }: any) {
               {successModalType === 'read'
                 ? 'Hallelujah!'
                 : successModalType === 'copied'
-                ? (savedVerseCount > 1 ? `${savedVerseCount} Verses Copied!` : 'Verse Copied!')
-                : (savedVerseCount > 1 ? `${savedVerseCount} Verses Saved!` : 'Verse Saved!')}
+                  ? (savedVerseCount > 1 ? `${savedVerseCount} Verses Copied!` : 'Verse Copied!')
+                  : (savedVerseCount > 1 ? `${savedVerseCount} Verses Saved!` : 'Verse Saved!')}
             </Text>
             {successModalType === 'read' && (
               <View style={{ backgroundColor: isDark ? '#27272A' : '#F1F5F9', paddingHorizontal: 14, paddingVertical: 5, borderRadius: 999, marginBottom: 10, borderWidth: 1, borderColor: isDark ? '#3F3F46' : '#CBD5E1' }}>
@@ -778,25 +781,25 @@ export default function BibleReaderScreen({ route, navigation }: any) {
               {successModalType === 'read'
                 ? 'Chapter marked as read! Your Bible reading progress has been saved.'
                 : successModalType === 'copied'
-                ? 'The selected verses have been copied to your clipboard.'
-                : (savedVerseCount > 1
-                  ? `${savedVerseCount} verses have been added to your Sermon Notes as one entry.`
-                  : 'This verse has been successfully added to your Sermon Notes.')}
+                  ? 'The selected verses have been copied to your clipboard.'
+                  : (savedVerseCount > 1
+                    ? `${savedVerseCount} verses have been added to your Sermon Notes as one entry.`
+                    : 'This verse has been successfully added to your Sermon Notes.')}
             </Text>
-            
+
             <View style={styles.modalActions}>
-              <TouchableOpacity 
-                style={[styles.modalBtn, (successModalType === 'copied' || successModalType === 'read') ? { backgroundColor: isDark ? '#FFFFFF' : '#000000', borderRadius: 999 } : [styles.modalBtnSecondary, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderRadius: 999 }]]} 
+              <TouchableOpacity
+                style={[styles.modalBtn, (successModalType === 'copied' || successModalType === 'read') ? { backgroundColor: isDark ? '#FFFFFF' : '#000000', borderRadius: 999 } : [styles.modalBtnSecondary, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderRadius: 999 }]]}
                 onPress={() => setShowSuccessModal(false)}
               >
                 <Text style={(successModalType === 'copied' || successModalType === 'read') ? [styles.modalBtnPrimaryTxt, { color: isDark ? '#000000' : '#FFFFFF', fontWeight: '800' }] : [styles.modalBtnSecondaryTxt, { color: isDark ? '#FFFFFF' : '#0F172A', fontWeight: '800' }]}>
                   {successModalType === 'read' ? 'Amen • Continue' : successModalType === 'copied' ? 'OK' : 'Continue Reading'}
                 </Text>
               </TouchableOpacity>
-              
+
               {successModalType === 'saved' && (
-                <TouchableOpacity 
-                  style={[styles.modalBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000', borderRadius: 999 }]} 
+                <TouchableOpacity
+                  style={[styles.modalBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000', borderRadius: 999 }]}
                   onPress={() => {
                     setShowSuccessModal(false);
                     navigation.navigate('MemberNotes');
@@ -815,7 +818,7 @@ export default function BibleReaderScreen({ route, navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-    headerRow: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -919,10 +922,10 @@ const styles = StyleSheet.create({
 
   scroll: { flex: 1 },
   readerContent: { padding: 20 },
-  loadingContainer: { 
-    height: 300, 
-    justifyContent: 'center', 
-    alignItems: 'center' 
+  loadingContainer: {
+    height: 300,
+    justifyContent: 'center',
+    alignItems: 'center'
   },
   verseRow: {
     flexDirection: 'row',
@@ -1009,7 +1012,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.5
   },
-  
+
   // Multi-verse selection styles
   selectedVerseLight: {
     backgroundColor: 'rgba(26, 45, 90, 0.08)',
@@ -1214,7 +1217,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700'
   },
-  
+
   retryBtn: {
     marginTop: 20,
     backgroundColor: '#1a2d5a',

@@ -1,13 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput, Platform } from 'react-native';
-import { fmt, formatDateToDDMMYYYY } from './AdminExpenseUtils';
+import { fmt, formatDateToDDMMYYYY, formatInvoiceNoDisplay } from './AdminExpenseUtils';
 import { FileText, Check, X, User, Trash2 } from 'lucide-react-native';
-import { db } from '../../../services/firebaseConfig';
+import { db, FieldValue } from '../../../services/firebaseConfig';
 import { useAuth } from '../../../context/AuthContext';
+import { useChurch } from '../../../context/ChurchContext';
+import { RHEMA_CHURCH_ID } from '../../../constants/ChurchConfig';
 import { useAdminTheme } from '../../../utils/adminThemeHelper';
+import { phonesMatch } from '../../../utils/phoneUtils';
+import { isSuperAdminMember } from '../../../utils/roleUtils';
 
-export default function AdminExpenseApprovals({ expenses, onGenerateInvoice, onDelete }: any) {
-  const { member } = useAuth();
+export default function AdminExpenseApprovals({ expenses, onGenerateInvoice, onDelete, initialApprovalTab }: any) {
+  const { member, user, isPlatformSuperAdmin } = useAuth();
+  const { activeChurch } = useChurch();
+  const isSuperAdmin = isSuperAdminMember(member, isPlatformSuperAdmin);
   const {
     isDark,
     screenBg,
@@ -18,9 +24,17 @@ export default function AdminExpenseApprovals({ expenses, onGenerateInvoice, onD
     borderColor
   } = useAdminTheme();
 
-  const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'rejected'>('pending');
+  const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'rejected'>(
+    initialApprovalTab === 'approved' || initialApprovalTab === 'rejected' ? initialApprovalTab : 'pending'
+  );
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [remarks, setRemarks] = useState("");
+
+  useEffect(() => {
+    if (initialApprovalTab === 'pending' || initialApprovalTab === 'approved' || initialApprovalTab === 'rejected') {
+      setActiveTab(initialApprovalTab);
+    }
+  }, [initialApprovalTab]);
   
   const pending = expenses.filter((e: any) => 
     e.status === 'Pending Approval'
@@ -36,40 +50,93 @@ export default function AdminExpenseApprovals({ expenses, onGenerateInvoice, onD
 
   const currentList = activeTab === 'pending' ? pending : activeTab === 'approved' ? approved : rejected;
 
-  const handleApprove = async (expense: any) => {
+  const submitApprovalDecision = async (
+    expense: any,
+    decision: 'Approved' | 'Rejected',
+    remarkText = ''
+  ) => {
+    if (!isSuperAdmin) {
+      Alert.alert("Access Denied", "Only Super Admins can approve or reject expenses.");
+      return;
+    }
+
+    const actorName = member?.name || user?.displayName || 'Super Admin';
+    const churchId = expense.churchId || activeChurch?.id || RHEMA_CHURCH_ID;
+    const decisionRequestId = `dec_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const invDisplay = formatInvoiceNoDisplay(expense.invoiceNumber);
+    const invLabel = invDisplay ? ` (${invDisplay})` : '';
+    const expenseLabel = expense.eventName || expense.items?.[0]?.category || 'Expense';
+    const cleanRemarks = decision === 'Rejected' ? remarkText.trim() : '';
+
     try {
       await db.collection('ledger_expenses').doc(expense.id).update({
-        status: 'Approved',
-        approvedBy: member?.name || 'Admin',
+        status: decision,
+        approvedBy: actorName,
         approvedAt: new Date().toISOString(),
-        approvalRemarks: ''
+        approvalRemarks: cleanRemarks,
+        decidedByUid: user?.uid || member?.id || '',
+        churchId,
+        decisionRequestId,
       });
-      Alert.alert("Approved", "The expense has been approved.");
+
+      // Persist deterministic in-app notification for Super Admin(s); push dispatch runs via onLedgerExpenseApproval
+      try {
+        const notifId = `expense_decision_${expense.id}_${decisionRequestId}`;
+        const notifType = decision === 'Approved' ? 'expense_approved' : 'expense_rejected';
+        const notifTitle = decision === 'Approved'
+          ? `Expense Approved${invLabel}`
+          : `Expense Rejected${invLabel}`;
+        const notifBody = decision === 'Approved'
+          ? `${expenseLabel}${invLabel} was approved by ${actorName}.`
+          : `${expenseLabel}${invLabel} was rejected by ${actorName}${cleanRemarks ? `. Reason: ${cleanRemarks}` : '.'}`;
+
+        const recipientUid = String(expense.submittedByUid || '').trim();
+        await db
+          .collection('Rhema Church')
+          .doc(churchId)
+          .collection('notifications')
+          .doc(notifId)
+          .set(
+            {
+              type: notifType,
+              targetRole: 'super_admin',
+              ...(recipientUid ? { targetUid: recipientUid, targetMemberId: recipientUid } : {}),
+              title: notifTitle,
+              body: notifBody,
+              expenseId: expense.id,
+              invoiceNumber: invDisplay || expense.invoiceNumber || '',
+              churchId,
+              approvedBy: actorName,
+              approvalRemarks: cleanRemarks,
+              decisionRequestId,
+              read: false,
+              createdAt: FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
+      } catch (notifErr) {
+        console.warn('Non-fatal error saving expense decision notification:', notifErr);
+      }
+
+      if (decision === 'Rejected') {
+        setRejectId(null);
+        setRemarks("");
+      }
+      Alert.alert(decision, `The expense has been ${decision.toLowerCase()}.`);
     } catch (err) {
       console.error(err);
-      Alert.alert("Error", "Could not approve the expense.");
+      Alert.alert("Error", `Could not ${decision === 'Approved' ? 'approve' : 'reject'} the expense.`);
     }
   };
 
-  const handleReject = async (expense: any) => {
+  const handleApprove = (expense: any) => submitApprovalDecision(expense, 'Approved');
+
+  const handleReject = (expense: any) => {
     if (!remarks.trim()) {
       Alert.alert("Validation", "Please enter rejection remarks.");
       return;
     }
-    try {
-      await db.collection('ledger_expenses').doc(expense.id).update({
-        status: 'Rejected',
-        approvedBy: member?.name || 'Admin',
-        approvedAt: new Date().toISOString(),
-        approvalRemarks: remarks
-      });
-      setRejectId(null);
-      setRemarks("");
-      Alert.alert("Rejected", "The expense has been rejected.");
-    } catch (err) {
-      console.error(err);
-      Alert.alert("Error", "Could not reject the expense.");
-    }
+    return submitApprovalDecision(expense, 'Rejected', remarks);
   };
 
   return (
@@ -170,7 +237,7 @@ export default function AdminExpenseApprovals({ expenses, onGenerateInvoice, onD
                       {e.eventName || e.items[0]?.category || 'Expense'}
                     </Text>
                     <Text style={[styles.subtitle, { color: secondaryText }]}>
-                      {formatDateToDDMMYYYY(e.date)}
+                      {e.invoiceNumber ? `${formatInvoiceNoDisplay(e.invoiceNumber)} · ` : ''}{formatDateToDDMMYYYY(e.date)}
                     </Text>
                   </View>
                   <Text style={[styles.amount, { color: '#10B981' }]}>{fmt(sum)}</Text>
@@ -242,7 +309,7 @@ export default function AdminExpenseApprovals({ expenses, onGenerateInvoice, onD
                     </View>
                   ) : (
                     <View style={{ flexDirection: 'column', gap: 10 }}>
-                      {(!e.approverId || e.approverId === member?.id) ? (
+                      {(isSuperAdmin && (!e.approverId || e.approverId === member?.id || (user?.uid && e.approverId === user.uid) || (e.approverPhone && phonesMatch(e.approverPhone, member?.phone || user?.phoneNumber)))) ? (
                         <View style={{ flexDirection: 'row', gap: 10 }}>
                           <TouchableOpacity
                             style={[
@@ -271,7 +338,7 @@ export default function AdminExpenseApprovals({ expenses, onGenerateInvoice, onD
                       ) : (
                         <View style={{ justifyContent: 'center' }}>
                           <Text style={{ fontSize: 13, color: secondaryText, fontStyle: 'italic' }}>
-                            Waiting on {e.approverName || 'another admin'}
+                            {isSuperAdmin ? `Waiting on ${e.approverName || 'another super admin'}` : 'Super Admin approval required'}
                           </Text>
                         </View>
                       )}

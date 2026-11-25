@@ -44,6 +44,7 @@ import { QuizService } from '../../services/QuizService';
 import { BibleQuiz, QuizAttempt } from '../../types/Quiz';
 import { isQuizScheduledLocked, formatQuizTime } from '../../utils/QuizScheduleUtils';
 import { formatDateDisplay } from '../../utils/DateUtils';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../../utils/instantCache';
 import QuizLanguageModal from './QuizLanguageModal';
 import QuizAlertModal from './QuizAlertModal';
 
@@ -73,10 +74,14 @@ export default function ChurchQuizzesScreen() {
   const { quizLanguage, quizLanguageOption } = useQuizLanguage();
   const { isDark } = useTheme();
   const { activeChurch } = useChurch();
+  const ui = getQuizStrings(quizLanguage);
+  const churchId = activeChurch?.id || RHEMA_CHURCH_ID;
+  const cacheKey = makeScopedCacheKey('church_quizzes_v1', churchId, user?.uid, quizLanguage);
+  const initialCache = getInstantMemory<{ quizzes: BibleQuiz[]; userAttempts: Record<string, QuizAttempt> }>(cacheKey);
 
-  const [quizzes, setQuizzes] = useState<BibleQuiz[]>([]);
-  const [userAttempts, setUserAttempts] = useState<Record<string, QuizAttempt>>({});
-  const [loading, setLoading] = useState<boolean>(true);
+  const [quizzes, setQuizzes] = useState<BibleQuiz[]>(() => initialCache?.quizzes || []);
+  const [userAttempts, setUserAttempts] = useState<Record<string, QuizAttempt>>(() => initialCache?.userAttempts || {});
+  const [loading, setLoading] = useState<boolean>(() => !initialCache);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [langModalVisible, setLangModalVisible] = useState<boolean>(false);
   const [selectedFilter, setSelectedFilter] = useState<QuizDateFilter>('all');
@@ -101,50 +106,64 @@ export default function ChurchQuizzesScreen() {
     });
   };
 
-  // Live timer so scheduled quizzes unlock reactively the exact minute arrives
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(new Date());
-    }, 5000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const ui = getQuizStrings(quizLanguage);
-  const churchId = activeChurch?.id || RHEMA_CHURCH_ID;
-
-  useFocusEffect(
-    useCallback(() => {
-      loadQuizzes();
-    }, [churchId, user?.uid, quizLanguage])
+  const hasLockedScheduledQuiz = useMemo(
+    () => quizzes.some(q => q.status === 'scheduled' && isQuizScheduledLocked(q, now)),
+    [quizzes, now]
   );
 
-  const loadQuizzes = async (isManualRefresh = false) => {
+  // Live timer runs ONLY when at least one scheduled quiz is waiting to unlock
+  useEffect(() => {
+    if (!hasLockedScheduledQuiz) return;
+    const timer = setInterval(() => {
+      setNow(new Date());
+    }, 10000);
+    return () => clearInterval(timer);
+  }, [hasLockedScheduledQuiz]);
+
+  const loadQuizzes = useCallback(async (isManualRefresh = false) => {
     try {
-      // If we don't have quizzes yet, show loader.
-      // If we already have quizzes, load silently in background for instant responsiveness.
-      if (quizzes.length === 0 && !isManualRefresh) {
+      const memHit = getInstantMemory<{ quizzes: BibleQuiz[]; userAttempts: Record<string, QuizAttempt> }>(cacheKey);
+      if (memHit) {
+        setQuizzes(memHit.quizzes);
+        setUserAttempts(memHit.userAttempts);
+        setLoading(false);
+      } else if (quizzes.length === 0 && !isManualRefresh) {
         setLoading(true);
       }
 
-      const [list, attempts] = await Promise.all([
-        QuizService.getQuizzes(churchId, {
-          isAdmin: false,
-          forceRefresh: isManualRefresh,
-          targetLanguage: quizLanguage,
-        }),
-        user?.uid
-          ? QuizService.getUserAttemptsMap(user.uid, churchId, isManualRefresh)
-          : Promise.resolve({} as Record<string, QuizAttempt>),
-      ]);
-
-      setQuizzes(list);
-      setUserAttempts(attempts);
-
-      // Register device notifications for upcoming scheduled quizzes so members get notified at start time
-      list.forEach(q => {
-        if (q.status === 'scheduled') {
-          QuizService.scheduleDeviceQuizNotification(q).catch(() => {});
-        }
+      await loadWithInstantCache<{ quizzes: BibleQuiz[]; userAttempts: Record<string, QuizAttempt> }>({
+        key: cacheKey,
+        screenName: 'ChurchQuizzes',
+        freshSkipMs: 90 * 1000,
+        forceRefresh: isManualRefresh,
+        fetcher: async () => {
+          const [list, attempts] = await Promise.all([
+            QuizService.getQuizzes(churchId, {
+              isAdmin: false,
+              forceRefresh: isManualRefresh,
+              targetLanguage: quizLanguage,
+            }),
+            user?.uid
+              ? QuizService.getUserAttemptsMap(user.uid, churchId, isManualRefresh)
+              : Promise.resolve({} as Record<string, QuizAttempt>),
+          ]);
+          return { quizzes: list, userAttempts: attempts };
+        },
+        onCached: (cached) => {
+          setQuizzes(cached.quizzes || []);
+          setUserAttempts(cached.userAttempts || {});
+          setLoading(false);
+        },
+        onFresh: (fresh) => {
+          setQuizzes(fresh.quizzes || []);
+          setUserAttempts(fresh.userAttempts || {});
+          setLoading(false);
+          (fresh.quizzes || []).forEach(q => {
+            if (q.status === 'scheduled') {
+              QuizService.scheduleDeviceQuizNotification(q).catch(() => {});
+            }
+          });
+        },
       });
     } catch (err) {
       console.warn('[ChurchQuizzesScreen] Error loading quizzes:', err);
@@ -152,7 +171,13 @@ export default function ChurchQuizzesScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [cacheKey, churchId, user?.uid, quizLanguage, quizzes.length]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadQuizzes(false);
+    }, [loadQuizzes])
+  );
 
   const handleRefresh = () => {
     setRefreshing(true);

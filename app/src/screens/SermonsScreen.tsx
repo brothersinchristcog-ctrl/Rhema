@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   ScrollView,
+  FlatList,
   Pressable,
   Image,
   Modal,
@@ -23,8 +24,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import FirestoreService, { Sermon } from '../services/FirestoreService';
 import { formatSermonDuration, isSermonVisibleToMembers } from '../utils/DateUtils';
+import { CachedImage } from '../components/CachedImage';
+import { useAuth } from '../context/AuthContext';
+import { useChurch } from '../context/ChurchContext';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../utils/instantCache';
 
 /* ───────────── Category Definitions & Colors ───────────── */
 const ALL_CATEGORIES = [
@@ -49,46 +54,46 @@ export interface CardColorDef {
 }
 
 export const SERMON_CARD_COLORS: CardColorDef[] = [
-  { name: 'Royal Sapphire',  color: '#174A7E' }, // 39 from user
-  { name: 'Peach Pink',      color: '#FFB7A5' }, // 20
-  { name: 'Forest',          color: '#22543D' }, // 7
-  { name: 'Cashmere',        color: '#D8C3A5' }, // 5
-  { name: 'Ultra Violet',    color: '#5F4B8B' }, // 13
-  { name: 'Candle',          color: '#FAD02C' }, // 28
-  { name: 'Charcoal',        color: '#243342' }, // 4 (rich deep midnight charcoal)
-  { name: 'Mint Green',      color: '#86EFAC' }, // 17
-  { name: 'Coral',           color: '#FF6F61' }, // 29
-  { name: 'Truffle',         color: '#5E4B3E' }, // 6
-  { name: 'Soft Sage',       color: '#A3B899' }, // 15
-  { name: 'Cognac',          color: '#9E472A' }, // 3
-  { name: 'Ocean Blue',      color: '#0284C7' }, // 11
-  { name: 'Alabaster',       color: '#E7E4DC' }, // 22
-  { name: 'Deep Burgundy',   color: '#58111A' }, // 10
-  { name: 'Golden Yellow',   color: '#F5B041' }, // 18
-  { name: 'Slate Green',     color: '#2E5F52' }, // 23 (rich jade slate)
-  { name: 'Dusty Mauve',     color: '#A77B91' }, // 40 from user
-  { name: 'Orange',          color: '#F97316' }, // 32
-  { name: 'Gunmetal',        color: '#2C465E' }, // 8 (rich steel navy gunmetal)
-  { name: 'Ivory',           color: '#FAF5E4' }, // 24
-  { name: 'Moss',            color: '#607D3B' }, // 9
-  { name: 'Pumpkin',         color: '#D35400' }, // 12
-  { name: 'Midnight Luxe',   color: '#121B28' }, // 37
-  { name: 'Lavender Pink',   color: '#E8AEB7' }, // 16
-  { name: 'Leaf',            color: '#4CAF50' }, // 30
-  { name: 'Warm Sand',       color: '#D4B28C' }, // 34
-  { name: 'Merlot Bliss',    color: '#6B1D2F' }, // 35
-  { name: 'Cove',            color: '#385A6C' }, // 1
-  { name: 'Apricot',         color: '#FDBA74' }, // 26
-  { name: 'Dark Emerald',    color: '#065F46' }, // 21
-  { name: 'Natural',         color: '#C8B69B' }, // 25
-  { name: 'Velours Noir',    color: '#1C1C1E' }, // 2
-  { name: 'Olive Grove',     color: '#6A7B44' }, // 33
-  { name: 'Creamy Taupe',    color: '#DFD3C3' }, // 36 (warm creamy almond)
-  { name: 'Juniper',         color: '#2E4E4C' }, // 31
-  { name: 'Organic',         color: '#C4AB8E' }, // 27 (warm honey taupe)
-  { name: 'Deep Olive',      color: '#4A5320' }, // 14
-  { name: 'Soft Ivory',      color: '#F0EAE1' }, // 38
-  { name: 'Sage Green',      color: '#5A7A64' }, // 19 (rich evergreen sage)
+  { name: 'Royal Sapphire', color: '#174A7E' }, // 39 from user
+  { name: 'Peach Pink', color: '#FFB7A5' }, // 20
+  { name: 'Forest', color: '#22543D' }, // 7
+  { name: 'Cashmere', color: '#D8C3A5' }, // 5
+  { name: 'Ultra Violet', color: '#5F4B8B' }, // 13
+  { name: 'Candle', color: '#FAD02C' }, // 28
+  { name: 'Charcoal', color: '#243342' }, // 4 (rich deep midnight charcoal)
+  { name: 'Mint Green', color: '#86EFAC' }, // 17
+  { name: 'Coral', color: '#FF6F61' }, // 29
+  { name: 'Truffle', color: '#5E4B3E' }, // 6
+  { name: 'Soft Sage', color: '#A3B899' }, // 15
+  { name: 'Cognac', color: '#9E472A' }, // 3
+  { name: 'Ocean Blue', color: '#0284C7' }, // 11
+  { name: 'Alabaster', color: '#E7E4DC' }, // 22
+  { name: 'Deep Burgundy', color: '#58111A' }, // 10
+  { name: 'Golden Yellow', color: '#F5B041' }, // 18
+  { name: 'Slate Green', color: '#2E5F52' }, // 23 (rich jade slate)
+  { name: 'Dusty Mauve', color: '#A77B91' }, // 40 from user
+  { name: 'Orange', color: '#F97316' }, // 32
+  { name: 'Gunmetal', color: '#2C465E' }, // 8 (rich steel navy gunmetal)
+  { name: 'Ivory', color: '#FAF5E4' }, // 24
+  { name: 'Moss', color: '#607D3B' }, // 9
+  { name: 'Pumpkin', color: '#D35400' }, // 12
+  { name: 'Midnight Luxe', color: '#121B28' }, // 37
+  { name: 'Lavender Pink', color: '#E8AEB7' }, // 16
+  { name: 'Leaf', color: '#4CAF50' }, // 30
+  { name: 'Warm Sand', color: '#D4B28C' }, // 34
+  { name: 'Merlot Bliss', color: '#6B1D2F' }, // 35
+  { name: 'Cove', color: '#385A6C' }, // 1
+  { name: 'Apricot', color: '#FDBA74' }, // 26
+  { name: 'Dark Emerald', color: '#065F46' }, // 21
+  { name: 'Natural', color: '#C8B69B' }, // 25
+  { name: 'Velours Noir', color: '#1C1C1E' }, // 2
+  { name: 'Olive Grove', color: '#6A7B44' }, // 33
+  { name: 'Creamy Taupe', color: '#DFD3C3' }, // 36 (warm creamy almond)
+  { name: 'Juniper', color: '#2E4E4C' }, // 31
+  { name: 'Organic', color: '#C4AB8E' }, // 27 (warm honey taupe)
+  { name: 'Deep Olive', color: '#4A5320' }, // 14
+  { name: 'Soft Ivory', color: '#F0EAE1' }, // 38
+  { name: 'Sage Green', color: '#5A7A64' }, // 19 (rich evergreen sage)
 ];
 
 export const getSermonCardColor = (index: number): CardColorDef => {
@@ -327,7 +332,7 @@ const Thumb = ({ s, style, small }: { s: SermonItemData; style?: any; small?: bo
   return (
     <View style={[{ overflow: 'hidden', backgroundColor: '#0F172A' }, style]}>
       {uri ? (
-        <Image
+        <CachedImage
           source={{ uri }}
           style={[StyleSheet.absoluteFill, { borderRadius: 8 }]}
           resizeMode="cover"
@@ -605,7 +610,7 @@ const DatePill = ({
 };
 
 /* ───────────── Sermon Item with Vibrant Folder-Tab ───────────── */
-const SermonItem = ({
+const SermonItem = React.memo(({
   s,
   onOpen,
   index,
@@ -637,33 +642,37 @@ const SermonItem = ({
     ? activeCategory
     : (s.cat || 'Sunday Service');
 
-  const a = useRef(new Animated.Value(0)).current;
+  const animateEntrance = index < 6;
+  const a = useRef(new Animated.Value(animateEntrance ? 0 : 1)).current;
 
   useEffect(() => {
+    if (!animateEntrance) return;
     Animated.timing(a, {
       toValue: 1,
-      duration: 380,
-      delay: Math.min(index * 60, 320),
+      duration: 240,
+      delay: Math.min(index * 45, 200),
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
-  }, [a, index]);
+  }, [a, index, animateEntrance]);
 
   return (
     <Animated.View
       style={[
         styles.item,
-        {
-          opacity: a,
-          transform: [
-            {
-              translateY: a.interpolate({
-                inputRange: [0, 1],
-                outputRange: [14, 0],
-              }),
-            },
-          ],
-        },
+        animateEntrance
+          ? {
+            opacity: a,
+            transform: [
+              {
+                translateY: a.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [12, 0],
+                }),
+              },
+            ],
+          }
+          : undefined,
       ]}
     >
       <View style={styles.itemRow}>
@@ -671,7 +680,7 @@ const SermonItem = ({
         <View style={styles.tl}>
           <Text style={[styles.tlD, { color: colors.text }]}>{d.getDate()}</Text>
           <Text style={[styles.tlM, { color: colors.textSecondary }]}>{MON[d.getMonth()].slice(0, 3)}</Text>
-          
+
           {/* Distinct dots between month and day */}
           <View style={styles.tlDots}>
             <View style={[styles.tlDot, { backgroundColor: dividerColor }]} />
@@ -756,7 +765,7 @@ const SermonItem = ({
       </View>
     </Animated.View>
   );
-};
+});
 
 /* ───────────── MAIN SERMONS SCREEN ───────────── */
 export default function SermonsScreen({ navigation }: any) {
@@ -764,11 +773,26 @@ export default function SermonsScreen({ navigation }: any) {
   const { width } = useWindowDimensions();
   const { colors, isDark, appearance } = useTheme();
   const { t } = useLanguage();
+  const { churchId } = useChurch();
+  const { user } = useAuth();
+  const sermonsCacheKey = useMemo(
+    () => makeScopedCacheKey('sermons_screen_v2', churchId, user?.uid),
+    [churchId, user?.uid]
+  );
 
-  const [sermons, setSermons] = useState<SermonItemData[]>([]);
-  const [categoryList, setCategoryList] = useState<string[]>(ALL_CATEGORIES);
+  const initialSermonsCache = getInstantMemory<{
+    sermons: SermonItemData[];
+    categoryList: string[];
+  }>(sermonsCacheKey);
+
+  const [sermons, setSermons] = useState<SermonItemData[]>(
+    () => initialSermonsCache?.sermons || []
+  );
+  const [categoryList, setCategoryList] = useState<string[]>(
+    () => initialSermonsCache?.categoryList || ALL_CATEGORIES
+  );
   const [activeCategory, setActiveCategory] = useState('All');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !initialSermonsCache);
   const [refreshing, setRefreshing] = useState(false);
 
   // Month & Year state: By default, show current month and year
@@ -866,65 +890,98 @@ export default function SermonsScreen({ navigation }: any) {
     };
   };
 
-  const fetchSermons = async () => {
-    try {
+  const fetchSermons = useCallback(async (isRefresh = false) => {
+    const memHit = getInstantMemory<{
+      sermons: SermonItemData[];
+      categoryList: string[];
+    }>(sermonsCacheKey);
+    let hasCached = Boolean(memHit?.sermons?.length);
+
+    if (memHit?.sermons?.length) {
+      setSermons(memHit.sermons);
+      if (memHit.categoryList?.length) setCategoryList(memHit.categoryList);
+      setLoading(false);
+    } else if (!isRefresh) {
       setLoading(true);
-      const [data, serverCats] = await Promise.all([
-        FirestoreService.getSermons(250),
-        FirestoreService.getSermonCategories().catch(() => [])
-      ]);
-      const visible = (data || []).filter((s: any) => isSermonVisibleToMembers(s));
-      const mapped = visible.map(mapFirestoreSermon);
-      setSermons(mapped);
+    }
 
-      // Collect any custom categories from Firestore
-      const sermonCats: string[] = [];
-      visible.forEach((s: any) => {
-        if (typeof s.categories === 'string' && s.categories.trim()) {
-          s.categories.split(/[;,|]/).forEach((c: string) => {
-            const trimmed = c.trim();
-            if (trimmed && !sermonCats.includes(trimmed)) sermonCats.push(trimmed);
+    try {
+      await loadWithInstantCache<{
+        sermons: SermonItemData[];
+        categoryList: string[];
+      }>({
+        key: sermonsCacheKey,
+        screenName: 'Sermons',
+        freshSkipMs: 2 * 60 * 1000,
+        forceRefresh: isRefresh,
+        fetcher: async () => {
+          const data = await FirestoreService.getSermons(150);
+          const serverCats = await FirestoreService.getSermonCategories(data).catch(() => []);
+          const visible = (data || []).filter((s: any) => isSermonVisibleToMembers(s));
+          const mapped = visible.map(mapFirestoreSermon);
+
+          const sermonCats: string[] = [];
+          visible.forEach((s: any) => {
+            if (typeof s.categories === 'string' && s.categories.trim()) {
+              s.categories.split(/[;,|]/).forEach((c: string) => {
+                const trimmed = c.trim();
+                if (trimmed && !sermonCats.includes(trimmed)) sermonCats.push(trimmed);
+              });
+            } else if (Array.isArray(s.categories)) {
+              s.categories.forEach((c: any) => {
+                const trimmed = typeof c === 'string' ? c.trim() : '';
+                if (trimmed && !sermonCats.includes(trimmed)) sermonCats.push(trimmed);
+              });
+            } else if (s.category && typeof s.category === 'string') {
+              const trimmed = s.category.trim();
+              if (trimmed && !sermonCats.includes(trimmed)) sermonCats.push(trimmed);
+            }
           });
-        } else if (Array.isArray(s.categories)) {
-          s.categories.forEach((c: any) => {
-            const trimmed = typeof c === 'string' ? c.trim() : '';
-            if (trimmed && !sermonCats.includes(trimmed)) sermonCats.push(trimmed);
-          });
-        } else if (s.category && typeof s.category === 'string') {
-          const trimmed = s.category.trim();
-          if (trimmed && !sermonCats.includes(trimmed)) sermonCats.push(trimmed);
-        }
+
+          const merged = ['All'];
+          const addCat = (c: string) => {
+            if (c && c !== 'All' && c !== 'Uncategorized' && !merged.includes(c)) {
+              merged.push(c);
+            }
+          };
+          ALL_CATEGORIES.forEach(addCat);
+          (serverCats || []).forEach(addCat);
+          sermonCats.forEach(addCat);
+          merged.push('Uncategorized');
+
+          return { sermons: mapped, categoryList: merged };
+        },
+        onCached: (cached) => {
+          if (cached?.sermons?.length) {
+            setSermons(cached.sermons);
+            if (cached.categoryList?.length) setCategoryList(cached.categoryList);
+            setLoading(false);
+            hasCached = true;
+          }
+        },
+        onFresh: (fresh) => {
+          setSermons(fresh.sermons);
+          if (fresh.categoryList?.length) setCategoryList(fresh.categoryList);
+          setLoading(false);
+        },
       });
-
-      const merged = ['All'];
-      const addCat = (c: string) => {
-        if (c && c !== 'All' && c !== 'Uncategorized' && !merged.includes(c)) {
-          merged.push(c);
-        }
-      };
-      ALL_CATEGORIES.forEach(addCat);
-      (serverCats || []).forEach(addCat);
-      sermonCats.forEach(addCat);
-      merged.push('Uncategorized');
-
-      setCategoryList(merged);
     } catch (err) {
       console.warn('Error fetching sermons from Firestore:', err);
-      setSermons([]);
+      if (!hasCached) setSermons([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [sermonsCacheKey]);
 
   useEffect(() => {
-    fetchSermons();
-  }, []);
+    fetchSermons(false);
+  }, [fetchSermons]);
 
-  const onRefresh = () => {
+  const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchSermons();
-  };
+    fetchSermons(true);
+  }, [fetchSermons]);
 
   const catOK = (s: SermonItemData) => {
     if (activeCategory === 'All') return true;
@@ -1049,9 +1106,8 @@ export default function SermonsScreen({ navigation }: any) {
   // Share sermon
   const handleShareSermon = (s: SermonItemData) => {
     Share.share({
-      message: `${s.title} – Rhema Global Ministries\nSpeaker: ${s.spk}${
-        s.youtubeId ? `\nhttps://youtu.be/${s.youtubeId}` : ''
-      }`,
+      message: `${s.title} – Rhema Global Ministries\nSpeaker: ${s.spk}${s.youtubeId ? `\nhttps://youtu.be/${s.youtubeId}` : ''
+        }`,
     });
   };
 
@@ -1070,8 +1126,8 @@ export default function SermonsScreen({ navigation }: any) {
   const panelBg = isDark
     ? (colors.surface || '#121214')
     : isWarmWhite
-    ? '#F2EAE0'
-    : (colors.background || '#FFFFFF');
+      ? '#F2EAE0'
+      : (colors.background || '#FFFFFF');
 
   return (
     <View style={[styles.container, { backgroundColor: panelBg }]}>
@@ -1113,10 +1169,16 @@ export default function SermonsScreen({ navigation }: any) {
         </TouchableOpacity>
       </View>
 
-      <ScrollView
+      <FlatList
+        data={loading ? [] : list}
+        keyExtractor={(item) => String(item.id)}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ flexGrow: 1 }}
-        style={{ backgroundColor: 'transparent' }}
+        style={{ backgroundColor: 'transparent', flex: 1 }}
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: 60 }}
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -1125,168 +1187,174 @@ export default function SermonsScreen({ navigation }: any) {
             colors={['#FA6203', '#FB923C']}
           />
         }
-      >
-        {/* ── Month & Year Selector ── */}
-        <Pressable style={styles.mon} onPress={() => setSheet(true)}>
-          <Text style={[styles.monTxt, { color: '#0F172A' }]}>
-            {MON[m]} {y}
-          </Text>
-          <Icon
-            name="down"
-            size={22}
-            color="#FA6203"
-          />
-        </Pressable>
-
-        {/* ── Horizontal Date Strip ── */}
-        <ScrollView
-          ref={dateRef}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ flexGrow: 0, backgroundColor: 'transparent' }}
-          contentContainerStyle={styles.dates}
-        >
-          <DatePill
-            label="All"
-            sub="days"
-            on={day === null}
-            dot={false}
-            onPress={() => setDay(null)}
-            colors={colors}
-            isDark={isDark}
-            isAshTop={isAshTop}
-          />
-          {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((d) => (
-            <DatePill
-              key={d}
-              label={String(d)}
-              sub={WK[new Date(y, m, d).getDay()]}
-              on={day === d}
-              dot={!!withSermon[d]}
-              onPress={() => setDay(d)}
-              colors={colors}
-              isDark={isDark}
-              isAshTop={isAshTop}
-            />
-          ))}
-        </ScrollView>
-
-        {/* ── Top Convex Curve Transition (Smooth prominent curve above category badges) ── */}
-        <View style={{ width: '100%', height: 72, overflow: 'hidden', marginTop: 2 }}>
-          <Svg
-            width={width}
-            height={72}
-            viewBox={`0 0 ${width} 72`}
-            style={{ position: 'absolute', bottom: 0 }}
-          >
-            <Path
-              d={`M 0,72 Q ${width / 2},-16 ${width},72 L ${width},72 L 0,72 Z`}
-              fill={panelBg}
-            />
-          </Svg>
-        </View>
-
-        {/* ── Lower Panel in colors.surface ── */}
-        <View style={[styles.panel, { backgroundColor: panelBg, marginTop: -1, flex: 1 }]}>
-          {/* Fully Rounded Category Badges Strip (Capsule Badge - Fixed Height, No Ballooning) */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={{ flexGrow: 0 }}
-            contentContainerStyle={{ gap: 8, paddingVertical: 4, alignItems: 'center' }}
-          >
-            {dynamicCategories.map((cat) => {
-              const isSelected = activeCategory === cat;
-              return (
-                <TouchableOpacity
-                  key={cat}
-                  onPress={() => setActiveCategory(cat)}
-                  style={[
-                    styles.chip,
-                    isSelected
-                      ? {
-                          backgroundColor: isDark ? '#FFFFFF' : '#1E293B',
-                          borderColor: isDark ? '#FFFFFF' : '#1E293B',
-                          borderWidth: 1.5,
-                        }
-                      : {
-                          backgroundColor: isDark
-                            ? 'rgba(255,255,255,0.08)'
-                            : isWarmWhite
-                            ? '#FAF6F0'
-                            : '#FFFFFF',
-                          borderColor: isDark
-                            ? 'rgba(255,255,255,0.28)'
-                            : isWarmWhite
-                            ? '#DCD3C5'
-                            : '#94A3B8',
-                          borderWidth: 1.5,
-                        },
-                  ]}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      styles.chipTxt,
-                      {
-                        color: isSelected
-                          ? (isDark ? '#111827' : '#FFFFFF')
-                          : (isDark ? 'rgba(255,255,255,0.85)' : '#1E293B'),
-                      },
-                      isSelected && { fontWeight: '800' },
-                    ]}
-                  >
-                    {getCategoryLabel(cat)}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-
-          {/* Summary Counter Row */}
-          <View style={styles.sum}>
-            <Text style={[styles.sumT, { color: colors.text }]}>
-              {list.length} {list.length === 1 ? 'sermon' : 'sermons'}
-            </Text>
-            <Text style={[styles.sumD, { color: colors.textSecondary }]}>
-              {day === null ? `${MON[m]} ${y}` : `${day} ${MON[m].slice(0, 3)} ${y}`}
-            </Text>
-          </View>
-
-          {/* Real Sermons List / Loading / Empty State */}
-          {loading ? (
-            <View style={styles.empty}>
-              <ActivityIndicator size="large" color={isDark ? C.lime : (colors.accent || '#15803d')} />
-              <Text style={[styles.emptyS, { color: colors.textSecondary, marginTop: 14 }]}>
-                Loading sermons...
+        ListHeaderComponent={
+          <>
+            {/* ── Month & Year Selector ── */}
+            <Pressable style={styles.mon} onPress={() => setSheet(true)}>
+              <Text style={[styles.monTxt, { color: '#0F172A' }]}>
+                {MON[m]} {y}
               </Text>
-            </View>
-          ) : list.length === 0 ? (
-            <View style={styles.empty}>
-              <Icon name="video" size={52} color={colors.textSecondary} />
-              <Text style={[styles.emptyT, { color: colors.text }]}>No sermons found</Text>
-              <Text style={[styles.emptyS, { color: colors.textSecondary }]}>
-                {activeCategory !== 'All'
-                  ? `No ${getCategoryLabel(activeCategory)} sermons found for ${MON[m]} ${y}.`
-                  : `No sermons found for ${MON[m]} ${y}. Try selecting another month.`}
-              </Text>
-            </View>
-          ) : (
-            list.map((s, i) => (
-              <SermonItem
-                key={String(s.id)}
-                s={s}
-                index={i}
-                onOpen={handleOpenSermon}
-                onDotsPress={(item) => setActionSermon(item)}
+              <Icon
+                name="down"
+                size={22}
+                color="#FA6203"
+              />
+            </Pressable>
+
+            {/* ── Horizontal Date Strip ── */}
+            <ScrollView
+              ref={dateRef}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ flexGrow: 0, backgroundColor: 'transparent' }}
+              contentContainerStyle={styles.dates}
+            >
+              <DatePill
+                label="All"
+                sub="days"
+                on={day === null}
+                dot={false}
+                onPress={() => setDay(null)}
                 colors={colors}
                 isDark={isDark}
-                activeCategory={activeCategory}
+                isAshTop={isAshTop}
               />
-            ))
-          )}
-        </View>
-      </ScrollView>
+              {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((d) => (
+                <DatePill
+                  key={d}
+                  label={String(d)}
+                  sub={WK[new Date(y, m, d).getDay()]}
+                  on={day === d}
+                  dot={!!withSermon[d]}
+                  onPress={() => setDay(d)}
+                  colors={colors}
+                  isDark={isDark}
+                  isAshTop={isAshTop}
+                />
+              ))}
+            </ScrollView>
+
+            {/* ── Top Convex Curve Transition (Smooth prominent curve above category badges) ── */}
+            <View style={{ width: '100%', height: 72, overflow: 'hidden', marginTop: 2 }}>
+              <Svg
+                width={width}
+                height={72}
+                viewBox={`0 0 ${width} 72`}
+                style={{ position: 'absolute', bottom: 0 }}
+              >
+                <Path
+                  d={`M 0,72 Q ${width / 2},-16 ${width},72 L ${width},72 L 0,72 Z`}
+                  fill={panelBg}
+                />
+              </Svg>
+            </View>
+
+            {/* ── Lower Panel Header (Category Chips + Summary) ── */}
+            <View style={{ paddingHorizontal: 16, backgroundColor: panelBg, marginTop: -1 }}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ flexGrow: 0 }}
+                contentContainerStyle={{ gap: 8, paddingVertical: 4, alignItems: 'center' }}
+              >
+                {dynamicCategories.map((cat) => {
+                  const isSelected = activeCategory === cat;
+                  return (
+                    <TouchableOpacity
+                      key={cat}
+                      onPress={() => setActiveCategory(cat)}
+                      style={[
+                        styles.chip,
+                        isSelected
+                          ? {
+                            backgroundColor: isDark ? '#FFFFFF' : '#1E293B',
+                            borderColor: isDark ? '#FFFFFF' : '#1E293B',
+                            borderWidth: 1.5,
+                          }
+                          : {
+                            backgroundColor: isDark
+                              ? 'rgba(255,255,255,0.08)'
+                              : isWarmWhite
+                                ? '#FAF6F0'
+                                : '#FFFFFF',
+                            borderColor: isDark
+                              ? 'rgba(255,255,255,0.28)'
+                              : isWarmWhite
+                                ? '#DCD3C5'
+                                : '#94A3B8',
+                            borderWidth: 1.5,
+                          },
+                      ]}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={[
+                          styles.chipTxt,
+                          {
+                            color: isSelected
+                              ? (isDark ? '#111827' : '#FFFFFF')
+                              : (isDark ? 'rgba(255,255,255,0.85)' : '#1E293B'),
+                          },
+                          isSelected && { fontWeight: '800' },
+                        ]}
+                      >
+                        {getCategoryLabel(cat)}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              {/* Summary Counter Row */}
+              <View style={styles.sum}>
+                <Text style={[styles.sumT, { color: colors.text }]}>
+                  {list.length} {list.length === 1 ? 'sermon' : 'sermons'}
+                </Text>
+                <Text style={[styles.sumD, { color: colors.textSecondary }]}>
+                  {day === null ? `${MON[m]} ${y}` : `${day} ${MON[m].slice(0, 3)} ${y}`}
+                </Text>
+              </View>
+            </View>
+          </>
+        }
+        renderItem={({ item, index }) => (
+          <View style={{ paddingHorizontal: 16, backgroundColor: panelBg }}>
+            <SermonItem
+              s={item}
+              index={index}
+              onOpen={handleOpenSermon}
+              onDotsPress={(sItem) => setActionSermon(sItem)}
+              colors={colors}
+              isDark={isDark}
+              activeCategory={activeCategory}
+            />
+          </View>
+        )}
+        ListEmptyComponent={
+          loading ? (
+            <View style={[styles.panel, { backgroundColor: panelBg }]}>
+              <View style={styles.empty}>
+                <ActivityIndicator size="large" color={isDark ? C.lime : (colors.accent || '#15803d')} />
+                <Text style={[styles.emptyS, { color: colors.textSecondary, marginTop: 14 }]}>
+                  Loading sermons...
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <View style={[styles.panel, { backgroundColor: panelBg }]}>
+              <View style={styles.empty}>
+                <Icon name="video" size={52} color={colors.textSecondary} />
+                <Text style={[styles.emptyT, { color: colors.text }]}>No sermons found</Text>
+                <Text style={[styles.emptyS, { color: colors.textSecondary }]}>
+                  {activeCategory !== 'All'
+                    ? `No ${getCategoryLabel(activeCategory)} sermons found for ${MON[m]} ${y}.`
+                    : `No sermons found for ${MON[m]} ${y}. Try selecting another month.`}
+                </Text>
+              </View>
+            </View>
+          )
+        }
+      />
 
       {/* ── Month & Year Picker Sheet Modal ── */}
       <MonthSheet

@@ -35,6 +35,7 @@ interface Props {
   churchId: string;
   member: any;
   existingFamilyMembers?: any[];
+  initialClasses?: KidsClassRecord[];
   onChildEnrolled?: () => void;
 }
 
@@ -99,6 +100,7 @@ export default function EnrollChildModal({
   churchId,
   member,
   existingFamilyMembers = EMPTY_FAMILY_ARRAY,
+  initialClasses,
   onChildEnrolled,
 }: Props) {
   const {
@@ -143,17 +145,21 @@ export default function EnrollChildModal({
   const [canLeavePremisesIndependently, setCanLeavePremisesIndependently] = useState(false);
   const [teacherInstructions, setTeacherInstructions] = useState('');
 
-  // Derived age & class recommendation + eligible classrooms (including Mixed Age Group)
-  const [availableClasses, setAvailableClasses] = useState<KidsClassRecord[]>([]);
+  // Derived age & class recommendation + eligible classrooms (reuse parent-loaded classes to avoid duplicate listener)
+  const [availableClasses, setAvailableClasses] = useState<KidsClassRecord[]>(() => initialClasses || []);
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
 
   useEffect(() => {
+    if (initialClasses && initialClasses.length > 0) {
+      setAvailableClasses(initialClasses);
+      return;
+    }
     if (!visible || !churchId) return;
     const unsub = KidsMinistryService.subscribeToClasses(churchId, list => {
       setAvailableClasses(list);
     });
     return () => unsub();
-  }, [visible, churchId]);
+  }, [visible, churchId, initialClasses]);
 
   const calculatedAge = calculateChildAge(dob);
   const recommendedTier = getRecommendedClassTier(calculatedAge);

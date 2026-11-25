@@ -24,6 +24,7 @@ import { useQuizLanguage } from '../../context/QuizLanguageContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 import { getQuizStrings } from '../../constants/BibleQuizTranslations';
+import { CachedImageBackground } from '../../components/CachedImage';
 import QuizLanguageModal from './QuizLanguageModal';
 
 export default function BibleQuizLevelsScreen() {
@@ -118,7 +119,7 @@ export default function BibleQuizLevelsScreen() {
       >
         {/* Hero Section */}
         <View style={styles.curvedHeroWrapper}>
-          <ImageBackground
+          <CachedImageBackground
             source={{
               uri: categoryImage || 'https://images.unsplash.com/photo-1511895426328-dc8714191300?w=800',
             }}
@@ -142,7 +143,7 @@ export default function BibleQuizLevelsScreen() {
                   : 'Choose your difficulty level and grow in Scripture knowledge.'}
               </Text>
             </LinearGradient>
-          </ImageBackground>
+          </CachedImageBackground>
         </View>
 
         {/* Section Label */}

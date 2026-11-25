@@ -21,9 +21,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { ChevronLeft, ArrowLeft, ChevronRight, Download, Share2, Calendar, Play, BookOpen, Sparkles } from 'lucide-react-native';
 import * as MediaLibrary from 'expo-media-library';
 import FirestoreService, { DailyPromise } from '../services/FirestoreService';
+import { useAuth } from '../context/AuthContext';
 import { useChurch } from '../context/ChurchContext';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../utils/instantCache';
 
 const { width } = Dimensions.get('window');
 
@@ -35,47 +37,73 @@ const stripHtml = (html: string | undefined): string => {
 
 export default function PromiseArchiveScreen({ navigation }: { navigation: any }) {
   const insets = useSafeAreaInsets();
-  const [promises, setPromises] = useState<DailyPromise[]>([]);
-  const [selectedPromise, setSelectedPromise] = useState<DailyPromise | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const { activeChurch } = useChurch();
+  const { user } = useAuth();
+  const { activeChurch, churchId } = useChurch();
   const { colors, isDark } = useTheme();
   const { t } = useLanguage();
-  const scrollViewRef = useRef<ScrollView>(null);
-  const viewShotRef = useRef<ViewShot>(null);
+  const archiveCacheKey = makeScopedCacheKey('promises_archive_v1', churchId || activeChurch?.id, user?.uid);
+  const initialArchive = getInstantMemory<DailyPromise[]>(archiveCacheKey);
 
   const getTodayStr = () => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
 
-  const fetchPromises = async () => {
+  const [promises, setPromises] = useState<DailyPromise[]>(() => initialArchive || []);
+  const [selectedPromise, setSelectedPromise] = useState<DailyPromise | null>(() => {
+    if (!initialArchive?.length) return null;
+    const today = getTodayStr();
+    return initialArchive.find((p) => p.date === today) || null;
+  });
+  const [loading, setLoading] = useState(() => !initialArchive?.length);
+  const [refreshing, setRefreshing] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const viewShotRef = useRef<ViewShot>(null);
+
+  const applyPromises = React.useCallback((sortedData: DailyPromise[]) => {
+    setPromises(sortedData);
+    const today = getTodayStr();
+    const todayPromise = sortedData.find(p => p.date === today);
+    setSelectedPromise((prev) => prev || todayPromise || null);
+    setLoading(false);
+  }, []);
+
+  const fetchPromises = React.useCallback(async (forceRefresh = false) => {
+    const memHit = getInstantMemory<DailyPromise[]>(archiveCacheKey);
+    if (memHit?.length) {
+      applyPromises(memHit);
+    } else if (!forceRefresh) {
+      setLoading(true);
+    }
+
     try {
-      const data = await FirestoreService.getDailyPromisesArchive();
-      // Ensure sorted by date descending in case Firestore returns them out of order
-      const sortedData = data.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      setPromises(sortedData);
-
-      const today = getTodayStr();
-      const todayPromise = sortedData.find(p => p.date === today);
-
-      if (todayPromise) {
-        setSelectedPromise(todayPromise);
-      } else {
-        setSelectedPromise(null);
-      }
+      await loadWithInstantCache<DailyPromise[]>({
+        key: archiveCacheKey,
+        screenName: 'PromiseArchive',
+        freshSkipMs: 2 * 60 * 1000,
+        forceRefresh,
+        fetcher: async () => {
+          const data = await FirestoreService.getDailyPromisesArchive(60);
+          return (data || []).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        },
+        onCached: (cached) => {
+          if (cached?.length) applyPromises(cached);
+        },
+        onFresh: (fresh) => {
+          applyPromises(fresh);
+        },
+      });
     } catch (error) {
       console.error('Error fetching promises:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [archiveCacheKey, applyPromises]);
 
   useEffect(() => {
-    fetchPromises();
-  }, []);
+    fetchPromises(false);
+  }, [fetchPromises]);
 
   // Reset to Today's promise when focusing the tab
   useFocusEffect(

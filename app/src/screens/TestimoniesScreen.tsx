@@ -47,8 +47,11 @@ import {
 } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
+import { useChurch } from '../context/ChurchContext';
 import { RHEMA_CHURCH_ID } from '../constants/ChurchConfig';
 import TestimonyService from '../services/TestimonyService';
+import { CachedImage } from '../components/CachedImage';
+import { getInstantMemory, readInstantCache, writeInstantCache, makeScopedCacheKey } from '../utils/instantCache';
 import {
   Testimony,
   TestimonyAttachment,
@@ -68,8 +71,8 @@ const formatDate = (ts: any): string => {
       typeof ts.toDate === 'function'
         ? ts.toDate()
         : typeof ts.seconds === 'number'
-        ? new Date(ts.seconds * 1000)
-        : new Date(ts);
+          ? new Date(ts.seconds * 1000)
+          : new Date(ts);
     if (Number.isNaN(date.getTime())) return '';
     return date.toLocaleDateString('en-US', {
       day: 'numeric',
@@ -100,10 +103,15 @@ const formatDuration = (ms?: number | null): string => {
 export default function TestimoniesScreen({ route, navigation }: any) {
   const { colors, isDark } = useTheme();
   const { user, member } = useAuth();
+  const { churchId } = useChurch();
   const initialTab: ActiveTab = route?.params?.initialTab || 'feed';
 
   const activeChurchId =
-    member?.churchId || member?.primaryChurchId || RHEMA_CHURCH_ID;
+    churchId || member?.churchId || member?.primaryChurchId || RHEMA_CHURCH_ID;
+  const feedCacheKey = makeScopedCacheKey('testimonies_public_v1', activeChurchId);
+  const mineCacheKey = makeScopedCacheKey('testimonies_mine_v1', activeChurchId, user?.uid);
+  const initialPublicFeed = getInstantMemory<Testimony[]>(feedCacheKey);
+  const initialMyTestimonies = getInstantMemory<Testimony[]>(mineCacheKey);
 
   // Reusable theme tokens consistent with all other Member View tabs
   const themeBg = colors.background || (isDark ? '#121212' : '#FAF7F2');
@@ -116,11 +124,11 @@ export default function TestimoniesScreen({ route, navigation }: any) {
 
   const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab);
 
-  // Feed & My Testimonies lists
-  const [publicFeed, setPublicFeed] = useState<Testimony[]>([]);
-  const [myTestimonies, setMyTestimonies] = useState<Testimony[]>([]);
-  const [loadingFeed, setLoadingFeed] = useState(true);
-  const [loadingMine, setLoadingMine] = useState(true);
+  // Feed & My Testimonies lists (Cache-first initial hydration)
+  const [publicFeed, setPublicFeed] = useState<Testimony[]>(() => initialPublicFeed || []);
+  const [myTestimonies, setMyTestimonies] = useState<Testimony[]>(() => initialMyTestimonies || []);
+  const [loadingFeed, setLoadingFeed] = useState(() => !initialPublicFeed);
+  const [loadingMine, setLoadingMine] = useState(() => !initialMyTestimonies);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('All');
 
@@ -165,18 +173,35 @@ export default function TestimoniesScreen({ route, navigation }: any) {
   const [showSuccessModal, setShowSuccessModal] = useState<boolean>(false);
 
   useEffect(() => {
-    setLoadingFeed(true);
+    let isActive = true;
+    const memHit = getInstantMemory<Testimony[]>(feedCacheKey);
+    if (memHit) {
+      setPublicFeed(memHit);
+      setLoadingFeed(false);
+    } else {
+      readInstantCache<Testimony[]>(feedCacheKey).then((disk) => {
+        if (isActive && disk?.data?.length) {
+          setPublicFeed(disk.data);
+          setLoadingFeed(false);
+        }
+      }).catch(() => { });
+    }
+
     const unsubFeed = TestimonyService.subscribeToPublicFeed(
       activeChurchId,
       (items) => {
         setPublicFeed(items);
         setLoadingFeed(false);
+        writeInstantCache(feedCacheKey, items).catch(() => { });
       },
       () => setLoadingFeed(false)
     );
 
-    return () => unsubFeed();
-  }, [activeChurchId]);
+    return () => {
+      isActive = false;
+      unsubFeed();
+    };
+  }, [activeChurchId, feedCacheKey]);
 
   useEffect(() => {
     if (!user?.uid) {
@@ -184,19 +209,36 @@ export default function TestimoniesScreen({ route, navigation }: any) {
       setLoadingMine(false);
       return;
     }
-    setLoadingMine(true);
+    let isActive = true;
+    const memHit = getInstantMemory<Testimony[]>(mineCacheKey);
+    if (memHit) {
+      setMyTestimonies(memHit);
+      setLoadingMine(false);
+    } else {
+      readInstantCache<Testimony[]>(mineCacheKey).then((disk) => {
+        if (isActive && disk?.data?.length) {
+          setMyTestimonies(disk.data);
+          setLoadingMine(false);
+        }
+      }).catch(() => { });
+    }
+
     const unsubMine = TestimonyService.subscribeToMyTestimonies(
       activeChurchId,
       user.uid,
       (items) => {
         setMyTestimonies(items);
         setLoadingMine(false);
+        writeInstantCache(mineCacheKey, items).catch(() => { });
       },
       () => setLoadingMine(false)
     );
 
-    return () => unsubMine();
-  }, [activeChurchId, user?.uid]);
+    return () => {
+      isActive = false;
+      unsubMine();
+    };
+  }, [activeChurchId, user?.uid, mineCacheKey]);
 
   // Helper to check whether a testimony belongs to the currently logged-in member
   const isMySubmission = (item: Testimony): boolean => {
@@ -665,8 +707,8 @@ export default function TestimoniesScreen({ route, navigation }: any) {
         (writtenContent.trim()
           ? writtenContent.trim().slice(0, 180)
           : hasVideo
-          ? 'Video Testimony'
-          : 'Testimony');
+            ? 'Video Testimony'
+            : 'Testimony');
 
       if (editingTestimony) {
         await TestimonyService.updateMemberTestimony(
@@ -846,7 +888,7 @@ export default function TestimoniesScreen({ route, navigation }: any) {
         {/* Author Header */}
         <View style={styles.cardHeaderRow}>
           {item.memberPhotoUrl ? (
-            <Image source={{ uri: item.memberPhotoUrl }} style={styles.avatarImg} />
+            <CachedImage source={{ uri: item.memberPhotoUrl }} style={styles.avatarImg} />
           ) : (
             <View
               style={[
@@ -1298,6 +1340,10 @@ export default function TestimoniesScreen({ route, navigation }: any) {
               renderItem={renderFeedCard}
               contentContainerStyle={styles.listContainer}
               showsVerticalScrollIndicator={false}
+              initialNumToRender={8}
+              maxToRenderPerBatch={6}
+              windowSize={5}
+              removeClippedSubviews={Platform.OS === 'android'}
             />
           )}
         </View>
@@ -1840,8 +1886,8 @@ export default function TestimoniesScreen({ route, navigation }: any) {
                         ? 'Save Private Testimony'
                         : 'Update & Submit for Review'
                       : privacy === 'Private'
-                      ? 'Submit Private Testimony'
-                      : 'Submit Public Testimony'}
+                        ? 'Submit Private Testimony'
+                        : 'Submit Public Testimony'}
                   </Text>
                 </>
               )}
@@ -1884,6 +1930,10 @@ export default function TestimoniesScreen({ route, navigation }: any) {
               renderItem={renderMyTestimonyCard}
               contentContainerStyle={styles.listContainer}
               showsVerticalScrollIndicator={false}
+              initialNumToRender={8}
+              maxToRenderPerBatch={6}
+              windowSize={5}
+              removeClippedSubviews={Platform.OS === 'android'}
             />
           )}
         </View>

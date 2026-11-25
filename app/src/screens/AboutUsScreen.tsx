@@ -19,6 +19,13 @@ import { useTheme } from '../context/ThemeContext';
 import { useChurch } from '../context/ChurchContext';
 import { useLanguage } from '../context/LanguageContext';
 import firestoreService from '../services/FirestoreService';
+import { CachedImage } from '../components/CachedImage';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  readInstantCache,
+  writeInstantCache,
+} from '../utils/instantCache';
 
 interface AboutUsData {
   churchName: string;
@@ -44,35 +51,53 @@ export default function AboutUsScreen() {
   const { colors, isDark } = useTheme();
   const { activeChurch } = useChurch();
   const { t } = useLanguage();
-  const [data, setData] = useState<AboutUsData>(DEFAULT);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = React.useMemo(
+    () => makeScopedCacheKey('about_us_v1', activeChurch?.id, 'shared'),
+    [activeChurch?.id]
+  );
+  const initialCached = React.useMemo(() => getInstantMemory<AboutUsData>(cacheKey), [cacheKey]);
+  const [data, setData] = useState<AboutUsData>(initialCached || DEFAULT);
+  const [loading, setLoading] = useState(!initialCached);
 
   useEffect(() => {
-    let unsub: () => void = () => {};
+    let unsub: () => void = () => { };
+    let isMounted = true;
+
+    const mem = getInstantMemory<AboutUsData>(cacheKey);
+    if (mem) {
+      setData(mem);
+      setLoading(false);
+    } else {
+      readInstantCache<AboutUsData>(cacheKey).then((cached) => {
+        if (!isMounted || !cached?.data) return;
+        setData(cached.data);
+        setLoading(false);
+      });
+    }
 
     const setupListener = async () => {
       try {
         const col = await firestoreService.getCollection('settings');
         unsub = col.doc('about').onSnapshot(
           (doc) => {
-            if (doc.exists()) {
-              const d = doc.data() as AboutUsData;
-              setData({
-                churchName: d.churchName || activeChurch?.name || 'Your Church',
-                churchSubtitle: d.churchSubtitle || '',
-                description: d.description || activeChurch?.aboutUs || '',
-                mission: d.mission || '',
-                vision: d.vision || '',
-              });
-            } else {
-              setData({
+            if (!isMounted) return;
+            const nextData: AboutUsData = doc.exists()
+              ? {
+                churchName: (doc.data() as AboutUsData).churchName || activeChurch?.name || 'Your Church',
+                churchSubtitle: (doc.data() as AboutUsData).churchSubtitle || '',
+                description: (doc.data() as AboutUsData).description || activeChurch?.aboutUs || '',
+                mission: (doc.data() as AboutUsData).mission || '',
+                vision: (doc.data() as AboutUsData).vision || '',
+              }
+              : {
                 churchName: activeChurch?.name || 'Your Church',
                 churchSubtitle: '',
                 description: activeChurch?.aboutUs || '',
                 mission: '',
                 vision: '',
-              });
-            }
+              };
+            setData(nextData);
+            writeInstantCache(cacheKey, nextData);
             setLoading(false);
           },
           (err) => {
@@ -88,15 +113,16 @@ export default function AboutUsScreen() {
 
     setupListener();
     return () => {
+      isMounted = false;
       if (unsub) unsub();
     };
-  }, []);
+  }, [cacheKey, activeChurch?.id]);
 
   return (
     <View style={[styles.safe, { backgroundColor: colors.background }]}>
       <StatusBar barStyle={colors.barStyle || (isDark ? 'light-content' : 'dark-content')} backgroundColor={colors.background} />
       {/* Hero Header Card */}
-            {/* ── Screen Header (Clean circular back button & title) ── */}
+      {/* ── Screen Header (Clean circular back button & title) ── */}
       <View
         style={[
           styles.headerRow,
@@ -133,7 +159,7 @@ export default function AboutUsScreen() {
           <View style={styles.heroSection}>
             {!!activeChurch?.theme?.logoUrl ? (
               <View style={[styles.logoCircle, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }]}>
-                <Image
+                <CachedImage
                   source={{ uri: activeChurch.theme.logoUrl }}
                   style={styles.logo}
                   resizeMode="cover"
@@ -156,9 +182,10 @@ export default function AboutUsScreen() {
           </View>
 
           {/* Church Image */}
-          <Image 
-            source={{ uri: 'https://images.unsplash.com/photo-1438232992991-995b7058bbb3?q=80&w=800&auto=format&fit=crop' }} 
+          <CachedImage
+            source={{ uri: 'https://images.unsplash.com/photo-1438232992991-995b7058bbb3?q=80&w=800&auto=format&fit=crop' }}
             style={styles.churchImage}
+            resizeMode="cover"
           />
 
           {/* Our Vision */}
@@ -197,7 +224,7 @@ export default function AboutUsScreen() {
           {/* Connected in Spirit */}
           <View style={styles.connectedSection}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>{t('aboutUs.connectedInSpirit')}</Text>
-            
+
             <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={[styles.featureIconBox, { backgroundColor: '#e2e8f0' }]}>
                 <BookOpen size={20} color="#1e293b" />
@@ -205,7 +232,7 @@ export default function AboutUsScreen() {
               <Text style={[styles.featureTitle, { color: colors.text }]}>{t('aboutUs.features.sermonsTitle')}</Text>
               <Text style={[styles.featureDesc, { color: colors.textSecondary }]}>{t('aboutUs.features.sermonsDesc')}</Text>
             </View>
-            
+
             <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={[styles.featureIconBox, { backgroundColor: '#fef3c7' }]}>
                 <Video size={20} color="#92400e" />
@@ -213,7 +240,7 @@ export default function AboutUsScreen() {
               <Text style={[styles.featureTitle, { color: colors.text }]}>{t('aboutUs.features.liveServicesTitle')}</Text>
               <Text style={[styles.featureDesc, { color: colors.textSecondary }]}>{t('aboutUs.features.liveServicesDesc')}</Text>
             </View>
-            
+
             <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={[styles.featureIconBox, { backgroundColor: '#fef3c7' }]}>
                 <Hand size={20} color="#92400e" />
@@ -221,7 +248,7 @@ export default function AboutUsScreen() {
               <Text style={[styles.featureTitle, { color: colors.text }]}>{t('aboutUs.features.prayerRequestsTitle')}</Text>
               <Text style={[styles.featureDesc, { color: colors.textSecondary }]}>{t('aboutUs.features.prayerRequestsDesc')}</Text>
             </View>
-            
+
             <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={[styles.featureIconBox, { backgroundColor: '#e2e8f0' }]}>
                 <Gift size={20} color="#1e293b" />
@@ -229,7 +256,7 @@ export default function AboutUsScreen() {
               <Text style={[styles.featureTitle, { color: colors.text }]}>{t('aboutUs.features.givingTitle')}</Text>
               <Text style={[styles.featureDesc, { color: colors.textSecondary }]}>{t('aboutUs.features.givingDesc')}</Text>
             </View>
-            
+
             <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={[styles.featureIconBox, { backgroundColor: '#e5e7eb' }]}>
                 <Sparkles size={20} color="#1f2937" />
@@ -237,7 +264,7 @@ export default function AboutUsScreen() {
               <Text style={[styles.featureTitle, { color: colors.text }]}>{t('aboutUs.features.dailyPromisesTitle')}</Text>
               <Text style={[styles.featureDesc, { color: colors.textSecondary }]}>{t('aboutUs.features.dailyPromisesDesc')}</Text>
             </View>
-            
+
             <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={[styles.featureIconBox, { backgroundColor: '#e2e8f0' }]}>
                 <Calendar size={20} color="#1e293b" />
@@ -262,7 +289,7 @@ export default function AboutUsScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#FAF7F2' },
-    headerRow: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -366,7 +393,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   headerSub: { color: 'rgba(255,255,255,0.65)', fontSize: 11, fontWeight: '500' },
-  
+
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',

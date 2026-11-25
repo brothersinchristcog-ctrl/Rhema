@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useContext, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform, ActivityIndicator, Alert, DeviceEventEmitter, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LayoutDashboard, History, PlusCircle, Receipt, Menu, Check, ChevronLeft, ArrowLeft } from 'lucide-react-native';
+import { LayoutDashboard, History, PlusCircle, Receipt, Menu, Check, ChevronLeft, ArrowLeft, ShieldAlert } from 'lucide-react-native';
 
 // Import sub-screens
 import AdminExpenseDashboard from './AdminExpenseDashboard';
@@ -10,10 +10,14 @@ import AdminExpenseAdd from './AdminExpenseAdd';
 import AdminExpenseInvoices from './AdminExpenseInvoices';
 import AdminExpenseApprovals from './AdminExpenseApprovals';
 import { AdminTabContext } from '../../../context/AdminTabContext';
-import { db, functions, FieldValue } from '../../../services/firebaseConfig';
+import { db, FieldValue } from '../../../services/firebaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../../context/AuthContext';
+import { useChurch } from '../../../context/ChurchContext';
+import { RHEMA_CHURCH_ID } from '../../../constants/ChurchConfig';
+import { isSuperAdminMember } from '../../../utils/roleUtils';
 import { useAdminTheme } from '../../../utils/adminThemeHelper';
+import { parseInvoiceSequence, formatInvoiceNoDisplay } from './AdminExpenseUtils';
 
 const TAB_TITLES: any = {
   dashboard: 'Expense Overview',
@@ -25,11 +29,11 @@ const TAB_TITLES: any = {
 
 const BASE_TABS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "history",   label: "Expenses",  icon: History },
-  { id: "invoice",   label: "Invoices",  icon: Receipt },
+  { id: "history", label: "Expenses", icon: History },
+  { id: "invoice", label: "Invoices", icon: Receipt },
 ];
 
-export default function AdminExpenseMain({ onBack }: any) {
+export default function AdminExpenseMain({ onBack, routeParams }: any) {
   const {
     isDark,
     screenBg,
@@ -45,7 +49,13 @@ export default function AdminExpenseMain({ onBack }: any) {
   const openDrawer = adminTabCtx?.openDrawer;
   const setActiveAdminTab = adminTabCtx?.setActiveTab;
 
-  const { member } = useAuth();
+  const { member, user, isPlatformSuperAdmin } = useAuth();
+  const { activeChurch } = useChurch();
+  const isSuperAdmin = useMemo(
+    () => isSuperAdminMember(member, isPlatformSuperAdmin),
+    [member, isPlatformSuperAdmin]
+  );
+
   const [activeTab, setActiveTab] = useState('dashboard');
   const [expenses, setExpenses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,16 +64,19 @@ export default function AdminExpenseMain({ onBack }: any) {
   const [pendingInvoiceEntries, setPendingInvoiceEntries] = useState<any[] | null>(null);
 
   const TABS = useMemo(() => {
-    const ut = member?.userType?.toLowerCase() || '';
-    const isAdmin = ut === 'admin' || ut === 'pastor' || ut === 'system administrator' || ut.includes('admin') || ut.includes('pastor');
-    
-    if (isAdmin) {
+    if (isSuperAdmin) {
       return [...BASE_TABS, { id: "approvals", label: "Approvals", icon: Check }];
     }
     return BASE_TABS;
-  }, [member?.userType]);
+  }, [isSuperAdmin]);
 
   useEffect(() => {
+    if (!isSuperAdmin) {
+      setExpenses([]);
+      setLoading(false);
+      return;
+    }
+
     const unsubscribe = db.collection('ledger_expenses')
       .orderBy('date', 'desc')
       .onSnapshot(
@@ -86,14 +99,23 @@ export default function AdminExpenseMain({ onBack }: any) {
       );
 
     return () => unsubscribe();
-  }, []);
+  }, [isSuperAdmin]);
 
   useEffect(() => {
+    if (!isSuperAdmin) return;
+    const requestedTab = routeParams?.innerTab || (routeParams?.highlightInvoiceId ? 'invoice' : null);
+    if (requestedTab && ['dashboard', 'history', 'add', 'invoice', 'approvals'].includes(requestedTab)) {
+      setActiveTab(requestedTab);
+    }
+  }, [isSuperAdmin, routeParams?.innerTab, routeParams?.highlightInvoiceId, routeParams?.timestamp]);
+
+  useEffect(() => {
+    if (!isSuperAdmin) return;
     const sub = DeviceEventEmitter.addListener('NAVIGATE_ADMIN_INNER', (innerTab) => {
       setActiveTab(innerTab);
     });
     return () => sub.remove();
-  }, []);
+  }, [isSuperAdmin]);
 
   const handleBackOrMenu = () => {
     if (activeTab !== 'dashboard') {
@@ -114,55 +136,55 @@ export default function AdminExpenseMain({ onBack }: any) {
     setHistoryRange(range);
     setActiveTab("history");
   };
-  
-  const handleGenerateInvoiceFromHistory = async (entries: any[]) => {
-    if (entries.length === 0) return;
-    
-    if (entries.length === 1 && entries[0].invoiceNumber) {
-      setPendingInvoiceEntries(entries);
-      setActiveTab("invoice");
-      return;
-    }
-    
+
+  const allocateNextInvoiceNumber = async () => {
     let maxSeq = 0;
+    const checkMax = (inv: string) => {
+      const num = parseInvoiceSequence(inv);
+      if (num !== null && num > maxSeq) {
+        maxSeq = num;
+      }
+    };
+
     expenses.forEach((ex: any) => {
-      const checkMax = (inv: string) => {
-        if (inv && inv.startsWith('INV-COG')) {
-          const numStr = inv.replace('INV-COG', '');
-          const num = parseInt(numStr, 10);
-          if (!isNaN(num) && num > maxSeq) {
-            maxSeq = num;
-          }
-        }
-      };
-      
       if (ex.invoiceNumber) checkMax(ex.invoiceNumber);
       if (ex.invoiceNumbers && Array.isArray(ex.invoiceNumbers)) {
         ex.invoiceNumbers.forEach(checkMax);
       }
     });
 
-    let asyncSeq = parseInt(await AsyncStorage.getItem('inv_seq') || '0', 10);
-    let nextSeq = Math.max(maxSeq, asyncSeq) + 1;
+    const asyncSeq = parseInt((await AsyncStorage.getItem('inv_seq')) || '0', 10);
+    const nextSeq = Math.max(maxSeq, isNaN(asyncSeq) ? 0 : asyncSeq) + 1;
     await AsyncStorage.setItem('inv_seq', nextSeq.toString());
+    return `Inv_RGM${nextSeq.toString().padStart(4, '0')}`;
+  };
 
-    const invNo = `INV-COG${nextSeq.toString().padStart(4, '0')}`;
+  const handleGenerateInvoiceFromHistory = async (entries: any[]) => {
+    if (entries.length === 0) return;
+
+    if (entries.length === 1 && entries[0].invoiceNumber) {
+      setPendingInvoiceEntries(entries);
+      setActiveTab("invoice");
+      return;
+    }
+
+    const invNo = await allocateNextInvoiceNumber();
     const invoiceDate = new Date().toISOString();
     const batch = db.batch();
-    
+
     let updatedCount = 0;
     entries.forEach(e => {
       if (e.invoiceNumber !== invNo && !(e.invoiceNumbers || []).includes(invNo)) {
         const ref = db.collection('ledger_expenses').doc(e.id);
-        batch.update(ref, { 
+        batch.update(ref, {
           invoiceNumber: e.invoiceNumber || invNo,
-          invoiceNumbers: FieldValue.arrayUnion(invNo), 
-          invoiceDate 
+          invoiceNumbers: FieldValue.arrayUnion(invNo),
+          invoiceDate
         });
         updatedCount++;
       }
     });
-    
+
     if (updatedCount > 0) {
       try {
         await batch.commit();
@@ -172,14 +194,14 @@ export default function AdminExpenseMain({ onBack }: any) {
         return;
       }
     }
-    
-    const updatedEntries = entries.map(e => ({ 
-      ...e, 
-      invoiceNumber: e.invoiceNumber || invNo, 
+
+    const updatedEntries = entries.map(e => ({
+      ...e,
+      invoiceNumber: e.invoiceNumber || invNo,
       invoiceNumbers: [...(e.invoiceNumbers || []), invNo],
-      invoiceDate: e.invoiceDate || invoiceDate 
+      invoiceDate: e.invoiceDate || invoiceDate
     }));
-    
+
     setPendingInvoiceEntries(updatedEntries);
     setActiveTab("invoice");
   };
@@ -196,9 +218,9 @@ export default function AdminExpenseMain({ onBack }: any) {
             invoiceNumbers: FieldValue.arrayRemove(invNo)
           };
           if (e.invoiceNumber === invNo) {
-             const remaining = (e.invoiceNumbers || []).filter((i: string) => i !== invNo);
-             updateData.invoiceNumber = remaining.length > 0 ? remaining[0] : null;
-             if (remaining.length === 0) updateData.invoiceDate = null;
+            const remaining = (e.invoiceNumbers || []).filter((i: string) => i !== invNo);
+            updateData.invoiceNumber = remaining.length > 0 ? remaining[0] : null;
+            if (remaining.length === 0) updateData.invoiceDate = null;
           }
           batch.update(ref, updateData);
           updatedCount++;
@@ -213,12 +235,12 @@ export default function AdminExpenseMain({ onBack }: any) {
       Alert.alert("Error", "Could not delete the invoice.");
     }
   };
-  
+
   const suggestedEvents = useMemo(() => {
     const events = expenses.map((e: any) => e.eventName).filter(Boolean);
     return Array.from(new Set(events));
   }, [expenses]);
-  
+
   const usedCategories = useMemo(() => {
     const cats: string[] = [];
     expenses.forEach((e: any) => {
@@ -262,54 +284,78 @@ export default function AdminExpenseMain({ onBack }: any) {
   };
 
   const handleSendForApproval = async (expense: any, assignedAdmin?: any) => {
+    if (!isSuperAdmin) {
+      Alert.alert("Access Denied", "Only Super Admins can send expenses for approval.");
+      return;
+    }
     try {
+      const churchId = activeChurch?.id || RHEMA_CHURCH_ID;
+      const submitterName = member?.name || user?.displayName || 'Super Admin';
+      const approvalRequestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       let updateData: any = {
         status: 'Pending Approval',
         submittedAt: new Date().toISOString(),
-        submittedBy: member?.name || 'Admin',
+        submittedBy: submitterName,
+        submittedByUid: user?.uid || member?.id || '',
+        churchId,
+        approvalRequestId,
         approvedBy: FieldValue.delete(),
-        rejectedReason: FieldValue.delete()
+        rejectedReason: FieldValue.delete(),
+        approvalRemarks: FieldValue.delete(),
       };
 
       if (assignedAdmin) {
         updateData.approverId = assignedAdmin.id;
         updateData.approverName = assignedAdmin.name;
+        updateData.approverPhone = assignedAdmin.phone || '';
+      } else {
+        updateData.approverId = FieldValue.delete();
+        updateData.approverName = FieldValue.delete();
+        updateData.approverPhone = FieldValue.delete();
       }
 
+      const effectiveInvNo = expense.invoiceNumber || (await allocateNextInvoiceNumber());
       if (!expense.invoiceNumber) {
-        let seq = parseInt(await AsyncStorage.getItem('inv_seq') || '0', 10);
-        seq += 1;
-        await AsyncStorage.setItem('inv_seq', seq.toString());
-        const invNo = `INV-COG${seq.toString().padStart(4, '0')}`;
-        updateData.invoiceNumber = invNo;
+        updateData.invoiceNumber = effectiveInvNo;
       }
 
       await db.collection('ledger_expenses').doc(expense.id).update(updateData);
-      Alert.alert("Success", "Expense has been sent for approval.");
 
+      // Persist deterministic in-app notification for Super Admin(s); push notifications are dispatched by Cloud Function onLedgerExpenseApproval
       try {
-        const notifyMembers = functions().app.functions('asia-south1').httpsCallable('notifyMembers');
-        const cleanPhone = assignedAdmin?.phone ? assignedAdmin.phone.replace(/[^0-9]/g, '') : '';
-        
-        if (assignedAdmin && cleanPhone.length >= 10) {
-          await notifyMembers({
-            title: "New Expense Approval",
-            body: `${updateData.submittedBy} has sent an expense to ${assignedAdmin.name} for approval.`,
-            targetPhone: assignedAdmin.phone,
-            target: "admin",
-            type: "expense_approval"
-          });
-        } else if (!assignedAdmin) {
-          await notifyMembers({
-            title: "New Expense Approval",
-            body: `${updateData.submittedBy} has submitted an expense for approval.`,
-            target: "admin",
-            type: "expense_approval"
-          });
-        }
-      } catch (err) {
-        console.error("Failed to notify admins:", err);
+        const displayInvNo = formatInvoiceNoDisplay(effectiveInvNo) || effectiveInvNo;
+        const notifId = `expense_approval_${expense.id}_${approvalRequestId}`;
+        const notifTitle = 'New Expense Approval';
+        const notifBody = assignedAdmin
+          ? `${submitterName} has sent an expense (${displayInvNo}) to ${assignedAdmin.name} for approval.`
+          : `${submitterName} has submitted an expense (${displayInvNo}) for approval.`;
+
+        await db
+          .collection('Rhema Church')
+          .doc(churchId)
+          .collection('notifications')
+          .doc(notifId)
+          .set({
+            type: 'expense_approval',
+            targetRole: 'super_admin',
+            ...(assignedAdmin?.id ? { targetUid: assignedAdmin.id, targetMemberId: assignedAdmin.id } : {}),
+            ...(assignedAdmin?.phone ? { targetPhone: assignedAdmin.phone } : {}),
+            title: notifTitle,
+            body: notifBody,
+            expenseId: expense.id,
+            invoiceNumber: displayInvNo,
+            churchId,
+            submittedBy: submitterName,
+            approverName: assignedAdmin?.name || '',
+            approvalRequestId,
+            read: false,
+            createdAt: FieldValue.serverTimestamp(),
+          }, { merge: true });
+      } catch (notifErr) {
+        console.warn('Non-fatal error saving expense approval notification:', notifErr);
       }
+
+      Alert.alert("Success", "Expense has been sent for approval.");
     } catch (err) {
       console.error("Error sending for approval:", err);
       Alert.alert("Error", "Could not send for approval.");
@@ -336,16 +382,42 @@ export default function AdminExpenseMain({ onBack }: any) {
       case 'invoice':
         return <AdminExpenseInvoices expenses={expenses} pendingInvoiceEntries={pendingInvoiceEntries} clearPendingInvoice={() => setPendingInvoiceEntries(null)} onSendForApproval={handleSendForApproval} onDeleteInvoice={handleDeleteInvoice} />;
       case 'approvals':
-        return <AdminExpenseApprovals expenses={expenses} onGenerateInvoice={handleGenerateInvoiceFromHistory} onDelete={handleDeleteExpense} />;
+        return <AdminExpenseApprovals expenses={expenses} onGenerateInvoice={handleGenerateInvoiceFromHistory} onDelete={handleDeleteExpense} initialApprovalTab={routeParams?.approvalSubTab} />;
       default:
         return <AdminExpenseDashboard expenses={expenses} goTo={setActiveTab} goToRange={goToHistoryWithRange} />;
     }
   };
 
+  if (!isSuperAdmin) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: screenBg }]} edges={['bottom']}>
+        <StatusBar barStyle={barStyle} backgroundColor={isDark ? '#000000' : '#FFFFFF'} />
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 28 }}>
+          <View style={{ width: 68, height: 68, borderRadius: 34, backgroundColor: 'rgba(239, 68, 68, 0.14)', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+            <ShieldAlert size={34} color="#EF4444" />
+          </View>
+          <Text style={{ fontSize: 19, fontWeight: '800', color: primaryText, textAlign: 'center', marginBottom: 8 }}>
+            Super Admin Access Only
+          </Text>
+          <Text style={{ fontSize: 13.5, color: secondaryText, textAlign: 'center', lineHeight: 20, marginBottom: 22 }}>
+            Expense and Invoice management is restricted to Platform Super Admins only.
+          </Text>
+          <TouchableOpacity
+            onPress={handleBackOrMenu}
+            style={{ backgroundColor: '#174A33', paddingHorizontal: 22, paddingVertical: 12, borderRadius: 12 }}
+            activeOpacity={0.85}
+          >
+            <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '700' }}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: isDark ? '#000000' : '#FFFFFF' }]} edges={['bottom']}>
       <StatusBar barStyle={barStyle} backgroundColor={isDark ? '#000000' : '#FFFFFF'} />
-      
+
       {/* ── Top App Bar (Expense Overview / Ledger / Invoices / Approvals) ── */}
       <View
         style={[
@@ -401,9 +473,9 @@ export default function AdminExpenseMain({ onBack }: any) {
           const Icon = t.icon as any;
 
           return (
-            <TouchableOpacity 
-              key={t.id} 
-              style={styles.tabBtn} 
+            <TouchableOpacity
+              key={t.id}
+              style={styles.tabBtn}
               onPress={() => {
                 if (t.id === 'history') setHistoryRange('all');
                 setActiveTab(t.id);

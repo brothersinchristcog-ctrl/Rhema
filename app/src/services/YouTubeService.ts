@@ -330,6 +330,12 @@ export interface ActiveLiveStreamResult {
  * When `expectedChannelId` is provided, strictly verifies that the video belongs
  * to that exact YouTube channel (rejecting any foreign/recommended videos).
  */
+const LIVE_STATUS_CACHE = new Map<string, { ts: number; data: any }>();
+const LIVE_STATUS_IN_FLIGHT = new Map<string, Promise<any>>();
+const ACTIVE_STREAM_CACHE = new Map<string, { ts: number; data: ActiveLiveStreamResult }>();
+const ACTIVE_STREAM_IN_FLIGHT = new Map<string, Promise<ActiveLiveStreamResult>>();
+const YOUTUBE_LIVE_CACHE_TTL_MS = 30_000;
+
 export async function checkVideoLiveStatus(
   videoId: string,
   expectedChannelId?: string | null
@@ -346,8 +352,32 @@ export async function checkVideoLiveStatus(
     return { status: 'none', isLiveNow: false, hasEnded: false };
   }
   const cleanVideoId = videoId.trim();
+  const cacheKey = `${cleanVideoId}:${expectedChannelId || ''}`;
+  const cached = LIVE_STATUS_CACHE.get(cacheKey);
+  if (cached && Date.now() - cached.ts < YOUTUBE_LIVE_CACHE_TTL_MS) {
+    return cached.data;
+  }
+  const pending = LIVE_STATUS_IN_FLIGHT.get(cacheKey);
+  if (pending) return pending;
 
-  try {
+  const task: Promise<{
+    status: 'live' | 'completed' | 'none';
+    isLiveNow: boolean;
+    hasEnded: boolean;
+    title?: string;
+    channelId?: string;
+    channelTitle?: string;
+    channelMismatch?: boolean;
+  }> = (async (): Promise<{
+    status: 'live' | 'completed' | 'none';
+    isLiveNow: boolean;
+    hasEnded: boolean;
+    title?: string;
+    channelId?: string;
+    channelTitle?: string;
+    channelMismatch?: boolean;
+  }> => {
+    try {
     const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,liveStreamingDetails&id=${cleanVideoId}&key=${YOUTUBE_API_KEY}`;
     const res = await fetch(url);
     if (res.ok) {
@@ -467,6 +497,17 @@ export async function checkVideoLiveStatus(
   }
 
   return { status: 'none', isLiveNow: false, hasEnded: false };
+  })()
+    .then((result) => {
+      LIVE_STATUS_CACHE.set(cacheKey, { ts: Date.now(), data: result });
+      return result;
+    })
+    .finally(() => {
+      LIVE_STATUS_IN_FLIGHT.delete(cacheKey);
+    });
+
+  LIVE_STATUS_IN_FLIGHT.set(cacheKey, task);
+  return task;
 }
 
 /**
@@ -481,6 +522,15 @@ export async function findActiveLiveStream(
   if (!channelHandleOrUrl) {
     return { videoId: null, title: '', isLiveNow: false, hasEnded: false, status: 'none' };
   }
+  const streamKey = `${channelHandleOrUrl}:${expectedChannelId || ''}`;
+  const cachedStream = ACTIVE_STREAM_CACHE.get(streamKey);
+  if (cachedStream && Date.now() - cachedStream.ts < YOUTUBE_LIVE_CACHE_TTL_MS) {
+    return cachedStream.data;
+  }
+  const pendingStream = ACTIVE_STREAM_IN_FLIGHT.get(streamKey);
+  if (pendingStream) return pendingStream;
+
+  const runStreamDiscovery = async (): Promise<ActiveLiveStreamResult> => {
   try {
     const { handle, channelId: directCId, videoId: directVideoId } = sanitizeYoutubeInput(channelHandleOrUrl);
 
@@ -504,39 +554,32 @@ export async function findActiveLiveStream(
       return { videoId: null, title: '', isLiveNow: false, hasEnded: false, status: 'none' };
     }
 
-    // Method 1: Channel Live Streams Playlist (UULV) + Channel RSS + authoritative `videos.list` (2 quota units)
+    // Method 1: Fetch UULV Live Streams Playlist AND Channel RSS in parallel
     const candidateIds: string[] = [];
     const suffix = channelId.slice(2);
 
-    try {
-      const uulvRes = await fetch(
-        `https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&playlistId=UULV${suffix}&maxResults=5&key=${YOUTUBE_API_KEY}`
-      );
-      if (uulvRes.ok) {
-        const uulvData = await uulvRes.json();
-        for (const it of uulvData.items || []) {
-          if (it?.contentDetails?.videoId) candidateIds.push(it.contentDetails.videoId);
-        }
-      }
-    } catch {
-      // Continue to RSS
-    }
-
-    try {
-      const rssRes = await fetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`);
-      if (rssRes.ok) {
-        const xml = await rssRes.text();
-        const matches = xml.matchAll(/<yt:videoId>([\w-]{11})<\/yt:videoId>/g);
-        let count = 0;
-        for (const m of matches) {
-          if (m[1]) candidateIds.push(m[1]);
-          count++;
-          if (count >= 6) break;
-        }
-      }
-    } catch {
-      // Non-fatal
-    }
+    const [uulvIds, rssIds] = await Promise.all([
+      fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&playlistId=UULV${suffix}&maxResults=5&key=${YOUTUBE_API_KEY}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((uulvData) =>
+          (uulvData?.items || []).map((it: any) => it?.contentDetails?.videoId).filter(Boolean) as string[]
+        )
+        .catch(() => [] as string[]),
+      fetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`)
+        .then((res) => (res.ok ? res.text() : ''))
+        .then((xml) => {
+          const out: string[] = [];
+          if (!xml) return out;
+          const matches = xml.matchAll(/<yt:videoId>([\w-]{11})<\/yt:videoId>/g);
+          for (const m of matches) {
+            if (m[1]) out.push(m[1]);
+            if (out.length >= 6) break;
+          }
+          return out;
+        })
+        .catch(() => [] as string[]),
+    ]);
+    candidateIds.push(...uulvIds, ...rssIds);
 
     const uniqueIds = Array.from(new Set(candidateIds.filter((id) => /^[\w-]{11}$/.test(id)))).slice(0, 12);
     if (uniqueIds.length > 0) {
@@ -606,4 +649,19 @@ export async function findActiveLiveStream(
     console.error('❌ [YouTubeService] findActiveLiveStream error:', err);
     return { videoId: null, title: '', isLiveNow: false, hasEnded: false, status: 'none' };
   }
+  };
+
+  const task = runStreamDiscovery()
+    .then((result) => {
+      ACTIVE_STREAM_CACHE.set(streamKey, { ts: Date.now(), data: result });
+      ACTIVE_STREAM_IN_FLIGHT.delete(streamKey);
+      return result;
+    })
+    .catch(() => {
+      ACTIVE_STREAM_IN_FLIGHT.delete(streamKey);
+      return { videoId: null, title: '', isLiveNow: false, hasEnded: false, status: 'none' } as ActiveLiveStreamResult;
+    });
+
+  ACTIVE_STREAM_IN_FLIGHT.set(streamKey, task);
+  return task;
 }

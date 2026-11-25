@@ -70,7 +70,7 @@ export default function KidsLessonDetailModal({
   onClose,
 }: Props) {
   const { isDark } = useTheme();
-  const [isPreparing, setIsPreparing] = useState(true);
+  const [isPreparing, setIsPreparing] = useState(false);
   const [langMode, setLangMode] = useState<'both' | 'english' | 'telugu'>('both');
   const [verseMemorized, setVerseMemorized] = useState(false);
   const [playingAudio, setPlayingAudio] = useState(false);
@@ -105,14 +105,10 @@ export default function KidsLessonDetailModal({
 
   useEffect(() => {
     if (!visible || !lesson) return;
-    setIsPreparing(true);
+    setIsPreparing(false);
     setOrderedWordIds([]);
     setPracticeHint(null);
     setVerseMemorized(false);
-    const timer = setTimeout(() => {
-      setIsPreparing(false);
-    }, 180);
-    return () => clearTimeout(timer);
   }, [lesson?.id, visible]);
 
   if (!lesson) return null;

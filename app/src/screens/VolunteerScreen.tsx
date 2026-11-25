@@ -49,6 +49,12 @@ import {
 } from '../types/volunteer';
 import { formatDateDisplay, formatDateMonthYear, formatTimeTo12Hour } from '../utils/DateUtils';
 import { CustomAlert } from '../components/CustomAlert';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  readInstantCache,
+  writeInstantCache,
+} from '../utils/instantCache';
 
 const { width } = Dimensions.get('window');
 
@@ -119,13 +125,29 @@ export default function VolunteerScreen({ navigation, route }: any) {
 
   const churchId = activeChurch?.id || 'rhema';
   const targetPostId = route?.params?.postId || '';
+  const volunteerCacheKey = useMemo(
+    () => makeScopedCacheKey('volunteer_screen_v1', churchId, user?.uid),
+    [churchId, user?.uid]
+  );
+  const initialVolunteerCache = useMemo(
+    () =>
+      getInstantMemory<{
+        myApplications: VolunteerApplication[];
+        volunteerPosts: GeneralVolunteerPost[];
+      }>(volunteerCacheKey),
+    [volunteerCacheKey]
+  );
 
-  const [myApplications, setMyApplications] = useState<VolunteerApplication[]>([]);
-  const [volunteerPosts, setVolunteerPosts] = useState<GeneralVolunteerPost[]>([]);
+  const [myApplications, setMyApplications] = useState<VolunteerApplication[]>(
+    initialVolunteerCache?.myApplications || []
+  );
+  const [volunteerPosts, setVolunteerPosts] = useState<GeneralVolunteerPost[]>(
+    initialVolunteerCache?.volunteerPosts || []
+  );
   const [selectedPost, setSelectedPost] = useState<GeneralVolunteerPost | null>(null);
   const [quickApplyPost, setQuickApplyPost] = useState<GeneralVolunteerPost | null>(null);
   const [quickApplyNotes, setQuickApplyNotes] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialVolunteerCache);
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -179,10 +201,17 @@ export default function VolunteerScreen({ navigation, route }: any) {
   }, [myApplications]);
 
   const fetchApplications = async () => {
-    if (!user?.uid) return;
+    if (!user?.uid) {
+      setLoading(false);
+      return;
+    }
     try {
       const apps = await VolunteerService.getMyApplications(churchId, user.uid);
       setMyApplications(apps);
+      writeInstantCache(volunteerCacheKey, {
+        myApplications: apps,
+        volunteerPosts,
+      }).catch(() => {});
       // If user has existing applications and didn't tap a specific post notification, switch to status tab by default on initial load
       if (apps.length > 0 && loading && !targetPostId) {
         setActiveTab('my_status');
@@ -196,11 +225,37 @@ export default function VolunteerScreen({ navigation, route }: any) {
   };
 
   useEffect(() => {
+    let active = true;
+    const mem = getInstantMemory<{
+      myApplications: VolunteerApplication[];
+      volunteerPosts: GeneralVolunteerPost[];
+    }>(volunteerCacheKey);
+    if (mem) {
+      setMyApplications(mem.myApplications || []);
+      setVolunteerPosts(mem.volunteerPosts || []);
+      setLoading(false);
+    } else {
+      readInstantCache<{
+        myApplications: VolunteerApplication[];
+        volunteerPosts: GeneralVolunteerPost[];
+      }>(volunteerCacheKey).then((cached) => {
+        if (!active || !cached?.data) return;
+        setMyApplications(cached.data.myApplications || []);
+        setVolunteerPosts(cached.data.volunteerPosts || []);
+        setLoading(false);
+      });
+    }
+
     fetchApplications();
     const unsubPosts = VolunteerService.subscribeVolunteerPosts(
       churchId,
       (posts) => {
+        if (!active) return;
         setVolunteerPosts(posts);
+        writeInstantCache(volunteerCacheKey, {
+          myApplications,
+          volunteerPosts: posts,
+        }).catch(() => {});
         if (targetPostId) {
           const matched = posts.find((p) => p.id === targetPostId && p.status !== 'closed');
           if (matched) {
@@ -211,8 +266,11 @@ export default function VolunteerScreen({ navigation, route }: any) {
       },
       () => {}
     );
-    return () => unsubPosts();
-  }, [churchId, user?.uid, targetPostId]);
+    return () => {
+      active = false;
+      unsubPosts();
+    };
+  }, [churchId, user?.uid, targetPostId, volunteerCacheKey]);
 
   const handleOpenQuickApply = (post: GeneralVolunteerPost) => {
     const existingPendingForPost = myApplications.find(

@@ -39,6 +39,8 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '../../../context/AuthContext';
 import { FONT_STYLE_OPTIONS, useTheme } from '../../../context/ThemeContext';
+import { e2eeService, E2EEStateSnapshot } from '../../../services/e2eeService';
+import ChatEncryptionModal, { ChatEncryptionModalMode } from '../../../components/ChatEncryptionModal';
 import MatrimonyCachedImage from '../components/MatrimonyCachedImage';
 import MatrimonyReportModal from '../components/MatrimonyReportModal';
 import { isMatrimonyInactiveError, matrimonyApi } from '../services/matrimonyApi';
@@ -197,9 +199,17 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [e2eeState, setE2eeState] = useState<E2EEStateSnapshot>(() => e2eeService.getState());
+  const [e2eeModalMode, setE2eeModalMode] = useState<ChatEncryptionModalMode | null>(null);
   const [showPaywallCard, setShowPaywallCard] = useState(false);
   const [iosKbVisible, setIosKbVisible] = useState(false);
   const [composerHeight, setComposerHeight] = useState(() => Math.max(insets.bottom + 8, 12) + 54);
+
+  useEffect(() => {
+    setE2eeState(e2eeService.getState());
+    const unsub = e2eeService.subscribeState(setE2eeState);
+    return () => unsub();
+  }, []);
 
   const listRef = useRef<FlatList<TimelineItem>>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -476,6 +486,11 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
       if (!overrideText) {
         setInputText((cur) => cur || textToSend);
       }
+      setReplyTo(activeReply);
+      if (err?.message === 'PIN_UNLOCK_REQUIRED') {
+        setE2eeModalMode('unlock_backup');
+        return;
+      }
       Alert.alert('Message Not Sent', err?.message || 'Unable to deliver message right now.');
     }
   };
@@ -522,6 +537,10 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
       setInputText('');
       setReplyTo(null);
     } catch (err: any) {
+      if (err?.message === 'PIN_UNLOCK_REQUIRED') {
+        setE2eeModalMode('unlock_backup');
+        return;
+      }
       Alert.alert('Upload Failed', err?.message || 'Unable to send image right now.');
     } finally {
       setUploadingImage(false);
@@ -965,7 +984,13 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
                 ) : null}
                 {canMessage ? (
                   <View style={styles.privacyBannerWrap}>
-                    <View
+                    <TouchableOpacity
+                      activeOpacity={0.82}
+                      onPress={() =>
+                        setE2eeModalMode(
+                          e2eeState.status === 'needs_pin_unlock' ? 'unlock_backup' : 'manage'
+                        )
+                      }
                       style={[
                         styles.privacyBanner,
                         { backgroundColor: isDark ? '#182229' : '#FFF3CD' },
@@ -978,9 +1003,11 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
                           { color: isDark ? '#FDE68A' : '#856404', fontFamily },
                         ]}
                       >
-                        Private real-time chat unlocked through your Rhema Matrimony mutual match.
+                        {e2eeState.status === 'needs_pin_unlock'
+                          ? 'End-to-end encrypted chat is locked. Tap here to enter Backup PIN.'
+                          : 'Messages in this Rhema Matrimony mutual match chat are end-to-end encrypted.'}
                       </Text>
-                    </View>
+                    </TouchableOpacity>
                   </View>
                 ) : timeline.length > 0 ? (
                   <View style={styles.privacyBannerWrap}>
@@ -1446,6 +1473,25 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
               style={styles.msgSheetBtn}
               onPress={() => {
                 setHeaderMenuOpen(false);
+                setTimeout(
+                  () =>
+                    setE2eeModalMode(
+                      e2eeState.status === 'needs_pin_unlock' ? 'unlock_backup' : 'manage'
+                    ),
+                  120
+                );
+              }}
+            >
+              <Lock size={19} color={WHATSAPP_GREEN} />
+              <Text style={[styles.msgSheetBtnText, { color: colors.text, fontFamily }]}>
+                Chat Encryption & PIN
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.msgSheetBtn}
+              onPress={() => {
+                setHeaderMenuOpen(false);
                 setTimeout(() => setReportModalOpen(true), 120);
               }}
             >
@@ -1526,6 +1572,15 @@ export default function MatrimonyChatScreen({ navigation, route }: any) {
           }}
         />
       ) : null}
+
+      <ChatEncryptionModal
+        visible={Boolean(e2eeModalMode)}
+        uid={myUid}
+        mode={e2eeModalMode || 'manage'}
+        isDark={isDark}
+        accentColor={WHATSAPP_GREEN}
+        onClose={() => setE2eeModalMode(null)}
+      />
     </SafeAreaView>
   );
 }

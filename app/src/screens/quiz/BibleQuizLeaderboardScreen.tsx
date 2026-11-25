@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  FlatList,
   TouchableOpacity,
   StatusBar,
   Platform,
@@ -42,6 +43,8 @@ import { RHEMA_CHURCH_ID } from '../../constants/ChurchConfig';
 import { useAuth } from '../../context/AuthContext';
 import { QuizService } from '../../services/QuizService';
 import { LeaderboardEntry } from '../../types/Quiz';
+import { CachedImage } from '../../components/CachedImage';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../../utils/instantCache';
 
 type LeaderboardCategory = 'daily' | 'church';
 type PeriodFilter = 'today' | 'week' | 'month' | 'year' | 'custom';
@@ -88,15 +91,29 @@ export default function BibleQuizLeaderboardScreen() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   });
 
+  const boardCacheKey = makeScopedCacheKey(
+    'quiz_leaderboard_v1',
+    churchId,
+    selectedCategory,
+    selectedPeriod === 'custom' ? `${selectedPeriod}_${customStartDate}_${customEndDate}` : selectedPeriod
+  );
+  const initialBoardCache = getInstantMemory<LeaderboardEntry[]>(boardCacheKey);
+
   // Leaderboard data
-  const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [entries, setEntries] = useState<LeaderboardEntry[]>(() => initialBoardCache || []);
+  const [loading, setLoading] = useState<boolean>(() => !initialBoardCache);
   const [refreshing, setRefreshing] = useState<boolean>(false);
 
   const loadLeaderboardData = useCallback(async (isRefresh = false) => {
     try {
+      const memHit = getInstantMemory<LeaderboardEntry[]>(boardCacheKey);
       if (isRefresh) setRefreshing(true);
-      else setLoading(true);
+      else if (memHit) {
+        setEntries(memHit);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
 
       const currentUserPhoto =
         (member as any)?.profilePhoto ||
@@ -115,25 +132,37 @@ export default function BibleQuizLeaderboardScreen() {
         user?.displayName ||
         undefined;
 
-      const list = await QuizService.getCategorizedLeaderboard({
-        churchId,
-        category: selectedCategory,
-        period: selectedPeriod,
-        customStartDate: selectedPeriod === 'custom' ? customStartDate : undefined,
-        customEndDate: selectedPeriod === 'custom' ? customEndDate : undefined,
-        currentUserId: user?.uid,
-        currentUserAvatar: currentUserPhoto,
-        currentUserName: currentUserName,
+      await loadWithInstantCache<LeaderboardEntry[]>({
+        key: boardCacheKey,
+        screenName: 'BibleQuizLeaderboard',
+        freshSkipMs: 90 * 1000,
+        forceRefresh: isRefresh,
+        fetcher: () => QuizService.getCategorizedLeaderboard({
+          churchId,
+          category: selectedCategory,
+          period: selectedPeriod,
+          customStartDate: selectedPeriod === 'custom' ? customStartDate : undefined,
+          customEndDate: selectedPeriod === 'custom' ? customEndDate : undefined,
+          currentUserId: user?.uid,
+          currentUserAvatar: currentUserPhoto,
+          currentUserName: currentUserName,
+        }),
+        onCached: (cached) => {
+          setEntries(cached || []);
+          setLoading(false);
+        },
+        onFresh: (fresh) => {
+          setEntries(fresh || []);
+          setLoading(false);
+        },
       });
-
-      setEntries(list);
     } catch (err) {
       console.warn('[BibleQuizLeaderboard] Error loading leaderboard data:', err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [churchId, selectedCategory, selectedPeriod, customStartDate, customEndDate, user?.uid, user?.photoURL, user?.displayName, member]);
+  }, [churchId, selectedCategory, selectedPeriod, customStartDate, customEndDate, user?.uid, user?.photoURL, user?.displayName, member, boardCacheKey]);
 
   useEffect(() => {
     loadLeaderboardData();
@@ -313,7 +342,7 @@ export default function BibleQuizLeaderboardScreen() {
                   <View style={styles.personOnCardContainer}>
                     <View style={[styles.avatarCircle, { borderColor: '#93C5FD', backgroundColor: '#DBEAFE' }]}>
                       {getAvatarUri(top2) ? (
-                        <Image source={{ uri: getAvatarUri(top2) }} style={styles.avatarImg} />
+                        <CachedImage source={{ uri: getAvatarUri(top2) }} style={styles.avatarImg} />
                       ) : (
                         <Text style={[styles.initialsTxt, { color: '#2563EB' }]}>
                           {getAvatarInitials(top2.memberName)}
@@ -343,7 +372,7 @@ export default function BibleQuizLeaderboardScreen() {
 
                     <View style={[styles.avatarCircleCenter, { borderColor: '#FBBF24', backgroundColor: '#FEF3C7' }]}>
                       {getAvatarUri(top1) ? (
-                        <Image source={{ uri: getAvatarUri(top1) }} style={styles.avatarImg} />
+                        <CachedImage source={{ uri: getAvatarUri(top1) }} style={styles.avatarImg} />
                       ) : (
                         <Text style={[styles.initialsTxtCenter, { color: '#D97706' }]}>
                           {getAvatarInitials(top1.memberName)}
@@ -368,7 +397,7 @@ export default function BibleQuizLeaderboardScreen() {
                   <View style={styles.personOnCardContainer}>
                     <View style={[styles.avatarCircle, { borderColor: '#86EFAC', backgroundColor: '#D1FAE5' }]}>
                       {getAvatarUri(top3) ? (
-                        <Image source={{ uri: getAvatarUri(top3) }} style={styles.avatarImg} />
+                        <CachedImage source={{ uri: getAvatarUri(top3) }} style={styles.avatarImg} />
                       ) : (
                         <Text style={[styles.initialsTxt, { color: '#059669' }]}>
                           {getAvatarInitials(top3.memberName)}
@@ -583,14 +612,19 @@ export default function BibleQuizLeaderboardScreen() {
               </View>
 
               {/* Inside Scrollable List for remaining 47 members */}
-              <ScrollView
+              <FlatList
                 style={styles.sheetScrollView}
                 contentContainerStyle={[styles.sheetScrollContent, { paddingBottom: safeBottomPadding }]}
+                data={remainingEntries}
+                keyExtractor={(item, idx) => String(item.userId || idx)}
                 showsVerticalScrollIndicator={true}
                 nestedScrollEnabled={true}
+                initialNumToRender={12}
+                maxToRenderPerBatch={10}
+                windowSize={5}
+                removeClippedSubviews={Platform.OS === 'android'}
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
-              >
-                {remainingEntries.length === 0 ? (
+                ListEmptyComponent={
                   <View style={styles.emptyListWrap}>
                     <Text style={[styles.emptyListTxt, { color: '#64748B', textAlign: 'center', lineHeight: 20 }]}>
                       {entries.length === 0
@@ -598,55 +632,52 @@ export default function BibleQuizLeaderboardScreen() {
                         : 'No other rankings in this period yet.'}
                     </Text>
                   </View>
-                ) : (
-                  remainingEntries.map((entry, idx) => {
-                    const avatarUri = getAvatarUri(entry);
-                    return (
-                      <View
-                        key={entry.userId || idx}
-                        style={[
-                          styles.entryRowCard,
-                          {
-                            backgroundColor: '#F8FAFC',
-                          },
-                        ]}
-                      >
-                        {/* Avatar */}
-                        <View style={styles.listAvatarWrap}>
-                          {avatarUri ? (
-                            <Image source={{ uri: avatarUri }} style={styles.listAvatarImg} />
-                          ) : (
-                            <View
-                              style={[
-                                styles.listAvatarFallback,
-                                {
-                                  backgroundColor: '#E2E8F0',
-                                },
-                              ]}
-                            >
-                              <Text style={[styles.listAvatarInitials, { color: '#0F172A' }]}>
-                                {getAvatarInitials(entry.memberName)}
-                              </Text>
-                            </View>
-                          )}
-                        </View>
-
-                        {/* Name & Coins in clean vertical stack */}
-                        <View style={styles.entryInfoWrap}>
-                          <Text style={[styles.entryNameTxt, { color: '#0F172A' }]} numberOfLines={1}>
-                            {entry.memberName}
-                          </Text>
-                          <Text style={[styles.entryCoinsTxt, { color: '#000000' }]}>
-                            {entry.totalPoints.toLocaleString()} points
-                          </Text>
-                        </View>
+                }
+                renderItem={({ item: entry }) => {
+                  const avatarUri = getAvatarUri(entry);
+                  return (
+                    <View
+                      style={[
+                        styles.entryRowCard,
+                        {
+                          backgroundColor: '#F8FAFC',
+                        },
+                      ]}
+                    >
+                      {/* Avatar */}
+                      <View style={styles.listAvatarWrap}>
+                        {avatarUri ? (
+                          <CachedImage source={{ uri: avatarUri }} style={styles.listAvatarImg} />
+                        ) : (
+                          <View
+                            style={[
+                              styles.listAvatarFallback,
+                              {
+                                backgroundColor: '#E2E8F0',
+                              },
+                            ]}
+                          >
+                            <Text style={[styles.listAvatarInitials, { color: '#0F172A' }]}>
+                              {getAvatarInitials(entry.memberName)}
+                            </Text>
+                          </View>
+                        )}
                       </View>
-                    );
-                  })
-                )}
-                {/* Generous navigation safe spacer guaranteeing 50th card is never hidden behind device navigation buttons */}
-                <View style={{ height: Platform.OS === 'android' ? 70 : 35 }} />
-              </ScrollView>
+
+                      {/* Name & Coins in clean vertical stack */}
+                      <View style={styles.entryInfoWrap}>
+                        <Text style={[styles.entryNameTxt, { color: '#0F172A' }]} numberOfLines={1}>
+                          {entry.memberName}
+                        </Text>
+                        <Text style={[styles.entryCoinsTxt, { color: '#000000' }]}>
+                          {entry.totalPoints.toLocaleString()} points
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                }}
+                ListFooterComponent={<View style={{ height: Platform.OS === 'android' ? 70 : 35 }} />}
+              />
             </View>
           </>
         )}

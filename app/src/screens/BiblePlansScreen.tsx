@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  StyleSheet, 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  ScrollView, 
+import {
+  StyleSheet,
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
   StatusBar,
   Dimensions,
   ActivityIndicator,
@@ -160,26 +160,28 @@ export default function BiblePlansScreen({ navigation }: any) {
     });
   }, [member]);
 
+  const scopedPlansKey = member?.churchId && member?.id
+    ? `@BiblePlansProgress_${member.churchId}_${member.id}`
+    : '@BiblePlansProgress';
+
   const loadProgress = async () => {
     try {
-      setLoadingProgress(true);
-      
-      // 1. Try from Firestore if member is logged in
-      if (member && member.id && member.churchId) {
-        const cloudProgress = await FirestoreService.getBibleProgress(member.churchId, member.id);
-        // Guard against null return (no document yet)
-        if (cloudProgress && Object.keys(cloudProgress).length > 0) {
-          setProgress(cloudProgress);
-          await AsyncStorage.setItem('@BiblePlansProgress', JSON.stringify(cloudProgress));
-          setLoadingProgress(false);
-          return;
-        }
-      }
-
-      // 2. Fallback to Local Storage
-      const stored = await AsyncStorage.getItem('@BiblePlansProgress');
+      // 1. Hydrate immediately from local scoped storage (or migrate legacy unscoped storage) before hitting Firestore
+      const stored = await AsyncStorage.getItem(scopedPlansKey) || await AsyncStorage.getItem('@BiblePlansProgress');
       if (stored) {
         setProgress(JSON.parse(stored));
+        setLoadingProgress(false);
+      } else {
+        setLoadingProgress(true);
+      }
+
+      // 2. Revalidate from Firestore in background if member is logged in
+      if (member && member.id && member.churchId) {
+        const cloudProgress = await FirestoreService.getBibleProgress(member.churchId, member.id);
+        if (cloudProgress && Object.keys(cloudProgress).length > 0) {
+          setProgress(cloudProgress);
+          await AsyncStorage.setItem(scopedPlansKey, JSON.stringify(cloudProgress));
+        }
       }
     } catch (e) {
       console.error('Error loading progress:', e);
@@ -192,7 +194,7 @@ export default function BiblePlansScreen({ navigation }: any) {
     try {
       const planProgress = progress[selectedPlanId] || [];
       const dayStr = dayNumber.toString();
-      
+
       let updatedProgressList: string[];
       if (planProgress.includes(dayStr)) {
         updatedProgressList = planProgress.filter(d => d !== dayStr);
@@ -207,7 +209,7 @@ export default function BiblePlansScreen({ navigation }: any) {
 
       setProgress(updatedProgress);
       const jsonStr = JSON.stringify(updatedProgress);
-      await AsyncStorage.setItem('@BiblePlansProgress', jsonStr);
+      await AsyncStorage.setItem(scopedPlansKey, jsonStr);
     } catch (e) {
       console.error('Error saving progress locally:', e);
       Alert.alert('Error', 'Failed to save progress locally.');
@@ -233,14 +235,14 @@ export default function BiblePlansScreen({ navigation }: any) {
 
   const isTelugu = language === 'te';
   const activePlanCompletedDays = progress[selectedPlanId] || [];
-  const percentComplete = activePlan.days.length > 0 
+  const percentComplete = activePlan.days.length > 0
     ? Math.round((activePlanCompletedDays.length / activePlan.days.length) * 100)
     : 0;
 
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2' }]}>
       <StatusBar barStyle="light-content" backgroundColor="#1a2d5a" />
-      
+
       {/* ── Screen Header (Clean back button & title) ── */}
       <View
         style={[
@@ -278,7 +280,7 @@ export default function BiblePlansScreen({ navigation }: any) {
               <TouchableOpacity
                 key={plan.id}
                 style={[
-                  styles.tabCard, 
+                  styles.tabCard,
                   { backgroundColor: isDark ? '#1e293b' : '#fff' },
                   isActive && { borderColor: plan.color, borderWidth: 2 }
                 ]}
@@ -288,7 +290,7 @@ export default function BiblePlansScreen({ navigation }: any) {
                   <PlanIcon size={18} color="#fff" />
                 </View>
                 <Text style={[
-                  styles.tabLabel, 
+                  styles.tabLabel,
                   { color: isDark ? '#fff' : '#1e293b' },
                   isActive && { fontWeight: '800' }
                 ]}>
@@ -344,16 +346,16 @@ export default function BiblePlansScreen({ navigation }: any) {
           {activePlan.days.map((item) => {
             const isCompleted = activePlanCompletedDays.includes(item.day.toString());
             return (
-              <View 
-                key={item.day} 
+              <View
+                key={item.day}
                 style={[
-                  styles.dayCard, 
+                  styles.dayCard,
                   { backgroundColor: isDark ? '#1e293b' : '#fff' },
                   isCompleted && { opacity: 0.85 }
                 ]}
               >
-                <TouchableOpacity 
-                  style={styles.checkbox} 
+                <TouchableOpacity
+                  style={styles.checkbox}
                   onPress={() => toggleDayCompletion(item.day)}
                 >
                   {isCompleted ? (
@@ -363,7 +365,7 @@ export default function BiblePlansScreen({ navigation }: any) {
                   )}
                 </TouchableOpacity>
 
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.dayInfo}
                   activeOpacity={0.7}
                   onPress={() => {
@@ -384,7 +386,7 @@ export default function BiblePlansScreen({ navigation }: any) {
                     </Text>
                   </View>
                   <Text style={[
-                    styles.dayScripture, 
+                    styles.dayScripture,
                     { color: isDark ? '#fff' : '#1e293b' },
                     isCompleted && styles.completedText
                   ]}>
@@ -396,7 +398,7 @@ export default function BiblePlansScreen({ navigation }: any) {
           })}
         </View>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.saveBtn, isSaving && { opacity: 0.7 }]}
           onPress={handleSavePlan}
           disabled={isSaving}
@@ -409,7 +411,7 @@ export default function BiblePlansScreen({ navigation }: any) {
             </Text>
           )}
         </TouchableOpacity>
-        
+
         <View style={{ height: 100 }} />
       </ScrollView>
 
@@ -418,9 +420,9 @@ export default function BiblePlansScreen({ navigation }: any) {
         <View style={styles.modalOverlayCen}>
           <View style={[styles.successModal, { backgroundColor: isDark ? '#1e293b' : '#fff' }]}>
             <View style={styles.successCircleBg}>
-               <View style={styles.successIconBox}>
-                 <CheckCircle size={46} color="#fff" />
-               </View>
+              <View style={styles.successIconBox}>
+                <CheckCircle size={46} color="#fff" />
+              </View>
             </View>
             <Text style={[styles.successTitle, { color: isDark ? '#fff' : '#1a2d5a' }]}>
               {t('bible.hallelujah')}
@@ -442,7 +444,7 @@ export default function BiblePlansScreen({ navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-    headerRow: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -538,7 +540,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 10,
   },
-  
+
   langToggle: {
     backgroundColor: 'rgba(0,0,0,0.3)',
     paddingHorizontal: 12,
@@ -661,7 +663,7 @@ const styles = StyleSheet.create({
   readPrompt: { fontSize: 10, color: '#94a3b8', fontWeight: '800' },
   dayScripture: { fontSize: 14, fontWeight: '700' },
   completedText: { textDecorationLine: 'line-through', opacity: 0.6 },
-  
+
   saveBtn: {
     backgroundColor: '#FCD34D',
     borderRadius: 16,
@@ -682,11 +684,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  successModal: { 
-    backgroundColor: '#fff', 
-    borderRadius: 32, 
-    padding: 30, 
-    width: '85%', 
+  successModal: {
+    backgroundColor: '#fff',
+    borderRadius: 32,
+    padding: 30,
+    width: '85%',
     alignItems: 'center',
     elevation: 20,
     shadowColor: '#10b981',
@@ -700,21 +702,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
     marginBottom: 20,
   },
-  successIconBox: { 
-    width: 76, height: 76, borderRadius: 38, 
-    backgroundColor: '#10b981', 
+  successIconBox: {
+    width: 76, height: 76, borderRadius: 38,
+    backgroundColor: '#10b981',
     justifyContent: 'center', alignItems: 'center',
     elevation: 5,
     shadowColor: '#10b981', shadowOpacity: 0.5, shadowRadius: 10, shadowOffset: { width: 0, height: 5 }
   },
   successTitle: { fontSize: 28, fontWeight: '900', marginBottom: 12, letterSpacing: 0.5 },
   successSub: { fontSize: 15, color: '#64748b', textAlign: 'center', marginBottom: 30, lineHeight: 22 },
-  doneBtn: { 
-    backgroundColor: '#1a2d5a', 
-    paddingVertical: 16, 
-    paddingHorizontal: 40, 
-    borderRadius: 100, 
-    width: '100%', 
+  doneBtn: {
+    backgroundColor: '#1a2d5a',
+    paddingVertical: 16,
+    paddingHorizontal: 40,
+    borderRadius: 100,
+    width: '100%',
     alignItems: 'center',
     elevation: 4,
     shadowColor: '#1a2d5a', shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }

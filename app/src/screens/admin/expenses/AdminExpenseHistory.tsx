@@ -10,7 +10,8 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { 
   fmt, todayISO, CATEGORY_NAMES, PAYMENT_METHODS,
-  getCategoryIconComponent, PaymentStamp, formatDateToDDMMYYYY, ApprovalBadge
+  getCategoryIconComponent, PaymentStamp, formatDateToDDMMYYYY, ApprovalBadge,
+  formatInvoiceNoDisplay
 } from './AdminExpenseUtils';
 import { useAdminTheme } from '../../../utils/adminThemeHelper';
 
@@ -240,7 +241,7 @@ export default function AdminExpenseHistory({
               {isNormal && <ApprovalBadge status={e.status} isDark={isDark} />}
             </View>
             <Text style={[styles.ledgerLineDetail, { color: secondaryText }]} numberOfLines={1}>
-              {e.invoiceNumber ? <Text style={{ color: '#10B981', fontWeight: '700' }}>{e.invoiceNumber} · </Text> : null}
+              {e.invoiceNumber ? <Text style={{ color: '#10B981', fontWeight: '700' }}>{formatInvoiceNoDisplay(e.invoiceNumber)} · </Text> : null}
               {e.vendor || (e.items.some((i: any) => i.vendor) ? "Multiple Vendors" : "—")} · {formatDateToDDMMYYYY(e.date)}
             </Text>
           </View>
@@ -294,7 +295,7 @@ export default function AdminExpenseHistory({
               {!!e.invoiceNumber && (
                 <View style={styles.detailCell}>
                   <Text style={[styles.detailLabel, { color: secondaryText }]}>Invoice No</Text>
-                  <Text style={[styles.detailValue, { color: primaryText }]}>{e.invoiceNumber}</Text>
+                  <Text style={[styles.detailValue, { color: primaryText }]}>{formatInvoiceNoDisplay(e.invoiceNumber)}</Text>
                 </View>
               )}
               {!!e.approvalRemarks && (

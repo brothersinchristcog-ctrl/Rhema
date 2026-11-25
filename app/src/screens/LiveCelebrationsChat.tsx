@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  FlatList, 
-  TextInput, 
-  TouchableOpacity, 
-  KeyboardAvoidingView, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TextInput,
+  TouchableOpacity,
+  KeyboardAvoidingView,
   Platform,
   Image,
   ActivityIndicator,
@@ -26,6 +26,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../context/AuthContext';
 import { useChurch } from '../context/ChurchContext';
 import { LinearGradient } from 'expo-linear-gradient';
+import { e2eeService, E2EEStateSnapshot } from '../services/e2eeService';
+import { roomKeyManager } from '../services/roomKeyManager';
+import ChatEncryptionModal, { ChatEncryptionModalMode } from '../components/ChatEncryptionModal';
+import { CachedImage } from '../components/CachedImage';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  writeInstantCache,
+} from '../utils/instantCache';
 
 const WISH_DICTIONARY: Record<string, string[]> = {
   'Birthday': [
@@ -70,17 +79,24 @@ const AnimatedSpikes = () => {
 
   useEffect(() => {
     const startAnim = (anim: Animated.Value, duration: number) => {
-      Animated.loop(
+      const loop = Animated.loop(
         Animated.sequence([
           Animated.timing(anim, { toValue: 1, duration, useNativeDriver: true }),
           Animated.timing(anim, { toValue: 0.3, duration, useNativeDriver: true }),
         ])
-      ).start();
+      );
+      loop.start();
+      return loop;
     };
-    startAnim(anim1, 400);
-    startAnim(anim2, 600);
-    startAnim(anim3, 500);
-  }, []);
+    const loops = [
+      startAnim(anim1, 400),
+      startAnim(anim2, 600),
+      startAnim(anim3, 500),
+    ];
+    return () => {
+      loops.forEach((l) => l.stop());
+    };
+  }, [anim1, anim2, anim3]);
 
   return (
     <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: 12, gap: 2 }}>
@@ -94,10 +110,15 @@ const AnimatedSpikes = () => {
 export default function LiveCelebrationsChat({ navigation, route }: any) {
   const { activeChurch } = useChurch();
   const { member, user } = useAuth();
-  
-  const [messages, setMessages] = useState<any[]>([]);
+  const celebMsgsCacheKey = React.useMemo(
+    () => makeScopedCacheKey('live_celebrations_chat_v1', activeChurch?.id, user?.uid || member?.id),
+    [activeChurch?.id, user?.uid, member?.id]
+  );
+  const initialCelebMsgs = React.useMemo(() => getInstantMemory<any[]>(celebMsgsCacheKey), [celebMsgsCacheKey]);
+
+  const [messages, setMessages] = useState<any[]>(initialCelebMsgs || []);
   const [inputText, setInputText] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialCelebMsgs);
   const [isKeyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [isListening, setIsListening] = useState(false);
@@ -116,13 +137,23 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
   const [selectedCelebrantName, setSelectedCelebrantName] = useState<string | null>(null);
   const [selectedCardCeleb, setSelectedCardCeleb] = useState<any | null>(null);
   const [longPressedMessage, setLongPressedMessage] = useState<any | null>(null);
-  
+
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const typingTimeoutRef = useRef<any>(null);
   const isTypingLocally = useRef(false);
-  
+
   const [initialLastReadTime, setInitialLastReadTime] = useState<number>(0);
+
+  const e2eeUid = user?.uid || member?.id || '';
+  const [e2eeState, setE2eeState] = useState<E2EEStateSnapshot>(() => e2eeService.getState());
+  const [e2eeModalMode, setE2eeModalMode] = useState<ChatEncryptionModalMode | null>(null);
+
+  useEffect(() => {
+    setE2eeState(e2eeService.getState());
+    const unsub = e2eeService.subscribeState(setE2eeState);
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     const fetchLastRead = async () => {
@@ -148,7 +179,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
         .doc(todayStr)
         .collection('presence')
         .doc('typing');
-        
+
       if (isTyping) {
         await typingRef.set({ [member.id]: member.name || user?.displayName || 'Someone' }, { merge: true });
       } else {
@@ -184,7 +215,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
 
     const words = text.split(' ');
     const lastWord = words[words.length - 1];
-    
+
     if (lastWord.startsWith('@')) {
       setMentionQuery(lastWord.substring(1).toLowerCase());
       setShowMentionPopup(true);
@@ -201,7 +232,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
   const selectMention = (celeb: any) => {
     const celebName = celeb.Name || celeb.name || 'Member';
     const words = inputText.split(' ');
-    words.pop(); 
+    words.pop();
     const newText = (words.length > 0 ? words.join(' ') + ' ' : '') + `@${celebName} `;
     setInputText(newText);
     setSelectedCelebrantId(celeb.id || celeb.uid || celeb.Id);
@@ -240,32 +271,69 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
   useEffect(() => {
     if (!activeChurch?.id) return;
 
-    const unsubscribe = firestore()
+    const churchId = activeChurch.id;
+    const celebrationDocRef = firestore()
       .collection('Rhema Church')
-      .doc(activeChurch.id)
+      .doc(churchId)
       .collection('live_celebrations')
-      .doc(todayStr)
-      .collection('messages')
-      .orderBy('createdAt', 'asc')
-      .onSnapshot(snap => {
-        if (snap) {
-          const msgs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          setMessages(msgs);
-        }
-        setLoading(false);
-      }, err => {
-        console.error('Chat error:', err);
-        setLoading(false);
-      });
+      .doc(todayStr);
+    const ctx = { scope: 'celebrations' as const, churchId, dateId: todayStr };
 
-    const typingUnsubscribe = firestore()
-      .collection('Rhema Church')
-      .doc(activeChurch.id)
-      .collection('live_celebrations')
-      .doc(todayStr)
+    let disposed = false;
+    let seq = 0;
+    let latestDocs: Array<{ id: string; data: Record<string, any> }> = [];
+    let hasLockedMessages = false;
+
+    const processDocs = async (docs: Array<{ id: string; data: Record<string, any> }>) => {
+      const currentSeq = ++seq;
+      let foundLocked = false;
+      const decrypted = await Promise.all(
+        docs.map(async ({ id, data }) => {
+          const rawText = typeof data.text === 'string' ? data.text : '';
+          let finalText = rawText;
+          if (rawText && e2eeService.isEncryptedPayload(rawText) && e2eeUid) {
+            const dec = await roomKeyManager.decryptString(ctx, e2eeUid, rawText);
+            finalText = dec.text;
+            if (dec.lockedReason) foundLocked = true;
+          }
+          return { id, ...data, text: finalText };
+        })
+      );
+      if (disposed || currentSeq !== seq) return;
+      hasLockedMessages = foundLocked;
+      setMessages(decrypted);
+      if (!foundLocked) {
+        writeInstantCache(celebMsgsCacheKey, decrypted).catch(() => { });
+      }
+      setLoading(false);
+    };
+
+    const unsubscribe = celebrationDocRef
+      .collection('messages')
+      .orderBy('createdAt', 'desc')
+      .limit(100)
+      .onSnapshot(
+        (snap) => {
+          if (snap) {
+            latestDocs = snap.docs
+              .slice()
+              .reverse()
+              .map((doc) => ({ id: doc.id, data: doc.data() || {} }));
+            processDocs(latestDocs);
+          } else {
+            setLoading(false);
+          }
+        },
+        (err) => {
+          console.error('Chat error:', err);
+          setLoading(false);
+        }
+      );
+
+    const typingUnsubscribe = celebrationDocRef
       .collection('presence')
       .doc('typing')
-      .onSnapshot(snap => {
+      .onSnapshot((snap) => {
         if (snap) {
           const data = typeof snap.data === 'function' ? snap.data() : null;
           if (data) {
@@ -279,20 +347,89 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
         }
       });
 
+    const keyReqsUnsubscribe = celebrationDocRef.collection('keyRequests').onSnapshot(
+      (reqSnap) => {
+        if (
+          reqSnap &&
+          !reqSnap.empty &&
+          e2eeUid &&
+          e2eeService.getState().status === 'ready'
+        ) {
+          roomKeyManager.fulfillCelebrationsKeyRequests(ctx, e2eeUid).catch(() => { });
+        }
+      },
+      () => { }
+    );
+
+    const envelopesUnsubscribe = e2eeUid
+      ? celebrationDocRef
+        .collection('keyEnvelopes')
+        .where('uid', '==', e2eeUid)
+        .onSnapshot(
+          () => {
+            if (hasLockedMessages && latestDocs.length > 0) {
+              processDocs(latestDocs);
+            }
+          },
+          () => { }
+        )
+      : () => { };
+
+    let prevStatus = e2eeService.getState().status;
+    const unsubState = e2eeService.subscribeState((snap) => {
+      if (snap.status !== prevStatus) {
+        prevStatus = snap.status;
+        if (snap.status === 'ready') {
+          if (latestDocs.length > 0) {
+            processDocs(latestDocs);
+          }
+          if (e2eeUid) {
+            roomKeyManager.fulfillCelebrationsKeyRequests(ctx, e2eeUid).catch(() => { });
+          }
+        }
+      }
+    });
+
     return () => {
+      disposed = true;
       unsubscribe();
       typingUnsubscribe();
+      keyReqsUnsubscribe();
+      envelopesUnsubscribe();
+      unsubState();
     };
-  }, [activeChurch?.id]);
+  }, [activeChurch?.id, e2eeUid]);
 
   const sendMessage = async (text: string) => {
-    if (!text.trim() || !activeChurch?.id || !member) return;
-    
+    const cleanText = text.trim();
+    if (!cleanText || !activeChurch?.id || !member) return;
+
+    const ctx = {
+      scope: 'celebrations' as const,
+      churchId: activeChurch.id,
+      dateId: todayStr,
+    };
+
+    let storedText = cleanText;
+    if (e2eeUid) {
+      try {
+        const enc = await roomKeyManager.encryptString(ctx, e2eeUid, [e2eeUid], cleanText);
+        storedText = enc.cipherText;
+      } catch (encErr: any) {
+        if (encErr?.message === 'PIN_UNLOCK_REQUIRED') {
+          setE2eeModalMode('unlock_backup');
+          return;
+        }
+        Alert.alert('Encryption Error', encErr?.message || 'Unable to encrypt message.');
+        return;
+      }
+    }
+
     setInputText('');
     Keyboard.dismiss();
     isTypingLocally.current = false;
     updateTypingStatus(false);
-    
+
     try {
       if (editingMsgId) {
         await firestore()
@@ -303,8 +440,9 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
           .collection('messages')
           .doc(editingMsgId)
           .update({
-            text: text.trim(),
-            isEdited: true
+            text: storedText,
+            encrypted: true,
+            isEdited: true,
           });
         setEditingMsgId(null);
       } else {
@@ -316,15 +454,26 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
           .doc(todayStr)
           .collection('messages')
           .doc();
-          
+
         batch.set(msgRef, {
-            text: text.trim(),
-            userId: member.id,
-            userName: member.name || user?.displayName || 'Unknown',
-            userPhoto: (member as any).profilePhoto || (member as any).photoURL || (member as any).photoUrl || (member as any).profileImageUrl || (member as any).PhotoUrl || (member as any).Photo || user?.photoURL || null,
-            createdAt: firestore.FieldValue.serverTimestamp(),
-            reactions: {},
-            ...(selectedCelebrantId ? { targetCelebrantId: selectedCelebrantId, targetCelebrantName: selectedCelebrantName } : {})
+          text: storedText,
+          encrypted: true,
+          userId: member.id,
+          userName: member.name || user?.displayName || 'Unknown',
+          userPhoto:
+            (member as any).profilePhoto ||
+            (member as any).photoURL ||
+            (member as any).photoUrl ||
+            (member as any).profileImageUrl ||
+            (member as any).PhotoUrl ||
+            (member as any).Photo ||
+            user?.photoURL ||
+            null,
+          createdAt: firestore.FieldValue.serverTimestamp(),
+          reactions: {},
+          ...(selectedCelebrantId
+            ? { targetCelebrantId: selectedCelebrantId, targetCelebrantName: selectedCelebrantName }
+            : {}),
         });
 
         if (selectedCelebrantId) {
@@ -335,10 +484,10 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
             .doc(todayStr)
             .collection('celebrants')
             .doc(selectedCelebrantId);
-            
+
           const tokens = selectedCardCeleb?.fcmTokens || [];
           if (selectedCardCeleb?.fcmToken) tokens.push(selectedCardCeleb.fcmToken);
-          
+
           batch.set(celebRef, {
             unnotifiedWishes: firestore.FieldValue.increment(1),
             totalWishes: firestore.FieldValue.increment(1),
@@ -346,7 +495,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
             fcmTokens: Array.from(new Set(tokens))
           }, { merge: true });
         }
-        
+
         await batch.commit();
         setSelectedCelebrantId(null);
         setSelectedCelebrantName(null);
@@ -387,7 +536,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
     try {
       // Clean up any leftover recording object first
       if (recordingObj) {
-        try { await recordingObj.stopAndUnloadAsync(); } catch (e) {}
+        try { await recordingObj.stopAndUnloadAsync(); } catch (e) { }
         setRecordingObj(null);
       }
 
@@ -416,7 +565,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
     if (recordingObj) {
       try {
         await recordingObj.stopAndUnloadAsync();
-      } catch (e) {}
+      } catch (e) { }
       setRecordingObj(null);
     }
     recordingWaveAnim.stopAnimation();
@@ -456,15 +605,15 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
         .doc(todayStr)
         .collection('messages')
         .doc();
-        
+
       batch.set(msgRef, {
-          audioUrl,
-          userId: member.id,
-          userName: member.name || user?.displayName || 'Unknown',
-          userPhoto: (member as any).profilePhoto || (member as any).photoURL || (member as any).photoUrl || (member as any).profileImageUrl || (member as any).PhotoUrl || (member as any).Photo || user?.photoURL || null,
-          createdAt: firestore.FieldValue.serverTimestamp(),
-          reactions: {},
-          ...(selectedCelebrantId ? { targetCelebrantId: selectedCelebrantId, targetCelebrantName: selectedCelebrantName } : {})
+        audioUrl,
+        userId: member.id,
+        userName: member.name || user?.displayName || 'Unknown',
+        userPhoto: (member as any).profilePhoto || (member as any).photoURL || (member as any).photoUrl || (member as any).profileImageUrl || (member as any).PhotoUrl || (member as any).Photo || user?.photoURL || null,
+        createdAt: firestore.FieldValue.serverTimestamp(),
+        reactions: {},
+        ...(selectedCelebrantId ? { targetCelebrantId: selectedCelebrantId, targetCelebrantName: selectedCelebrantName } : {})
       });
 
       if (selectedCelebrantId) {
@@ -475,10 +624,10 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
           .doc(todayStr)
           .collection('celebrants')
           .doc(selectedCelebrantId);
-          
+
         const tokens = selectedCardCeleb?.fcmTokens || [];
         if (selectedCardCeleb?.fcmToken) tokens.push(selectedCardCeleb.fcmToken);
-        
+
         batch.set(celebRef, {
           unnotifiedWishes: firestore.FieldValue.increment(1),
           totalWishes: firestore.FieldValue.increment(1),
@@ -486,7 +635,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
           fcmTokens: Array.from(new Set(tokens))
         }, { merge: true });
       }
-      
+
       await batch.commit();
       setSelectedCelebrantId(null);
       setSelectedCelebrantName(null);
@@ -540,17 +689,17 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
   const getCelebrationType = (celeb: any) => {
     if (celeb.type && celeb.type !== 'Celebration') return celeb.type;
     if (celeb.title && celeb.title !== 'Celebration') return celeb.title;
-    
+
     const today = new Date();
     const m = today.getMonth() + 1;
     const d = today.getDate();
-    
+
     const checkDate = (dateStr: string) => {
       if (!dateStr) return false;
       const parts = dateStr.split(/[-/T]/);
       if (parts.length >= 3) {
         let mm, dd;
-        if (parts[0].length === 4) { mm = parseInt(parts[1], 10); dd = parseInt(parts[2], 10); } 
+        if (parts[0].length === 4) { mm = parseInt(parts[1], 10); dd = parseInt(parts[2], 10); }
         else { dd = parseInt(parts[0], 10); mm = parseInt(parts[1], 10); }
         return mm === m && dd === d;
       }
@@ -560,7 +709,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
     if (checkDate(celeb.dob)) return 'Birthday';
     if (checkDate(celeb.anniversaryDate)) return 'Wedding Anniversary';
     if (checkDate(celeb.baptismDate)) return 'Baptism';
-    
+
     return 'Birthday'; // Default fallback
   };
 
@@ -568,28 +717,28 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
     return celeb.photoUrl || celeb.photoURL || celeb.profilePhoto || celeb.Profile_Photo__c || celeb.image || null;
   };
 
-  const displayedMessages = selectedCardCeleb 
+  const displayedMessages = selectedCardCeleb
     ? messages.filter(m => {
-        const celebId = selectedCardCeleb?.id || selectedCardCeleb?.uid || selectedCardCeleb?.Id;
-        const celebName = selectedCardCeleb?.Name || selectedCardCeleb?.name || '';
-        return m.targetCelebrantId === celebId || (m.targetCelebrantName && m.targetCelebrantName.toLowerCase() === celebName.toLowerCase());
-      })
+      const celebId = selectedCardCeleb?.id || selectedCardCeleb?.uid || selectedCardCeleb?.Id;
+      const celebName = selectedCardCeleb?.Name || selectedCardCeleb?.name || '';
+      return m.targetCelebrantId === celebId || (m.targetCelebrantName && m.targetCelebrantName.toLowerCase() === celebName.toLowerCase());
+    })
     : messages;
 
   const currentUserId = member?.id;
   const participantCount = displayedMessages.length > 0 ? [...new Set(displayedMessages.map(m => m.userId))].length : 0;
 
   const celebrationTypes = new Set(
-    selectedCardCeleb 
+    selectedCardCeleb
       ? [getCelebrationType(selectedCardCeleb)]
       : celebrations.map((c: any) => getCelebrationType(c))
   );
   let dynamicQuickWishes: string[] = [];
-  
+
   if (celebrationTypes.has('Birthday')) dynamicQuickWishes.push(...WISH_DICTIONARY['Birthday']);
   if (celebrationTypes.has('Wedding Anniversary')) dynamicQuickWishes.push(...WISH_DICTIONARY['Wedding Anniversary']);
   if (celebrationTypes.has('Baptism')) dynamicQuickWishes.push(...WISH_DICTIONARY['Baptism']);
-  
+
   if (dynamicQuickWishes.length === 0) {
     dynamicQuickWishes = WISH_DICTIONARY['General'];
   } else {
@@ -607,7 +756,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <MaterialIcons name="arrow-back" color={COLORS.onBackground} size={24} />
         </TouchableOpacity>
-        
+
         <View style={styles.headerCenter}>
           <View style={styles.headerTitleRow}>
             <Text style={styles.headerEmoji}>🎉</Text>
@@ -615,20 +764,47 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
           </View>
           <Text style={styles.headerDate}>{dateFormatted}</Text>
         </View>
-        
-        <View style={styles.liveBadge}>
-          <AnimatedSpikes />
-          <Text style={styles.liveText}>LIVE</Text>
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <TouchableOpacity
+            onPress={() =>
+              setE2eeModalMode(
+                e2eeState.status === 'needs_pin_unlock' ? 'unlock_backup' : 'manage'
+              )
+            }
+            activeOpacity={0.8}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 4,
+              paddingHorizontal: 8,
+              paddingVertical: 4,
+              borderRadius: 12,
+              backgroundColor: 'rgba(255, 200, 128, 0.14)',
+              borderWidth: 1,
+              borderColor: 'rgba(255, 200, 128, 0.35)',
+            }}
+          >
+            <MaterialIcons name="lock" size={12} color={COLORS.primary} />
+            <Text style={{ color: COLORS.primary, fontSize: 10.5, fontWeight: '700' }}>
+              {e2eeState.status === 'needs_pin_unlock' ? 'PIN' : 'E2EE'}
+            </Text>
+          </TouchableOpacity>
+
+          <View style={styles.liveBadge}>
+            <AnimatedSpikes />
+            <Text style={styles.liveText}>LIVE</Text>
+          </View>
         </View>
       </View>
 
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         style={styles.keyboardAvoid}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
         enabled={Platform.OS === 'ios'}
       >
-        <ScrollView 
+        <ScrollView
           style={styles.scrollFlex}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
@@ -639,9 +815,9 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
               <Text style={styles.tapEmoji}>👉</Text>
               <Text style={styles.tapText}>Tap a card to see their dedicated wishes</Text>
             </View>
-            
-            <ScrollView 
-              horizontal 
+
+            <ScrollView
+              horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.cardsScroll}
             >
@@ -651,41 +827,41 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
                 const celebName = celeb.Name || celeb.name || 'Member';
                 const wishCount = messages.filter(m => m.targetCelebrantId === celebId || (m.targetCelebrantName && m.targetCelebrantName.toLowerCase() === celebName.toLowerCase())).length;
                 return (
-                <TouchableOpacity key={idx} style={[styles.celebCard, selectedCardCeleb && (selectedCardCeleb.id || selectedCardCeleb.uid || selectedCardCeleb.Id) === celebId && { borderColor: COLORS.primary, borderWidth: 1 }]} onPress={() => {
-                  const currentSelectedId = selectedCardCeleb?.id || selectedCardCeleb?.uid || selectedCardCeleb?.Id;
-                  if (currentSelectedId === celebId) {
-                    setSelectedCardCeleb(null);
-                  } else {
-                    setSelectedCardCeleb(celeb);
-                  }
-                }}>
-                  {photo ? (
-                    <Image source={{ uri: photo }} style={styles.celebImage} />
-                  ) : (
-                    <View style={styles.celebInitialBox}>
-                      <Text style={styles.celebInitial}>
-                        {(celebName)[0].toUpperCase()}
-                      </Text>
-                    </View>
-                  )}
-                  <View style={styles.celebCardTextInfo}>
-                    <Text style={styles.celebCardName} numberOfLines={1}>
-                      {celebName}
-                    </Text>
-                    <View style={styles.celebCardTypeRow}>
-                      <Text style={styles.celebCardTypeEmoji}>{getCelebrationIcon(getCelebrationType(celeb))}</Text>
-                      <Text style={styles.celebCardTypeText} numberOfLines={1}>
-                        {getCelebrationType(celeb)}
-                      </Text>
-                    </View>
-                    {wishCount > 0 && (
-                      <View style={styles.wishCountBadge}>
-                        <MaterialIcons name="favorite" color="#ef4444" size={10} />
-                        <Text style={styles.wishCountText}>{wishCount} {wishCount === 1 ? 'wish' : 'wishes'}</Text>
+                  <TouchableOpacity key={idx} style={[styles.celebCard, selectedCardCeleb && (selectedCardCeleb.id || selectedCardCeleb.uid || selectedCardCeleb.Id) === celebId && { borderColor: COLORS.primary, borderWidth: 1 }]} onPress={() => {
+                    const currentSelectedId = selectedCardCeleb?.id || selectedCardCeleb?.uid || selectedCardCeleb?.Id;
+                    if (currentSelectedId === celebId) {
+                      setSelectedCardCeleb(null);
+                    } else {
+                      setSelectedCardCeleb(celeb);
+                    }
+                  }}>
+                    {photo ? (
+                      <CachedImage source={{ uri: photo }} style={styles.celebImage} resizeMode="cover" />
+                    ) : (
+                      <View style={styles.celebInitialBox}>
+                        <Text style={styles.celebInitial}>
+                          {(celebName)[0].toUpperCase()}
+                        </Text>
                       </View>
                     )}
-                  </View>
-                </TouchableOpacity>
+                    <View style={styles.celebCardTextInfo}>
+                      <Text style={styles.celebCardName} numberOfLines={1}>
+                        {celebName}
+                      </Text>
+                      <View style={styles.celebCardTypeRow}>
+                        <Text style={styles.celebCardTypeEmoji}>{getCelebrationIcon(getCelebrationType(celeb))}</Text>
+                        <Text style={styles.celebCardTypeText} numberOfLines={1}>
+                          {getCelebrationType(celeb)}
+                        </Text>
+                      </View>
+                      {wishCount > 0 && (
+                        <View style={styles.wishCountBadge}>
+                          <MaterialIcons name="favorite" color="#ef4444" size={10} />
+                          <Text style={styles.wishCountText}>{wishCount} {wishCount === 1 ? 'wish' : 'wishes'}</Text>
+                        </View>
+                      )}
+                    </View>
+                  </TouchableOpacity>
                 );
               })}
               {celebrations.length === 0 && (
@@ -701,6 +877,29 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
 
           {/* Live Wishes Chat Section */}
           <View style={styles.chatSection}>
+            {e2eeState.status === 'needs_pin_unlock' ? (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => setE2eeModalMode('unlock_backup')}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8,
+                  paddingHorizontal: 12,
+                  paddingVertical: 9,
+                  borderRadius: 12,
+                  marginBottom: 10,
+                  backgroundColor: 'rgba(255, 200, 128, 0.14)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(255, 200, 128, 0.38)',
+                }}
+              >
+                <MaterialIcons name="lock" size={14} color={COLORS.primary} />
+                <Text style={{ flex: 1, color: COLORS.primary, fontSize: 12, fontWeight: '700' }}>
+                  Encrypted wishes locked on this device — Tap to enter Backup PIN
+                </Text>
+              </TouchableOpacity>
+            ) : null}
             <View style={styles.chatHeader}>
               <View style={[styles.chatHeaderLeft, { flex: 1 }]}>
                 <Text style={{ fontSize: 20 }}>💬</Text>
@@ -725,10 +924,10 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
                       {!isMe && (
                         <View style={styles.avatarContainer}>
                           {item.userPhoto ? (
-                            <Image source={{ uri: item.userPhoto }} style={styles.avatarImage} />
+                            <CachedImage source={{ uri: item.userPhoto }} style={styles.avatarImage} resizeMode="cover" />
                           ) : (
                             <View style={[styles.avatarImage, { backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' }]}>
-                              <Text style={{color: '#ffffff', fontSize: 16, fontWeight: 'bold'}}>{item.userName?.[0]?.toUpperCase()}</Text>
+                              <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: 'bold' }}>{item.userName?.[0]?.toUpperCase()}</Text>
                             </View>
                           )}
                         </View>
@@ -807,11 +1006,11 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
 
                       {isMe && (
                         <View style={styles.avatarContainer}>
-                           {item.userPhoto ? (
-                            <Image source={{ uri: item.userPhoto }} style={styles.avatarImage} />
+                          {item.userPhoto ? (
+                            <CachedImage source={{ uri: item.userPhoto }} style={styles.avatarImage} resizeMode="cover" />
                           ) : (
                             <View style={[styles.avatarImage, { backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' }]}>
-                              <Text style={{color: '#ffffff', fontSize: 16, fontWeight: 'bold'}}>{item.userName?.[0]?.toUpperCase()}</Text>
+                              <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: 'bold' }}>{item.userName?.[0]?.toUpperCase()}</Text>
                             </View>
                           )}
                         </View>
@@ -829,8 +1028,8 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
           {typingUsers.length > 0 && (
             <View style={{ paddingHorizontal: 16, paddingBottom: 4 }}>
               <Text style={{ color: COLORS.onSurfaceVariant, fontSize: 12, fontStyle: 'italic' }}>
-                {typingUsers.length === 1 
-                  ? `${typingUsers[0]} is typing...` 
+                {typingUsers.length === 1
+                  ? `${typingUsers[0]} is typing...`
                   : `${typingUsers[0]} and ${typingUsers.length - 1} other${typingUsers.length > 2 ? 's' : ''} are typing...`}
               </Text>
             </View>
@@ -904,8 +1103,8 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
                 <View style={styles.mentionPopup}>
                   <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 150 }}>
                     {filteredMentionCelebrants.map((celeb: any, idx: number) => (
-                      <TouchableOpacity 
-                        key={idx} 
+                      <TouchableOpacity
+                        key={idx}
                         style={styles.mentionItem}
                         onPress={() => selectMention(celeb)}
                       >
@@ -917,7 +1116,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
               )}
               <View style={styles.inputBarRow}>
                 {editingMsgId && (
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={{ marginRight: 8, padding: 8, backgroundColor: 'rgba(239, 68, 68, 0.1)', borderRadius: 20 }}
                     onPress={() => {
                       setEditingMsgId(null);
@@ -937,28 +1136,28 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
                     onChangeText={handleTextChange}
                     multiline
                   />
-              </View>
+                </View>
 
-              <TouchableOpacity
-                style={styles.sendBtn}
-                onPress={() => {
-                  if (inputText.trim()) {
-                    sendMessage(inputText);
-                  } else if (!editingMsgId) {
-                    startRecording();
-                  }
-                }}
-              >
-                {editingMsgId ? (
-                  <MaterialIcons name="check" color="#452b00" size={20} />
-                ) : inputText.trim() ? (
-                  <MaterialIcons name="send" color="#452b00" size={20} />
-                ) : (
-                  <MaterialIcons name="mic" color="#452b00" size={20} />
-                )}
-              </TouchableOpacity>
-            </View>
-          </>
+                <TouchableOpacity
+                  style={styles.sendBtn}
+                  onPress={() => {
+                    if (inputText.trim()) {
+                      sendMessage(inputText);
+                    } else if (!editingMsgId) {
+                      startRecording();
+                    }
+                  }}
+                >
+                  {editingMsgId ? (
+                    <MaterialIcons name="check" color="#452b00" size={20} />
+                  ) : inputText.trim() ? (
+                    <MaterialIcons name="send" color="#452b00" size={20} />
+                  ) : (
+                    <MaterialIcons name="mic" color="#452b00" size={20} />
+                  )}
+                </TouchableOpacity>
+              </View>
+            </>
           )}
         </View>
       </KeyboardAvoidingView>
@@ -971,9 +1170,9 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
         animationType="fade"
         onRequestClose={() => setLongPressedMessage(null)}
       >
-        <TouchableOpacity 
-          style={styles.actionModalOverlay} 
-          activeOpacity={1} 
+        <TouchableOpacity
+          style={styles.actionModalOverlay}
+          activeOpacity={1}
           onPress={() => setLongPressedMessage(null)}
         >
           <View style={styles.actionModalCard}>
@@ -984,8 +1183,8 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
             <View style={styles.actionModalOptionsContainer}>
               {longPressedMessage && !longPressedMessage.audioUrl && (
                 <>
-                  <TouchableOpacity 
-                    style={styles.actionModalRowBtn} 
+                  <TouchableOpacity
+                    style={styles.actionModalRowBtn}
                     onPress={() => editMessage(longPressedMessage)}
                   >
                     <View style={[styles.actionModalIconCircle, { backgroundColor: 'rgba(255, 200, 128, 0.15)' }]}>
@@ -997,8 +1196,8 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
                 </>
               )}
 
-              <TouchableOpacity 
-                style={styles.actionModalRowBtn} 
+              <TouchableOpacity
+                style={styles.actionModalRowBtn}
                 onPress={() => deleteMessage(longPressedMessage)}
               >
                 <View style={[styles.actionModalIconCircle, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}>
@@ -1011,6 +1210,14 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
         </TouchableOpacity>
       </Modal>
 
+      <ChatEncryptionModal
+        visible={Boolean(e2eeModalMode)}
+        uid={e2eeUid}
+        mode={e2eeModalMode || 'manage'}
+        isDark={true}
+        accentColor={COLORS.primary}
+        onClose={() => setE2eeModalMode(null)}
+      />
     </SafeAreaView>
   );
 }

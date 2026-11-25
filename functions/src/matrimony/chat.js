@@ -248,7 +248,7 @@ export const ensureMatrimonyChatRoom = onCall({ invoker: 'public' }, async (requ
  * Ensures RTDB chat rooms & inbox entries exist for all Mutual Matches of the viewer.
  * Respects viewer's contact unlock entitlement and exposes messageAccess status.
  */
-export const getMatrimonyChatContacts = onCall({ invoker: 'public', cpu: 'gcf_gen1', concurrency: 1, maxInstances: 10 }, async (request) => {
+export const getMatrimonyChatContacts = onCall({ invoker: 'public', cpu: 1, memory: '256MiB', concurrency: 40, maxInstances: 10 }, async (request) => {
     const uid = requireAuthUid(request);
     const db = getFirestore();
     await assertMatrimonyProfileActive(db, uid);
@@ -389,7 +389,10 @@ export const getMatrimonyChatContacts = onCall({ invoker: 'public', cpu: 'gcf_ge
 export const notifyMatrimonyChatMessage = onCall({ invoker: 'public' }, async (request) => {
     const uid = requireAuthUid(request);
     const targetUid = assertNonEmptyString(request.data?.targetUid, 'targetUid', 128);
-    const previewText = optionalString(request.data?.previewText, 180) || 'Sent you a message';
+    const rawPreview = optionalString(request.data?.previewText, 180) || 'Sent you a message';
+    const previewText = rawPreview.startsWith('e2ee:v1:')
+        ? '🔒 New encrypted message'
+        : rawPreview;
     const db = getFirestore();
     await assertMatrimonyProfileActive(db, uid);
     const entitlements = await resolveMemberEntitlements(db, uid);
@@ -462,7 +465,8 @@ export const sendMatrimonyMessage = onCall({ invoker: 'public' }, async (request
     const msgRef = rtdb.ref(`matrimony_chats/${roomId}/messages`).push();
     const msgId = msgRef.key || randomUUID();
     const createdAt = ServerValue.TIMESTAMP;
-    const preview = imageUrl && !text ? '📷 Photo' : text.slice(0, 120);
+    const isCipher = text.startsWith('e2ee:v1:');
+    const preview = imageUrl && !text ? '📷 Photo' : isCipher ? text : text.slice(0, 120);
     await rtdb.ref().update({
         [`matrimony_chats/${roomId}/participants/${uid}`]: true,
         [`matrimony_chats/${roomId}/participants/${targetUid}`]: true,

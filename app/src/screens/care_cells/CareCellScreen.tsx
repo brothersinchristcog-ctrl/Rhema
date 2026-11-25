@@ -49,6 +49,12 @@ import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
 import CareCellService from '../../services/CareCellService';
 import { formatDateDisplay } from '../../utils/DateUtils';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  readInstantCache,
+  writeInstantCache,
+} from '../../utils/instantCache';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 import {
   CareCell,
@@ -82,25 +88,31 @@ export default function CareCellScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
   const { member, user } = useAuth();
   const { activeChurch } = useChurch();
+  const memberId = member?.id || user?.uid;
+  const cacheKey = useMemo(
+    () => makeScopedCacheKey('care_cell_home_v1', activeChurch?.id || member?.churchId, memberId),
+    [activeChurch?.id, member?.churchId, memberId]
+  );
+  const initialCache = useMemo(() => getInstantMemory<any>(cacheKey), [cacheKey]);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialCache);
   const [refreshing, setRefreshing] = useState(false);
 
   // Cell & Membership Data
-  const [careCell, setCareCell] = useState<CareCell | null>(null);
-  const [membership, setMembership] = useState<CareCellMembership | null>(null);
-  const [fellowMembers, setFellowMembers] = useState<CareCellMembership[]>([]);
-  const [upcomingMeetings, setUpcomingMeetings] = useState<CareCellMeeting[]>([]);
-  const [attendanceHistory, setAttendanceHistory] = useState<CareCellAttendance[]>([]);
+  const [careCell, setCareCell] = useState<CareCell | null>(initialCache?.careCell || null);
+  const [membership, setMembership] = useState<CareCellMembership | null>(initialCache?.membership || null);
+  const [fellowMembers, setFellowMembers] = useState<CareCellMembership[]>(initialCache?.fellowMembers || []);
+  const [upcomingMeetings, setUpcomingMeetings] = useState<CareCellMeeting[]>(initialCache?.upcomingMeetings || []);
+  const [attendanceHistory, setAttendanceHistory] = useState<CareCellAttendance[]>(initialCache?.attendanceHistory || []);
 
   // Phase 2: Prayers, Notices, Followups
-  const [cellPrayers, setCellPrayers] = useState<CareCellPrayerRequest[]>([]);
-  const [cellAnnouncements, setCellAnnouncements] = useState<CareCellAnnouncement[]>([]);
-  const [cellFollowups, setCellFollowups] = useState<CareCellFollowup[]>([]);
-  const [inactiveMembers, setInactiveMembers] = useState<any[]>([]);
+  const [cellPrayers, setCellPrayers] = useState<CareCellPrayerRequest[]>(initialCache?.cellPrayers || []);
+  const [cellAnnouncements, setCellAnnouncements] = useState<CareCellAnnouncement[]>(initialCache?.cellAnnouncements || []);
+  const [cellFollowups, setCellFollowups] = useState<CareCellFollowup[]>(initialCache?.cellFollowups || []);
+  const [inactiveMembers, setInactiveMembers] = useState<any[]>(initialCache?.inactiveMembers || []);
 
   // Care Cell Visits
-  const [cellVisits, setCellVisits] = useState<(CareCellVisit & { myResponse?: CareCellVisitMemberResponse })[]>([]);
+  const [cellVisits, setCellVisits] = useState<(CareCellVisit & { myResponse?: CareCellVisitMemberResponse })[]>(initialCache?.cellVisits || []);
   const [respondingVisitId, setRespondingVisitId] = useState<string | null>(null);
 
   // Preferred Visit Time Modal State
@@ -202,7 +214,7 @@ export default function CareCellScreen({ navigation, route }: any) {
   };
 
   // Tab State
-  const [isLeader, setIsLeader] = useState(false);
+  const [isLeader, setIsLeader] = useState<boolean>(Boolean(initialCache?.isLeader));
   const [activeTab, setActiveTab] = useState<'gatherings' | 'visits' | 'prayers' | 'notices' | 'leader'>('gatherings');
 
   // Modals
@@ -211,8 +223,6 @@ export default function CareCellScreen({ navigation, route }: any) {
   const [targetFollowupMember, setTargetFollowupMember] = useState<any | null>(null);
   const [announceModalVisible, setAnnounceModalVisible] = useState(false);
   const [mapModalVisible, setMapModalVisible] = useState(false);
-
-  const memberId = member?.id || user?.uid;
 
   useEffect(() => {
     if (route?.params?.initialTab === 'visits' || route?.params?.visitId) {
@@ -226,12 +236,34 @@ export default function CareCellScreen({ navigation, route }: any) {
       return;
     }
 
+    const mem = getInstantMemory<any>(cacheKey);
+    if (mem) {
+      setLoading(false);
+    } else {
+      readInstantCache<any>(cacheKey).then((cached) => {
+        if (!cached?.data) return;
+        const c = cached.data;
+        setCareCell(c.careCell || null);
+        setMembership(c.membership || null);
+        setIsLeader(Boolean(c.isLeader));
+        setFellowMembers(c.fellowMembers || []);
+        setUpcomingMeetings(c.upcomingMeetings || []);
+        setAttendanceHistory(c.attendanceHistory || []);
+        setCellPrayers(c.cellPrayers || []);
+        setCellAnnouncements(c.cellAnnouncements || []);
+        setCellVisits(c.cellVisits || []);
+        setInactiveMembers(c.inactiveMembers || []);
+        setCellFollowups(c.cellFollowups || []);
+        setLoading(false);
+      });
+    }
+
     try {
-      const churchId = await CareCellService.getChurchId();
-      const { cell, membership: mem } = await CareCellService.getMemberActiveCareCell(churchId, memberId);
+      const resolvedChurchId = activeChurch?.id || (await CareCellService.getChurchId());
+      const { cell, membership: memData } = await CareCellService.getMemberActiveCareCell(resolvedChurchId, memberId);
 
       setCareCell(cell);
-      setMembership(mem);
+      setMembership(memData);
 
       if (cell) {
         // Detect leader status dynamically
@@ -240,12 +272,12 @@ export default function CareCellScreen({ navigation, route }: any) {
 
         // Fetch fellow members, meetings, personal attendance, prayers, announcements, and visits in parallel
         const [fellows, meetingsList, myAttendance, prayersList, announceList, visitsList] = await Promise.all([
-          CareCellService.getActiveCellMemberships(churchId, cell.id),
-          CareCellService.getMeetings(churchId, cell.id, { status: 'Upcoming' }),
-          CareCellService.getMemberAttendanceHistory(churchId, memberId),
-          CareCellService.getCellPrayerRequests(churchId, cell.id),
-          CareCellService.getCellAnnouncements(churchId, cell.id),
-          CareCellService.getMemberUpcomingVisits(churchId, cell.id, memberId),
+          CareCellService.getActiveCellMemberships(resolvedChurchId, cell.id),
+          CareCellService.getMeetings(resolvedChurchId, cell.id, { status: 'Upcoming' }),
+          CareCellService.getMemberAttendanceHistory(resolvedChurchId, memberId),
+          CareCellService.getCellPrayerRequests(resolvedChurchId, cell.id),
+          CareCellService.getCellAnnouncements(resolvedChurchId, cell.id),
+          CareCellService.getMemberUpcomingVisits(resolvedChurchId, cell.id, memberId),
         ]);
 
         setFellowMembers(fellows);
@@ -255,14 +287,41 @@ export default function CareCellScreen({ navigation, route }: any) {
         setCellAnnouncements(announceList);
         setCellVisits(visitsList);
 
+        let inactives: any[] = [];
+        let followupsList: CareCellFollowup[] = [];
         if (isLead) {
-          const [inactives, followupsList] = await Promise.all([
-            CareCellService.detectInactiveMembers(churchId, cell.id),
-            CareCellService.getCellFollowups(churchId, cell.id),
+          [inactives, followupsList] = await Promise.all([
+            CareCellService.detectInactiveMembers(resolvedChurchId, cell.id),
+            CareCellService.getCellFollowups(resolvedChurchId, cell.id),
           ]);
           setInactiveMembers(inactives);
           setCellFollowups(followupsList);
         }
+
+        writeInstantCache(cacheKey, {
+          careCell: cell,
+          membership: memData,
+          isLeader: isLead,
+          fellowMembers: fellows,
+          upcomingMeetings: meetingsList,
+          attendanceHistory: myAttendance,
+          cellPrayers: prayersList,
+          cellAnnouncements: announceList,
+          cellVisits: visitsList,
+          inactiveMembers: inactives,
+          cellFollowups: followupsList,
+        });
+      } else {
+        setIsLeader(false);
+        setFellowMembers([]);
+        setUpcomingMeetings([]);
+        setAttendanceHistory([]);
+        setCellPrayers([]);
+        setCellAnnouncements([]);
+        setCellVisits([]);
+        setInactiveMembers([]);
+        setCellFollowups([]);
+        writeInstantCache(cacheKey, { careCell: null, membership: null, isLeader: false });
       }
     } catch (e) {
       console.error('Error loading member Care Cell:', e);
@@ -270,7 +329,7 @@ export default function CareCellScreen({ navigation, route }: any) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [memberId]);
+  }, [memberId, activeChurch?.id, cacheKey]);
 
   useEffect(() => {
     loadMemberCellData();

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -43,6 +43,7 @@ import { useAuth } from '../context/AuthContext';
 import { useChurch } from '../context/ChurchContext';
 import { useAdminTheme } from '../utils/adminThemeHelper';
 import ServiceRosterService from '../services/ServiceRosterService';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../utils/instantCache';
 import {
   MemberServiceDuty,
   SetlistItem,
@@ -222,7 +223,7 @@ const resolveActivityAssignment = (
     const itemPersonClean = (item.responsiblePerson || '').trim();
     const fallbackLead =
       item.responsibleMemberId ||
-      (itemPersonClean && !prepPlaceholders.includes(itemPersonClean.toLowerCase()))
+        (itemPersonClean && !prepPlaceholders.includes(itemPersonClean.toLowerCase()))
         ? itemPersonClean
         : '';
     const leadName = directActName || fallbackLead;
@@ -230,7 +231,7 @@ const resolveActivityAssignment = (
     const isPersonYou = (id?: string, name?: string) =>
       Boolean(
         (id && memberId && id === memberId) ||
-          (name && memberName && name.toLowerCase().trim() === memberName.toLowerCase().trim())
+        (name && memberName && name.toLowerCase().trim() === memberName.toLowerCase().trim())
       );
 
     const prepTeamSlots = [
@@ -353,18 +354,31 @@ export default function MyServiceScreen({ navigation, route }: any) {
 
   const churchId = route?.params?.churchId || activeChurch?.id || 'rhema';
   const memberId = member?.id || '';
+  const serviceCacheKey = useMemo(
+    () => makeScopedCacheKey('my_service_v1', churchId, memberId),
+    [churchId, memberId]
+  );
+  const initialServiceCache = getInstantMemory<{
+    duties: MemberServiceDuty[];
+    publishedPlans: ServicePlan[];
+    blockouts: Array<{ date: string; reason?: string }>;
+    customCategories: ActivityCategoryDef[];
+  }>(serviceCacheKey);
 
   // Tab: 'roster' (Full Service Roster) | 'responsibilities' (Upcoming & Pending Personal Responsibilities)
   const [activeTab, setActiveTab] = useState<'roster' | 'responsibilities'>(
     (route?.params?.initialTab as any) || 'roster'
   );
 
-  const [duties, setDuties] = useState<MemberServiceDuty[]>([]);
-  const [publishedPlans, setPublishedPlans] = useState<ServicePlan[]>([]);
-  const [selectedPlanId, setSelectedPlanId] = useState<string>(route?.params?.serviceId || '');
-  const [loading, setLoading] = useState<boolean>(true);
+  const [duties, setDuties] = useState<MemberServiceDuty[]>(() => initialServiceCache?.duties || []);
+  const [publishedPlans, setPublishedPlans] = useState<ServicePlan[]>(() => initialServiceCache?.publishedPlans || []);
+  const [selectedPlanId, setSelectedPlanId] = useState<string>(() => {
+    if (route?.params?.serviceId) return route.params.serviceId;
+    return initialServiceCache?.publishedPlans?.[0]?.id || '';
+  });
+  const [loading, setLoading] = useState<boolean>(() => !initialServiceCache);
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [customCategories, setCustomCategories] = useState<ActivityCategoryDef[]>([]);
+  const [customCategories, setCustomCategories] = useState<ActivityCategoryDef[]>(() => initialServiceCache?.customCategories || []);
 
   // Decline Modal state
   const [selectedDutyForDecline, setSelectedDutyForDecline] = useState<MemberServiceDuty | null>(
@@ -379,80 +393,121 @@ export default function MyServiceScreen({ navigation, route }: any) {
   const [selectedSongForLyrics, setSelectedSongForLyrics] = useState<SetlistItem | null>(null);
 
   // Availability state
-  const [blockouts, setBlockouts] = useState<Array<{ date: string; reason?: string }>>([]);
+  const [blockouts, setBlockouts] = useState<Array<{ date: string; reason?: string }>>(() => initialServiceCache?.blockouts || []);
   const [showAddBlockoutModal, setShowAddBlockoutModal] = useState<boolean>(false);
   const [newBlockoutDate, setNewBlockoutDate] = useState<string>('');
   const [newBlockoutReason, setNewBlockoutReason] = useState<string>('Traveling / Family commitment');
   const [savingBlockout, setSavingBlockout] = useState<boolean>(false);
+  const lastListenerPlansFetchRef = useRef<number>(0);
 
-  const fetchDuties = useCallback(async () => {
+  const applyServicePayload = useCallback((payload: {
+    duties: MemberServiceDuty[];
+    publishedPlans: ServicePlan[];
+    blockouts: Array<{ date: string; reason?: string }>;
+    customCategories: ActivityCategoryDef[];
+  }) => {
+    setDuties(payload.duties || []);
+    if (route?.params?.initialTab) {
+      setActiveTab(route.params.initialTab);
+    } else if ((payload.duties || []).length === 0) {
+      setActiveTab('roster');
+    }
+
+    const published = payload.publishedPlans || [];
+    setPublishedPlans(published);
+    if (published.length > 0) {
+      const paramId = route?.params?.serviceId;
+      const paramValid = paramId && published.some(p => p.id === paramId);
+      setSelectedPlanId(prev =>
+        prev && published.some(p => p.id === prev)
+          ? prev
+          : paramValid
+            ? paramId
+            : published[0].id
+      );
+    } else {
+      setSelectedPlanId('');
+    }
+    setBlockouts(payload.blockouts || []);
+    setCustomCategories(payload.customCategories || []);
+    setLoading(false);
+  }, [route?.params?.initialTab, route?.params?.serviceId]);
+
+  const fetchDuties = useCallback(async (forceRefresh = false) => {
     if (!churchId || !memberId) {
       setLoading(false);
       return;
     }
     try {
-      const list = await ServiceRosterService.getMemberUpcomingDuties(churchId, memberId, member?.name);
-      setDuties(list);
-      if (route?.params?.initialTab) {
-        setActiveTab(route.params.initialTab);
-      } else if (list.length === 0) {
-        setActiveTab('roster');
+      const memHit = getInstantMemory<{
+        duties: MemberServiceDuty[];
+        publishedPlans: ServicePlan[];
+        blockouts: Array<{ date: string; reason?: string }>;
+        customCategories: ActivityCategoryDef[];
+      }>(serviceCacheKey);
+      if (memHit) {
+        applyServicePayload(memHit);
       }
 
-      // Fetch active & upcoming church service plans (exclude completed/past/ended services)
-      const allPlans = await ServiceRosterService.getServicePlans(churchId);
-      const published = (allPlans || [])
-        .filter(p => !ServiceRosterService.isServicePlanCompletedOrPast(p))
-        .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-      setPublishedPlans(published);
-      if (published.length > 0) {
-        const paramId = route?.params?.serviceId;
-        const paramValid = paramId && published.some(p => p.id === paramId);
-        setSelectedPlanId(prev =>
-          prev && published.some(p => p.id === prev)
-            ? prev
-            : paramValid
-            ? paramId
-            : published[0].id
-        );
-      } else {
-        setSelectedPlanId('');
-      }
-
-      // Also fetch blockout dates
-      const avail = await ServiceRosterService.getMemberAvailability(churchId, memberId);
-      setBlockouts(
-        avail?.blockouts ||
-          (avail?.unavailableDates || []).map((d: string) => ({ date: d, reason: 'Unavailable' }))
-      );
-
-      // Load church custom activity categories so timeline badges render custom labels/colors
-      const customCats = await ServiceRosterService.getCustomActivityCategories(churchId);
-      setCustomCategories(customCats);
+      await loadWithInstantCache({
+        key: serviceCacheKey,
+        screenName: 'MyService',
+        freshSkipMs: 90 * 1000,
+        forceRefresh,
+        fetcher: async () => {
+          const [list, allPlans, avail, customCats] = await Promise.all([
+            ServiceRosterService.getMemberUpcomingDuties(churchId, memberId, member?.name),
+            ServiceRosterService.getServicePlans(churchId, { limitCount: 40 }),
+            ServiceRosterService.getMemberAvailability(churchId, memberId),
+            ServiceRosterService.getCustomActivityCategories(churchId),
+          ]);
+          const published = (allPlans || [])
+            .filter(p => !ServiceRosterService.isServicePlanCompletedOrPast(p))
+            .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+          const nextBlockouts =
+            avail?.blockouts ||
+            (avail?.unavailableDates || []).map((d: string) => ({ date: d, reason: 'Unavailable' }));
+          lastListenerPlansFetchRef.current = Date.now();
+          return {
+            duties: list,
+            publishedPlans: published,
+            blockouts: nextBlockouts,
+            customCategories: customCats || [],
+          };
+        },
+        onCached: (cached) => {
+          applyServicePayload(cached);
+        },
+        onFresh: (fresh) => {
+          applyServicePayload(fresh);
+        },
+      });
     } catch (err) {
       console.error('[MyServiceScreen] fetchDuties error:', err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [churchId, memberId]);
+  }, [churchId, memberId, member?.name, serviceCacheKey, applyServicePayload]);
 
   useEffect(() => {
-    fetchDuties();
+    fetchDuties(false);
 
-    // Listen to real-time updates (both member duties and upcoming/active service plans)
+    // Listen to real-time updates (debounced secondary plans fetch so initial snapshot doesn't duplicate fetchDuties)
     const unsubscribe = ServiceRosterService.listenMemberUpcomingDuties(
       churchId,
       memberId,
       async (updatedList) => {
         setDuties(updatedList);
+        if (Date.now() - lastListenerPlansFetchRef.current < 15000) return;
+        lastListenerPlansFetchRef.current = Date.now();
         try {
-          const allPlans = await ServiceRosterService.getServicePlans(churchId);
+          const allPlans = await ServiceRosterService.getServicePlans(churchId, { limitCount: 40 });
           const published = (allPlans || [])
             .filter(p => !ServiceRosterService.isServicePlanCompletedOrPast(p))
             .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
           setPublishedPlans(published);
-        } catch (_) {}
+        } catch (_) { }
       }
     );
 
@@ -852,35 +907,35 @@ export default function MyServiceScreen({ navigation, route }: any) {
                             const badgeMeta =
                               displayStatus === 'live'
                                 ? {
-                                    label: 'LIVE SERVICE NOW',
-                                    dot: '#10B981',
-                                    bg: isDark ? 'rgba(16, 185, 129, 0.16)' : '#ECFDF5',
-                                    border: isDark ? 'rgba(16, 185, 129, 0.35)' : '#A7F3D0',
-                                    text: isDark ? '#34D399' : '#047857',
-                                  }
+                                  label: 'LIVE SERVICE NOW',
+                                  dot: '#10B981',
+                                  bg: isDark ? 'rgba(16, 185, 129, 0.16)' : '#ECFDF5',
+                                  border: isDark ? 'rgba(16, 185, 129, 0.35)' : '#A7F3D0',
+                                  text: isDark ? '#34D399' : '#047857',
+                                }
                                 : displayStatus === 'today'
-                                ? {
+                                  ? {
                                     label: 'TODAY’S SERVICE',
                                     dot: '#3B82F6',
                                     bg: isDark ? 'rgba(59, 130, 246, 0.16)' : '#EFF6FF',
                                     border: isDark ? 'rgba(96, 165, 250, 0.35)' : '#BFDBFE',
                                     text: isDark ? '#60A5FA' : '#1D4ED8',
                                   }
-                                : displayStatus === 'completed'
-                                ? {
-                                    label: 'COMPLETED SERVICE',
-                                    dot: '#64748B',
-                                    bg: isDark ? 'rgba(148, 163, 184, 0.14)' : '#F1F5F9',
-                                    border: isDark ? 'rgba(148, 163, 184, 0.3)' : '#CBD5E1',
-                                    text: isDark ? '#94A3B8' : '#475569',
-                                  }
-                                : {
-                                    label: 'UPCOMING SERVICE',
-                                    dot: '#10B981',
-                                    bg: isDark ? 'rgba(16, 185, 129, 0.12)' : '#ECFDF5',
-                                    border: isDark ? 'rgba(16, 185, 129, 0.25)' : '#A7F3D0',
-                                    text: isDark ? '#34D399' : '#059669',
-                                  };
+                                  : displayStatus === 'completed'
+                                    ? {
+                                      label: 'COMPLETED SERVICE',
+                                      dot: '#64748B',
+                                      bg: isDark ? 'rgba(148, 163, 184, 0.14)' : '#F1F5F9',
+                                      border: isDark ? 'rgba(148, 163, 184, 0.3)' : '#CBD5E1',
+                                      text: isDark ? '#94A3B8' : '#475569',
+                                    }
+                                    : {
+                                      label: 'UPCOMING SERVICE',
+                                      dot: '#10B981',
+                                      bg: isDark ? 'rgba(16, 185, 129, 0.12)' : '#ECFDF5',
+                                      border: isDark ? 'rgba(16, 185, 129, 0.25)' : '#A7F3D0',
+                                      text: isDark ? '#34D399' : '#059669',
+                                    };
                             return (
                               <View
                                 style={{
@@ -1198,8 +1253,8 @@ export default function MyServiceScreen({ navigation, route }: any) {
                                   <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>WORSHIP LEADER</Text>
                                   {((selectedPlan.assignmentMemberIds?.['role_worship_leader'] === memberId) ||
                                     (member?.name && selectedPlan.assignments['role_worship_leader'] && member.name.toLowerCase().trim() === selectedPlan.assignments['role_worship_leader'].toLowerCase().trim())) && (
-                                    <Text style={{ fontSize: 8.5, color: '#10B981', fontWeight: '800' }}>YOU</Text>
-                                  )}
+                                      <Text style={{ fontSize: 8.5, color: '#10B981', fontWeight: '800' }}>YOU</Text>
+                                    )}
                                 </View>
                                 <Text
                                   style={{

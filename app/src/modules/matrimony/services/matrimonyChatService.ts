@@ -18,6 +18,8 @@ import {
   update,
 } from 'firebase/database';
 import { webApp } from '../../../services/firebaseWebConfig';
+import { e2eeService } from '../../../services/e2eeService';
+import { roomKeyManager } from '../../../services/roomKeyManager';
 import {
   MatrimonyChatMessage,
   MatrimonyChatMessageReply,
@@ -31,6 +33,67 @@ const RTDB_URL = 'https://rhema-global-ministries-default-rtdb.firebaseio.com';
 let _rtdbInstance: Database | null = null;
 let _presenceCleanup: (() => void) | null = null;
 let _presenceUid: string | null = null;
+const _inFlightMatrimonyDeliveryKeys = new Set<string>();
+
+function ackMatrimonyInboxDeliveries(
+  db: Database,
+  uid: string,
+  entries: Array<{ roomId: string; r: Record<string, any> }>
+) {
+  const now = Date.now();
+  entries.forEach(({ roomId: rKey, r }) => {
+    const resolvedRoomId = String(r.roomId || rKey);
+    const peerUid = String(r.peerUid || '');
+    const msgId = String(r.lastMessageId || '');
+    if (
+      !r.lastMessageSenderUid ||
+      r.lastMessageSenderUid === uid ||
+      !msgId ||
+      r.lastMessageDeliveredToPeer
+    ) {
+      return;
+    }
+
+    const dedupeKey = `${uid}:${resolvedRoomId}:${msgId}`;
+    if (_inFlightMatrimonyDeliveryKeys.has(dedupeKey)) return;
+    _inFlightMatrimonyDeliveryKeys.add(dedupeKey);
+
+    void (async () => {
+      try {
+        const [partSnap, msgSnap] = await Promise.all([
+          get(ref(db, `matrimony_chats/${resolvedRoomId}/participants/${uid}`)).catch(() => null),
+          get(ref(db, `matrimony_chats/${resolvedRoomId}/messages/${msgId}/senderUid`)).catch(
+            () => null
+          ),
+        ]);
+
+        if (partSnap?.val() === true && msgSnap?.exists()) {
+          const perRoomUpdates: Record<string, any> = {
+            [`matrimony_chats/${resolvedRoomId}/messages/${msgId}/deliveredBy/${uid}`]: now,
+            [`matrimony_inbox/${uid}/${resolvedRoomId}/lastMessageDeliveredToPeer`]: true,
+          };
+          if (peerUid) {
+            perRoomUpdates[
+              `matrimony_inbox/${peerUid}/${resolvedRoomId}/lastMessageDeliveredToPeer`
+            ] = true;
+          }
+          await update(ref(db), perRoomUpdates);
+          return;
+        }
+
+        await update(ref(db, `matrimony_inbox/${uid}/${resolvedRoomId}`), {
+          lastMessageDeliveredToPeer: true,
+        }).catch(() => {});
+      } catch {
+        await update(ref(db, `matrimony_inbox/${uid}/${resolvedRoomId}`), {
+          lastMessageDeliveredToPeer: true,
+        }).catch(() => {});
+      } finally {
+        _inFlightMatrimonyDeliveryKeys.delete(dedupeKey);
+      }
+    })();
+  });
+}
 
 function getMatrimonyRtdb(): Database {
   if (_rtdbInstance) return _rtdbInstance;
@@ -96,30 +159,53 @@ export function getMatrimonyRoomId(uidA: string, uidB: string): string {
   return [uidA, uidB].sort().join('_');
 }
 
-function parseChatMessagesSnapshot(
+async function decryptChatMessagesSnapshot(
+  ctx: { scope: 'matrimony'; rtdb: ReturnType<typeof getMatrimonyRtdb>; roomId: string },
   val: Record<string, any> | null | undefined,
   myUid: string
-): MatrimonyChatMessage[] {
-  if (!val) return [];
-  return Object.keys(val)
-    .map((key) => {
-      const m = val[key] || {};
-      return {
-        id: String(m.id || key),
-        senderUid: String(m.senderUid || ''),
-        text: String(m.text || ''),
-        type: (m.type === 'image' ? 'image' : 'text') as 'text' | 'image',
-        imageUrl: m.imageUrl || null,
-        replyTo: m.replyTo || null,
-        createdAt: typeof m.createdAt === 'number' ? m.createdAt : Date.now(),
-        deliveredBy: m.deliveredBy || {},
-        readBy: m.readBy || {},
-        deletedForEveryone: Boolean(m.deletedForEveryone),
-        deletedFor: m.deletedFor || {},
-      };
-    })
-    .filter((m) => !m.deletedFor?.[myUid])
-    .sort((a, b) => a.createdAt - b.createdAt);
+): Promise<{ list: MatrimonyChatMessage[]; hasLockedMessages: boolean }> {
+  const obj = val || {};
+  let hasLockedMessages = false;
+
+  const list: MatrimonyChatMessage[] = (
+    await Promise.all(
+      Object.keys(obj)
+        .filter((key) => !obj[key]?.deletedFor?.[myUid])
+        .map(async (key) => {
+          const m = obj[key] || {};
+          const decText = m.deletedForEveryone
+            ? { text: '', encrypted: false }
+            : await roomKeyManager.decryptString(ctx, myUid, String(m.text || ''));
+          if (decText.lockedReason) hasLockedMessages = true;
+
+          let replyTo = m.replyTo || null;
+          if (
+            replyTo &&
+            typeof replyTo.text === 'string' &&
+            e2eeService.isEncryptedPayload(replyTo.text)
+          ) {
+            const decReply = await roomKeyManager.decryptString(ctx, myUid, replyTo.text);
+            replyTo = { ...replyTo, text: decReply.text };
+          }
+
+          return {
+            id: String(m.id || key),
+            senderUid: String(m.senderUid || ''),
+            text: decText.text,
+            type: (m.type === 'image' ? 'image' : 'text') as 'text' | 'image',
+            imageUrl: m.imageUrl || null,
+            replyTo,
+            createdAt: typeof m.createdAt === 'number' ? m.createdAt : Date.now(),
+            deliveredBy: m.deliveredBy || {},
+            readBy: m.readBy || {},
+            deletedForEveryone: Boolean(m.deletedForEveryone),
+            deletedFor: m.deletedFor || {},
+          };
+        })
+    )
+  ).sort((a, b) => a.createdAt - b.createdAt);
+
+  return { list, hasLockedMessages };
 }
 
 export const matrimonyChatService = {
@@ -262,13 +348,30 @@ export const matrimonyChatService = {
   ): () => void {
     if (!uid) return () => {};
     const db = getMatrimonyRtdb();
-    return onValue(ref(db, `matrimony_inbox/${uid}`), (snap) => {
-      const raw = snap.val() || {};
-      const items: MatrimonyInboxItem[] = Object.keys(raw)
-        .map((roomId) => {
-          const r = raw[roomId] || {};
+    let disposed = false;
+    let seq = 0;
+    let latestRaw: Record<string, any> | null = null;
+
+    const processSnapshot = async (rawObj: Record<string, any> | null) => {
+      const currentSeq = ++seq;
+      const raw = rawObj || {};
+      const entries = Object.keys(raw)
+        .map((roomId) => ({ roomId, r: raw[roomId] || {} }))
+        .filter(({ r }) => Boolean(r.peerUid));
+
+      // Mark incoming messages delivered safely per room without tripping root multi-path denials
+      ackMatrimonyInboxDeliveries(db, uid, entries);
+
+      const items: MatrimonyInboxItem[] = await Promise.all(
+        entries.map(async ({ roomId: rKey, r }) => {
+          const resolvedRoomId = String(r.roomId || rKey);
+          const dec = await roomKeyManager.decryptString(
+            { scope: 'matrimony', rtdb: db, roomId: resolvedRoomId },
+            uid,
+            String(r.lastMessageText || '')
+          );
           return {
-            roomId: String(r.roomId || roomId),
+            roomId: resolvedRoomId,
             peerUid: String(r.peerUid || ''),
             peerName: String(r.peerName || 'Rhema Member'),
             peerPhoto: r.peerPhoto || null,
@@ -279,7 +382,7 @@ export const matrimonyChatService = {
             peerGender: r.peerGender || null,
             peerCity: r.peerCity || null,
             contactPhone: r.contactPhone || null,
-            lastMessageText: String(r.lastMessageText || ''),
+            lastMessageText: dec.text,
             lastMessageType: (r.lastMessageType === 'image' ? 'image' : 'text') as 'text' | 'image',
             lastMessageSenderUid: r.lastMessageSenderUid || undefined,
             lastMessageId: r.lastMessageId || undefined,
@@ -289,29 +392,34 @@ export const matrimonyChatService = {
             unreadCount: typeof r.unreadCount === 'number' && r.unreadCount > 0 ? r.unreadCount : 0,
           };
         })
-        .filter((it) => Boolean(it.peerUid));
+      );
 
-      // Mark any incoming messages delivered now that this user's client is online and receiving updates
-      items.forEach((it) => {
-        if (
-          it.lastMessageSenderUid &&
-          it.lastMessageSenderUid !== uid &&
-          it.lastMessageId &&
-          !it.lastMessageDeliveredToPeer
-        ) {
-          const now = Date.now();
-          update(ref(db), {
-            [`matrimony_chats/${it.roomId}/messages/${it.lastMessageId}/deliveredBy/${uid}`]: now,
-            [`matrimony_inbox/${it.peerUid}/${it.roomId}/lastMessageDeliveredToPeer`]: true,
-            [`matrimony_inbox/${uid}/${it.roomId}/lastMessageDeliveredToPeer`]: true,
-          }).catch(() => {});
-        }
-      });
-
+      if (disposed || currentSeq !== seq) return;
       items.sort((a, b) => (b.lastMessageAt || 0) - (a.lastMessageAt || 0));
       const totalUnread = items.reduce((acc, it) => acc + it.unreadCount, 0);
       onChange(items, totalUnread);
+    };
+
+    const unsubRtdb = onValue(ref(db, `matrimony_inbox/${uid}`), (snap) => {
+      latestRaw = snap.val() || {};
+      processSnapshot(latestRaw);
     });
+
+    let prevStatus = e2eeService.getState().status;
+    const unsubState = e2eeService.subscribeState((snap) => {
+      if (snap.status !== prevStatus) {
+        prevStatus = snap.status;
+        if (snap.status === 'ready' && latestRaw !== null) {
+          processSnapshot(latestRaw);
+        }
+      }
+    });
+
+    return () => {
+      disposed = true;
+      unsubRtdb();
+      unsubState();
+    };
   },
 
   subscribeRoomMessages(
@@ -322,15 +430,65 @@ export const matrimonyChatService = {
   ): () => void {
     if (!roomId || !myUid) return () => {};
     const db = getMatrimonyRtdb();
+    const ctx = { scope: 'matrimony' as const, rtdb: db, roomId };
     const msgsQuery = query(
       ref(db, `matrimony_chats/${roomId}/messages`),
       orderByChild('createdAt'),
       limitToLast(pageLimit)
     );
-    return onValue(msgsQuery, (snap) => {
-      const list = parseChatMessagesSnapshot(snap.val(), myUid);
+    let disposed = false;
+    let seq = 0;
+    let latestRaw: Record<string, any> | null = null;
+    let hasLockedMessages = false;
+
+    const processSnapshot = async (val: Record<string, any> | null) => {
+      const currentSeq = ++seq;
+      const { list, hasLockedMessages: foundLocked } = await decryptChatMessagesSnapshot(
+        ctx,
+        val,
+        myUid
+      );
+
+      if (disposed || currentSeq !== seq) return;
+      hasLockedMessages = foundLocked;
       onChange(list);
+    };
+
+    const unsubMsgs = onValue(msgsQuery, (snap) => {
+      latestRaw = snap.val() || {};
+      processSnapshot(latestRaw);
     });
+
+    const unsubKeys = onValue(ref(db, `matrimony_chats/${roomId}/e2ee/keys`), () => {
+      if (hasLockedMessages && latestRaw !== null) {
+        processSnapshot(latestRaw);
+      }
+    });
+
+    const unsubReqs = onValue(ref(db, `matrimony_chats/${roomId}/e2ee/requests`), (snap) => {
+      if (snap.exists() && e2eeService.getState().status === 'ready') {
+        roomKeyManager.fulfillPendingRtdbRoomKeys(ctx, myUid, []).catch(() => {});
+      }
+    });
+
+    let prevStatus = e2eeService.getState().status;
+    const unsubState = e2eeService.subscribeState((snap) => {
+      if (snap.status !== prevStatus) {
+        prevStatus = snap.status;
+        if (snap.status === 'ready' && latestRaw !== null) {
+          processSnapshot(latestRaw);
+          roomKeyManager.fulfillPendingRtdbRoomKeys(ctx, myUid, []).catch(() => {});
+        }
+      }
+    });
+
+    return () => {
+      disposed = true;
+      unsubMsgs();
+      unsubKeys();
+      unsubReqs();
+      unsubState();
+    };
   },
 
   async fetchOlderRoomMessages(
@@ -343,6 +501,7 @@ export const matrimonyChatService = {
       return { messages: [], hasMore: false };
     }
     const db = getMatrimonyRtdb();
+    const ctx = { scope: 'matrimony' as const, rtdb: db, roomId };
     const msgsQuery = query(
       ref(db, `matrimony_chats/${roomId}/messages`),
       orderByChild('createdAt'),
@@ -352,7 +511,7 @@ export const matrimonyChatService = {
     const snap = await get(msgsQuery);
     const raw = snap.val() || {};
     const rawCount = Object.keys(raw).length;
-    const allSorted = parseChatMessagesSnapshot(raw, myUid);
+    const { list: allSorted } = await decryptChatMessagesSnapshot(ctx, raw, myUid);
     const hasMore = rawCount > pageLimit;
     const messages =
       hasMore && allSorted.length > pageLimit
@@ -391,11 +550,28 @@ export const matrimonyChatService = {
   ): Promise<void> {
     if (!roomId || !myUid) return;
     const db = getMatrimonyRtdb();
+    const [partSnap, inboxSnap] = await Promise.all([
+      get(ref(db, `matrimony_chats/${roomId}/participants/${myUid}`)).catch(() => null),
+      get(ref(db, `matrimony_inbox/${myUid}/${roomId}/unreadCount`)).catch(() => null),
+    ]);
+    const hasInboxUnread = inboxSnap?.exists() && Number(inboxSnap.val() || 0) > 0;
+
+    if (partSnap?.val() !== true) {
+      if (hasInboxUnread) {
+        await update(ref(db, `matrimony_inbox/${myUid}/${roomId}`), {
+          unreadCount: 0,
+        }).catch(() => {});
+      }
+      return;
+    }
+
     const now = Date.now();
     const updates: Record<string, any> = {
-      [`matrimony_inbox/${myUid}/${roomId}/unreadCount`]: 0,
       [`matrimony_chats/${roomId}/readReceipts/${myUid}`]: now,
     };
+    if (hasInboxUnread) {
+      updates[`matrimony_inbox/${myUid}/${roomId}/unreadCount`] = 0;
+    }
     unreadIncomingMsgIds.forEach((msgId) => {
       updates[`matrimony_chats/${roomId}/messages/${msgId}/deliveredBy/${myUid}`] = now;
       updates[`matrimony_chats/${roomId}/messages/${msgId}/readBy/${myUid}`] = now;
@@ -429,6 +605,43 @@ export const matrimonyChatService = {
     const previewLabel = type === 'image' ? (cleanText ? `📷 ${cleanText}` : '📷 Photo') : cleanText;
     const deliveredImmediately = Boolean(params.peerOnline);
 
+    const ctx = { scope: 'matrimony' as const, rtdb: db, roomId: params.roomId };
+    const partSnap = await get(
+      ref(db, `matrimony_chats/${params.roomId}/participants`)
+    ).catch(() => null);
+    const partVal = (partSnap?.val() || {}) as Record<string, any>;
+    const missingParts: Record<string, any> = {};
+    if (partVal[params.myUid] !== true) missingParts[params.myUid] = true;
+    if (partVal[params.peerUid] !== true) missingParts[params.peerUid] = true;
+    if (Object.keys(missingParts).length > 0) {
+      await update(
+        ref(db, `matrimony_chats/${params.roomId}/participants`),
+        missingParts
+      ).catch(() => {});
+    }
+
+    const participants = [params.myUid, params.peerUid];
+    const roomKey = await roomKeyManager.getOrCreateRoomSendKey(ctx, params.myUid, participants);
+    const storedText = cleanText
+      ? (await roomKeyManager.encryptString(ctx, params.myUid, participants, cleanText, roomKey))
+          .cipherText
+      : '';
+    const storedPreview = (
+      await roomKeyManager.encryptString(ctx, params.myUid, participants, previewLabel, roomKey)
+    ).cipherText;
+
+    let finalReplyTo = params.replyTo || null;
+    if (finalReplyTo && finalReplyTo.text) {
+      const encReply = await roomKeyManager.encryptString(
+        ctx,
+        params.myUid,
+        participants,
+        finalReplyTo.text,
+        roomKey
+      );
+      finalReplyTo = { ...finalReplyTo, text: encReply.cipherText };
+    }
+
     const updates: Record<string, any> = {
       [`matrimony_chats/${params.roomId}/participants/${params.myUid}`]: true,
       [`matrimony_chats/${params.roomId}/participants/${params.peerUid}`]: true,
@@ -436,10 +649,12 @@ export const matrimonyChatService = {
       [`matrimony_chats/${params.roomId}/messages/${msgId}`]: {
         id: msgId,
         senderUid: params.myUid,
-        text: cleanText,
+        text: storedText,
+        encrypted: true,
+        keyId: roomKey.keyId,
         type,
         imageUrl: params.imageUrl || null,
-        replyTo: params.replyTo || null,
+        replyTo: finalReplyTo,
         createdAt: serverTimestamp(),
         ...(deliveredImmediately
           ? { deliveredBy: { [params.peerUid]: serverTimestamp() } }
@@ -449,7 +664,7 @@ export const matrimonyChatService = {
       [`matrimony_inbox/${params.myUid}/${params.roomId}/peerUid`]: params.peerUid,
       [`matrimony_inbox/${params.myUid}/${params.roomId}/peerName`]: params.peerName,
       [`matrimony_inbox/${params.myUid}/${params.roomId}/peerPhoto`]: params.peerPhoto || null,
-      [`matrimony_inbox/${params.myUid}/${params.roomId}/lastMessageText`]: previewLabel,
+      [`matrimony_inbox/${params.myUid}/${params.roomId}/lastMessageText`]: storedPreview,
       [`matrimony_inbox/${params.myUid}/${params.roomId}/lastMessageType`]: type,
       [`matrimony_inbox/${params.myUid}/${params.roomId}/lastMessageSenderUid`]: params.myUid,
       [`matrimony_inbox/${params.myUid}/${params.roomId}/lastMessageId`]: msgId,
@@ -462,7 +677,7 @@ export const matrimonyChatService = {
       [`matrimony_inbox/${params.peerUid}/${params.roomId}/peerUid`]: params.myUid,
       [`matrimony_inbox/${params.peerUid}/${params.roomId}/peerName`]: params.myName,
       [`matrimony_inbox/${params.peerUid}/${params.roomId}/peerPhoto`]: params.myPhoto || null,
-      [`matrimony_inbox/${params.peerUid}/${params.roomId}/lastMessageText`]: previewLabel,
+      [`matrimony_inbox/${params.peerUid}/${params.roomId}/lastMessageText`]: storedPreview,
       [`matrimony_inbox/${params.peerUid}/${params.roomId}/lastMessageType`]: type,
       [`matrimony_inbox/${params.peerUid}/${params.roomId}/lastMessageSenderUid`]: params.myUid,
       [`matrimony_inbox/${params.peerUid}/${params.roomId}/lastMessageId`]: msgId,
@@ -473,7 +688,8 @@ export const matrimonyChatService = {
     };
 
     await update(ref(db), updates);
-    matrimonyApi.notifyChatMessage(params.peerUid, previewLabel).catch(() => {});
+    const pushPreview = type === 'image' ? '📷 Sent you a photo' : '🔒 New encrypted message';
+    matrimonyApi.notifyChatMessage(params.peerUid, pushPreview).catch(() => {});
   },
 
   async deleteMessageForMe(roomId: string, msgId: string, myUid: string): Promise<void> {
@@ -512,6 +728,19 @@ export const matrimonyChatService = {
   ): Promise<void> {
     if (!roomId || !myUid) return;
     const db = getMatrimonyRtdb();
+    const partSnap =
+      messageIds.length > 0
+        ? await get(ref(db, `matrimony_chats/${roomId}/participants/${myUid}`)).catch(() => null)
+        : null;
+
+    if (partSnap?.val() !== true) {
+      await update(ref(db, `matrimony_inbox/${myUid}/${roomId}`), {
+        lastMessageText: '',
+        unreadCount: 0,
+      });
+      return;
+    }
+
     const updates: Record<string, any> = {
       [`matrimony_inbox/${myUid}/${roomId}/lastMessageText`]: '',
       [`matrimony_inbox/${myUid}/${roomId}/unreadCount`]: 0,

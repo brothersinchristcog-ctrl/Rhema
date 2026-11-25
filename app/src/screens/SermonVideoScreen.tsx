@@ -1,16 +1,16 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { 
-  StyleSheet, 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  ScrollView, 
-  ActivityIndicator, 
-  Dimensions, 
-  Image, 
-  Linking, 
-  Share, 
-  StatusBar, 
+import {
+  StyleSheet,
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  ActivityIndicator,
+  Dimensions,
+  Image,
+  Linking,
+  Share,
+  StatusBar,
   Platform,
   Alert,
   Modal,
@@ -20,13 +20,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import YoutubePlayer from 'react-native-youtube-iframe';
 import { WebView } from 'react-native-webview';
 import { LinearGradient } from 'expo-linear-gradient';
-import { 
-  ChevronLeft, 
+import { CachedImage } from '../components/CachedImage';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../utils/instantCache';
+import {
+  ChevronLeft,
   ArrowLeft,
-  Share2, 
-  Play, 
-  Clock, 
-  Video, 
+  Share2,
+  Play,
+  Clock,
+  Video,
   ExternalLink,
   ChevronRight,
   Heart,
@@ -138,15 +140,21 @@ export default function SermonVideoScreen({ navigation, route }: any) {
   const [readerKey, setReaderKey] = useState(0);
   const playerRef = useRef<any>(null);
   const scrollViewRef = useRef<ScrollView>(null);
-  const { activeChurch } = useChurch();
+  const { activeChurch, churchId } = useChurch();
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
+  const subKeyPrefix = user?.uid || 'anon';
+  const videosCacheKey = makeScopedCacheKey('sermon_videos_v1', churchId || activeChurch?.id, user?.uid);
 
-  // Bell ringing animation for Subscribe button
+  // Bell ringing animation for Subscribe button (stops once subscribed to save idle CPU/UI frames)
   const bellAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (isSubscribed) {
+      bellAnim.setValue(0);
+      return;
+    }
     const ringSequence = Animated.loop(
       Animated.sequence([
         Animated.delay(1600),
@@ -161,7 +169,7 @@ export default function SermonVideoScreen({ navigation, route }: any) {
     );
     ringSequence.start();
     return () => ringSequence.stop();
-  }, [bellAnim]);
+  }, [bellAnim, isSubscribed]);
 
   const bellRotation = bellAnim.interpolate({
     inputRange: [-1, 0, 1],
@@ -173,16 +181,18 @@ export default function SermonVideoScreen({ navigation, route }: any) {
     let isCancelled = false;
     const checkSub = async () => {
       const sermonId = activeVideo?.id;
+      const globalKey = `@rhema_youtube_subscribed_${subKeyPrefix}`;
       if (!sermonId) {
-        const globalSub = await AsyncStorage.getItem('@rhema_youtube_subscribed').catch(() => null);
+        const globalSub = await AsyncStorage.getItem(globalKey).catch(() => null);
         if (!isCancelled && globalSub === 'true') {
           setIsSubscribed(true);
         }
         return;
       }
 
-      // 1. Check local persistent storage specifically for this sermon
-      const localSermonSub = await AsyncStorage.getItem(`@rhema_sermon_sub_${sermonId}`).catch(() => null);
+      // 1. Check local persistent storage specifically for this sermon (scoped per user)
+      const sermonSubKey = `@rhema_sermon_sub_${subKeyPrefix}_${sermonId}`;
+      const localSermonSub = await AsyncStorage.getItem(sermonSubKey).catch(() => null);
       if (localSermonSub === 'true') {
         if (!isCancelled) setIsSubscribed(true);
         return;
@@ -192,8 +202,8 @@ export default function SermonVideoScreen({ navigation, route }: any) {
         return;
       }
 
-      // 2. Check global channel subscription fallback
-      const globalSub = await AsyncStorage.getItem('@rhema_youtube_subscribed').catch(() => null);
+      // 2. Check global channel subscription fallback (scoped per user)
+      const globalSub = await AsyncStorage.getItem(globalKey).catch(() => null);
       if (globalSub === 'true') {
         if (!isCancelled) setIsSubscribed(true);
         return;
@@ -210,10 +220,10 @@ export default function SermonVideoScreen({ navigation, route }: any) {
             .get();
           if (!isCancelled && doc.exists) {
             setIsSubscribed(true);
-            AsyncStorage.setItem(`@rhema_sermon_sub_${sermonId}`, 'true').catch(() => {});
+            AsyncStorage.setItem(sermonSubKey, 'true').catch(() => { });
             return;
           }
-        } catch (_) {}
+        } catch (_) { }
       }
 
       if (!isCancelled) setIsSubscribed(false);
@@ -221,39 +231,21 @@ export default function SermonVideoScreen({ navigation, route }: any) {
 
     checkSub();
     return () => { isCancelled = true; };
-  }, [activeVideo?.id, user?.uid]);
+  }, [activeVideo?.id, user?.uid, subKeyPrefix]);
 
-  // Initial load from params or fetch
+  // Initial load from params or cache-first SWR
   useEffect(() => {
     let isCancelled = false;
-    const init = async () => {
-      setLoading(true);
-      const promiseData = await FirestoreService.getSermons(100);
-      const data: any[] = promiseData
-        .filter(p => p.youtubeId && p.youtubeId.trim() !== '' && p.youtubeId !== 'mock')
-        .map(p => ({
-          ...p,
-          id: p.id,
-          title: p.title || 'Sermon',
-          youtubeId: p.youtubeId,
-          date: p.date,
-          duration: p.duration || '',
-          pastor: p.pastor || 'Pastor',
-          thumbnailUrl: p.thumbnailUrl || p.imageUrl || '',
-          notesUrl: p.notesUrl || '',
-          notesFileName: p.notesFileName || '',
-          notesFileType: p.notesFileType || '',
-          notesText: p.notesText || '',
-        }));
+
+    const applyVideos = async (data: any[]) => {
       if (isCancelled) return;
       setVideos(data);
-      
+
       const sermonData = route?.params?.sermonData;
       const targetSermonId = route?.params?.sermonId || sermonData?.id;
 
       if (targetSermonId) {
         const cleanTargetId = String(targetSermonId).replace(/^sermon_/, '').trim();
-        // 1. Check in fetched data
         const match = data.find(v => v.id === cleanTargetId || v.id === targetSermonId);
         if (match) {
           setActiveVideo(match);
@@ -261,31 +253,31 @@ export default function SermonVideoScreen({ navigation, route }: any) {
           setLoading(false);
           return;
         }
-        // 2. Direct fetch from Firestore if not in the first 50
-        const directSermon = await FirestoreService.getSermonById(cleanTargetId);
-        if (!isCancelled && directSermon) {
-          const formattedDirect = {
-            ...directSermon,
-            id: directSermon.id,
-            title: directSermon.title || 'Sermon',
-            youtubeId: directSermon.youtubeId || '',
-            date: directSermon.date || 'Today',
-            duration: directSermon.duration || '',
-            pastor: directSermon.pastor || 'Pastor',
-            thumbnailUrl: directSermon.thumbnailUrl || directSermon.imageUrl || '',
-            notesUrl: directSermon.notesUrl || '',
-            notesFileName: directSermon.notesFileName || '',
-            notesFileType: directSermon.notesFileType || '',
-            notesText: directSermon.notesText || '',
-          };
-          setActiveVideo(formattedDirect);
-          setPlaying(true);
-          setLoading(false);
-          return;
+        if (!sermonData) {
+          const directSermon = await FirestoreService.getSermonById(cleanTargetId);
+          if (!isCancelled && directSermon) {
+            const formattedDirect = {
+              ...directSermon,
+              id: directSermon.id,
+              title: directSermon.title || 'Sermon',
+              youtubeId: directSermon.youtubeId || '',
+              date: directSermon.date || 'Today',
+              duration: directSermon.duration || '',
+              pastor: directSermon.pastor || 'Pastor',
+              thumbnailUrl: directSermon.thumbnailUrl || directSermon.imageUrl || '',
+              notesUrl: directSermon.notesUrl || '',
+              notesFileName: directSermon.notesFileName || '',
+              notesFileType: directSermon.notesFileType || '',
+              notesText: directSermon.notesText || '',
+            };
+            setActiveVideo(formattedDirect);
+            setPlaying(true);
+            setLoading(false);
+            return;
+          }
         }
       }
 
-      // 3. Match by Sermon Title if ID lookup didn't match
       const targetTitle = route?.params?.title || route?.params?.sermonTitle;
       if (targetTitle) {
         const cleanTitle = String(targetTitle)
@@ -308,7 +300,7 @@ export default function SermonVideoScreen({ navigation, route }: any) {
       }
 
       if (sermonData) {
-        setActiveVideo({
+        setActiveVideo((prev: any) => prev || {
           ...sermonData,
           id: sermonData.id || 'direct',
           title: sermonData.title || 'Sermon',
@@ -323,13 +315,59 @@ export default function SermonVideoScreen({ navigation, route }: any) {
         });
         setPlaying(true);
       } else if (data.length > 0) {
-        setActiveVideo(data[0]);
+        setActiveVideo((prev: any) => prev || data[0]);
       }
       setLoading(false);
     };
+
+    const init = async () => {
+      const memCached = getInstantMemory<any[]>(videosCacheKey);
+      if (memCached?.length) {
+        await applyVideos(memCached);
+      } else if (!sermonDataParam) {
+        setLoading(true);
+      }
+
+      await loadWithInstantCache<any[]>({
+        key: videosCacheKey,
+        screenName: 'SermonVideo',
+        freshSkipMs: 2 * 60 * 1000,
+        fetcher: async () => {
+          const promiseData = await FirestoreService.getSermons(100);
+          return promiseData
+            .filter(p => p.youtubeId && p.youtubeId.trim() !== '' && p.youtubeId !== 'mock')
+            .map(p => ({
+              ...p,
+              id: p.id,
+              title: p.title || 'Sermon',
+              youtubeId: p.youtubeId,
+              date: p.date,
+              duration: p.duration || '',
+              pastor: p.pastor || 'Pastor',
+              thumbnailUrl: p.thumbnailUrl || p.imageUrl || '',
+              notesUrl: p.notesUrl || '',
+              notesFileName: p.notesFileName || '',
+              notesFileType: p.notesFileType || '',
+              notesText: p.notesText || '',
+            }));
+        },
+        onCached: (cached) => {
+          if (!isCancelled && cached?.length) {
+            applyVideos(cached).catch(() => { });
+          }
+        },
+        onFresh: (fresh) => {
+          if (!isCancelled) {
+            applyVideos(fresh).catch(() => { });
+          }
+        },
+      }).catch(() => {
+        if (!isCancelled) setLoading(false);
+      });
+    };
     init();
     return () => { isCancelled = true; };
-  }, [route?.params?.sermonId, route?.params?.sermonData, route?.params?.youtubeId]);
+  }, [route?.params?.sermonId, route?.params?.sermonData, route?.params?.youtubeId, videosCacheKey]);
 
   // Load text notes if needed
   useEffect(() => {
@@ -375,9 +413,9 @@ export default function SermonVideoScreen({ navigation, route }: any) {
       }
       setIsSubscribed(true);
       if (sermonId) {
-        await AsyncStorage.setItem(`@rhema_sermon_sub_${sermonId}`, 'true').catch(() => {});
+        await AsyncStorage.setItem(`@rhema_sermon_sub_${subKeyPrefix}_${sermonId}`, 'true').catch(() => { });
       }
-      await AsyncStorage.setItem('@rhema_youtube_subscribed', 'true').catch(() => {});
+      await AsyncStorage.setItem(`@rhema_youtube_subscribed_${subKeyPrefix}`, 'true').catch(() => { });
       if (user?.uid && sermonId) {
         try {
           await firestore()
@@ -391,7 +429,7 @@ export default function SermonVideoScreen({ navigation, route }: any) {
               youtubeId: activeVideo?.youtubeId || '',
               subscribedAt: firestore.FieldValue.serverTimestamp(),
             }, { merge: true });
-        } catch (_) {}
+        } catch (_) { }
       }
     }
   };
@@ -401,9 +439,9 @@ export default function SermonVideoScreen({ navigation, route }: any) {
     setShowUnsubModal(false);
     setIsSubscribed(false);
     if (sermonId) {
-      await AsyncStorage.setItem(`@rhema_sermon_sub_${sermonId}`, 'false').catch(() => {});
+      await AsyncStorage.setItem(`@rhema_sermon_sub_${subKeyPrefix}_${sermonId}`, 'false').catch(() => { });
     }
-    await AsyncStorage.setItem('@rhema_youtube_subscribed', 'false').catch(() => {});
+    await AsyncStorage.setItem(`@rhema_youtube_subscribed_${subKeyPrefix}`, 'false').catch(() => { });
     if (user?.uid && sermonId) {
       try {
         await firestore()
@@ -412,7 +450,7 @@ export default function SermonVideoScreen({ navigation, route }: any) {
           .collection('sermon_subscriptions')
           .doc(String(sermonId))
           .delete();
-      } catch (_) {}
+      } catch (_) { }
     }
     const channelUrl = 'https://www.youtube.com/@RhemaGlobalMinistries';
     try {
@@ -451,16 +489,16 @@ export default function SermonVideoScreen({ navigation, route }: any) {
   }
 
   const hasNotes = Boolean(
-    activeVideo?.notesUrl || 
-    activeVideo?.notesText || 
+    activeVideo?.notesUrl ||
+    activeVideo?.notesText ||
     activeVideo?.notesFileName
   );
 
   const detectedFileType = (activeVideo?.notesFileType || (
     activeVideo?.notesFileName?.toLowerCase()?.endsWith('.pdf') ? 'pdf' :
-    activeVideo?.notesFileName?.toLowerCase()?.endsWith('.docx') ? 'docx' :
-    activeVideo?.notesFileName?.toLowerCase()?.endsWith('.doc') ? 'doc' :
-    activeVideo?.notesFileName?.toLowerCase()?.endsWith('.txt') ? 'txt' : 'pdf'
+      activeVideo?.notesFileName?.toLowerCase()?.endsWith('.docx') ? 'docx' :
+        activeVideo?.notesFileName?.toLowerCase()?.endsWith('.doc') ? 'doc' :
+          activeVideo?.notesFileName?.toLowerCase()?.endsWith('.txt') ? 'txt' : 'pdf'
   )).toLowerCase();
 
   const isTextDoc = detectedFileType === 'txt' || (inlineNotesText && !activeVideo?.notesUrl);
@@ -493,7 +531,7 @@ export default function SermonVideoScreen({ navigation, route }: any) {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar barStyle={colors.barStyle || (isDark ? 'light-content' : 'dark-content')} backgroundColor={colors.background} />
-      
+
       {/* ── Screen Header (Clean circular back button & title) ── */}
       <View
         style={[
@@ -518,7 +556,7 @@ export default function SermonVideoScreen({ navigation, route }: any) {
       </View>
 
       <ScrollView ref={scrollViewRef} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-        
+
         {/* ── Video Player (Spaced with rounded corners) ── */}
         <View style={styles.playerSection}>
           {hasValidVideo ? (
@@ -622,7 +660,7 @@ export default function SermonVideoScreen({ navigation, route }: any) {
         {/* ── Video Details ── */}
         <View style={[styles.videoDetails, { backgroundColor: colors.surface, borderColor: isDark ? colors.border : '#E2E8F0' }]}>
           <Text style={[styles.videoTitle, { color: colors.text }]}>{activeVideo?.title || t('home.exploreSermons')}</Text>
-          
+
           {/* Normal text row for Category, Date, Duration (All visible in a single row, no badges, no clipping) */}
           <View style={styles.metaRow}>
             {primaryCategory ? (
@@ -672,7 +710,7 @@ export default function SermonVideoScreen({ navigation, route }: any) {
                 {t('sermons.mainSpeaker')}
               </Text>
             </View>
-            <TouchableOpacity 
+            <TouchableOpacity
               activeOpacity={0.8}
               onPress={handleSubscribeToggle}
               style={styles.subBtnWrapper}
@@ -716,14 +754,14 @@ export default function SermonVideoScreen({ navigation, route }: any) {
                     <View style={[
                       styles.notesBadge,
                       detectedFileType === 'pdf' ? (isDark ? styles.badgePdfDark : styles.badgePdf) :
-                      (detectedFileType === 'doc' || detectedFileType === 'docx') ? (isDark ? styles.badgeDocDark : styles.badgeDoc) :
-                      (isDark ? styles.badgeTxtDark : styles.badgeTxt)
+                        (detectedFileType === 'doc' || detectedFileType === 'docx') ? (isDark ? styles.badgeDocDark : styles.badgeDoc) :
+                          (isDark ? styles.badgeTxtDark : styles.badgeTxt)
                     ]}>
                       <Text style={[
                         styles.notesBadgeTxt,
                         detectedFileType === 'pdf' ? (isDark ? styles.badgePdfDarkTxt : styles.badgePdfTxt) :
-                        (detectedFileType === 'doc' || detectedFileType === 'docx') ? (isDark ? styles.badgeDocDarkTxt : styles.badgeDocTxt) :
-                        (isDark ? styles.badgeTxtDarkTxt : styles.badgeTxtTxt)
+                          (detectedFileType === 'doc' || detectedFileType === 'docx') ? (isDark ? styles.badgeDocDarkTxt : styles.badgeDocTxt) :
+                            (isDark ? styles.badgeTxtDarkTxt : styles.badgeTxtTxt)
                       ]}>
                         {detectedFileType.toUpperCase()}
                       </Text>
@@ -847,7 +885,7 @@ export default function SermonVideoScreen({ navigation, route }: any) {
           </View>
         )}
 
-                {/* ── Archive ── */}
+        {/* ── Archive ── */}
         <Text style={[styles.secLbl, { color: isDark ? '#FFFFFF' : '#000000' }]}>{t('sermons.pastSermons')}</Text>
         <View style={[styles.archiveList, { backgroundColor: colors.surface, borderColor: isDark ? colors.border : '#E2E8F0' }]}>
           {videos.filter(v => v.id !== activeVideo?.id).length === 0 ? (
@@ -861,8 +899,8 @@ export default function SermonVideoScreen({ navigation, route }: any) {
               const metaString = [formattedDate, formattedDuration].filter(Boolean).join(' · ');
 
               return (
-                <TouchableOpacity 
-                  key={video.id} 
+                <TouchableOpacity
+                  key={video.id}
                   style={[styles.archiveItem, { borderBottomColor: isDark ? 'rgba(255,255,255,0.08)' : '#f3f4f6' }]}
                   onPress={() => {
                     setActiveVideo(video);
@@ -872,9 +910,9 @@ export default function SermonVideoScreen({ navigation, route }: any) {
                   activeOpacity={0.7}
                 >
                   <View style={styles.thumbBox}>
-                    <Image 
-                      source={{ uri: video.thumbnailUrl || `https://img.youtube.com/vi/${extractYoutubeId(video.youtubeId)}/mqdefault.jpg` }} 
-                      style={styles.thumb} 
+                    <CachedImage
+                      source={{ uri: video.thumbnailUrl || `https://img.youtube.com/vi/${extractYoutubeId(video.youtubeId)}/mqdefault.jpg` }}
+                      style={styles.thumb}
                       resizeMode="cover"
                     />
                     <View style={styles.playIcon}><Play size={10} color="#fff" fill="#fff" /></View>
@@ -906,13 +944,13 @@ export default function SermonVideoScreen({ navigation, route }: any) {
         onRequestClose={() => setShowUnsubModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <TouchableOpacity 
-            style={StyleSheet.absoluteFillObject} 
-            activeOpacity={1} 
-            onPress={() => setShowUnsubModal(false)} 
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={() => setShowUnsubModal(false)}
           />
           <View style={styles.unsubModalCard}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.modalCloseBtn}
               onPress={() => setShowUnsubModal(false)}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -965,10 +1003,10 @@ export default function SermonVideoScreen({ navigation, route }: any) {
       >
         <View style={styles.fullscreenModalContainer}>
           <StatusBar barStyle="light-content" backgroundColor="#000000" />
-          
+
           {/* Modal Header: Only back arrow icon on left, document name in middle, spacer on right */}
           <View style={styles.fullscreenModalHeader}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.fullscreenCloseBtn}
               onPress={() => setShowFullscreenNotes(false)}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
@@ -1021,14 +1059,14 @@ export default function SermonVideoScreen({ navigation, route }: any) {
                     <Text style={styles.notesErrorTitle}>Could not display document preview</Text>
                     <Text style={styles.notesErrorDesc}>Google Docs preview is taking too long to render.</Text>
                     <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
-                      <TouchableOpacity 
+                      <TouchableOpacity
                         style={styles.notesRetryBtn}
                         onPress={() => setReaderKey(k => k + 1)}
                         activeOpacity={0.8}
                       >
                         <Text style={styles.notesRetryBtnTxt}>Retry</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity 
+                      <TouchableOpacity
                         style={styles.notesExternalBtn}
                         onPress={() => Linking.openURL(safeNotesUrl)}
                         activeOpacity={0.8}
@@ -1157,14 +1195,14 @@ const styles = StyleSheet.create({
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   metaTxt: { fontSize: 11.5, fontWeight: '700', letterSpacing: -0.1 },
 
-  pastorCard: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    gap: 12, 
+  pastorCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     paddingVertical: 10,
     paddingHorizontal: 0,
-    backgroundColor: 'transparent', 
-    borderRadius: 14, 
+    backgroundColor: 'transparent',
+    borderRadius: 14,
     marginBottom: 0,
     borderWidth: 0,
   },
@@ -1231,29 +1269,29 @@ const styles = StyleSheet.create({
   shareBtn: { backgroundColor: '#c0392b', paddingVertical: 14, borderRadius: 12, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: 8 },
   shareBtnTxt: { color: '#fff', fontSize: 13, fontWeight: '700' },
 
-  secLbl: { 
-    fontSize: 16, 
-    fontWeight: '700', 
-    color: '#000000', 
-    marginHorizontal: 16, 
-    marginBottom: 12, 
-    marginTop: 22 
+  secLbl: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000000',
+    marginHorizontal: 16,
+    marginBottom: 12,
+    marginTop: 22
   },
-  
-  archiveList: { 
-    marginHorizontal: 16, 
-    borderRadius: 16, 
-    overflow: 'hidden', 
-    borderWidth: 1, 
+
+  archiveList: {
+    marginHorizontal: 16,
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
     borderColor: '#e5e7eb',
     marginBottom: 24,
   },
-  archiveItem: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    padding: 12, 
-    borderBottomWidth: 0.5, 
-    gap: 12 
+  archiveItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderBottomWidth: 0.5,
+    gap: 12
   },
   thumbBox: { width: 84, height: 56, borderRadius: 8, overflow: 'hidden', position: 'relative' },
   thumb: { width: '100%', height: '100%' },

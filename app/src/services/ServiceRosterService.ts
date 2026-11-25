@@ -452,7 +452,14 @@ class ServiceRosterService {
     }
   ): Promise<ServicePlan[]> {
     try {
-      const snap = await this.getServicePlansCol(churchId).get();
+      const col = this.getServicePlansCol(churchId);
+      const maxFetch = filter?.limitCount ? Math.max(filter.limitCount * 2, 40) : 80;
+      let snap;
+      try {
+        snap = await col.orderBy('date', 'desc').limit(maxFetch).get();
+      } catch {
+        snap = await col.limit(maxFetch).get();
+      }
       let list = snap.docs.map((doc: any) => ({
         id: doc.id,
         ...doc.data()
@@ -504,7 +511,13 @@ class ServiceRosterService {
   async getUpcomingPublishedPlans(churchId: string, limitCount: number = 5): Promise<ServicePlan[]> {
     try {
       const today = new Date().toISOString().split('T')[0];
-      const snap = await this.getServicePlansCol(churchId).get();
+      const col = this.getServicePlansCol(churchId);
+      let snap;
+      try {
+        snap = await col.where('date', '>=', today).orderBy('date', 'asc').limit(limitCount * 4).get();
+      } catch {
+        snap = await col.limit(40).get();
+      }
 
       const plans = snap.docs
         .map((doc: any) => ({ id: doc.id, ...doc.data() } as ServicePlan))
@@ -3090,27 +3103,43 @@ class ServiceRosterService {
     if (!churchId || (!memberId && !memberName)) return [];
     try {
       const now = new Date();
-      const plansSnap = await this.getServicePlansCol(churchId).get();
+      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const minDateStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+      const col = this.getServicePlansCol(churchId);
+      let plansSnap;
+      try {
+        plansSnap = await col.where('date', '>=', minDateStr).orderBy('date', 'asc').limit(35).get();
+      } catch {
+        plansSnap = await col.limit(50).get();
+      }
 
       const plans = plansSnap.docs
         .map((pDoc: any) => ({ id: pDoc.id, ...pDoc.data() } as ServicePlan))
         .filter(plan => !this.isServicePlanCompletedOrPast(plan, now))
-        .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+        .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+        .slice(0, 25);
+
+      const perPlanSubcollections = await Promise.all(
+        plans.map(async (plan) => {
+          const [rRes, qRes] = await Promise.all([
+            this.getRehearsalsCol(churchId, plan.id).get().catch(() => null),
+            this.getAssignmentQueuesCol(churchId, plan.id).get().catch(() => null),
+          ]);
+          const rehearsals: ServiceRehearsal[] = rRes
+            ? rRes.docs
+                .map((doc: any) => ({ id: doc.id, ...doc.data() }))
+                .filter((r: ServiceRehearsal) => (r.participantMemberIds || []).includes(memberId))
+            : [];
+          const queueDocs = qRes ? qRes.docs : [];
+          return { plan, rehearsals, queueDocs };
+        })
+      );
 
       const duties: MemberServiceDuty[] = [];
 
-      for (const plan of plans) {
+      for (const { plan, rehearsals, queueDocs } of perPlanSubcollections) {
         const planStartTime = plan.startTime || '10:00';
         const defaultCallTime = this.addMinutesToTime(planStartTime, -45); // 45m before service
-
-        // Fetch rehearsals for this service
-        let rehearsals: ServiceRehearsal[] = [];
-        try {
-          const rSnap = await this.getRehearsalsCol(churchId, plan.id).get();
-          rehearsals = rSnap.docs
-            .map((doc: any) => ({ id: doc.id, ...doc.data() }))
-            .filter((r: ServiceRehearsal) => (r.participantMemberIds || []).includes(memberId));
-        } catch (_) { }
 
         // 1. Check direct runSheet assignments
         (plan.runSheet || []).forEach(item => {
@@ -3167,10 +3196,10 @@ class ServiceRosterService {
             });
           }
           if (song.musicianAssignments) {
-            Object.entries(song.musicianAssignments).forEach(([roleKey, mus]) => {
-              const musName = mus.memberName || (mus as any).name;
-              const isMusician = mus.memberId === memberId ||
-                (memberName && musName && musName.toLowerCase().trim() === memberName.toLowerCase().trim());
+            Object.entries(song.musicianAssignments).forEach(([roleKey, mus]: [string, any]) => {
+              const musName = mus?.memberName || mus?.name;
+              const isMusician = mus?.memberId === memberId ||
+                (memberName && musName && String(musName).toLowerCase().trim() === memberName.toLowerCase().trim());
               if (isMusician) {
                 duties.push({
                   id: `${plan.id}_setlist_mus_${song.id}_${roleKey}`,
@@ -3255,8 +3284,8 @@ class ServiceRosterService {
         }
 
         if (plan.assignments && memberName) {
-          for (const [rId, name] of Object.entries(plan.assignments)) {
-            if (name && name.toLowerCase().trim() === memberName.toLowerCase().trim() && !duties.some(d => d.roleId === rId && d.serviceId === plan.id)) {
+          for (const [rId, name] of Object.entries(plan.assignments) as [string, any][]) {
+            if (name && typeof name === 'string' && name.toLowerCase().trim() === memberName.toLowerCase().trim() && !duties.some(d => d.roleId === rId && d.serviceId === plan.id)) {
               const rTitle = resolveRoleTitle(rId);
               duties.push({
                 id: `${plan.id}_${rId}_band_name`,
@@ -3280,10 +3309,9 @@ class ServiceRosterService {
           }
         }
 
-        // 3. Check sequential assignment queues (Pending invitations or Confirmed)
+        // 3. Check assignment queues (Pending invitations or Confirmed) using pre-fetched parallel docs
         try {
-          const queuesSnap = await this.getAssignmentQueuesCol(churchId, plan.id).get();
-          for (const qDoc of queuesSnap.docs) {
+          for (const qDoc of queueDocs) {
             const queue = qDoc.data() as ServiceAssignmentQueue;
             const candidates = queue.candidates || [];
             const curIdx = queue.currentCandidateIndex ?? 0;
@@ -3426,13 +3454,29 @@ class ServiceRosterService {
   ): () => void {
     if (!churchId || !memberId) return () => { };
 
-    return this.getServicePlansCol(churchId).onSnapshot(
-      async () => {
-        const duties = await this.getMemberUpcomingDuties(churchId, memberId);
-        onUpdate(duties);
-      },
-      (err: any) => console.error('[ServiceRosterService] listenMemberUpcomingDuties error:', err)
-    );
+    const today = new Date().toISOString().split('T')[0];
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let initialSkipped = false;
+    const unsub = this.getServicePlansCol(churchId)
+      .where('date', '>=', today)
+      .limit(35)
+      .onSnapshot(
+        () => {
+          if (!initialSkipped) {
+            initialSkipped = true;
+          }
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(async () => {
+            const duties = await this.getMemberUpcomingDuties(churchId, memberId);
+            onUpdate(duties);
+          }, 150);
+        },
+        (err: any) => console.error('[ServiceRosterService] listenMemberUpcomingDuties error:', err)
+      );
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      unsub();
+    };
   }
 
   /**

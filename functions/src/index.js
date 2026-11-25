@@ -6,24 +6,22 @@ import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getStorage } from 'firebase-admin/storage';
-import { SalesforceBackend } from './services/SalesforceBackend.js';
-import { sendWhatsAppTemplateInternal } from './whatsapp.js';
-import { generateCelebrationImage } from './imageGenerator.js';
-import { checkChurchYouTubeLive } from './notifications.js';
+import { checkChurchYouTubeLive, dispatchYouTubeLivePush } from './notifications.js';
 import { randomUUID } from 'crypto';
 // Initialize Firebase Admin once at top level
 initializeApp();
 // TODO: When Salesforce integration becomes multi-tenant, remove this and loop over churches.
 // Single-church configuration for Rhema Global Ministries
 const DEFAULT_CHURCH_ID = 'rhema';
-// Lazy initialization helpers
+// Lazy initialization helpers (avoids slow cold-start & discovery timeouts)
 let _db;
 let _messaging;
 let _sfBackend;
 const getDb = () => _db || (_db = getFirestore());
 const getMsg = () => _messaging || (_messaging = getMessaging());
-const getSf = () => {
+const getSf = async () => {
     if (!_sfBackend) {
+        const { SalesforceBackend } = await import('./services/SalesforceBackend.js');
         _sfBackend = new SalesforceBackend({
             consumerKey: process.env.SF_CONSUMER_KEY || '',
             username: process.env.SF_USERNAME || '',
@@ -32,6 +30,14 @@ const getSf = () => {
         });
     }
     return _sfBackend;
+};
+const generateCelebrationImage = async (...args) => {
+    const mod = await import('./imageGenerator.js');
+    return mod.generateCelebrationImage(...args);
+};
+const sendWhatsAppTemplateInternal = async (...args) => {
+    const mod = await import('./whatsapp.js');
+    return mod.sendWhatsAppTemplateInternal(...args);
 };
 // Helper to remove HTML tags from rich text before sending push notifications
 const stripHtml = (html) => {
@@ -44,7 +50,8 @@ const stripHtml = (html) => {
  */
 const getDailyPromise = onCall({ invoker: 'public' }, async (request) => {
     try {
-        const promise = await getSf().getDailyPromise();
+        const sf = await getSf();
+        const promise = await sf.getDailyPromise();
         return { success: true, data: promise };
     }
     catch (error) {
@@ -58,7 +65,8 @@ const getDailyPromise = onCall({ invoker: 'public' }, async (request) => {
 const getUpcomingEvents = onCall({ invoker: 'public' }, async (request) => {
     try {
         const limit = request.data?.limit || 5;
-        const events = await getSf().getUpcomingEvents(limit);
+        const sf = await getSf();
+        const events = await sf.getUpcomingEvents(limit);
         return { success: true, data: events };
     }
     catch (error) {
@@ -75,7 +83,8 @@ const checkContactExists = onCall({ invoker: 'public' }, async (request) => {
         if (!phone) {
             throw new HttpsError('invalid-argument', 'Phone number is required');
         }
-        const result = await getSf().checkContact(phone);
+        const sf = await getSf();
+        const result = await sf.checkContact(phone);
         return { success: true, ...result };
     }
     catch (error) {
@@ -1414,39 +1423,21 @@ export const triggerTestYouTubeLive = onCall({ invoker: 'public' }, async (reque
             silent: true,
             createdAt: FieldValue.serverTimestamp(),
         }, { merge: true });
-        // Send ONE single topic push (data-only on Android so NotificationService renders
-        // the notification directly with the "📺 Join Live Now" action button).
-        await getMsg().send({
-            data: {
-                type: 'youtube_live',
-                url: liveUrl,
-                videoId,
-                churchId,
-                title: pushTitle,
-                pushTitle,
-                pushBody,
-                id: docId,
-            },
-            topic: `church_${churchId}`,
-            android: {
-                priority: 'high',
-            },
-            apns: {
-                headers: { 'apns-priority': '10' },
-                payload: {
-                    aps: {
-                        alert: {
-                            title: pushTitle,
-                            body: pushBody,
-                        },
-                        sound: 'default',
-                        badge: 1,
-                        category: 'youtube_live',
-                    },
-                },
-            },
+        // Send to all registered member tokens (multicast) + church topic with shared tag deduplication
+        const pushResult = await dispatchYouTubeLivePush(db, {
+            churchId,
+            videoId,
+            liveUrl,
+            pushTitle,
+            pushBody,
+            streamTitle: pushTitle,
+            docId,
         });
-        return { success: true, broadcastId: docId };
+        return {
+            success: pushResult.delivered,
+            broadcastId: docId,
+            ...pushResult,
+        };
     }
     catch (error) {
         if (error instanceof HttpsError)
@@ -1688,9 +1679,9 @@ const testBaptismsV1 = functionsCompat.https.onRequest(async (req, res) => {
         res.status(500).send(error.message);
     }
 });
-export { publishScheduledSermons, triggerPublishScheduledSermonsHttp, triggerDailyVersePushHttp, sendDailyVersePushScheduled, monitorMeetingLive, pushMeetingLive, onBaptismRequestCreatedAdmin, onBaptismRequestCreatedAdminLegacy, onPrayerRequestCreatedAdmin, onPrayerRequestCreatedAdminLegacy, onPrayerRequestProcessedMember, onPrayerRequestProcessedMemberLegacy, pushPrayerRequestApproved, pushCareCellAnnouncement, pushCareCellMeeting, pushCareCellPrayerRequest, pushCareCellVisit, onCareCellVisitResponseUpdated, onTestimonyCreatedAdmin, onTestimonyCreatedAdminLegacy, onTestimonyUpdatedWorkflow, onTestimonyUpdatedWorkflowLegacy, onVolunteerApplicationCreated, onVolunteerApplicationCreatedLegacy, onVolunteerApplicationUpdated, onVolunteerApplicationUpdatedLegacy, onEventUpdatedForVolunteers, onEventUpdatedForVolunteersLegacy, scheduledVolunteerReminders, triggerVolunteerPushTestHttp, onJobApplicationCreated, onJobApplicationUpdated, onJobOpportunityCreated, onJobOpportunityUpdated, onRegistrationRequestCreated, onRegistrationRequestUpdated, onVolunteerPostCreated, onVolunteerPostUpdated, onKidsSessionCreated, onKidsSessionUpdated, onKidsAttendanceAbsentCreated, } from './notifications.js';
+export { publishScheduledSermons, triggerPublishScheduledSermonsHttp, triggerDailyVersePushHttp, sendDailyVersePushScheduled, monitorMeetingLive, onBaptismRequestCreatedAdmin, onBaptismRequestCreatedAdminLegacy, onPrayerRequestCreatedAdmin, onPrayerRequestCreatedAdminLegacy, onPrayerRequestProcessedMember, onPrayerRequestProcessedMemberLegacy, pushPrayerRequestApproved, pushCareCellAnnouncement, pushCareCellMeeting, pushCareCellPrayerRequest, pushCareCellVisit, onCareCellVisitResponseUpdated, onTestimonyCreatedAdmin, onTestimonyCreatedAdminLegacy, onTestimonyUpdatedWorkflow, onTestimonyUpdatedWorkflowLegacy, onVolunteerApplicationCreated, onVolunteerApplicationCreatedLegacy, onVolunteerApplicationUpdated, onVolunteerApplicationUpdatedLegacy, onEventUpdatedForVolunteers, onEventUpdatedForVolunteersLegacy, scheduledVolunteerReminders, triggerVolunteerPushTestHttp, onJobApplicationCreated, onJobApplicationUpdated, onJobOpportunityCreated, onJobOpportunityUpdated, onRegistrationRequestCreated, onRegistrationRequestUpdated, onVolunteerPostCreated, onVolunteerPostUpdated, onKidsSessionCreated, onKidsSessionUpdated, onKidsAttendanceAbsentCreated, onLedgerExpenseApproval, } from './notifications.js';
 export { onServiceAssignmentQueueDispatched, onServiceAssignmentResponded, checkServiceAssignmentTimeoutsCron, sendServiceRosterRemindersCron, triggerCheckRosterTimeoutsHttp, dispatchServiceAssignmentNotificationHttp, onServiceRehearsalCreated, onServicePlanPublished, bookResponsibilitySlotHttp, declineResponsibilitySlotHttp, } from './rosterNotifications.js';
-export { createZoomMeeting, createZoomMeetingHttp, generateZoomMeetingLink, createBibleClass, } from './meetings.js';
+export { generateZoomMeetingLink, createBibleClass, updateBibleClass, deleteBibleClass, startBibleClass, endBibleClass, } from './meetings.js';
 export { guestInviteLanding } from './guestInvite.js';
 export { startMatrimonyRegistration, saveMatrimonyDraft, submitMatrimonyProfile, resetMatrimonyProfile, deactivateMyMatrimonyAccount, deleteMyMatrimonyAccount, getMatrimonyStatus, uploadMatrimonyPhoto, } from './matrimony/registration.js';
 export { getMatrimonyAdminDashboard, getMatrimonyPendingProfiles, getMatrimonyAdminProfileDetail, approveMatrimonyProfile, rejectMatrimonyProfile, requestMatrimonyCorrection, suspendMatrimonyProfile, removeMatrimonyProfileForAbuse, deleteMatrimonyProfile, inactivateMatrimonyProfile, activateMatrimonyProfile, resolveMatrimonyReport, } from './matrimony/admin.js';
@@ -1701,4 +1692,7 @@ export { ensureMatrimonyChatRoom, getMatrimonyChatContacts, notifyMatrimonyChatM
 export { getMatrimonyPlans, getMemberEntitlements, createMatrimonyUpgradeOrder, verifyMatrimonyUpgradePayment, expireMatrimonySubscriptions, } from './matrimony/membership.js';
 export { adminGetMatrimonyPlansAndSubs, adminUpsertMatrimonyPlan, adminGrantComplimentarySubscription, } from './matrimony/adminPlans.js';
 export { seedMatrimonyTestUsers, deleteMatrimonyTestUsers, } from './matrimony/testSeed.js';
+export { createRhemaChatGroup, onRhemaChatMessageCreated, } from './churchChat/chatFunctions.js';
+export { createRazorpayOrder, verifyRazorpayPayment, createRazorpayRecurringDonation, verifyRazorpaySubscriptionDonation, manageRazorpayRecurringDonation, createRazorpayOrderV4, verifyRazorpaySubscriptionV3, createRazorpayDonationOrderV6, verifyRazorpayDonationV6, razorpayWebhookV1, } from './razorpay.js';
+export { sendPledgeRemindersScheduled, triggerPledgeRemindersManual, } from './pledgeReminders.js';
 //# sourceMappingURL=index.js.map

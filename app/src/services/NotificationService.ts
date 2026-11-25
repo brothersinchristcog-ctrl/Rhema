@@ -147,7 +147,6 @@ class NotificationService {
       if (!this.notificationHandlerConfigured) {
         Notifications.setNotificationHandler({
           handleNotification: async () => ({
-            shouldShowAlert: true,
             shouldPlaySound: true,
             shouldSetBadge: false,
             shouldShowBanner: true,
@@ -164,6 +163,17 @@ class NotificationService {
           sound: 'default',
           vibrationPattern: [0, 250, 250, 250],
           lightColor: '#E02424',
+          enableLights: true,
+          enableVibrate: true,
+          showBadge: true,
+        });
+
+        await Notifications.setNotificationChannelAsync('church_chat', {
+          name: 'Church Messages & Groups',
+          importance: Notifications.AndroidImportance.MAX,
+          sound: 'default',
+          vibrationPattern: [0, 180, 120, 180],
+          lightColor: '#22C55E',
           enableLights: true,
           enableVibrate: true,
           showBadge: true,
@@ -275,30 +285,39 @@ class NotificationService {
     data?: Record<string, any>
   ): Promise<boolean> {
     try {
-      await this.setupCategoriesAndChannels();
       const cleanTitle = (title || 'Rhema Church Update').trim();
       const cleanBody = (body || '').trim();
       if (!cleanTitle && !cleanBody) return false;
 
       const rawId = String(
-        data?.postId ||
+        data?.meetingId ||
+          data?.postId ||
           data?.opportunityId ||
           data?.applicationId ||
           data?.requestId ||
           data?.eventId ||
+          data?.sermonId ||
+          data?.quizId ||
           data?.referenceId ||
           data?.id ||
           ''
       )
-        .replace(/^vol_post_/, '')
+        .replace(/^(?:meeting_sched_|meeting_live_|vol_post_|sermon_)/, '')
         .trim();
       const dedupKey = `${data?.type || 'general'}|${rawId}|${cleanTitle}`;
+      const contentDedupKey = `${data?.type || 'general'}|content|${cleanTitle}|${cleanBody}`;
       const now = Date.now();
       const prevAt = this.recentSystemNotifs.get(dedupKey) || 0;
-      if (now - prevAt < 20000) {
+      const prevContentAt = this.recentSystemNotifs.get(contentDedupKey) || 0;
+      if (now - prevAt < 20000 || now - prevContentAt < 20000) {
         return false;
       }
+      // Claim deduplication window synchronously before any await so concurrent
+      // FCM and Firestore listeners cannot both pass the gate on the same tick.
       this.recentSystemNotifs.set(dedupKey, now);
+      this.recentSystemNotifs.set(contentDedupKey, now);
+
+      await this.setupCategoriesAndChannels();
 
       const identifier = rawId
         ? `rhema_push_${data?.type || 'notif'}_${rawId}`
@@ -378,18 +397,68 @@ class NotificationService {
           break;
         }
         case 'online_meeting':
+        case 'online_meeting_scheduled': {
+          const meetingId = rawData.meetingId || rawData.id || id;
+          const churchId = rawData.churchId || 'rhema';
           try {
-            nav.navigate('OnlineMeetings');
+            if (meetingId) {
+              nav.navigate('OnlineMeetingDetail', {
+                meetingId: String(meetingId),
+                churchId: String(churchId),
+                meeting: {
+                  id: String(meetingId),
+                  churchId: String(churchId),
+                  title: rawData.title || '',
+                  meetingLink: rawData.url || rawData.meetingLink || '',
+                  meetingUrl: rawData.url || rawData.meetingLink || '',
+                  url: rawData.url || rawData.meetingLink || '',
+                  provider: rawData.provider || 'google_meet',
+                  meetingType: rawData.provider || 'google_meet',
+                  password: rawData.password || '',
+                  date: rawData.date || '',
+                  startTimeLabel: rawData.startTimeLabel || '',
+                  endTimeLabel: rawData.endTimeLabel || '',
+                  teacherName: rawData.teacherName || '',
+                  topic: rawData.topic || '',
+                  bibleBook: rawData.bibleBook || '',
+                  status: type === 'online_meeting' ? 'live' : 'scheduled',
+                },
+              });
+            } else {
+              nav.navigate('OnlineMeetings');
+            }
           } catch (_) {
             try {
-              nav.navigate('AdminRoot', { targetTab: 'Online Meetings' });
+              nav.navigate('OnlineMeetings');
             } catch (e) {
               console.warn('Navigation to online meetings failed:', e);
             }
           }
           break;
+        }
+        case 'expense_approval':
+        case 'expense_approved':
+        case 'expense_rejected':
+          nav.navigate('AdminRoot', {
+            targetTab: 'Expense',
+            innerTab: 'approvals',
+            approvalSubTab:
+              type === 'expense_approved'
+                ? 'approved'
+                : type === 'expense_rejected'
+                ? 'rejected'
+                : 'pending',
+            expenseId: rawData.expenseId || id,
+            timestamp: Date.now(),
+          });
+          break;
         case 'invoice':
-          nav.navigate('AdminRoot', { targetTab: 'Expense', highlightInvoiceId: id });
+          nav.navigate('AdminRoot', {
+            targetTab: 'Expense',
+            innerTab: 'invoice',
+            highlightInvoiceId: id,
+            timestamp: Date.now(),
+          });
           break;
         case 'promise':
           nav.navigate('Updates');
@@ -676,6 +745,31 @@ class NotificationService {
           });
           break;
         }
+        case 'CHURCH_CHAT': {
+          nav.navigate('ChurchChat', {
+            roomId: rawData.roomId,
+            roomType: rawData.roomType || 'direct',
+            title: rawData.roomTitle || rawData.senderName || 'Chat',
+            avatarUrl: rawData.avatarUrl || null,
+            peerUid: rawData.peerUid || undefined,
+          });
+          break;
+        }
+        case 'pledge_reminder':
+        case 'recurring_donation_failed': {
+          nav.navigate('Give', {
+            pledgeId: rawData.pledgeId || undefined,
+            subscriptionId: rawData.subscriptionId || undefined,
+          });
+          break;
+        }
+        case 'recurring_donation_receipt':
+        case 'recurring_pre_debit_reminder': {
+          nav.navigate('GivingHistory', {
+            initialTab: type === 'recurring_pre_debit_reminder' ? 'mandates' : 'donations',
+          });
+          break;
+        }
         default:
           if (id) {
             nav.navigate('Updates', { highlightId: id, highlightType: type });
@@ -723,6 +817,8 @@ class NotificationService {
       }
 
       const topicName = `church_${churchId}`;
+      // Ensure FCM instance has registered a token before subscribing to topics
+      await messaging().getToken().catch(() => null);
       await messaging().subscribeToTopic(topicName);
       console.log(`📡 Subscribed to FCM topic: ${topicName}`);
     } catch (error: any) {

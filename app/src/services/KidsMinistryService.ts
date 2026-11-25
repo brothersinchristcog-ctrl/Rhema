@@ -289,10 +289,12 @@ class KidsMinistryService {
    */
   subscribeToAllChildren(
     churchId: string,
-    callback: (children: ChildRecord[]) => void
+    callback: (children: ChildRecord[]) => void,
+    limitCount = 300
   ): () => void {
     return this.getKidsCollection(churchId)
       .orderBy('enrolledAt', 'desc')
+      .limit(limitCount)
       .onSnapshot(
         snap => {
           if (!snap) {
@@ -307,7 +309,7 @@ class KidsMinistryService {
         },
         () => {
           // Fallback without order
-          this.getKidsCollection(churchId).onSnapshot(snap => {
+          this.getKidsCollection(churchId).limit(limitCount).onSnapshot(snap => {
             if (!snap) return callback([]);
             callback(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
           });
@@ -415,9 +417,9 @@ class KidsMinistryService {
       }
     }
 
-    // Determine sequence number for formatted ID e.g. "KID-2026-0001"
-    const countSnap = await collectionRef.get();
-    const childId = formatChildId(countSnap.size + 1);
+    // Determine sequence number for formatted ID e.g. "KID-2026-0001" via cheap count()
+    const countSnap = await collectionRef.count().get();
+    const childId = formatChildId((countSnap.data().count || 0) + 1);
 
     const newRecord: Omit<ChildRecord, 'id'> = {
       childId,
@@ -910,15 +912,23 @@ class KidsMinistryService {
    * Reconciles missing profile photos and faceEnrolled flags between `kids_children`
    * and `Rhema Church/{churchId}/members` so every uploaded photo is linked for Face Scan.
    */
-  async reconcileAllChildPhotos(churchId?: string): Promise<number> {
+  private lastReconcileByChurch = new Map<string, number>();
+
+  async reconcileAllChildPhotos(churchId?: string, force = false): Promise<number> {
     const cId = churchId || RHEMA_CHURCH_ID;
+    const lastRun = this.lastReconcileByChurch.get(cId) || 0;
+    if (!force && Date.now() - lastRun < 5 * 60_000) {
+      return 0;
+    }
+    this.lastReconcileByChurch.set(cId, Date.now());
     try {
       const [kidsSnap, membersSnap] = await Promise.all([
-        this.getKidsCollection(cId).get(),
+        this.getKidsCollection(cId).limit(300).get(),
         firestore()
           .collection(RHEMA_ROOT_COLLECTION)
           .doc(cId)
           .collection('members')
+          .limit(500)
           .get(),
       ]);
 
@@ -937,6 +947,7 @@ class KidsMinistryService {
           .replace(/\s+/g, ' ');
       const compact = (s: string) => norm(s).replace(/\s+/g, '');
 
+      const tasks: Promise<void>[] = [];
       let reconciled = 0;
       for (const kidDoc of kidsSnap.docs) {
         const k = kidDoc.data() as ChildRecord;
@@ -957,46 +968,55 @@ class KidsMinistryService {
         const memberPhoto = (linkedMember?.data?.profilePhoto || linkedMember?.data?.photoUrl || '').trim();
 
         if (!kidPhoto && memberPhoto) {
-          await this.updateChildProfile(
-            cId,
-            kidDoc.id,
-            {
-              photoUrl: memberPhoto,
-              faceEnrolled: true,
-              faceEnrolledAt: firestore.FieldValue.serverTimestamp(),
-              ...(linkedMember && !k.memberContactId
-                ? { memberContactId: linkedMember.id, isSyncedFromMember: true }
-                : {}),
-            },
-            { skipMemberMirror: true }
-          );
           reconciled++;
+          tasks.push(
+            this.updateChildProfile(
+              cId,
+              kidDoc.id,
+              {
+                photoUrl: memberPhoto,
+                faceEnrolled: true,
+                faceEnrolledAt: firestore.FieldValue.serverTimestamp(),
+                ...(linkedMember && !k.memberContactId
+                  ? { memberContactId: linkedMember.id, isSyncedFromMember: true }
+                  : {}),
+              },
+              { skipMemberMirror: true }
+            ).catch(() => {})
+          );
         } else if (kidPhoto && !k.faceEnrolled) {
-          await this.updateChildProfile(
-            cId,
-            kidDoc.id,
-            {
-              faceEnrolled: true,
-              faceEnrolledAt: firestore.FieldValue.serverTimestamp(),
-            },
-            { skipMemberMirror: true }
+          reconciled++;
+          tasks.push(
+            this.updateChildProfile(
+              cId,
+              kidDoc.id,
+              {
+                faceEnrolled: true,
+                faceEnrolledAt: firestore.FieldValue.serverTimestamp(),
+              },
+              { skipMemberMirror: true }
+            ).catch(() => {})
           );
-          reconciled++;
         } else if (kidPhoto && linkedMember && !memberPhoto) {
-          await firestore()
-            .collection(RHEMA_ROOT_COLLECTION)
-            .doc(cId)
-            .collection('members')
-            .doc(linkedMember.id)
-            .update(
-              sanitizeForFirestore({
-                profilePhoto: kidPhoto,
-                updatedAt: firestore.FieldValue.serverTimestamp(),
-              })
-            )
-            .catch(() => {});
           reconciled++;
+          tasks.push(
+            firestore()
+              .collection(RHEMA_ROOT_COLLECTION)
+              .doc(cId)
+              .collection('members')
+              .doc(linkedMember.id)
+              .update(
+                sanitizeForFirestore({
+                  profilePhoto: kidPhoto,
+                  updatedAt: firestore.FieldValue.serverTimestamp(),
+                })
+              )
+              .catch(() => {})
+          );
         }
+      }
+      if (tasks.length > 0) {
+        await Promise.all(tasks);
       }
 
       return reconciled;

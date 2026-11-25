@@ -1,12 +1,22 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SupportedLanguage } from '../locales';
 
-// Local Telugu Bible fallback (bundled offline JSON)
-let LOCAL_TELUGU_BIBLE: any = null;
-try {
-  LOCAL_TELUGU_BIBLE = require('../../assets/telugu_bible.json');
-} catch (e) {
-  console.warn('Local Telugu Bible JSON not loaded:', e);
+// Local Telugu Bible fallback (lazy-loaded on first Telugu lookup so startup never parses multi-MB JSON unnecessarily)
+let _localTeluguBible: any = undefined;
+function getLocalTeluguBible(): any {
+  if (_localTeluguBible !== undefined) return _localTeluguBible;
+  try {
+    _localTeluguBible = require('../../assets/telugu_bible.json');
+  } catch (e) {
+    console.warn('Local Telugu Bible JSON not loaded:', e);
+    _localTeluguBible = null;
+  }
+  return _localTeluguBible;
 }
+
+const CHAPTER_CACHE_PREFIX = '@rhema_bible_chapter_v1_';
+const CHAPTER_MEMORY_CACHE = new Map<string, any[]>();
+const CHAPTER_IN_FLIGHT = new Map<string, Promise<any[]>>();
 
 export interface BibleVerse {
   verse: number;
@@ -314,7 +324,8 @@ export const BibleService = {
    */
   getVerseCount(bookIndex: number, chapter: number): number {
     try {
-      const verses = LOCAL_TELUGU_BIBLE?.Book?.[bookIndex]?.Chapter?.[chapter - 1]?.Verse;
+      const bible = getLocalTeluguBible();
+      const verses = bible?.Book?.[bookIndex]?.Chapter?.[chapter - 1]?.Verse;
       if (Array.isArray(verses) && verses.length > 0) {
         return verses.length;
       }
@@ -379,55 +390,49 @@ export const BibleService = {
   ): Promise<BibleVerse[]> {
     const bookId = bookIndex + 1;
     const usfm = BIBLE_BOOK_USFM[bookIndex] || 'GEN';
+    const normVersion = (englishVersion || 'KJV').trim();
+    const cacheKey = `${CHAPTER_CACHE_PREFIX}${lang}_${normVersion}_${bookId}_${chapter}`;
 
-    // ─── 1. Telugu ERV / IRV request: try helloao tel_irv first ───
-    const isTeluguErv = lang === 'te' && (
-      englishVersion?.toLowerCase().includes('erv') || 
-      englishVersion?.toLowerCase().includes('irv')
-    );
-
-    if (isTeluguErv) {
-      try {
-        const url = `https://bible.helloao.org/api/tel_irv/${usfm}/${chapter}.json`;
-        const res = await fetch(url);
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.chapter?.content && Array.isArray(data.chapter.content)) {
-            const verses: BibleVerse[] = data.chapter.content
-              .filter((c: any) => c.type === 'verse')
-              .map((c: any) => ({
-                verse: c.number,
-                text: Array.isArray(c.content) ? c.content.filter((s: any) => typeof s === 'string').join(' ') : String(c.content || '')
-              }));
-            if (verses.length > 0) return verses;
-          }
-        }
-      } catch (e) {
-        console.warn('Telugu ERV (tel_irv) fetch failed, falling back to BSI:', e);
-      }
+    const memHit = CHAPTER_MEMORY_CACHE.get(cacheKey);
+    if (memHit && memHit.length > 0) {
+      return memHit;
     }
 
-    // ─── 2. Telugu: Try local bundled JSON first for instant offline access (BSI) ───
-    if (lang === 'te') {
-      try {
-        if (LOCAL_TELUGU_BIBLE?.Book?.[bookIndex]?.Chapter?.[chapter - 1]?.Verse) {
-          const rawVerses = LOCAL_TELUGU_BIBLE.Book[bookIndex].Chapter[chapter - 1].Verse;
-          return rawVerses.map((v: any, i: number) => ({
-            verse: i + 1,
-            text: v.Verse
-          }));
-        }
-      } catch (e) {
-        console.warn('Local Telugu Bible read failed, falling back to online API', e);
-      }
-    }
+    const pending = CHAPTER_IN_FLIGHT.get(cacheKey);
+    if (pending) return pending;
 
-    // ─── 2. Marathi: Fetch from helloao API (mar_cbi / mar_irv) ───
-    if (lang === 'mr') {
-      const mrTranslations = ['mar_cbi', 'mar_irv'];
-      for (const tid of mrTranslations) {
+    const loadChapter = async (): Promise<BibleVerse[]> => {
+      // Check persistent AsyncStorage chapter cache (skip if Telugu offline JSON is faster)
+      if (lang !== 'te' || normVersion.toLowerCase().includes('erv') || normVersion.toLowerCase().includes('irv')) {
         try {
-          const url = `https://bible.helloao.org/api/${tid}/${usfm}/${chapter}.json`;
+          const cachedRaw = await AsyncStorage.getItem(cacheKey);
+          if (cachedRaw) {
+            const parsed = JSON.parse(cachedRaw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              CHAPTER_MEMORY_CACHE.set(cacheKey, parsed);
+              return parsed;
+            }
+          }
+        } catch {}
+      }
+
+      const saveAndReturn = (verses: BibleVerse[]) => {
+        CHAPTER_MEMORY_CACHE.set(cacheKey, verses);
+        if (lang !== 'te' || normVersion.toLowerCase().includes('erv') || normVersion.toLowerCase().includes('irv')) {
+          AsyncStorage.setItem(cacheKey, JSON.stringify(verses)).catch(() => {});
+        }
+        return verses;
+      };
+
+      // ─── 1. Telugu ERV / IRV request: try helloao tel_irv first ───
+      const isTeluguErv = lang === 'te' && (
+        normVersion.toLowerCase().includes('erv') || 
+        normVersion.toLowerCase().includes('irv')
+      );
+
+      if (isTeluguErv) {
+        try {
+          const url = `https://bible.helloao.org/api/tel_irv/${usfm}/${chapter}.json`;
           const res = await fetch(url);
           if (res.ok) {
             const data = await res.json();
@@ -438,79 +443,126 @@ export const BibleService = {
                   verse: c.number,
                   text: Array.isArray(c.content) ? c.content.filter((s: any) => typeof s === 'string').join(' ') : String(c.content || '')
                 }));
-              if (verses.length > 0) return verses;
+              if (verses.length > 0) return saveAndReturn(verses);
             }
           }
         } catch (e) {
-          console.warn(`Marathi fetch from ${tid} failed:`, e);
+          console.warn('Telugu ERV (tel_irv) fetch failed, falling back to BSI:', e);
         }
       }
-    }
 
-    // ─── 3. English, Hindi, Tamil, Kannada, Malayalam (or Telugu fallback): Bolls API ───
-    const versionMap: Record<SupportedLanguage, string[]> = {
-      en: [englishVersion || 'KJV', 'KJV', 'ASV'],
-      hi: ['HIOV'],
-      ta: ['TBSI', 'TAMBL98', 'TAMOVR'],
-      kn: ['KNCL', 'ERVKN'],
-      ml: ['MOV'],
-      te: ['TELBSI', 'BSITEL'],
-      mr: []
-    };
+      // ─── 2. Telugu: Try local bundled JSON first for instant offline access (BSI) ───
+      if (lang === 'te') {
+        try {
+          const teluguBible = getLocalTeluguBible();
+          if (teluguBible?.Book?.[bookIndex]?.Chapter?.[chapter - 1]?.Verse) {
+            const rawVerses = teluguBible.Book[bookIndex].Chapter[chapter - 1].Verse;
+            return saveAndReturn(rawVerses.map((v: any, i: number) => ({
+              verse: i + 1,
+              text: v.Verse
+            })));
+          }
+        } catch (e) {
+          console.warn('Local Telugu Bible read failed, falling back to online API', e);
+        }
+      }
 
-    const candidateVersions = versionMap[lang] || [];
-    for (const v of candidateVersions) {
-      try {
-        const url = `https://bolls.life/get-text/${v}/${bookId}/${chapter}/`;
-        const res = await fetch(url, { headers: { Accept: 'application/json' } });
-        if (res.ok) {
-          const result = await res.json();
-          if (Array.isArray(result) && result.length > 0) {
-            return result.map((item: any) => ({
-              verse: item.verse,
-              text: BibleService.cleanVerseText(item.text)
-            }));
+      // ─── 2. Marathi: Fetch from helloao API (mar_cbi / mar_irv) ───
+      if (lang === 'mr') {
+        const mrTranslations = ['mar_cbi', 'mar_irv'];
+        for (const tid of mrTranslations) {
+          try {
+            const url = `https://bible.helloao.org/api/${tid}/${usfm}/${chapter}.json`;
+            const res = await fetch(url);
+            if (res.ok) {
+              const data = await res.json();
+              if (data?.chapter?.content && Array.isArray(data.chapter.content)) {
+                const verses: BibleVerse[] = data.chapter.content
+                  .filter((c: any) => c.type === 'verse')
+                  .map((c: any) => ({
+                    verse: c.number,
+                    text: Array.isArray(c.content) ? c.content.filter((s: any) => typeof s === 'string').join(' ') : String(c.content || '')
+                  }));
+                if (verses.length > 0) return saveAndReturn(verses);
+              }
+            }
+          } catch (e) {
+            console.warn(`Marathi fetch from ${tid} failed:`, e);
           }
         }
-      } catch (e) {
-        console.warn(`Bolls fetch (${v}) failed:`, e);
       }
-    }
 
-    // ─── 4. Universal Online Fallback (helloao IRV translations) ───
-    const helloaoFallbackMap: Record<SupportedLanguage, string> = {
-      te: 'tel_irv',
-      hi: 'HINIRV',
-      ta: 'tam_irv',
-      kn: 'kan_irv',
-      ml: 'mal_bib',
-      mr: 'mar_irv',
-      en: 'BSB'
+      // ─── 3. English, Hindi, Tamil, Kannada, Malayalam (or Telugu fallback): Bolls API ───
+      const versionMap: Record<SupportedLanguage, string[]> = {
+        en: [normVersion, 'KJV', 'ASV'],
+        hi: ['HIOV'],
+        ta: ['TBSI', 'TAMBL98', 'TAMOVR'],
+        kn: ['KNCL', 'ERVKN'],
+        ml: ['MOV'],
+        te: ['TELBSI', 'BSITEL'],
+        mr: []
+      };
+
+      const candidateVersions = versionMap[lang] || [];
+      for (const v of candidateVersions) {
+        try {
+          const url = `https://bolls.life/get-text/${v}/${bookId}/${chapter}/`;
+          const res = await fetch(url, { headers: { Accept: 'application/json' } });
+          if (res.ok) {
+            const result = await res.json();
+            if (Array.isArray(result) && result.length > 0) {
+              return saveAndReturn(result.map((item: any) => ({
+                verse: item.verse,
+                text: BibleService.cleanVerseText(item.text)
+              })));
+            }
+          }
+        } catch (e) {
+          console.warn(`Bolls fetch (${v}) failed:`, e);
+        }
+      }
+
+      // ─── 4. Universal Online Fallback (helloao IRV translations) ───
+      const helloaoFallbackMap: Record<SupportedLanguage, string> = {
+        te: 'tel_irv',
+        hi: 'HINIRV',
+        ta: 'tam_irv',
+        kn: 'kan_irv',
+        ml: 'mal_bib',
+        mr: 'mar_irv',
+        en: 'BSB'
+      };
+
+      const fallbackTid = helloaoFallbackMap[lang];
+      if (fallbackTid) {
+        try {
+          const url = `https://bible.helloao.org/api/${fallbackTid}/${usfm}/${chapter}.json`;
+          const res = await fetch(url);
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.chapter?.content && Array.isArray(data.chapter.content)) {
+              const verses: BibleVerse[] = data.chapter.content
+                .filter((c: any) => c.type === 'verse')
+                .map((c: any) => ({
+                  verse: c.number,
+                  text: Array.isArray(c.content) ? c.content.filter((s: any) => typeof s === 'string').join(' ') : String(c.content || '')
+                }));
+              if (verses.length > 0) return saveAndReturn(verses);
+            }
+          }
+        } catch (e) {
+          console.warn(`helloao fallback (${fallbackTid}) failed:`, e);
+        }
+      }
+
+      throw new Error('Scripture could not be loaded. Please check your internet connection and try again.');
     };
 
-    const fallbackTid = helloaoFallbackMap[lang];
-    if (fallbackTid) {
-      try {
-        const url = `https://bible.helloao.org/api/${fallbackTid}/${usfm}/${chapter}.json`;
-        const res = await fetch(url);
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.chapter?.content && Array.isArray(data.chapter.content)) {
-            const verses: BibleVerse[] = data.chapter.content
-              .filter((c: any) => c.type === 'verse')
-              .map((c: any) => ({
-                verse: c.number,
-                text: Array.isArray(c.content) ? c.content.filter((s: any) => typeof s === 'string').join(' ') : String(c.content || '')
-              }));
-            if (verses.length > 0) return verses;
-          }
-        }
-      } catch (e) {
-        console.warn(`helloao fallback (${fallbackTid}) failed:`, e);
-      }
-    }
-
-    throw new Error('Scripture could not be loaded. Please check your internet connection and try again.');
+    const reqPromise = loadChapter().finally(() => {
+      CHAPTER_IN_FLIGHT.delete(cacheKey);
+    });
+    CHAPTER_IN_FLIGHT.set(cacheKey, reqPromise);
+    return reqPromise;
   },
 
   /**
@@ -545,9 +597,11 @@ export const BibleService = {
     };
 
     // ─── 1. Telugu local search ───
-    if (lang === 'te' && LOCAL_TELUGU_BIBLE?.Book) {
+    if (lang === 'te') {
+      const teluguBible = getLocalTeluguBible();
+      if (teluguBible?.Book) {
       const results: any[] = [];
-      const books = LOCAL_TELUGU_BIBLE.Book;
+      const books = teluguBible.Book;
       for (let b = 0; b < books.length; b++) {
         const chapters = books[b]?.Chapter || [];
         for (let c = 0; c < chapters.length; c++) {
@@ -572,6 +626,7 @@ export const BibleService = {
         }
       }
       return results;
+      }
     }
 
     // ─── 2. Bolls Search API for English, Hindi, Tamil, Kannada, Malayalam ───

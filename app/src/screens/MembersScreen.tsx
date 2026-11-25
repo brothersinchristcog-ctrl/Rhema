@@ -1,17 +1,17 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { 
-  StyleSheet, 
-  View, 
-  Text, 
-  ScrollView, 
-  TouchableOpacity, 
-  ActivityIndicator, 
-  StatusBar, 
-  Platform, 
-  Dimensions, 
-  Linking, 
-  Alert, 
-  TextInput, 
+import {
+  StyleSheet,
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  StatusBar,
+  Platform,
+  Dimensions,
+  Linking,
+  Alert,
+  TextInput,
   Modal,
   Image
 } from 'react-native';
@@ -19,19 +19,19 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import storage from '@react-native-firebase/storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { 
-  Users, 
-  ArrowLeft, 
-  ChevronLeft, 
-  ChevronDown, 
-  Phone, 
-  Mail, 
-  Calendar, 
-  UserCheck, 
-  Plus, 
-  X, 
-  Calendar as CalendarIcon, 
-  Edit3, 
+import {
+  Users,
+  ArrowLeft,
+  ChevronLeft,
+  ChevronDown,
+  Phone,
+  Mail,
+  Calendar,
+  UserCheck,
+  Plus,
+  X,
+  Calendar as CalendarIcon,
+  Edit3,
   Trash2,
   Search,
   Camera,
@@ -44,6 +44,8 @@ import { useAdminTheme, createAdminThemedStyles } from '../utils/adminThemeHelpe
 import { useLanguage } from '../context/LanguageContext';
 import FirestoreService from '../services/FirestoreService';
 import KidsMinistryService from '../services/KidsMinistryService';
+import { CachedImage } from '../components/CachedImage';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../utils/instantCache';
 
 const { width } = Dimensions.get('window');
 
@@ -61,18 +63,21 @@ const KID_RELATIONS = ['Son', 'Daughter', 'Grandson', 'Granddaughter', 'Nephew',
 export default function MembersScreen({ navigation }: any) {
   const { isDark: _adminIsDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const insets = useSafeAreaInsets();
-  const { member } = useAuth();
+  const { member, user } = useAuth();
   const { isDark, colors } = useTheme();
   const { t, language } = useLanguage();
   const inputBg = isDark ? '#0F0F12' : '#FFFFFF';
   const inputBorder = isDark ? '#3F3F46' : '#000000';
   const placeholderColor = isDark ? '#71717A' : '#94A3B8';
-  const [relatedContacts, setRelatedContacts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const membersCacheKey = makeScopedCacheKey('family_members_v1', member?.churchId, user?.uid || member?.id);
+  const initialMembersCache = getInstantMemory<any[]>(membersCacheKey);
+
+  const [relatedContacts, setRelatedContacts] = useState<any[]>(() => initialMembersCache || []);
+  const [loading, setLoading] = useState(() => !initialMembersCache);
   const [showAddModal, setShowAddModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  
+
   const [newMember, setNewMember] = useState<any>({
     firstName: '',
     lastName: '',
@@ -93,10 +98,10 @@ export default function MembersScreen({ navigation }: any) {
   const [showRelationPicker, setShowRelationPicker] = useState(false);
   const [datePickerType, setDatePickerType] = useState<'birthdate' | 'anniversary' | null>(null);
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
-  
+
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [memberToDelete, setMemberToDelete] = useState<{ id: string, name: string } | null>(null);
-  
+
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -145,35 +150,53 @@ export default function MembersScreen({ navigation }: any) {
       setLoading(false);
       return;
     }
-    
+
+    const memHit = getInstantMemory<any[]>(membersCacheKey);
+    if (memHit?.length) {
+      setRelatedContacts(memHit);
+      setLoading(false);
+    }
+
     const targetAccountId = member.accountId || member.id;
-    
+
     try {
-      const churchId = member.churchId || await FirestoreService.getChurchId();
-      if (!churchId) {
-        setLoading(false);
-        return;
-      }
-      
-      const contacts = await FirestoreService.getRelatedContacts(churchId, targetAccountId);
-      
-      const selfExists = contacts.some((c: any) => c.id === member.id || c.Id === member.id);
-      if (!selfExists) {
-        contacts.unshift({
-          Id: member.id,
-          id: member.id,
-          Name: member.name || `${member.firstName || ''} ${member.lastName || ''}`.trim(),
-          Phone: member.phone,
-          Email: member.email,
-          User_Type__c: member.userType || 'Member',
-          CreatedDate: member.joinDate ? new Date(member.joinDate).toISOString() : new Date().toISOString()
-        });
-      }
-      
-      setRelatedContacts(contacts);
+      await loadWithInstantCache<any[]>({
+        key: membersCacheKey,
+        screenName: 'Members',
+        freshSkipMs: 2 * 60 * 1000,
+        fetcher: async () => {
+          const churchId = member.churchId || await FirestoreService.getChurchId();
+          if (!churchId) return [];
+
+          const contacts = await FirestoreService.getRelatedContacts(churchId, targetAccountId);
+          const selfExists = contacts.some((c: any) => c.id === member.id || c.Id === member.id);
+          if (!selfExists) {
+            contacts.unshift({
+              Id: member.id,
+              id: member.id,
+              Name: member.name || `${member.firstName || ''} ${member.lastName || ''}`.trim(),
+              Phone: member.phone,
+              Email: member.email,
+              User_Type__c: member.userType || 'Member',
+              CreatedDate: member.joinDate ? new Date(member.joinDate).toISOString() : new Date().toISOString()
+            });
+          }
+          return contacts;
+        },
+        onCached: (cached) => {
+          setRelatedContacts(cached);
+          setLoading(false);
+        },
+        onFresh: (fresh) => {
+          setRelatedContacts(fresh);
+          setLoading(false);
+        },
+      });
     } catch (err) {
       console.error('Error fetching household members:', err);
-      Alert.alert(t('common.error'), t('members.fetchError'));
+      if (!memHit?.length) {
+        Alert.alert(t('common.error'), t('members.fetchError'));
+      }
     } finally {
       setLoading(false);
     }
@@ -181,7 +204,7 @@ export default function MembersScreen({ navigation }: any) {
 
   useEffect(() => {
     fetchFamily();
-  }, [member]);
+  }, [member?.id, member?.churchId, member?.accountId]);
 
   const getParentPhones = () => {
     const parentRelations = ['Father', 'Mother', 'Husband', 'Wife', 'Guardian'];
@@ -359,17 +382,17 @@ export default function MembersScreen({ navigation }: any) {
         newMember.referencePhone = parents[0].phone;
       }
     }
-    
+
     setSubmitting(true);
     try {
       const churchId = member!.churchId || await FirestoreService.getChurchId();
       const targetAccountId = member!.accountId || member!.id;
-      
+
       if (!member!.accountId && churchId) {
         await FirestoreService.updateMemberProfile(churchId, member!.id, { accountId: targetAccountId });
         member!.accountId = targetAccountId;
       }
-      
+
       const isKidMember = KID_RELATIONS.includes(newMember.relation);
       let finalProfilePhoto = newMember.profilePhoto || '';
       if (
@@ -397,7 +420,7 @@ export default function MembersScreen({ navigation }: any) {
             familyId: targetAccountId,
             fullName: editedFullName,
             photoUrl: finalProfilePhoto,
-          }).catch(() => {});
+          }).catch(() => { });
         }
         setSuccessMessage(t('members.memberUpdatedSuccess'));
       } else {
@@ -598,7 +621,7 @@ export default function MembersScreen({ navigation }: any) {
               const contactPhone = c.Phone || c.MobilePhone || c.phone;
               const contactRefPhone = c.referencePhone || c.referenceNumber || null;
               const contactEmail = c.Email || c.email;
-              
+
               let contactDate = null;
               const rawDate = c.CreatedDate || c.joinDate || c.createdAt;
               if (rawDate) {
@@ -612,7 +635,7 @@ export default function MembersScreen({ navigation }: any) {
                   contactDate = new Date(rawDate);
                 }
               }
-              
+
               const contactName = (`${c.FirstName || c.firstName || ''} ${c.LastName || c.lastName || ''}`.trim()) ||
                 (c.Name && c.Name.trim()) ||
                 (c.name && c.name.trim()) ||
@@ -626,11 +649,11 @@ export default function MembersScreen({ navigation }: any) {
               const isUploadingThisKid = uploadingPhotoForId === contactId;
 
               return (
-                <View 
-                  key={`${contactId || 'member'}-${index}`} 
+                <View
+                  key={`${contactId || 'member'}-${index}`}
                   style={[
-                    styles.memberCard, 
-                    { 
+                    styles.memberCard,
+                    {
                       backgroundColor: cardSurface,
                       borderColor: adminBorderColor,
                       borderWidth: 1
@@ -654,7 +677,7 @@ export default function MembersScreen({ navigation }: any) {
                         {isUploadingThisKid ? (
                           <ActivityIndicator size="small" color="#FFFFFF" />
                         ) : contactPhoto ? (
-                          <Image
+                          <CachedImage
                             source={{ uri: contactPhoto }}
                             style={{ width: '100%', height: '100%' }}
                             resizeMode="cover"
@@ -709,7 +732,7 @@ export default function MembersScreen({ navigation }: any) {
                     </View>
 
                     <View style={{ flexDirection: 'row' }}>
-                      <TouchableOpacity 
+                      <TouchableOpacity
                         style={{ padding: 8 }}
                         onPress={() => {
                           setEditingMemberId(contactId);
@@ -732,7 +755,7 @@ export default function MembersScreen({ navigation }: any) {
                         <Edit3 size={20} color={secondaryText} />
                       </TouchableOpacity>
                       {!isCurrentUser && (
-                        <TouchableOpacity 
+                        <TouchableOpacity
                           style={{ padding: 8, marginLeft: 4 }}
                           onPress={() => handleDeleteMember(contactId, contactName)}
                         >
@@ -746,8 +769,8 @@ export default function MembersScreen({ navigation }: any) {
 
                   <View style={styles.cardDetails}>
                     {contactPhone ? (
-                      <TouchableOpacity 
-                        style={styles.detailRow} 
+                      <TouchableOpacity
+                        style={styles.detailRow}
                         onPress={() => handleMakeCall(contactPhone)}
                       >
                         <View style={styles.iconBgPhone}>
@@ -761,8 +784,8 @@ export default function MembersScreen({ navigation }: any) {
                         </View>
                       </TouchableOpacity>
                     ) : contactRefPhone ? (
-                      <TouchableOpacity 
-                        style={styles.detailRow} 
+                      <TouchableOpacity
+                        style={styles.detailRow}
                         onPress={() => handleMakeCall(contactRefPhone)}
                       >
                         <View style={[styles.iconBgPhone, { backgroundColor: '#fef3c7' }]}>
@@ -778,8 +801,8 @@ export default function MembersScreen({ navigation }: any) {
                     ) : null}
 
                     {contactEmail && (
-                      <TouchableOpacity 
-                        style={styles.detailRow} 
+                      <TouchableOpacity
+                        style={styles.detailRow}
                         onPress={() => handleSendEmail(contactEmail)}
                       >
                         <View style={styles.iconBgMail}>
@@ -889,8 +912,8 @@ export default function MembersScreen({ navigation }: any) {
             </View>
             <Text style={[styles.successTitle, { color: primaryText }]}>{t('common.success')}</Text>
             <Text style={styles.successSub}>{successMessage}</Text>
-            <TouchableOpacity 
-              style={styles.successBtn} 
+            <TouchableOpacity
+              style={styles.successBtn}
               onPress={() => setShowSuccess(false)}
             >
               <Text style={styles.successBtnTxt}>{t('common.done')}</Text>
@@ -908,8 +931,8 @@ export default function MembersScreen({ navigation }: any) {
             </View>
             <Text style={[styles.successTitle, { color: primaryText }]}>{t('members.duplicateMemberTitle')}</Text>
             <Text style={styles.successSub}>{errorMessage}</Text>
-            <TouchableOpacity 
-              style={[styles.successBtn, { backgroundColor: secondarySurface }]} 
+            <TouchableOpacity
+              style={[styles.successBtn, { backgroundColor: secondarySurface }]}
               onPress={() => setShowErrorModal(false)}
             >
               <Text style={[styles.successBtnTxt, { color: primaryText }]}>{t('common.close')}</Text>
@@ -927,16 +950,16 @@ export default function MembersScreen({ navigation }: any) {
             </View>
             <Text style={[styles.successTitle, { color: primaryText }]}>{t('members.deleteMemberTitle')}</Text>
             <Text style={styles.successSub}>{t('members.deleteMemberConfirm', { name: memberToDelete.name })}</Text>
-            
+
             <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
-              <TouchableOpacity 
-                style={[styles.successBtn, { flex: 1, width: 'auto', paddingHorizontal: 0, backgroundColor: secondarySurface }]} 
+              <TouchableOpacity
+                style={[styles.successBtn, { flex: 1, width: 'auto', paddingHorizontal: 0, backgroundColor: secondarySurface }]}
                 onPress={() => setShowDeleteConfirm(false)}
               >
                 <Text style={[styles.successBtnTxt, { color: primaryText }]}>{t('common.cancel')}</Text>
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.successBtn, { flex: 1, width: 'auto', paddingHorizontal: 0, backgroundColor: '#ef4444' }]} 
+              <TouchableOpacity
+                style={[styles.successBtn, { flex: 1, width: 'auto', paddingHorizontal: 0, backgroundColor: '#ef4444' }]}
                 onPress={confirmDeleteMember}
               >
                 <Text style={[styles.successBtnTxt, { color: '#fff' }]}>{t('common.delete')}</Text>
@@ -958,7 +981,7 @@ export default function MembersScreen({ navigation }: any) {
                 <X size={18} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.5} />
               </TouchableOpacity>
             </View>
-            
+
             <ScrollView showsVerticalScrollIndicator={false}>
               {/* Child Profile Picture Picker inside Add/Edit Modal */}
               {KID_RELATIONS.includes(newMember.relation) && (
@@ -983,7 +1006,7 @@ export default function MembersScreen({ navigation }: any) {
                     {pickingModalPhoto ? (
                       <ActivityIndicator size="small" color="#F59E0B" />
                     ) : newMember.profilePhoto ? (
-                      <Image
+                      <CachedImage
                         source={{ uri: newMember.profilePhoto }}
                         style={{ width: '100%', height: '100%' }}
                         resizeMode="cover"
@@ -1041,23 +1064,23 @@ export default function MembersScreen({ navigation }: any) {
 
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>{t('members.firstName')}</Text>
-                <TextInput 
+                <TextInput
                   style={[styles.input, { color: primaryText, borderColor: inputBorder, backgroundColor: inputBg }]}
                   placeholder={t('members.firstNamePlaceholder')}
                   placeholderTextColor={placeholderColor}
                   value={newMember.firstName}
-                  onChangeText={(tVal) => setNewMember({...newMember, firstName: tVal})}
+                  onChangeText={(tVal) => setNewMember({ ...newMember, firstName: tVal })}
                 />
               </View>
 
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>{t('members.lastName')}</Text>
-                <TextInput 
+                <TextInput
                   style={[styles.input, { color: primaryText, borderColor: inputBorder, backgroundColor: inputBg }]}
                   placeholder={t('members.lastNamePlaceholder')}
                   placeholderTextColor={placeholderColor}
                   value={newMember.lastName}
-                  onChangeText={(tVal) => setNewMember({...newMember, lastName: tVal})}
+                  onChangeText={(tVal) => setNewMember({ ...newMember, lastName: tVal })}
                 />
               </View>
 
@@ -1065,13 +1088,13 @@ export default function MembersScreen({ navigation }: any) {
                 <Text style={styles.inputLabel}>
                   {KID_RELATIONS.includes(newMember.relation) ? t('members.mobileNumberKids') : t('members.mobileNumber')}
                 </Text>
-                <TextInput 
+                <TextInput
                   style={[styles.input, { color: primaryText, borderColor: inputBorder, backgroundColor: inputBg }]}
                   placeholder={KID_RELATIONS.includes(newMember.relation) ? t('members.phoneKidsPlaceholder') : t('members.phonePlaceholder')}
                   placeholderTextColor={placeholderColor}
                   keyboardType="phone-pad"
                   value={newMember.phone}
-                  onChangeText={(tVal) => setNewMember({...newMember, phone: tVal})}
+                  onChangeText={(tVal) => setNewMember({ ...newMember, phone: tVal })}
                 />
               </View>
 
@@ -1086,13 +1109,13 @@ export default function MembersScreen({ navigation }: any) {
                           key={i}
                           style={[
                             styles.input,
-                            { 
+                            {
                               flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6,
                               borderColor: newMember.referencePhone === p.phone ? (isDark ? '#FFFFFF' : '#000000') : inputBorder,
                               backgroundColor: newMember.referencePhone === p.phone ? secondarySurface : inputBg
                             }
                           ]}
-                          onPress={() => setNewMember({...newMember, referencePhone: p.phone})}
+                          onPress={() => setNewMember({ ...newMember, referencePhone: p.phone })}
                         >
                           <Text style={{ color: secondaryText, fontSize: 14, fontWeight: '600' }}>
                             {p.name} ({getRelationLabel(p.relation)}) — {p.phone}
@@ -1107,13 +1130,13 @@ export default function MembersScreen({ navigation }: any) {
                       </Text>
                     </View>
                   ) : (
-                    <TextInput 
+                    <TextInput
                       style={[styles.input, { color: primaryText, borderColor: inputBorder, backgroundColor: inputBg }]}
                       placeholder={t('members.parentPhonePlaceholder')}
                       placeholderTextColor={placeholderColor}
                       keyboardType="phone-pad"
                       value={newMember.referencePhone}
-                      onChangeText={(tVal) => setNewMember({...newMember, referencePhone: tVal})}
+                      onChangeText={(tVal) => setNewMember({ ...newMember, referencePhone: tVal })}
                     />
                   )}
                 </View>
@@ -1121,14 +1144,14 @@ export default function MembersScreen({ navigation }: any) {
 
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>{t('members.emailAddress')}</Text>
-                <TextInput 
+                <TextInput
                   style={[styles.input, { color: primaryText, borderColor: inputBorder, backgroundColor: inputBg }]}
                   placeholder={t('members.emailPlaceholder')}
                   placeholderTextColor={placeholderColor}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   value={newMember.email}
-                  onChangeText={(tVal) => setNewMember({...newMember, email: tVal})}
+                  onChangeText={(tVal) => setNewMember({ ...newMember, email: tVal })}
                 />
               </View>
 
@@ -1149,10 +1172,10 @@ export default function MembersScreen({ navigation }: any) {
                 <Text style={styles.inputLabel}>{t('members.gender')}</Text>
                 <View style={styles.pillContainer}>
                   {['Male', 'Female'].map(gen => (
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       key={gen}
                       style={[styles.pill, { backgroundColor: newMember.gender === gen ? (isDark ? '#FFFFFF' : '#000000') : inputBg, borderColor: newMember.gender === gen ? (isDark ? '#FFFFFF' : '#000000') : inputBorder }]}
-                      onPress={() => setNewMember({...newMember, gender: gen})}
+                      onPress={() => setNewMember({ ...newMember, gender: gen })}
                     >
                       <Text style={[styles.pillText, { color: newMember.gender === gen ? (isDark ? '#000000' : '#FFFFFF') : secondaryText, fontWeight: newMember.gender === gen ? '800' : '600' }]}>
                         {gen === 'Male' ? t('members.male') : t('members.female')}
@@ -1164,7 +1187,7 @@ export default function MembersScreen({ navigation }: any) {
 
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>{t('members.birthdate')}</Text>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.input, styles.dateInput, { borderColor: inputBorder, backgroundColor: inputBg }]}
                   onPress={() => setDatePickerType('birthdate')}
                 >
@@ -1178,7 +1201,7 @@ export default function MembersScreen({ navigation }: any) {
               {SPOUSE_RELATIONS.includes(newMember.relation) && (
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>{t('members.anniversaryDate')}</Text>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={[styles.input, styles.dateInput, { borderColor: inputBorder, backgroundColor: inputBg }]}
                     onPress={() => setDatePickerType('anniversary')}
                   >
@@ -1190,8 +1213,8 @@ export default function MembersScreen({ navigation }: any) {
                 </View>
               )}
 
-              <TouchableOpacity 
-                style={[styles.submitBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000', borderRadius: 999, marginTop: 4, marginBottom: 36 }]} 
+              <TouchableOpacity
+                style={[styles.submitBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000', borderRadius: 999, marginTop: 4, marginBottom: 36 }]}
                 onPress={handleAddMember}
                 disabled={submitting}
               >
@@ -1213,9 +1236,9 @@ export default function MembersScreen({ navigation }: any) {
         animationType="slide"
         onRequestClose={() => setShowRelationPicker(false)}
       >
-        <TouchableOpacity 
-          style={styles.pickerOverlay} 
-          activeOpacity={1} 
+        <TouchableOpacity
+          style={styles.pickerOverlay}
+          activeOpacity={1}
           onPress={() => setShowRelationPicker(false)}
         >
           <View style={[styles.pickerSheet, { backgroundColor: cardSurface }]}>
@@ -1425,9 +1448,9 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   emptySubText: { fontSize: 14, color: '#94a3b8', textAlign: 'center', lineHeight: 20 },
 
   scroll: { padding: 16, paddingBottom: 40 },
-  memberCard: { 
-    borderRadius: 20, 
-    padding: 16, 
+  memberCard: {
+    borderRadius: 20,
+    padding: 16,
     marginBottom: 16,
     elevation: 3,
     shadowColor: '#000',
@@ -1435,12 +1458,12 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     shadowRadius: 8,
   },
   cardHeader: { flexDirection: 'row', alignItems: 'center' },
-  avatarCircle: { 
-    width: 50, 
-    height: 50, 
-    borderRadius: 25, 
-    backgroundColor: '#64748b', 
-    justifyContent: 'center', 
+  avatarCircle: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#64748b',
+    justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16
   },
@@ -1451,34 +1474,34 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   memberMeta: { flex: 1 },
   nameRow: { flexDirection: 'row', alignItems: 'center' },
   memberName: { fontSize: 16, fontWeight: '800', flexShrink: 1 },
-  selfBadge: { 
-    backgroundColor: '#FCD34D', 
-    paddingHorizontal: 8, 
-    paddingVertical: 2.5, 
-    borderRadius: 6, 
-    marginLeft: 8 
+  selfBadge: {
+    backgroundColor: '#FCD34D',
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+    marginLeft: 8
   },
   selfBadgeTxt: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
-  roleBadge: { 
-    alignSelf: 'flex-start', 
-    backgroundColor: '#eff6ff', 
-    paddingHorizontal: 8, 
-    paddingVertical: 3, 
+  roleBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#eff6ff',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: 6
   },
   roleBadgeTxt: { color: '#1e40af', fontSize: 11, fontWeight: '700' },
-  
+
   cardDivider: { height: 1, marginVertical: 14 },
-  
+
   cardDetails: { gap: 14 },
   detailRow: { flexDirection: 'row', alignItems: 'center' },
   iconBgPhone: { width: 28, height: 28, borderRadius: 8, backgroundColor: '#f0fdf4', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   iconBgMail: { width: 28, height: 28, borderRadius: 8, backgroundColor: '#f0fdfa', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   iconBgCal: { width: 28, height: 28, borderRadius: 8, backgroundColor: '#fffbeb', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  
+
   detailLabel: { fontSize: 10, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5 },
   detailValue: { fontSize: 13, fontWeight: '700', marginTop: 2 },
-  
+
   addBtnFloating: {
     position: 'absolute',
     bottom: 30,
@@ -1495,7 +1518,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 4 },
   },
-  
+
   modalOverlay: {
     position: 'absolute',
     top: 0, bottom: 0, left: 0, right: 0,
@@ -1531,7 +1554,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     marginBottom: 20
   },
   modalTitle: { fontSize: 20, fontWeight: '800' },
-  
+
   inputGroup: { marginBottom: 16 },
   inputLabel: { fontSize: 12, fontWeight: '700', color: '#64748b', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
   input: {
@@ -1561,7 +1584,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   },
   pillText: { fontSize: 14, fontWeight: '600', color: '#64748b' },
   pillTextActive: { color: '#FCD34D' },
-  
+
   submitBtn: {
     backgroundColor: '#FCD34D',
     borderRadius: 16,

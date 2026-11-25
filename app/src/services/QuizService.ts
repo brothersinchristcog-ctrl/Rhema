@@ -89,89 +89,50 @@ export class QuizService {
     try {
       const targetChurchId = await this.resolveChurchId(churchId);
       const docsMap = new Map<string, BibleQuiz>();
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-      // 1. Fetch from church-specific subcollection (permitted by church rules)
-      if (targetChurchId && targetChurchId !== 'global') {
-        try {
-          const churchSnaps = await firestore()
-            .collection('Rhema Church')
-            .doc(targetChurchId)
-            .collection(this.QUIZZES_COLLECTION)
-            .get();
+      const fetchChurchQuizzes = async (cid: string, adminMode: boolean) => {
+        const quizzesCol = firestore()
+          .collection('Rhema Church')
+          .doc(cid)
+          .collection(this.QUIZZES_COLLECTION);
 
-          churchSnaps.docs.forEach((doc: any) => {
-            docsMap.set(doc.id, { id: doc.id, ...doc.data() });
+        if (adminMode) {
+          const churchSnaps = await quizzesCol.limit(200).get().catch(() => null);
+          churchSnaps?.docs.forEach((doc: any) => {
+            if (!docsMap.has(doc.id)) docsMap.set(doc.id, { id: doc.id, ...doc.data() });
           });
-        } catch (e: any) {
-          console.warn('[QuizService] Notice: church quizzes query:', e?.message || e);
+          return;
         }
-      }
 
-      // 2. Fetch from main church subcollection (only for members, never for church admin dashboard)
-      if (!options?.isAdmin || targetChurchId === RHEMA_CHURCH_ID) {
-        try {
-          if (!options?.isAdmin) {
-            // OPTIMIZATION: For regular church members, do NOT download 700+ future scheduled daily quizzes!
-            // Only fetch released daily quizzes (up to today, limit 60) and non-daily global quizzes
-            const now = new Date();
-            const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const [dailySnaps, generalSnaps] = await Promise.all([
+          quizzesCol.where('dailyDate', '<=', todayStr).limit(60).get().catch(() => null),
+          quizzesCol.where('isDailyQuiz', '==', false).limit(50).get().catch(() => null),
+        ]);
+        dailySnaps?.docs.forEach((doc: any) => {
+          if (!docsMap.has(doc.id)) docsMap.set(doc.id, { id: doc.id, ...doc.data() });
+        });
+        generalSnaps?.docs.forEach((doc: any) => {
+          if (!docsMap.has(doc.id)) docsMap.set(doc.id, { id: doc.id, ...doc.data() });
+        });
 
-            try {
-              const dailySnaps = await firestore()
-                .collection('Rhema Church')
-                .doc(RHEMA_CHURCH_ID)
-                .collection(this.QUIZZES_COLLECTION)
-                .where('dailyDate', '<=', todayStr)
-                .limit(60)
-                .get();
-
-              dailySnaps.docs.forEach((doc: any) => {
-                if (!docsMap.has(doc.id)) {
-                  docsMap.set(doc.id, { id: doc.id, ...doc.data() });
-                }
-              });
-            } catch {
-              // where filter fallback
-            }
-
-            try {
-              const generalSnaps = await firestore()
-                .collection('Rhema Church')
-                .doc(RHEMA_CHURCH_ID)
-                .collection(this.QUIZZES_COLLECTION)
-                .where('isDailyQuiz', '==', false)
-                .limit(50)
-                .get();
-
-              generalSnaps.docs.forEach((doc: any) => {
-                if (!docsMap.has(doc.id)) {
-                  docsMap.set(doc.id, { id: doc.id, ...doc.data() });
-                }
-              });
-            } catch {
-              // where filter fallback
-            }
-
-            // If targeted queries yielded no docs, fallback safely with limit 60
-            if (docsMap.size === 0) {
-              const globalSnaps = await firestore()
-                .collection('Rhema Church')
-                .doc(RHEMA_CHURCH_ID)
-                .collection(this.QUIZZES_COLLECTION)
-                .limit(60)
-                .get();
-
-              globalSnaps.docs.forEach((doc: any) => {
-                if (!docsMap.has(doc.id)) {
-                  docsMap.set(doc.id, { id: doc.id, ...doc.data() });
-                }
-              });
-            }
-          }
-        } catch (e: any) {
-          // Suppress if not found
+        if (!dailySnaps && !generalSnaps) {
+          const fallbackSnaps = await quizzesCol.limit(60).get().catch(() => null);
+          fallbackSnaps?.docs.forEach((doc: any) => {
+            if (!docsMap.has(doc.id)) docsMap.set(doc.id, { id: doc.id, ...doc.data() });
+          });
         }
+      };
+
+      const fetchTasks: Promise<void>[] = [];
+      if (targetChurchId && targetChurchId !== 'global') {
+        fetchTasks.push(fetchChurchQuizzes(targetChurchId, Boolean(options?.isAdmin)));
       }
+      if (!options?.isAdmin && targetChurchId !== RHEMA_CHURCH_ID) {
+        fetchTasks.push(fetchChurchQuizzes(RHEMA_CHURCH_ID, false));
+      }
+      await Promise.all(fetchTasks);
 
       // 3. Fallback: ONLY try top-level collection for non-admin if docsMap is STILL empty
       if (!options?.isAdmin && docsMap.size === 0) {
@@ -242,8 +203,6 @@ export class QuizService {
       }
 
       // Ensure today's Daily Bible Quiz is present for members
-      const now = new Date();
-      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       const hasTodayDaily = list.some(q => q.dailyDate === todayStr || q.id === `daily_quiz_${todayStr}`);
       if (!hasTodayDaily && (!options?.category || options.category.toLowerCase() === 'daily quiz' || options.category === 'All')) {
         try {
@@ -346,137 +305,98 @@ export class QuizService {
       if (churchId && churchId !== 'global') {
         candidateChurchIds.push(churchId);
       }
-      try {
-        const cached = await AsyncStorage.getItem('@cached_church_id');
-        if (cached && cached !== 'global' && !candidateChurchIds.includes(cached)) {
-          candidateChurchIds.push(cached);
-        }
-        const active = await AsyncStorage.getItem('@active_church_id');
-        if (active && active !== 'global' && !candidateChurchIds.includes(active)) {
-          candidateChurchIds.push(active);
-        }
-        const storedChurch = await AsyncStorage.getItem('church_id');
-        if (storedChurch && storedChurch !== 'global' && !candidateChurchIds.includes(storedChurch)) {
-          candidateChurchIds.push(storedChurch);
-        }
-      } catch {
-        // ignore storage read errors
-      }
-
-      // 1. Check each candidate church subcollection
-      for (const cId of candidateChurchIds) {
-        try {
-          const doc = await firestore()
-            .collection('Rhema Church')
-            .doc(cId)
-            .collection(this.QUIZZES_COLLECTION)
-            .doc(effectiveQuizId)
-            .get();
-          const exists = typeof (doc as any).exists === 'function' ? (doc as any).exists() : Boolean((doc as any).exists);
-          if (exists) {
-            foundQuiz = { id: doc.id, churchId: cId, ...doc.data() } as BibleQuiz;
-            break;
-          }
-        } catch {
-          // ignore error for this candidate
+      const [cached, active, storedChurch] = await Promise.all([
+        AsyncStorage.getItem('@cached_church_id').catch(() => null),
+        AsyncStorage.getItem('@active_church_id').catch(() => null),
+        AsyncStorage.getItem('church_id').catch(() => null),
+      ]);
+      for (const idCandidate of [cached, active, storedChurch, RHEMA_CHURCH_ID]) {
+        if (idCandidate && idCandidate !== 'global' && !candidateChurchIds.includes(idCandidate)) {
+          candidateChurchIds.push(idCandidate);
         }
       }
 
-      // 2. Check main church subcollection
-      if (!foundQuiz) {
-        try {
-          const doc = await firestore()
-            .collection('Rhema Church')
-            .doc(RHEMA_CHURCH_ID)
-            .collection(this.QUIZZES_COLLECTION)
-            .doc(effectiveQuizId)
-            .get();
-          const exists = typeof (doc as any).exists === 'function' ? (doc as any).exists() : Boolean((doc as any).exists);
-          if (exists) {
-            foundQuiz = { id: doc.id, churchId: RHEMA_CHURCH_ID, ...doc.data() } as BibleQuiz;
-          }
-        } catch {
-          // ignore
-        }
-      }
-
-      // 3. Fallback: If effectiveQuizId is a broadcast doc ID, check broadcasts collection across churches
-      if (!foundQuiz) {
-        for (const cId of [...candidateChurchIds, 'global']) {
+      // 1. Check candidate churches in parallel
+      const directResults = await Promise.all(
+        candidateChurchIds.map(async (cId) => {
           try {
-            const bDoc = await firestore()
+            const doc = await firestore()
               .collection('Rhema Church')
               .doc(cId)
-              .collection('broadcasts')
+              .collection(this.QUIZZES_COLLECTION)
               .doc(effectiveQuizId)
               .get();
-            const exists = typeof (bDoc as any).exists === 'function' ? (bDoc as any).exists() : Boolean((bDoc as any).exists);
-            if (exists) {
-              const bData: any = bDoc.data();
-              const resolvedQuizId = bData?.quizId || bData?.relatedId || (bData?.type === 'quiz' ? bData?.id : null);
-              if (resolvedQuizId && resolvedQuizId !== effectiveQuizId) {
-                this.broadcastToQuizMap.set(effectiveQuizId, resolvedQuizId);
-                const resolved = await this.getQuizById(resolvedQuizId, cId, targetLanguage);
-                if (resolved) {
-                  return resolved;
-                }
-              }
-            }
-          } catch {}
-        }
-      }
+            const exists = typeof (doc as any).exists === 'function' ? (doc as any).exists() : Boolean((doc as any).exists);
+            return exists ? ({ id: doc.id, churchId: cId, ...doc.data() } as BibleQuiz) : null;
+          } catch {
+            return null;
+          }
+        })
+      );
+      foundQuiz = directResults.find(Boolean) || null;
 
-      // 4. Fallback: Check notifications collection across churches
+      // 2. Fallback: Check broadcasts and notifications in parallel for resolvedQuizId
       if (!foundQuiz) {
-        for (const cId of [...candidateChurchIds, 'global']) {
-          try {
-            const nDoc = await firestore()
-              .collection('Rhema Church')
-              .doc(cId)
-              .collection('notifications')
-              .doc(effectiveQuizId)
-              .get();
-            const exists = typeof (nDoc as any).exists === 'function' ? (nDoc as any).exists() : Boolean((nDoc as any).exists);
-            if (exists) {
-              const nData: any = nDoc.data();
-              const resolvedQuizId = nData?.quizId || nData?.relatedId;
-              if (resolvedQuizId && resolvedQuizId !== effectiveQuizId) {
-                this.broadcastToQuizMap.set(effectiveQuizId, resolvedQuizId);
-                const resolved = await this.getQuizById(resolvedQuizId, cId, targetLanguage);
-                if (resolved) {
-                  return resolved;
-                }
+        const lookupTargets = Array.from(new Set([...candidateChurchIds, 'global']));
+        const fallbackResolutions = await Promise.all([
+          ...lookupTargets.map(async (cId) => {
+            try {
+              const bDoc = await firestore().collection('Rhema Church').doc(cId).collection('broadcasts').doc(effectiveQuizId).get();
+              const exists = typeof (bDoc as any).exists === 'function' ? (bDoc as any).exists() : Boolean((bDoc as any).exists);
+              if (exists) {
+                const bData: any = bDoc.data();
+                const resolvedId = bData?.quizId || bData?.relatedId || (bData?.type === 'quiz' ? bData?.id : null);
+                if (resolvedId && resolvedId !== effectiveQuizId) return { cId, resolvedId };
               }
-            }
-          } catch {}
+            } catch {}
+            return null;
+          }),
+          ...lookupTargets.map(async (cId) => {
+            try {
+              const nDoc = await firestore().collection('Rhema Church').doc(cId).collection('notifications').doc(effectiveQuizId).get();
+              const exists = typeof (nDoc as any).exists === 'function' ? (nDoc as any).exists() : Boolean((nDoc as any).exists);
+              if (exists) {
+                const nData: any = nDoc.data();
+                const resolvedId = nData?.quizId || nData?.relatedId;
+                if (resolvedId && resolvedId !== effectiveQuizId) return { cId, resolvedId };
+              }
+            } catch {}
+            return null;
+          }),
+        ]);
+        const matchedLink = fallbackResolutions.find(Boolean);
+        if (matchedLink) {
+          this.broadcastToQuizMap.set(effectiveQuizId, matchedLink.resolvedId);
+          const resolved = await this.getQuizById(matchedLink.resolvedId, matchedLink.cId, targetLanguage);
+          if (resolved) return resolved;
         }
       }
 
-      // 5. Fallback search across churches list if churchId was unspecified or mismatched
+      // 3. Fallback parallel search across churches list if churchId was unspecified
       if (!foundQuiz) {
         try {
           const churchesSnap = await firestore().collection('Rhema Church').limit(25).get();
-          for (const churchDoc of churchesSnap.docs) {
-            if (candidateChurchIds.includes(churchDoc.id) || churchDoc.id === 'global') continue;
-            try {
-              const doc = await firestore()
-                .collection('Rhema Church')
-                .doc(churchDoc.id)
-                .collection(this.QUIZZES_COLLECTION)
-                .doc(effectiveQuizId)
-                .get();
-              const exists = typeof (doc as any).exists === 'function' ? (doc as any).exists() : Boolean((doc as any).exists);
-              if (exists) {
-                foundQuiz = { id: doc.id, churchId: churchDoc.id, ...doc.data() } as BibleQuiz;
-                break;
+          const remaining = churchesSnap.docs.filter(
+            (churchDoc) => !candidateChurchIds.includes(churchDoc.id) && churchDoc.id !== 'global'
+          );
+          const scanned = await Promise.all(
+            remaining.map(async (churchDoc) => {
+              try {
+                const doc = await firestore()
+                  .collection('Rhema Church')
+                  .doc(churchDoc.id)
+                  .collection(this.QUIZZES_COLLECTION)
+                  .doc(effectiveQuizId)
+                  .get();
+                const exists = typeof (doc as any).exists === 'function' ? (doc as any).exists() : Boolean((doc as any).exists);
+                return exists ? ({ id: doc.id, churchId: churchDoc.id, ...doc.data() } as BibleQuiz) : null;
+              } catch {
+                return null;
               }
-            } catch {
-              // ignore
-            }
-          }
-        } catch {
-          // ignore
-        }
+            })
+          );
+          foundQuiz = scanned.find(Boolean) || null;
+        } catch {}
       }
 
       // 6. Fallback to top-level collection (safeguard)
@@ -1606,57 +1526,48 @@ export class QuizService {
       const targetChurchId = await this.resolveChurchId(churchId);
       const attemptsMap = new Map<string, QuizAttempt>();
 
-      // 1. Church attempts
+      const queries: Promise<any>[] = [];
       if (targetChurchId && targetChurchId !== 'global') {
-        try {
-          const snaps = await firestore()
+        queries.push(
+          firestore()
             .collection('Rhema Church')
             .doc(targetChurchId)
             .collection(this.ATTEMPTS_COLLECTION)
             .where('userId', '==', userId)
-            .get();
-
-          snaps.docs.forEach((doc: any) => {
-            attemptsMap.set(doc.id, { id: doc.id, ...doc.data() });
-          });
-        } catch {
-          // ignore
-        }
+            .limit(100)
+            .get()
+            .catch(() => null)
+        );
       }
-
-      // 2. Main church attempts
-      try {
-        const mainSnaps = await firestore()
-          .collection('Rhema Church')
-          .doc(RHEMA_CHURCH_ID)
+      if (targetChurchId !== RHEMA_CHURCH_ID) {
+        queries.push(
+          firestore()
+            .collection('Rhema Church')
+            .doc(RHEMA_CHURCH_ID)
+            .collection(this.ATTEMPTS_COLLECTION)
+            .where('userId', '==', userId)
+            .limit(100)
+            .get()
+            .catch(() => null)
+        );
+      }
+      queries.push(
+        firestore()
           .collection(this.ATTEMPTS_COLLECTION)
           .where('userId', '==', userId)
-          .get();
+          .limit(100)
+          .get()
+          .catch(() => null)
+      );
 
-        mainSnaps.docs.forEach((doc: any) => {
+      const snapshots = await Promise.all(queries);
+      snapshots.forEach((snap) => {
+        snap?.docs?.forEach((doc: any) => {
           if (!attemptsMap.has(doc.id)) {
             attemptsMap.set(doc.id, { id: doc.id, ...doc.data() });
           }
         });
-      } catch {
-        // ignore
-      }
-
-      // 3. Root attempts (safe fallback)
-      try {
-        const rootSnaps = await firestore()
-          .collection(this.ATTEMPTS_COLLECTION)
-          .where('userId', '==', userId)
-          .get();
-
-        rootSnaps.docs.forEach((doc: any) => {
-          if (!attemptsMap.has(doc.id)) {
-            attemptsMap.set(doc.id, { id: doc.id, ...doc.data() });
-          }
-        });
-      } catch {
-        // ignore
-      }
+      });
 
       const list = Array.from(attemptsMap.values());
 
@@ -1987,46 +1898,41 @@ export class QuizService {
       const targetChurchId = await this.resolveChurchId(churchId);
       const attemptsMap = new Map<string, QuizAttempt>();
 
+      const churchesToQuery: string[] = [];
       if (targetChurchId && targetChurchId !== 'global') {
-        try {
-          let q: any = firestore()
-            .collection('Rhema Church')
-            .doc(targetChurchId)
-            .collection(this.ATTEMPTS_COLLECTION);
-
-          if (quizId) {
-            q = q.where('quizId', '==', quizId);
-          }
-
-          const snaps = await q.limit(100).get();
-          snaps.docs.forEach((doc: any) => {
-            attemptsMap.set(doc.id, { id: doc.id, ...doc.data() });
-          });
-        } catch {
-          // ignore
-        }
+        churchesToQuery.push(targetChurchId);
+      }
+      if (!churchesToQuery.includes(RHEMA_CHURCH_ID)) {
+        churchesToQuery.push(RHEMA_CHURCH_ID);
       }
 
-      // Also main church attempts
-      try {
-        let gq: any = firestore()
-          .collection('Rhema Church')
-          .doc(RHEMA_CHURCH_ID)
-          .collection(this.ATTEMPTS_COLLECTION);
+      const attemptSnapsList = await Promise.all(
+        churchesToQuery.map(async (cid) => {
+          try {
+            let q: any = firestore()
+              .collection('Rhema Church')
+              .doc(cid)
+              .collection(this.ATTEMPTS_COLLECTION);
 
-        if (quizId) {
-          gq = gq.where('quizId', '==', quizId);
-        }
+            if (quizId) {
+              q = q.where('quizId', '==', quizId);
+            }
 
-        const mainSnaps = await gq.limit(100).get();
-        mainSnaps.docs.forEach((doc: any) => {
+            return await q.limit(100).get();
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      attemptSnapsList.forEach((snaps) => {
+        if (!snaps?.docs) return;
+        snaps.docs.forEach((doc: any) => {
           if (!attemptsMap.has(doc.id)) {
             attemptsMap.set(doc.id, { id: doc.id, ...doc.data() });
           }
         });
-      } catch {
-        // ignore
-      }
+      });
 
       const attempts = Array.from(attemptsMap.values());
       if (attempts.length === 0) return [];
@@ -2071,75 +1977,35 @@ export class QuizService {
       const targetChurchId = await this.resolveChurchId(options.churchId);
       const attemptsMap = new Map<string, QuizAttempt>();
 
-      // 1. Fetch attempts from target church subcollection
+      const sourceTasks: Promise<any>[] = [];
       if (targetChurchId && targetChurchId !== 'global') {
-        try {
-          const snaps = await firestore()
-            .collection('Rhema Church')
-            .doc(targetChurchId)
-            .collection(this.ATTEMPTS_COLLECTION)
-            .limit(500)
-            .get();
-          snaps.docs.forEach((doc: any) => {
-            attemptsMap.set(doc.id, { id: doc.id, ...doc.data() });
-          });
-        } catch {}
+        sourceTasks.push(
+          firestore().collection('Rhema Church').doc(targetChurchId).collection(this.ATTEMPTS_COLLECTION).limit(300).get().catch(() => null)
+        );
       }
-
-      // 2. Fetch from main church attempts subcollection
-      try {
-        const mainSnaps = await firestore()
-          .collection('Rhema Church')
-          .doc(RHEMA_CHURCH_ID)
-          .collection(this.ATTEMPTS_COLLECTION)
-          .limit(500)
-          .get();
-        mainSnaps.docs.forEach((doc: any) => {
-          if (!attemptsMap.has(doc.id)) {
-            attemptsMap.set(doc.id, { id: doc.id, ...doc.data() });
-          }
-        });
-      } catch {}
-
-      // 3. Fetch from global church attempts subcollection
-      try {
-        const globalSnaps = await firestore()
-          .collection('Rhema Church')
-          .doc('global')
-          .collection(this.ATTEMPTS_COLLECTION)
-          .limit(500)
-          .get();
-        globalSnaps.docs.forEach((doc: any) => {
-          if (!attemptsMap.has(doc.id)) {
-            attemptsMap.set(doc.id, { id: doc.id, ...doc.data() });
-          }
-        });
-      } catch {}
-
-      // 4. Fetch from root collection
-      try {
-        const rootSnaps = await firestore()
-          .collection(this.ATTEMPTS_COLLECTION)
-          .limit(500)
-          .get();
-        rootSnaps.docs.forEach((doc: any) => {
-          if (!attemptsMap.has(doc.id)) {
-            attemptsMap.set(doc.id, { id: doc.id, ...doc.data() });
-          }
-        });
-      } catch {}
-
-      // 5. If current user is logged in, explicitly fetch all their attempts to guarantee inclusion
-      if (options.currentUserId) {
-        try {
-          const userAttempts = await this.getUserAttempts(options.currentUserId, options.churchId);
-          userAttempts.forEach(ua => {
-            if (ua && ua.id) {
-              attemptsMap.set(ua.id, ua);
-            }
-          });
-        } catch {}
+      if (targetChurchId !== RHEMA_CHURCH_ID) {
+        sourceTasks.push(
+          firestore().collection('Rhema Church').doc(RHEMA_CHURCH_ID).collection(this.ATTEMPTS_COLLECTION).limit(300).get().catch(() => null)
+        );
       }
+      sourceTasks.push(
+        firestore().collection('Rhema Church').doc('global').collection(this.ATTEMPTS_COLLECTION).limit(200).get().catch(() => null),
+        firestore().collection(this.ATTEMPTS_COLLECTION).limit(200).get().catch(() => null),
+      );
+
+      const userAttemptsPromise = options.currentUserId
+        ? this.getUserAttempts(options.currentUserId, options.churchId).catch(() => [])
+        : Promise.resolve([] as QuizAttempt[]);
+
+      const [snapsList, userAttempts] = await Promise.all([Promise.all(sourceTasks), userAttemptsPromise]);
+      snapsList.forEach((snaps) => {
+        snaps?.docs?.forEach((doc: any) => {
+          if (!attemptsMap.has(doc.id)) attemptsMap.set(doc.id, { id: doc.id, ...doc.data() });
+        });
+      });
+      userAttempts.forEach((ua) => {
+        if (ua?.id) attemptsMap.set(ua.id, ua);
+      });
 
       const allAttempts = Array.from(attemptsMap.values());
 
@@ -2295,48 +2161,47 @@ export class QuizService {
         return a.timeTakenSeconds - b.timeTakenSeconds;
       });
 
-      // 5. Enrich real member profile images from Firestore for entries missing an avatar
-      for (const entry of entries) {
-        if (!entry.memberAvatar && entry.userId && !entry.userId.startsWith('benchmark_')) {
+      // Slice to top 50 BEFORE fetching missing avatars, then hydrate avatars in parallel
+      const top50 = entries.slice(0, 50);
+      await Promise.all(
+        top50.map(async (entry) => {
+          if (entry.memberAvatar || !entry.userId || entry.userId.startsWith('benchmark_')) return;
           if (options.currentUserId && entry.userId === options.currentUserId && options.currentUserAvatar) {
             entry.memberAvatar = options.currentUserAvatar;
-          } else {
-            try {
-              const memDoc = await firestore()
-                .collection('Rhema Church')
-                .doc(targetChurchId || RHEMA_CHURCH_ID)
-                .collection('members')
-                .doc(entry.userId)
-                .get();
-              const memExists = typeof (memDoc as any).exists === 'function' ? (memDoc as any).exists() : Boolean((memDoc as any).exists);
-              if (memExists) {
-                const mData: any = memDoc.data();
-                const p = mData?.profilePhoto || mData?.photoURL || mData?.photoUrl || mData?.profileImageUrl || mData?.PhotoUrl || mData?.Photo || mData?.avatar;
+            return;
+          }
+          try {
+            const memDoc = await firestore()
+              .collection('Rhema Church')
+              .doc(targetChurchId || RHEMA_CHURCH_ID)
+              .collection('members')
+              .doc(entry.userId)
+              .get();
+            const memExists = typeof (memDoc as any).exists === 'function' ? (memDoc as any).exists() : Boolean((memDoc as any).exists);
+            if (memExists) {
+              const mData: any = memDoc.data();
+              const p = mData?.profilePhoto || mData?.photoURL || mData?.photoUrl || mData?.profileImageUrl || mData?.PhotoUrl || mData?.Photo || mData?.avatar;
+              if (p) entry.memberAvatar = p;
+              if (mData?.name && (!entry.memberName || entry.memberName === 'Church Member')) {
+                entry.memberName = mData.name;
+              }
+            } else {
+              const uDoc = await firestore().collection('users').doc(entry.userId).get();
+              const uExists = typeof (uDoc as any).exists === 'function' ? (uDoc as any).exists() : Boolean((uDoc as any).exists);
+              if (uExists) {
+                const uData: any = uDoc.data();
+                const p = uData?.photoURL || uData?.photoUrl || uData?.profilePhoto || uData?.avatar;
                 if (p) entry.memberAvatar = p;
-                if (mData?.name && (!entry.memberName || entry.memberName === 'Church Member')) {
-                  entry.memberName = mData.name;
-                }
-              } else {
-                const uDoc = await firestore().collection('users').doc(entry.userId).get();
-                const uExists = typeof (uDoc as any).exists === 'function' ? (uDoc as any).exists() : Boolean((uDoc as any).exists);
-                if (uExists) {
-                  const uData: any = uDoc.data();
-                  const p = uData?.photoURL || uData?.photoUrl || uData?.profilePhoto || uData?.avatar;
-                  if (p) entry.memberAvatar = p;
-                  if (uData?.displayName && (!entry.memberName || entry.memberName === 'Church Member')) {
-                    entry.memberName = uData.displayName;
-                  }
+                if (uData?.displayName && (!entry.memberName || entry.memberName === 'Church Member')) {
+                  entry.memberName = uData.displayName;
                 }
               }
-            } catch {
-              // ignore avatar enrichment error
             }
-          }
-        }
-      }
+          } catch {}
+        })
+      );
 
-      // Assign ranks 1, 2, 3... and limit to 50 members (STRICTLY REAL DATA, ZERO MOCK/BENCHMARKS)
-      entries = entries.slice(0, 50).map((e, index) => ({
+      entries = top50.map((e, index) => ({
         ...e,
         rank: index + 1,
       }));

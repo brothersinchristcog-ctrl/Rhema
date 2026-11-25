@@ -11,6 +11,7 @@ import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import SpInAppUpdates, { IAUUpdateKind } from 'sp-react-native-in-app-updates';
 import { loadTeluguFonts } from './src/utils/ThumbnailTypography';
 import './src/utils/FontSizeManager';
+import { perfMonitor } from './src/utils/perfMonitor';
 
 // Import Firebase config to initialize it on app start
 import './src/services/firebaseConfig';
@@ -35,6 +36,7 @@ export const navigationRef = createNavigationContainerRef();
 const { width } = Dimensions.get('window');
 
 export default function App() {
+  const routeNameRef = useRef(null);
   const [notification, setNotification] = useState(null);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const slideAnim = useRef(new Animated.Value(-150)).current;
@@ -168,20 +170,38 @@ export default function App() {
 
     const unsubscribe = messaging().onMessage(async remoteMessage => {
       const rawData = remoteMessage?.data || {};
-      const title = remoteMessage?.notification?.title || rawData.title || (rawData.type ? `New ${rawData.type.replace(/_/g, ' ')}` : 'New Notification');
-      const body = remoteMessage?.notification?.body || rawData.body || 'You have a new message.';
+      const title =
+        remoteMessage?.notification?.title ||
+        rawData.pushTitle ||
+        rawData.title ||
+        (rawData.type ? `New ${rawData.type.replace(/_/g, ' ')}` : 'New Notification');
+      const body =
+        remoteMessage?.notification?.body ||
+        rawData.pushBody ||
+        rawData.body ||
+        'You have a new message.';
       const password = rawData.password || (body.match(/Passcode:\s*([A-Za-z0-9]+)/i)?.[1]) || '';
       
       const isLive = rawData.type === 'youtube_live';
       if (isLive) {
         NotificationService.displayLiveNotification(rawData, title, body).catch(e => console.warn(e));
-        return;
+      } else {
+        if (rawData.type === 'CHURCH_CHAT' && navigationRef.isReady()) {
+          const currentRoute = navigationRef.getCurrentRoute();
+          if (
+            currentRoute?.name === 'RhemaChatRoom' &&
+            currentRoute?.params?.roomId &&
+            currentRoute.params.roomId === rawData.roomId
+          ) {
+            return;
+          }
+        }
+
+        // Also post to Android/iOS system notification bar (with deduplication) so it appears in the device notification drawer
+        NotificationService.displaySystemPushNotification(title, body, rawData).catch(() => {});
       }
 
-      // Also post to Android/iOS system notification bar (with deduplication) so it appears in the device notification drawer
-      NotificationService.displaySystemPushNotification(title, body, rawData).catch(() => {});
-
-      setNotification({ title, body, password, remoteMessage, isLive: false });
+      setNotification({ title, body, password, remoteMessage, isLive });
       
       Animated.sequence([
         Animated.timing(slideAnim, {
@@ -223,7 +243,25 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-    <NavigationContainer ref={navigationRef} linking={linking}>
+    <NavigationContainer
+      ref={navigationRef}
+      linking={linking}
+      onReady={() => {
+        const current = navigationRef.getCurrentRoute()?.name;
+        if (current) {
+          routeNameRef.current = current;
+          perfMonitor.startRouteTransition(current);
+        }
+      }}
+      onStateChange={() => {
+        const prevRoute = routeNameRef.current;
+        const currentRoute = navigationRef.getCurrentRoute()?.name;
+        if (currentRoute && prevRoute !== currentRoute) {
+          routeNameRef.current = currentRoute;
+          perfMonitor.startRouteTransition(currentRoute);
+        }
+      }}
+    >
       <StatusBar style="light" />
       <RootNavigator />
       
