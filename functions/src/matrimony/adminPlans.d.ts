@@ -5,6 +5,10 @@ export declare const adminGetMatrimonyPlansAndSubs: import("firebase-functions/v
     plans: MatrimonyPlanDoc[];
     subscriptions: {
         uid: string;
+        memberName: string | null;
+        memberProfileCode: string | null;
+        memberCity: string | null;
+        memberPhone: string | null;
         subscriptionId: string;
         planId: string;
         planName: string;
@@ -21,14 +25,23 @@ export declare const adminGetMatrimonyPlansAndSubs: import("firebase-functions/v
     paymentHistory: {
         id: string;
         uid: string;
+        memberName: string | null;
+        memberProfileCode: string | null;
+        memberCity: string | null;
+        memberPhone: string | null;
         planId: string;
+        planName: string | null;
         tier: string;
+        durationMonths: number | null;
         amountInr: number;
         status: string;
         source: string;
         paymentId: string | null;
         orderId: string | null;
-        createdAtMs: number;
+        note: string | null;
+        startDateMs: any;
+        expiryDateMs: number | null;
+        createdAtMs: any;
     }[];
     summary: {
         activeCount: number;

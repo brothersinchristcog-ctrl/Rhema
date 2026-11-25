@@ -21,6 +21,7 @@ export { default as MatrimonyMatchDetailScreen } from './screens/MatrimonyMatchD
 export { default as MatrimonySubmitApprovalScreen } from './screens/MatrimonySubmitApprovalScreen';
 export { default as MatrimonyStatusScreen } from './screens/MatrimonyStatusScreen';
 export { default as MatrimonyUpgradeScreen } from './screens/MatrimonyUpgradeScreen';
+export { default as MatrimonyPlanCarousel } from './components/MatrimonyPlanCarousel';
 export { matrimonyApi, MATRIMONY_BUCKET_URL } from './services/matrimonyApi';
 export { getMatrimonyQuickAccessItem } from './quickAccessItem';
 export * from './types/matrimony';

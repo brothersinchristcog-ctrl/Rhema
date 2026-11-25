@@ -159,6 +159,14 @@ export default function AdminMatrimonyProfileDetailScreen({ navigation, route }:
   const preferences = data?.preferences;
 
   const displayName = profile?.displayName || contact?.fullName || 'Member';
+  const profileCode = String(
+    profile?.matrimonyId ||
+      profile?.profileCode ||
+      route?.params?.profileCode ||
+      (targetUid ? `RM${targetUid.slice(0, 7).toUpperCase()}` : '')
+  )
+    .trim()
+    .toUpperCase();
   const photoUri = profile?.signedProfilePhoto || null;
   const galleryUris = useMemo(() => {
     const all: string[] = [];
@@ -422,7 +430,7 @@ export default function AdminMatrimonyProfileDetailScreen({ navigation, route }:
     <View style={styles.kvRow} key={label}>
       <Text style={[styles.kvLabel, { color: colors.textSecondary, fontFamily }]}>{label}</Text>
       <Text style={[styles.kvColon, { color: colors.textSecondary }]}>:</Text>
-      <Text style={[styles.kvValue, { color: colors.text, fontFamily }]}>
+      <Text style={[styles.kvValue, { color: colors.text, fontFamily }]} selectable>
         {value && value.trim() ? value : 'Not Specified'}
       </Text>
     </View>
@@ -474,15 +482,32 @@ export default function AdminMatrimonyProfileDetailScreen({ navigation, route }:
           <ArrowLeft size={22} color={headerTextColor} />
         </TouchableOpacity>
 
-        <Text
-          style={[
-            styles.headerNameText,
-            { color: headerTextColor, fontFamily, fontSize: scaleFont(17.5) },
-          ]}
-          numberOfLines={1}
-        >
-          {displayName}
-        </Text>
+        <View style={styles.headerCenterCol}>
+          <Text
+            style={[
+              styles.headerNameText,
+              { color: headerTextColor, fontFamily, fontSize: scaleFont(17.5) },
+            ]}
+            numberOfLines={1}
+          >
+            {displayName}
+          </Text>
+          {profileCode ? (
+            <Text
+              style={[
+                styles.headerProfileIdText,
+                {
+                  color: isDark ? '#CBD5E1' : '#64748B',
+                  fontFamily,
+                },
+              ]}
+              numberOfLines={1}
+              selectable
+            >
+              {`ID: ${profileCode}`}
+            </Text>
+          ) : null}
+        </View>
 
         <TouchableOpacity
           style={[
@@ -809,6 +834,7 @@ export default function AdminMatrimonyProfileDetailScreen({ navigation, route }:
               {/* Basic Details */}
               <View style={styles.sectionBlock}>
                 {renderSectionHeader('Basic Details')}
+                {renderKeyValue('Profile ID', profileCode)}
                 {renderKeyValue('Name', displayName)}
                 {renderKeyValue('Age', profile?.age ? `${profile.age} yrs` : 'Not Specified')}
                 {renderKeyValue('Date of Birth', contact?.dob || 'Not Specified')}
@@ -1396,10 +1422,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerNameText: {
+  headerCenterCol: {
     flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerNameText: {
     textAlign: 'center',
     fontWeight: '800',
+  },
+  headerProfileIdText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    marginTop: 1,
+    letterSpacing: 0.4,
   },
   headerDeleteBtn: {
     width: 36,

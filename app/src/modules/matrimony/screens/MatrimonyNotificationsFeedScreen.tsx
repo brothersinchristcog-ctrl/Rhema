@@ -334,7 +334,7 @@ export default function MatrimonyNotificationsFeedScreen({ navigation }: any) {
       return;
     }
     if (item.actionType === 'view_interests') {
-      navigation.navigate('MatrimonyInterestsHub');
+      navigation.navigate('MatrimonyMainTabs', { screen: 'MatrimonyInterestsHub' });
       return;
     }
     if (item.actionType === 'view_offers') {
@@ -345,7 +345,7 @@ export default function MatrimonyNotificationsFeedScreen({ navigation }: any) {
       navigation.navigate('MatrimonyStatus');
       return;
     }
-    navigation.navigate('MatrimonyMatches');
+    navigation.navigate('MatrimonyMainTabs', { screen: 'MatrimonyMatches' });
   };
 
   const headerTextColor = isDark ? '#FFFFFF' : '#1E293B';
