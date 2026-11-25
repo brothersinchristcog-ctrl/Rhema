@@ -1,4 +1,5 @@
-import bundledBulkVerses from '../../../assets/bulk_verses.json';
+// Lazy load 5,863-verse JSON only when fallback or bundled import is needed
+const getBundledBulkVerses = () => require('../../../assets/bulk_verses.json') as any[];
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
@@ -171,7 +172,7 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
 
       if (total === 0) {
         try {
-          const bundled = bundledBulkVerses;
+          const bundled = getBundledBulkVerses();
           total = bundled.length || 5863;
         } catch (_) {
           total = 5863;
@@ -198,7 +199,7 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
       // Offline / fallback if Firestore returned nothing: populate from bundled verses
       if (fetched.length === 0) {
         try {
-          const bundled = bundledBulkVerses;
+          const bundled = getBundledBulkVerses();
           for (let offset = 0; offset < COUNT; offset++) {
             const idx = (todayBase + offset) % total;
             const bv = bundled[idx];
@@ -263,7 +264,7 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
 
       if (docs.length === 0) {
         try {
-          const bundled = bundledBulkVerses;
+          const bundled = getBundledBulkVerses();
           docs = bundled.slice(0, 50).map((bv: any, idx: number) => ({
             id: `verse_${idx}`,
             index: idx,
@@ -282,7 +283,7 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
     } catch (e) {
       console.error('Error fetching all verses:', e);
       try {
-        const bundled = bundledBulkVerses;
+        const bundled = getBundledBulkVerses();
         const docs = bundled.slice(0, 50).map((bv: any, idx: number) => ({
           id: `verse_${idx}`,
           index: idx,
@@ -583,11 +584,22 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
           setIsUploading(true);
           try {
             const snapshot = await firestore().collection('daily_verses').get();
-            const batch = firestore().batch();
+            const commitPromises: Promise<any>[] = [];
+            let batch = firestore().batch();
+            let ops = 0;
             snapshot.docs.forEach(doc => {
               batch.delete(doc.ref);
+              ops++;
+              if (ops % 450 === 0) {
+                commitPromises.push(batch.commit());
+                batch = firestore().batch();
+              }
             });
-            await batch.commit();
+            if (ops % 450 !== 0) {
+              commitPromises.push(batch.commit());
+            }
+            await Promise.all(commitPromises);
+            await VerseNotificationService.invalidateCache();
             cachedUpcomingVerses = null;
             cachedAllVerses = [];
             fetchUpcomingVerses(true);
@@ -673,7 +685,7 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
           text: 'Import (5,863)',
           onPress: async () => {
             try {
-              const bundled = bundledBulkVerses;
+              const bundled = getBundledBulkVerses();
               await handleBulkUpload(bundled);
             } catch (e: any) {
               Alert.alert('Error', e?.message || 'Failed to load bundled verses');
@@ -701,27 +713,33 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
           .map(v => v.backgroundUrl)
       );
       let updated = 0;
-      for (const verse of missing) {
-        const schedule = getFastSchedule(verse.index);
-        const dayNum = getCalendarDayNumber(new Date()) + (schedule.daysOffset || 0);
-        try {
-          const fetched = await fetchRelevantUnsplashForVerse(verse, schedule.period, dayNum, usedSet);
-          if (fetched && fetched.url) {
-            await firestore().collection('daily_verses').doc(verse.id).set({
-              ...verse,
-              backgroundUrl: fetched.url,
-              isDynamicUnsplash: true,
-              unsplashPhotographer: fetched.photographer,
-              backgroundTheme: fetched.theme,
-              updatedAt: firestore.FieldValue.serverTimestamp(),
-            }, { merge: true });
-            verse.backgroundUrl = fetched.url;
-            verse.isDynamicUnsplash = true;
-            updated++;
-          }
-        } catch (err) {
-          console.warn('Unsplash fetch error:', err);
-        }
+      const CHUNK_SIZE = 4;
+      for (let i = 0; i < missing.length; i += CHUNK_SIZE) {
+        const chunk = missing.slice(i, i + CHUNK_SIZE);
+        await Promise.all(
+          chunk.map(async (verse) => {
+            const schedule = getFastSchedule(verse.index);
+            const dayNum = getCalendarDayNumber(new Date()) + (schedule.daysOffset || 0);
+            try {
+              const fetched = await fetchRelevantUnsplashForVerse(verse, schedule.period, dayNum, usedSet);
+              if (fetched && fetched.url) {
+                await firestore().collection('daily_verses').doc(verse.id).set({
+                  ...verse,
+                  backgroundUrl: fetched.url,
+                  isDynamicUnsplash: true,
+                  unsplashPhotographer: fetched.photographer,
+                  backgroundTheme: fetched.theme,
+                  updatedAt: firestore.FieldValue.serverTimestamp(),
+                }, { merge: true });
+                verse.backgroundUrl = fetched.url;
+                verse.isDynamicUnsplash = true;
+                updated++;
+              }
+            } catch (err) {
+              console.warn('Unsplash fetch error:', err);
+            }
+          })
+        );
       }
       await VerseNotificationService.invalidateCache();
       Alert.alert('Success', `Updated ${updated} verses with fresh, verse-relevant Unsplash backgrounds.`);

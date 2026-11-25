@@ -3,12 +3,6 @@ import { View, Text, StyleSheet, TouchableOpacity, Platform, ActivityIndicator, 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LayoutDashboard, History, PlusCircle, Receipt, Menu, Check, ChevronLeft, ArrowLeft, ShieldAlert } from 'lucide-react-native';
 
-// Import sub-screens
-import AdminExpenseDashboard from './AdminExpenseDashboard';
-import AdminExpenseHistory from './AdminExpenseHistory';
-import AdminExpenseAdd from './AdminExpenseAdd';
-import AdminExpenseInvoices from './AdminExpenseInvoices';
-import AdminExpenseApprovals from './AdminExpenseApprovals';
 import { AdminTabContext } from '../../../context/AdminTabContext';
 import { db, FieldValue } from '../../../services/firebaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -18,6 +12,12 @@ import { RHEMA_CHURCH_ID } from '../../../constants/ChurchConfig';
 import { isSuperAdminMember } from '../../../utils/roleUtils';
 import { useAdminTheme } from '../../../utils/adminThemeHelper';
 import { parseInvoiceSequence, formatInvoiceNoDisplay } from './AdminExpenseUtils';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  readInstantCache,
+  writeInstantCache,
+} from '../../../utils/instantCache';
 
 const TAB_TITLES: any = {
   dashboard: 'Expense Overview',
@@ -56,9 +56,18 @@ export default function AdminExpenseMain({ onBack, routeParams }: any) {
     [member, isPlatformSuperAdmin]
   );
 
+  const expensesCacheKey = useMemo(
+    () => makeScopedCacheKey('admin_expenses_main_v1', activeChurch?.id || RHEMA_CHURCH_ID, user?.uid),
+    [activeChurch?.id, user?.uid]
+  );
+  const initialExpensesCache = useMemo(
+    () => (isSuperAdmin ? getInstantMemory<any[]>(expensesCacheKey) : null),
+    [isSuperAdmin, expensesCacheKey]
+  );
+
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [expenses, setExpenses] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [expenses, setExpenses] = useState<any[]>(initialExpensesCache || []);
+  const [loading, setLoading] = useState(!initialExpensesCache);
   const [editingExpense, setEditingExpense] = useState<any>(null);
   const [historyRange, setHistoryRange] = useState("all");
   const [pendingInvoiceEntries, setPendingInvoiceEntries] = useState<any[] | null>(null);
@@ -77,22 +86,39 @@ export default function AdminExpenseMain({ onBack, routeParams }: any) {
       return;
     }
 
+    let active = true;
+    const mem = getInstantMemory<any[]>(expensesCacheKey);
+    if (mem) {
+      setExpenses(mem);
+      setLoading(false);
+    } else {
+      readInstantCache<any[]>(expensesCacheKey).then((cached) => {
+        if (!active || !cached?.data) return;
+        setExpenses(cached.data);
+        setLoading(false);
+      });
+    }
+
     const unsubscribe = db.collection('ledger_expenses')
       .orderBy('date', 'desc')
+      .limit(300)
       .onSnapshot(
         (snapshot: any) => {
+          if (!active) return;
           if (snapshot && snapshot.docs) {
             const fetched = snapshot.docs.map((doc: any) => ({
               id: doc.id,
               ...doc.data()
             }));
             setExpenses(fetched);
+            writeInstantCache(expensesCacheKey, fetched).catch(() => { });
           } else {
             setExpenses([]);
           }
           setLoading(false);
         },
         (error: any) => {
+          if (!active) return;
           console.error("Error fetching ledger expenses:", error);
           setLoading(false);
         }
@@ -373,18 +399,30 @@ export default function AdminExpenseMain({ onBack, routeParams }: any) {
     }
 
     switch (activeTab) {
-      case 'dashboard':
+      case 'dashboard': {
+        const AdminExpenseDashboard = require('./AdminExpenseDashboard').default;
         return <AdminExpenseDashboard expenses={expenses} goTo={setActiveTab} goToRange={goToHistoryWithRange} />;
-      case 'history':
+      }
+      case 'history': {
+        const AdminExpenseHistory = require('./AdminExpenseHistory').default;
         return <AdminExpenseHistory expenses={expenses} usedEvents={suggestedEvents} customCategories={usedCategories} onEdit={handleEdit} onDelete={handleDeleteExpense} initialRange={historyRange} onGenerateInvoice={handleGenerateInvoiceFromHistory} onSendForApproval={handleSendForApproval} />;
-      case 'add':
+      }
+      case 'add': {
+        const AdminExpenseAdd = require('./AdminExpenseAdd').default;
         return <AdminExpenseAdd onSave={handleSaveExpense} suggestedEvents={suggestedEvents} suggestedCategories={usedCategories} initialExpense={editingExpense} onCancelEdit={() => { setEditingExpense(null); setActiveTab('history'); }} />;
-      case 'invoice':
+      }
+      case 'invoice': {
+        const AdminExpenseInvoices = require('./AdminExpenseInvoices').default;
         return <AdminExpenseInvoices expenses={expenses} pendingInvoiceEntries={pendingInvoiceEntries} clearPendingInvoice={() => setPendingInvoiceEntries(null)} onSendForApproval={handleSendForApproval} onDeleteInvoice={handleDeleteInvoice} />;
-      case 'approvals':
+      }
+      case 'approvals': {
+        const AdminExpenseApprovals = require('./AdminExpenseApprovals').default;
         return <AdminExpenseApprovals expenses={expenses} onGenerateInvoice={handleGenerateInvoiceFromHistory} onDelete={handleDeleteExpense} initialApprovalTab={routeParams?.approvalSubTab} />;
-      default:
+      }
+      default: {
+        const AdminExpenseDashboard = require('./AdminExpenseDashboard').default;
         return <AdminExpenseDashboard expenses={expenses} goTo={setActiveTab} goToRange={goToHistoryWithRange} />;
+      }
     }
   };
 

@@ -22,13 +22,13 @@ const CATEGORIES = [
   { id: 'Other', label: 'Other', icon: '📝' }
 ];
 
-export default function AdminDonationsGive({ onNavigate }: any) {
+export default function AdminDonationsGive({ onNavigate, initialDonations }: any) {
   const { isDark } = useAdminTheme();
   const insets = useSafeAreaInsets();
   const [activeCategory, setActiveCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
-  const [donations, setDonations] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [donations, setDonations] = useState<any[]>(Array.isArray(initialDonations) ? initialDonations : []);
+  const [loading, setLoading] = useState(!Array.isArray(initialDonations));
   const [selectedDonation, setSelectedDonation] = useState<any>(null);
   const [showReceipt, setShowReceipt] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -37,12 +37,21 @@ export default function AdminDonationsGive({ onNavigate }: any) {
   const authorizerName = member?.name || user?.displayName || user?.email || 'Authorized Administrator';
 
   useEffect(() => {
+    if (Array.isArray(initialDonations)) {
+      setDonations(initialDonations);
+      setLoading(false);
+    }
+  }, [initialDonations]);
+
+  useEffect(() => {
+    if (Array.isArray(initialDonations)) return;
     let isMounted = true;
     let unsubscribe: any = null;
 
     try {
-      // Fetch online member donations from church_donations
+      // Fetch online member donations from church_donations (bounded fallback when opened standalone)
       unsubscribe = db.collection('church_donations')
+        .limit(300)
         .onSnapshot((snapshot) => {
           if (!isMounted) return;
           if (snapshot) {
@@ -75,24 +84,33 @@ export default function AdminDonationsGive({ onNavigate }: any) {
       isMounted = false;
       if (unsubscribe) unsubscribe();
     };
-  }, []);
+  }, [Array.isArray(initialDonations)]);
 
-  const filteredDonations = donations.filter(d => {
-    const matchCat = activeCategory === 'All' || (d.category || '').startsWith(activeCategory);
-    const q = searchQuery.toLowerCase().trim();
-    const matchQ = !q 
-      || (d.userName?.toLowerCase() || '').includes(q) 
-      || (d.name?.toLowerCase() || '').includes(q) 
-      || (d.id?.toLowerCase() || '').includes(q) 
-      || (d.category?.toLowerCase() || '').includes(q)
-      || (d.paymentId?.toLowerCase() || '').includes(q)
-      || (d.orderId?.toLowerCase() || '').includes(q);
-    return matchCat && matchQ;
-  });
+  const filteredDonations = React.useMemo(
+    () =>
+      donations.filter(d => {
+        const matchCat = activeCategory === 'All' || (d.category || '').startsWith(activeCategory);
+        const q = searchQuery.toLowerCase().trim();
+        const matchQ =
+          !q ||
+          (d.userName?.toLowerCase() || '').includes(q) ||
+          (d.name?.toLowerCase() || '').includes(q) ||
+          (d.id?.toLowerCase() || '').includes(q) ||
+          (d.category?.toLowerCase() || '').includes(q) ||
+          (d.paymentId?.toLowerCase() || '').includes(q) ||
+          (d.orderId?.toLowerCase() || '').includes(q);
+        return matchCat && matchQ;
+      }),
+    [donations, activeCategory, searchQuery]
+  );
 
-  const totalAmount = filteredDonations
-    .filter(d => d.status === 'completed')
-    .reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
+  const totalAmount = React.useMemo(
+    () =>
+      filteredDonations
+        .filter(d => d.status === 'completed')
+        .reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0),
+    [filteredDonations]
+  );
 
   const handleLongPress = (id: string) => {
     const newSet = new Set(selectedIds);

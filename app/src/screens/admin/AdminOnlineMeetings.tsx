@@ -1,7 +1,7 @@
-import React, { useState, useContext, useEffect } from 'react';
+import React, { useState, useContext, useEffect, useMemo } from 'react';
 import { 
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, 
-  Dimensions, ScrollView, Alert, Platform, StatusBar, Image, ToastAndroid 
+  Dimensions, ScrollView, Alert, Platform, StatusBar, ToastAndroid 
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
@@ -15,7 +15,8 @@ import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHe
 import { db } from '../../services/firebaseConfig';
 import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
-import AdminZoomMeetingsCreate from './AdminZoomMeetingsCreate';
+import CachedImage from '../../components/CachedImage';
+import { getInstantMemory, makeScopedCacheKey, writeInstantCache, readInstantCache } from '../../utils/instantCache';
 import {
   deleteOnlineMeeting,
   endOnlineMeeting,
@@ -35,6 +36,26 @@ const BASE_TABS = [
   { id: "history",   label: "All Meetings", icon: Calendar },
 ];
 
+// Isolated 30s clock component so root AdminOnlineMeetings doesn't re-render every second
+const MeetingLiveClock = React.memo(({ cardSurface, borderColor, primaryText, secondaryText, timeBadgeStyle, clockTimeStyle, clockDateStyle }: any) => {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const timeString = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const dateString = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+
+  return (
+    <View style={[timeBadgeStyle, { backgroundColor: cardSurface, borderColor }]}>
+      <Text style={[clockTimeStyle, { color: primaryText }]}>{timeString}</Text>
+      <Text style={[clockDateStyle, { color: secondaryText }]}>{dateString}</Text>
+    </View>
+  );
+});
+
 export default function AdminOnlineMeetings() {
   const { isDark, screenBg, cardSurface, primaryText, secondaryText, borderColor: adminBorderColor, barStyle } = useAdminTheme();
   const insets = useSafeAreaInsets();
@@ -42,16 +63,23 @@ export default function AdminOnlineMeetings() {
   const { member, isPlatformSuperAdmin } = useAuth();
   const { activeChurch } = useChurch();
   const canManageMeetings = isMeetingAdmin(member, isPlatformSuperAdmin);
+  const meetingsCacheKey = useMemo(
+    () => makeScopedCacheKey('admin_online_meetings_v1', activeChurch?.id || member?.churchId || 'default', 'admin'),
+    [activeChurch?.id, member?.churchId]
+  );
+  const initialCachedMeetings = useMemo(
+    () => getInstantMemory<any[]>(meetingsCacheKey),
+    [meetingsCacheKey]
+  );
   
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [meetings, setMeetings] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [meetings, setMeetings] = useState<any[]>(() => initialCachedMeetings || []);
+  const [loading, setLoading] = useState(!initialCachedMeetings);
   const [createMode, setCreateMode] = useState(false);
   const [selectedMeeting, setSelectedMeeting] = useState<any | null>(null);
   const [editingMeeting, setEditingMeeting] = useState<any | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<'zoom' | 'google_meet'>('google_meet');
   const [historyFilter, setHistoryFilter] = useState<'ALL' | 'UPCOMING' | 'LIVE' | 'COMPLETED'>('ALL');
-  const [currentTime, setCurrentTime] = useState(new Date());
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);
   const [attendees, setAttendees] = useState<any[]>([]);
   const [attendeesLoading, setAttendeesLoading] = useState(false);
@@ -63,30 +91,46 @@ export default function AdminOnlineMeetings() {
   const activeLiveMeeting = meetings.find((m) => resolveMeetingStatus(m, false) === 'live') || null;
 
   useEffect(() => {
+    let mounted = true;
     if (!canManageMeetings) {
       setLoading(false);
       return;
     }
 
+    if (!getInstantMemory<any[]>(meetingsCacheKey)) {
+      readInstantCache<any[]>(meetingsCacheKey, 15 * 60 * 1000).then((cached) => {
+        if (mounted && cached?.data?.length) {
+          setMeetings((prev) => (prev.length === 0 ? cached.data : prev));
+          setLoading(false);
+        }
+      }).catch(() => {});
+    }
+
     const unsubscribe = db.collection(`churches/default/online_meetings`)
       .orderBy('createdAt', 'desc')
+      .limit(60)
       .onSnapshot(
         (snapshot: any) => {
           const fetched = snapshot ? snapshot.docs.map((doc: any) => ({
             id: doc.id,
             ...doc.data()
           })) : [];
+          if (!mounted) return;
           setMeetings(fetched);
           setLoading(false);
+          writeInstantCache(meetingsCacheKey, fetched).catch(() => {});
         },
         (error: any) => {
           console.error("Error fetching zoom meetings:", error);
-          setLoading(false);
+          if (mounted) setLoading(false);
         }
       );
 
-    return () => unsubscribe();
-  }, [canManageMeetings]);
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, [canManageMeetings, meetingsCacheKey]);
 
   useEffect(() => {
     if (!canManageMeetings || !resolvedSelectedMeeting?.id) {
@@ -131,11 +175,18 @@ export default function AdminOnlineMeetings() {
       return;
     }
 
+    // Reuse attendees listener when the selected meeting IS the active live meeting
+    if (resolvedSelectedMeeting?.id === activeLiveMeeting.id) {
+      setLiveDashboardAttendees(attendees);
+      return;
+    }
+
     const churchId = normalizeMeetingChurchId(
       activeLiveMeeting.churchId || activeChurch?.id || member?.churchId
     );
     const unsubscribe = db
       .collection(`Rhema Church/${churchId}/online_meetings/${activeLiveMeeting.id}/attendees`)
+      .limit(100)
       .onSnapshot(
         (snapshot: any) => {
           const list = snapshot
@@ -154,12 +205,7 @@ export default function AdminOnlineMeetings() {
       );
 
     return () => unsubscribe();
-  }, [canManageMeetings, activeLiveMeeting?.id, activeLiveMeeting?.churchId, activeChurch?.id, member?.churchId]);
-
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+  }, [canManageMeetings, activeLiveMeeting?.id, activeLiveMeeting?.churchId, resolvedSelectedMeeting?.id, attendees, activeChurch?.id, member?.churchId]);
 
   const handleStatClick = (filter: 'ALL' | 'UPCOMING' | 'LIVE' | 'COMPLETED') => {
     setSelectedMeeting(null);
@@ -337,7 +383,7 @@ export default function AdminOnlineMeetings() {
         ]}
       >
         {a.profilePhoto ? (
-          <Image source={{ uri: a.profilePhoto }} style={styles.attendeeAvatarImg} />
+          <CachedImage uri={a.profilePhoto} style={styles.attendeeAvatarImg} resizeMode="cover" />
         ) : (
           <View
             style={[
@@ -1060,25 +1106,21 @@ export default function AdminOnlineMeetings() {
   };
 
   const renderCreateLanding = () => {
-    const timeString = currentTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    const dateString = currentTime.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-
     return (
       <ScrollView 
         contentContainerStyle={[styles.landingScroll, { paddingBottom: Math.max(insets.bottom, 24) + 90 }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Clock Badge */}
-        <View style={[
-          styles.timeBadge, 
-          { 
-            backgroundColor: cardSurface, 
-            borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : adminBorderColor,
-          }
-        ]}>
-          <Text style={[styles.clockTime, { color: primaryText }]}>{timeString}</Text>
-          <Text style={[styles.clockDate, { color: secondaryText }]}>{dateString}</Text>
-        </View>
+        <MeetingLiveClock
+          cardSurface={cardSurface}
+          borderColor={isDark ? 'rgba(255, 255, 255, 0.15)' : adminBorderColor}
+          primaryText={primaryText}
+          secondaryText={secondaryText}
+          timeBadgeStyle={styles.timeBadge}
+          clockTimeStyle={styles.clockTime}
+          clockDateStyle={styles.clockDate}
+        />
         
         {/* Card 1: Google Meet */}
         <View style={[
@@ -1290,26 +1332,32 @@ export default function AdminOnlineMeetings() {
         </View>
       ) : (
         <View style={{ flex: 1 }}>
-          {editingMeeting ? (
-            <AdminZoomMeetingsCreate
-              editingMeeting={editingMeeting}
-              onBack={() => setEditingMeeting(null)}
-              onSaved={(updated) => {
-                if (selectedMeeting && updated) {
-                  setSelectedMeeting((prev: any) => (prev ? { ...prev, ...updated } : prev));
-                }
-                setEditingMeeting(null);
-              }}
-              initialProvider={selectedProvider}
-              hideHeader={true}
-            />
-          ) : createMode ? (
-            <AdminZoomMeetingsCreate 
-              onBack={() => setCreateMode(false)} 
-              initialProvider={selectedProvider} 
-              hideHeader={true}
-            />
-          ) : resolvedSelectedMeeting ? (
+          {editingMeeting ? (() => {
+            const AdminZoomMeetingsCreate = require('./AdminZoomMeetingsCreate').default;
+            return (
+              <AdminZoomMeetingsCreate
+                editingMeeting={editingMeeting}
+                onBack={() => setEditingMeeting(null)}
+                onSaved={(updated: any) => {
+                  if (selectedMeeting && updated) {
+                    setSelectedMeeting((prev: any) => (prev ? { ...prev, ...updated } : prev));
+                  }
+                  setEditingMeeting(null);
+                }}
+                initialProvider={selectedProvider}
+                hideHeader={true}
+              />
+            );
+          })() : createMode ? (() => {
+            const AdminZoomMeetingsCreate = require('./AdminZoomMeetingsCreate').default;
+            return (
+              <AdminZoomMeetingsCreate 
+                onBack={() => setCreateMode(false)} 
+                initialProvider={selectedProvider} 
+                hideHeader={true}
+              />
+            );
+          })() : resolvedSelectedMeeting ? (
             renderSelectedMeeting(resolvedSelectedMeeting)
           ) : (
             <>

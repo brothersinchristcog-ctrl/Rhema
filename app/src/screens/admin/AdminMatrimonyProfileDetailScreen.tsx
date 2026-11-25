@@ -4,7 +4,6 @@ import {
   Alert,
   Dimensions,
   FlatList,
-  Image,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
@@ -17,6 +16,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import CachedImage from '../../components/CachedImage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -550,7 +550,7 @@ export default function AdminMatrimonyProfileDetailScreen({ navigation, route }:
               }}
             >
               {photoUri ? (
-                <Image source={{ uri: photoUri }} style={styles.heroImage} resizeMode="cover" />
+                <CachedImage uri={photoUri} style={styles.heroImage} resizeMode="cover" />
               ) : (
                 <View style={styles.heroPlaceholder}>
                   <User size={74} color="#CBD5E1" />
@@ -659,7 +659,7 @@ export default function AdminMatrimonyProfileDetailScreen({ navigation, route }:
                         setGalleryModalVisible(true);
                       }}
                     >
-                      <Image source={{ uri }} style={styles.galleryThumb} resizeMode="cover" />
+                      <CachedImage uri={uri} style={styles.galleryThumb} resizeMode="cover" />
                       {idx === 0 && (
                         <View style={styles.primaryTag}>
                           <Text style={styles.primaryTagText}>Primary</Text>
@@ -1214,7 +1214,7 @@ export default function AdminMatrimonyProfileDetailScreen({ navigation, route }:
             }}
             renderItem={({ item }) => (
               <View style={styles.lightboxSlide}>
-                <Image source={{ uri: item }} style={styles.lightboxImage} resizeMode="contain" />
+                <CachedImage uri={item} style={styles.lightboxImage} resizeMode="contain" />
               </View>
             )}
           />

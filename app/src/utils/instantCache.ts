@@ -143,7 +143,7 @@ export interface StaleWhileRevalidateOptions<T> {
  * 2. Deduplicates concurrent network calls for the same key.
  * 3. Fetches fresh data in the background and persists + emits via `onFresh`.
  */
-export async function loadWithInstantCache<T>({
+async function loadWithInstantCacheImpl<T>({
   key,
   fetcher,
   onCached,
@@ -186,8 +186,12 @@ export async function loadWithInstantCache<T>({
   try {
     const netStart = Date.now();
     const fresh = await pending;
-    await writeInstantCache(key, fresh);
+    MEMORY_CACHE.set(key, { data: fresh, fetchedAt: Date.now() });
     onFresh?.(fresh);
+    // Persist to AsyncStorage in background so large lists (e.g. 600+ members) never block UI paint
+    setTimeout(() => {
+      writeInstantCache(key, fresh).catch(() => {});
+    }, 0);
     if (screenName) {
       perfMonitor.recordScreenLoad(screenName, {
         source: 'network',
@@ -330,4 +334,48 @@ export async function writeScopedDeletedNotifIds(
   const key = makeScopedCacheKey('deleted_notification_ids_v1', churchId, uid);
   writeInstantCache(key, ids).catch(() => {});
   await AsyncStorage.setItem(key, JSON.stringify(ids));
+}
+
+export interface PositionalInstantCacheOptions {
+  /** Max cache age before cached data is treated as stale (still shown, then refreshed). */
+  ttlMs?: number;
+  /** Skip network entirely when cached data is younger than this. */
+  freshSkipMs?: number;
+  /** Bypass cache read and always fetch. */
+  force?: boolean;
+  screenName?: string;
+}
+
+/**
+ * Stale-while-revalidate loader.
+ * - Object form: loadWithInstantCache({ key, fetcher, onCached, onFresh, ... })
+ * - Positional form: loadWithInstantCache(key, fetcher, onData, { ttlMs, freshSkipMs, force })
+ *   where onData receives both cached and fresh payloads.
+ */
+export function loadWithInstantCache<T>(options: StaleWhileRevalidateOptions<T>): Promise<T>;
+export function loadWithInstantCache<T>(
+  key: string,
+  fetcher: () => Promise<T>,
+  onData: (data: T) => void,
+  opts?: PositionalInstantCacheOptions
+): Promise<T>;
+export function loadWithInstantCache<T>(
+  keyOrOptions: string | StaleWhileRevalidateOptions<T>,
+  fetcher?: () => Promise<T>,
+  onData?: (data: T) => void,
+  opts: PositionalInstantCacheOptions = {}
+): Promise<T> {
+  if (typeof keyOrOptions !== 'string') {
+    return loadWithInstantCacheImpl<T>(keyOrOptions);
+  }
+  return loadWithInstantCacheImpl<T>({
+    key: keyOrOptions,
+    fetcher: fetcher as () => Promise<T>,
+    onCached: onData,
+    onFresh: onData,
+    maxAgeMs: opts.ttlMs,
+    freshSkipMs: opts.freshSkipMs ?? 0,
+    forceRefresh: opts.force ?? false,
+    screenName: opts.screenName,
+  } as StaleWhileRevalidateOptions<T>);
 }

@@ -1625,55 +1625,48 @@ export class QuizService {
       const targetChurchId = await this.resolveChurchId(churchId);
       const attemptsMap = new Map<string, QuizAttempt>();
 
+      const tasks: Promise<any>[] = [];
       if (targetChurchId && targetChurchId !== 'global') {
-        try {
-          const snaps = await firestore()
+        tasks.push(
+          firestore()
             .collection('Rhema Church')
             .doc(targetChurchId)
             .collection(this.ATTEMPTS_COLLECTION)
             .where('quizId', '==', quizId)
-            .get();
-
-          snaps.docs.forEach((doc: any) => {
-            attemptsMap.set(doc.id, { id: doc.id, ...doc.data() });
-          });
-        } catch {
-          // ignore
-        }
+            .limit(200)
+            .get()
+            .catch(() => null)
+        );
       }
-
-      // Fallback check main church/root
-      try {
-        const mainSnaps = await firestore()
-          .collection('Rhema Church')
-          .doc(RHEMA_CHURCH_ID)
+      if (targetChurchId !== RHEMA_CHURCH_ID) {
+        tasks.push(
+          firestore()
+            .collection('Rhema Church')
+            .doc(RHEMA_CHURCH_ID)
+            .collection(this.ATTEMPTS_COLLECTION)
+            .where('quizId', '==', quizId)
+            .limit(200)
+            .get()
+            .catch(() => null)
+        );
+      }
+      tasks.push(
+        firestore()
           .collection(this.ATTEMPTS_COLLECTION)
           .where('quizId', '==', quizId)
-          .get();
+          .limit(200)
+          .get()
+          .catch(() => null)
+      );
 
-        mainSnaps.docs.forEach((doc: any) => {
+      const snapsList = await Promise.all(tasks);
+      snapsList.forEach((snaps) => {
+        snaps?.docs?.forEach((doc: any) => {
           if (!attemptsMap.has(doc.id)) {
             attemptsMap.set(doc.id, { id: doc.id, ...doc.data() });
           }
         });
-      } catch {
-        // ignore
-      }
-
-      try {
-        const rootSnaps = await firestore()
-          .collection(this.ATTEMPTS_COLLECTION)
-          .where('quizId', '==', quizId)
-          .get();
-
-        rootSnaps.docs.forEach((doc: any) => {
-          if (!attemptsMap.has(doc.id)) {
-            attemptsMap.set(doc.id, { id: doc.id, ...doc.data() });
-          }
-        });
-      } catch {
-        // ignore
-      }
+      });
 
       const list = Array.from(attemptsMap.values());
 

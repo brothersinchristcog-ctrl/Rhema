@@ -277,9 +277,14 @@ export default function AdminKidsHub({ navigation }: any) {
   // Load children, classes, teachers, curriculum & VBS (Realtime)
   useEffect(() => {
     // Sync all church registered children from Member module into Kids Ministry
-    KidsMinistryService.syncMemberChildrenToKidsMinistry(churchId).catch(err => {
-      console.warn('[AdminKidsHub] Auto-sync church member children error:', err);
-    });
+    // (deferred so the heavy write-sync doesn't compete with first paint / listeners)
+    const deferredSyncTimer = setTimeout(() => {
+      KidsMinistryService.syncMemberChildrenToKidsMinistry(churchId).catch(err => {
+        console.warn('[AdminKidsHub] Auto-sync church member children error:', err);
+      });
+      // Reconcile any unlinked household member profile photos onto Kids records
+      KidsMinistryService.reconcileAllChildPhotos(churchId).catch(() => {});
+    }, 1500);
 
     // 1. Realtime listener for Sunday School Classes
     const unsubClasses = KidsMinistryService.subscribeToClasses(churchId, classList => {
@@ -349,9 +354,6 @@ export default function AdminKidsHub({ navigation }: any) {
 
     // Do NOT auto-create a Sunday School session with today's date; wait for explicit admin creation.
 
-    // Reconcile any unlinked household member profile photos onto Kids records
-    KidsMinistryService.reconcileAllChildPhotos(churchId).catch(() => {});
-
     // Load saved Sunday School Director & Senior Pastor certificate leadership defaults
     KidsMinistryService.getCertificateSettings(churchId)
       .then(cfg => {
@@ -360,6 +362,7 @@ export default function AdminKidsHub({ navigation }: any) {
       .catch(() => {});
 
     return () => {
+      clearTimeout(deferredSyncTimer);
       unsubClasses();
       unsubKids();
       unsubTeachers();

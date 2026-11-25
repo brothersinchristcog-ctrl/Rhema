@@ -195,6 +195,16 @@ export default function CareCellMapModal({
     };
   }, [visitMemberMeta, members]);
 
+  // Always clean up GPS watcher if modal unmounts while navigation is active
+  useEffect(() => {
+    return () => {
+      if (navLocationSubRef.current) {
+        navLocationSubRef.current.remove();
+        navLocationSubRef.current = null;
+      }
+    };
+  }, []);
+
   // Sync planned route IDs & reset navigation cleanly whenever modal opens/closes
   useEffect(() => {
     if (!visible) {

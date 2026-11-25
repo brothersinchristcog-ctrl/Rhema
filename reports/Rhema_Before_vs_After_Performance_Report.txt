@@ -1,0 +1,246 @@
+============================================================================================
+RHEMA CHURCH APP - MEMBER VIEW & ADMIN VIEW BEFORE-VS-AFTER PERFORMANCE REPORT
+Generated: 2026-11-25T08:01:41.267Z
+Environment Constraint: Pure JS/TS optimizations compatible with expo-dev-client (~6.0.20)
+============================================================================================
+
+NOTE ON METRICS:
+TypeScript compilation, Metro bundling, lazy-require verification, runtime cache smoke
+tests, and local JMeter backend benchmarks are directly observed outputs from this session.
+Live on-device screen timings (Cold ms, Cached ms, Memory PSS, FPS) require running your
+Android/iOS dev client via: npx expo start --dev-client --no-dev --minify
+and executing globalThis.__RHEMA_PERF_REPORT__() in the Metro console.
+
+============================================================================================
+SECTION 1: EXECUTIVE SUMMARY & VERIFICATION STATUS
+============================================================================================
+1. Code Footprint Covered (Member View)
+   - BEFORE : Unoptimized sequential fetches, unscoped storage keys, raw <Image>
+   - AFTER  : 82 files updated (commit 271f3a4): SWR instantCache, CachedImage, cacheReset, perfMonitor
+   - PROOF  : Git commit 271f3a4 (+8,315 / -6,461 lines)
+
+2. Code Footprint Covered (Admin View)
+   - BEFORE : Eager 34-tab bundle imports, 1Hz timers, nested ScrollViews, full collection scans
+   - AFTER  : 56 files updated (commit 44451fd) + 5 follow-up fixes (630+ Members FlatList & Celebrations filters)
+   - PROOF  : Git commit 44451fd + verified working-tree diff
+
+3. Native Dependency Footprint
+   - BEFORE : expo-dev-client ~6.0.20 baseline
+   - AFTER  : 0 native packages added; app/package.json, android/, ios/ untouched
+   - PROOF  : Verified via git status on native dirs
+
+4. Admin Screen Bundle Graph & Lazy Routes
+   - BEFORE : All secondary tabs, modals, and huge Bible/verse JSON files parsed eagerly on mount
+   - AFTER  : 77 lazy require() targets audited across Admin & Pastor navigators + lazy telugu_bible.json / bulk_verses.json
+   - PROOF  : ADMIN_REQUIRE_DEFAULT_EXPORT_AUDIT: checked=77 failures=0
+
+5. TypeScript App Check (tsc -p app/tsconfig.json --noEmit)
+   - BEFORE : N/A (baseline)
+   - AFTER  : Passed with 0 errors after latest Members & Celebrations edits
+   - PROOF  : APP_TSC_EXIT=0
+
+6. TypeScript Functions Check (tsc -p functions/tsconfig.json --noEmit)
+   - BEFORE : N/A (baseline)
+   - AFTER  : Passed with 0 errors on functions bundle
+   - PROOF  : FN_TSC_EXIT=0
+
+7. Android Metro / Hermes Production Bundle
+   - BEFORE : Full eager bundle graph
+   - AFTER  : Passed (35.4 MB .hbc bytecode bundle built; pre-final-5-file Members/Celebrations patch)
+   - PROOF  : EXPO_EXPORT_EXIT=0 (task-5423)
+
+8. Babel & instantCache Runtime Smoke Test
+   - BEFORE : Untested lazy/cache paths
+   - AFTER  : Passed all 125 Admin files + 5 updated Members/Celebrations files; both SWR overloads verified
+   - PROOF  : RUNTIME_AND_BABEL_SMOKE_PASS & MEMBERS_AND_CELEBRATIONS_SMOKE_PASS
+
+9. Cloud Functions JMeter Benchmark (Local Emulator, 5 threads)
+   - BEFORE : 250 samples measured on local emulator
+   - AFTER  : Avg 182 ms | Min 13 ms | Max 14,372 ms | Throughput 13.1/sec | Error 0.00%
+   - PROOF  : Observed Apache JMeter Summary Report screenshot
+
+10. Live Android Dev-Client Timings (Cold ms / Cached ms / FPS)
+   - BEFORE : Not captured in CLI sandbox (no ADB device attached)
+   - AFTER  : Pending live device capture via globalThis.__RHEMA_PERF_REPORT__() under expo start --dev-client --no-dev --minify
+   - PROOF  : Ready for device measurement
+
+
+============================================================================================
+SECTION 2: MEMBER VIEW BEFORE VS AFTER (15 QUICK ACCESS SECTIONS + SHARED MODULES)
+============================================================================================
+[0] Core Architecture (Cache, Images, Contexts)
+   Files  : instantCache.ts, cacheReset.ts, CachedImage.tsx, perfMonitor.ts, App.js, AuthContext.tsx, ChurchContext.tsx, ThemeContext.tsx
+   BEFORE : Unscoped AsyncStorage keys risk cross-tenant/user leakage; raw <Image>; sequential AsyncStorage.getItem; redundant phone scans; no screen telemetry.
+   AFTER  : Scoped SWR keys (churchId + uid) + migration helpers; pure-JS CachedImage RAM+disk cache; resetAllClientCaches on logout/switch; multiGet in ThemeContext; perfMonitor.__RHEMA_PERF_REPORT__.
+--------------------------------------------------------------------------------------------
+[1] Sermons (Quick Access #1)
+   Files  : SermonsScreen.tsx, SermonVideoScreen.tsx, DailyVideoScreen.tsx
+   BEFORE : Lacked freshSkipMs; duplicated getSermonCategories() (100+250); uncached Video/Daily screens with spinner; unbounded promises archive; raw <Image>; idle bell loop.
+   AFTER  : Scoped SWR (sermons_screen_v2 2m skip, sermon_videos_v1, daily_videos_v1); deduped categories; bounded getSermons(150) & archive(45); memoized SermonItem; paused bellAnim; CachedImage.
+--------------------------------------------------------------------------------------------
+[2] Events (Quick Access #2)
+   Files  : EventsScreen.tsx, EventDetailsScreen.tsx, EventsCalendarScreen.tsx
+   BEFORE : Cold disk boot spinner; EventDetails fetched full getEvents() list for 1 event & recreated youtubeLiveState listener; uncached Calendar & untuned FlatList.
+   AFTER  : Scoped SWR (events_upcoming_v2, events_past_p1_v2, events_calendar_v1); single-doc getEventById(id, churchId); decoupled youtubeLiveState listener; CachedImage; tuned FlatList.
+--------------------------------------------------------------------------------------------
+[3] Songs (Quick Access #3)
+   Files  : SongsScreen.tsx, SongDetailModal.tsx
+   BEFORE : Unscoped @songs_cache & cog_my_songbook_ids blocking spinner; loadSetlists() duplicated getEvents(); SongDetailModal recomputed transliteration/lyrics unmemoized.
+   AFTER  : Scoped SWR (songs_list_v2, songs_setlists_v2) + scoped songbook IDs with migration; removed duplicate getEvents(); memoized languages & lyrics before early return.
+--------------------------------------------------------------------------------------------
+[4] Give / Donations (Quick Access #4)
+   Files  : GivingScreen.tsx, GivingHistoryScreen.tsx, PaymentResultScreen.tsx
+   BEFORE : Redundant members/{uid}.get() on Giving; GivingHistory forced refresh every focus + unbounded pledges/mandates; PaymentResult leaked listener & 30s timeout.
+   AFTER  : Reused AuthContext contact fields; scoped RAM/disk cache on recentDonations; giving_history_v2 SWR + .limit(50); CachedImage logo; isResolved cleanup guard.
+--------------------------------------------------------------------------------------------
+[5] Daily Verse (Quick Access #5)
+   Files  : VerseOfTheDayScreen.tsx, PromiseArchiveScreen.tsx
+   BEFORE : Artificial 1.2s delay; double localizeVerses; sequential Unsplash loop in VerseNotificationService; unmemoized getStyles; uncached Archive.
+   AFTER  : Removed 1.2s delay; memoized getStyles; parallel Unsplash enrichment; scoped SWR (verse_of_the_day_v1, promises_archive_v1 + archive(60)); CachedImageBackground.
+--------------------------------------------------------------------------------------------
+[6] Attendance (Quick Access #6)
+   Files  : AttendanceScreen.tsx, AttendanceService.ts
+   BEFORE : Up to 100-150+ sequential .get() calls; duplicate getEvents() scan; redundant members fetches; no instant cache; raw <Image> avatars.
+   AFTER  : Parallelized attendanceRequests + attendees via Promise.all; skipped duplicate getEvents(150); cached getChurchMembers; scoped attendance_screen_v1; CachedImage.
+--------------------------------------------------------------------------------------------
+[7] Sermon Notes (Quick Access #7)
+   Files  : MemberNotesScreen.tsx
+   BEFORE : Unscoped @SermonPersonalNotes leaked across accounts; uncached startup flash; unmemoized filtering; untuned FlatList.
+   AFTER  : Unified scoped sermon_personal_notes_v2 across Notes, BibleReader & BibleSearch with migration; memoized filteredNotes; tuned FlatList.
+--------------------------------------------------------------------------------------------
+[8] Bible Quiz (Quick Access #8)
+   Files  : BibleQuizHomeScreen.tsx, ChurchQuizzesScreen.tsx, BibleQuizDetailScreen.tsx, BibleQuizPlayerScreen.tsx, BibleQuizLeaderboardScreen.tsx, BibleQuizStagesScreen.tsx, BibleQuizLevelsScreen.tsx, QuizService.ts
+   BEFORE : QuizService.clearCache() wiped cache every focus & passed isAdmin:true; duplicate RHEMA_CHURCH_ID queries; Leaderboard ScrollView+.map(); Player timer state-updater bug.
+   AFTER  : Removed clearCache() & isAdmin:true; parallelized QuizService; churchId-scoped progress; SWR across all quiz screens; FlatList Leaderboard + CachedImage/Background.
+--------------------------------------------------------------------------------------------
+[9] Rhema Kids (Quick Access #9)
+   Files  : KidsMinistryScreen.tsx, EnrollChildModal.tsx, KidsLessonDetailModal.tsx
+   BEFORE : Blocking spinner every open; duplicate subscribeToClasses inside EnrollChildModal; 180ms artificial delay; raw <Image>.
+   AFTER  : Scoped kids_ministry_v1 RAM/disk cache; passed initialClasses to skip duplicate listener; removed 180ms delay; CachedImage cards & avatars.
+--------------------------------------------------------------------------------------------
+[10] Members (Quick Access #10)
+   Files  : MembersScreen.tsx
+   BEFORE : Full blocking spinner; unstable useEffect([member]) refetched on object mutation; raw <Image> avatars.
+   AFTER  : Scoped family_members_v1 loadWithInstantCache; narrowed primitive effect deps; CachedImage avatars.
+--------------------------------------------------------------------------------------------
+[11] Online Meetings (Quick Access #11)
+   Files  : OnlineMeetingsScreen.tsx, OnlineMeetingDetailScreen.tsx
+   BEFORE : Uncached spinner; unbounded online_meetings onSnapshot; listener churn in detail screen; untuned FlatList.
+   AFTER  : Scoped online_meetings_v1 cache; bounded .limit(40) listener; stabilized effectiveChurchId + targetMeetingId deps; tuned FlatList.
+--------------------------------------------------------------------------------------------
+[12] Gallery (Quick Access #12)
+   Files  : MemberGalleryDashboard.tsx, MemberGalleryAlbumDetail.tsx
+   BEFORE : Double fetch on mount + focus; uncached spinners; raw <Image>; untuned FlatList grids/viewer.
+   AFTER  : Removed duplicate mount+focus fetch; scoped SWR (gallery_albums_v1, gallery_album_photos_v1); CachedImage; tuned FlatLists.
+--------------------------------------------------------------------------------------------
+[13] Service Roster (Quick Access #13)
+   Files  : MyServiceScreen.tsx, LiveStageHUD.tsx, ServiceRosterService.ts
+   BEFORE : Sequential 4-call waterfall + duplicate getServicePlans; no cache; idle 1s countdown & pulse loops.
+   AFTER  : Scoped my_service_v1 SWR; Promise.all 4 service fetches (limitCount: 40); 15s cooldown; skipped HUD spinner with plan param; gated timers on live status.
+--------------------------------------------------------------------------------------------
+[14] YouTube Live (Quick Access #14)
+   Files  : YouTubeLiveScreen.tsx, YouTubeService.ts
+   BEFORE : Uncached spinner; repeated channel resolution; multi-step live discovery; offline pulse animation loop; raw <Image>.
+   AFTER  : Scoped youtube_live_state_v1; ACTIVE_STREAM_CACHE + in-flight dedupe; cached channel ID ref; pulse loop only while live; CachedImage.
+--------------------------------------------------------------------------------------------
+[15] Testimony (Quick Access #15)
+   Files  : TestimoniesScreen.tsx, TestimonyDetailScreen.tsx
+   BEFORE : Uncached spinners; repeated Storage signed URL & author resolution every snapshot; untuned FlatList; ignored ChurchContext.
+   AFTER  : useChurch().churchId reactivity; scoped feed cache with listener write-through; ref-deduped signed URLs & author summaries; CachedImage.
+--------------------------------------------------------------------------------------------
+[16] Home, Updates & Prayer Wall
+   Files  : HomeScreen.tsx, UpdatesScreen.tsx, PrayerWallScreen.tsx
+   BEFORE : Unbounded live celebration listener; unscoped deleted notifications; ScrollView+.map(<SwipeableRow>); duplicate checkContactExists.
+   AFTER  : Bounded live chat .limit(30); scoped updates_feed_v1 & deleted IDs; tuned FlatList Updates; prayers_list_v2 SWR + removed redundant check.
+--------------------------------------------------------------------------------------------
+[17] Bible Suite & Community/Account
+   Files  : BibleService.ts, BibleReaderScreen.tsx, BibleChaptersScreen.tsx, BiblePlansScreen.tsx, BibleSearchScreen.tsx, CareCellScreen.tsx, JobCircleScreen.tsx, VolunteerScreen.tsx, BaptismRequestScreen.tsx, CelebrationScreen.tsx, LiveCelebrationsChat.tsx, AboutUsScreen.tsx, ContactUsScreen.tsx, ProfileScreen.tsx, SubscriptionTab.tsx
+   BEFORE : Eager telugu_bible.json; onLayout state cascade; sequential Baptism & Subscription fetches; uncleaned Animated.loops; uncached screens.
+   AFTER  : Lazy telugu_bible.json; verseLayoutsRef; RAM+disk Bible chapter cache; scoped cache & Promise.all across community screens; cleaned Animated.loops; CachedImage.
+--------------------------------------------------------------------------------------------
+[18] Church Chat & Member Matrimony
+   Files  : ChurchChatNavigator.tsx, RhemaChatsScreen.tsx, RhemaChatRoomScreen.tsx, ChatListRow.tsx, MessageBubble.tsx, AvatarWithStatus.tsx, MatrimonyNavigator.tsx, MatrimonyStatusScreen.tsx
+   BEFORE : Eager 8 chat + 31 matrimony screens; empty RTDB markRoomRead roundtrips; unmemoized chat rows; forced matrimony reload on focus.
+   AFTER  : Lazy getComponent on all 8 chat + 31 matrimony routes; inbox SWR; RTDB guard; React.memo chat rows + CachedImage; Matrimony SWR + [uid] listener.
+--------------------------------------------------------------------------------------------
+
+============================================================================================
+SECTION 3: ADMIN VIEW & SUPER ADMIN BEFORE VS AFTER (INCLUDING 630+ MEMBERS & CELEBRATIONS FIX)
+============================================================================================
+[1] Admin Navigation & Context
+   Files  : AdminNavigator.tsx, AdminTabContext.tsx, PastorEventNavigator.tsx, AdminGalleryNavigator.tsx
+   BEFORE : 34+ Admin screens + Pastor (6) & Gallery (3) stacks eagerly imported on boot; dashboardScrollY in useState triggered root re-renders every scroll frame; unbounded careCells listener.
+   AFTER  : All routes converted to lazy getComponent require(); ref-backed getDashboardScrollY() eliminating scroll re-renders; bounded careCells .limit(100); ref-stabilized BackHandler; perfMonitor route transitions.
+--------------------------------------------------------------------------------------------
+[2] Admin Dashboard & SuperAdmin
+   Files  : AdminDashboard.tsx, SuperAdminDashboard.tsx, SuperAdminDailyQuizManager.tsx, SuperAdminRoleManager.tsx, SuperAdminVersesManager.tsx
+   BEFORE : Duplicate Matrimony count fetch; eager SuperAdmin sub-suites; DailyQuiz blocked on N church scans; RoleManager full members.get(); eager bulk_verses.json; sequential Unsplash loop.
+   AFTER  : Scoped admin_dashboard_matrimony_v1 SWR; lazy SuperAdmin sub-tabs; unblocked Daily Bank render; RoleManager 3 parallel indexed admin queries (.limit(100)); lazy bulk_verses.json & batched Unsplash/delete.
+--------------------------------------------------------------------------------------------
+[3] Admin Members (630+ Scalability Fix)
+   Files  : AdminMembers.tsx, FirestoreService.ts, instantCache.ts
+   BEFORE : ScrollView rendered ALL 630+ full member cards eagerly (~28k Views) freezing open/search/expand; O(N^2) household filter; getAllMembers() lacked RAM cache/dedupe; AsyncStorage awaited before onFresh.
+   AFTER  : Virtualized FlatList (10 initial cards, extraData); separated dedupedMembers regex pass from villageFilter; O(1) membersByIdMap & membersByAccountId; 60s _allMembersCache + dedupe + mutation invalidation; non-blocking background AsyncStorage persist; CachedImage.
+--------------------------------------------------------------------------------------------
+[4] Admin Celebrations (Filter & Scroll Fix)
+   Files  : AdminCelebrations.tsx, AdminCelebrationsList.tsx
+   BEFORE : Read raw dob/anniversaryDate/baptismDate instead of normalized Birthdate/Anniversary_Date__c/Baptism_Date__c; re-fetched on every category tap; Math.ceil local time/DST & Week wrap bugs; nested ScrollViews broke Android scrolling.
+   AFTER  : Normalized field lookup + multi-format date parser; UTC Date.UTC diff + Dec->Jan Week wraparound; single fetch cached in SWR + instant useMemo filtering; single virtualized FlatList; CachedImage avatars; hero stats & list math synced.
+--------------------------------------------------------------------------------------------
+[5] Attendance, Events, Sermons, Songs & Promises
+   Files  : AdminAttendance.tsx, AdminEventList.tsx, EventAttendeesScreen.tsx, AdminSermonList.tsx, AdminSongEditor.tsx, AdminPromiseEditor.tsx, AdminPromiseCalendar.tsx
+   BEFORE : Unbounded attendance queries & O(N^2) absent checks; EventList RSVP churn on empty churchId; double snapshots/fetches on Attendees & SongEditor; render-time setTimeout & eager telugu_bible.json; per-cell .find() calendar lookup.
+   AFTER  : Bounded Attendance (.limit 150/200/250) + Set lookups + cache invalidation; guarded RSVP listeners; scoped SWR caches; removed duplicate fetches; fixed PromiseEditor useEffect & lazy JSON; PromiseCalendar Map lookup; CachedImage.
+--------------------------------------------------------------------------------------------
+[6] Settings, Approvals & Volunteers
+   Files  : AdminChurchSettings.tsx, AdminAboutUsEditor.tsx, AdminContactUsEditor.tsx, AdminRegistrationApprovals.tsx, AdminVolunteerManagement.tsx
+   BEFORE : Sequential ChurchDetails + Secrets load & save; duplicate fetch alongside onSnapshot in Approvals; leaked pull-to-refresh onSnapshot subscription in VolunteerManagement; uncached editors.
+   AFTER  : Scoped SWR caches + write-through on save; Promise.all for ChurchDetails & Secrets; removed duplicate Approvals fetch; appsUnsubRef cleanup in Volunteers; CachedImage church logo.
+--------------------------------------------------------------------------------------------
+[7] Finance: Donations & Expenses
+   Files  : AdminDonationsMain.tsx, AdminDonationsDashboard.tsx, AdminDonationsDetails.tsx, AdminDonationsForm.tsx, AdminDonationsGive.tsx, AdminDonationsList.tsx, AdminExpenseMain.tsx, AdminExpenseAdd.tsx, AdminExpenseDashboard.tsx, AdminExpenseHistory.tsx
+   BEFORE : Eager sub-screens; duplicate church_donations listener; render-phase Firestore delete; full ledger_donations.get() for receipt no; eager receipt HTML generation; unpaused Animated.loop; missing custom date useMemo deps; uid() regenerated every keystroke.
+   AFTER  : Lazy-loaded 6 Donation & 5 Expense sub-screens; bounded SWR caches (.limit 300/200); reused initialDonations; paused Animated.loop via useIsFocused; lazy receipt HTML & bounded receipt counter; memoized draftItems & dashboard totals; CachedImage.
+--------------------------------------------------------------------------------------------
+[8] Gallery & Bible Quiz Admin
+   Files  : AdminGalleryDashboard.tsx, AdminGalleryAlbumDetail.tsx, GalleryService.ts, AdminQuizList.tsx, AdminQuizReports.tsx, QuizService.ts
+   BEFORE : Mount+focus double fetch; sequential photo uploads/deletes (N roundtrips); cleared QuizService cache on mount; sequential QuizService.getQuizAttempts; raw <Image>.
+   AFTER  : Scoped SWR caches; tuned 2-col FlatList & viewer + CachedImage; parallelized uploadPhotosToAlbum (chunks of 4) & batched deleteAlbum; lazy QuizEditor/Reports; parallel .limit(200) QuizAttempts.
+--------------------------------------------------------------------------------------------
+[9] Comms, Care Cells, Kids, Service Planner, Pastor Events & Matrimony
+   Files  : AdminOnlineMeetings.tsx, AdminWhatsAppInbox.tsx, AdminNotificationBroadcast.tsx, AdminCareCellsHub.tsx, CareCellMapModal.tsx, AdminKidsHub.tsx, AdminServicePlanner.tsx, AdminJobCircleDashboard.tsx, AdminMinistryTeamsScreen.tsx, PastorEventDashboard.tsx, PastorEventRoutePlanner.tsx, PastorEventDetail.tsx, AIAssistantModal.tsx, AdminMatrimonyScreen.tsx, AdminMatrimonyProfileDetailScreen.tsx, AdminMatrimonyPlansModal.tsx
+   BEFORE : 1Hz clock re-rendering OnlineMeetings; duplicate attendees listener; O(G*M) WhatsApp lookup; CareCells self-loop & GPS leak; Kids startup heavy sync; sequential Distance Matrix loops; PastorEvents double fetch; O(N*M) Matrimony plans lookup.
+   AFTER  : 30s leaf MeetingLiveClock & deduped attendees; O(1) WhatsApp phone Map & bounded listeners; bounded/parallel broadcasts; fixed CareCells loop & GPS cleanup; deferred Kids write-syncs (1.5s); SWR for Planner/JobCircle/Teams/Matrimony; parallel Distance Matrix & focus cooldown; lazy PlansModal + Map lookup + CachedImage.
+--------------------------------------------------------------------------------------------
+
+============================================================================================
+SECTION 4: BACKEND JMETER LOAD TEST & BUILD/SMOKE VERIFICATION
+============================================================================================
+* HTTP: guestInviteLanding (JMeter Emulator)
+  Scope: 50 samples (5 concurrent users) | Result: 58 ms | Range: 13 / 321 ms | Status: 0.00% Error
+* Callable: getMatrimonyPlans (JMeter Emulator)
+  Scope: 50 samples (5 concurrent users) | Result: 84 ms | Range: 26 / 1,104 ms | Status: 0.00% Error
+* Callable: getMemberEntitlements (JMeter Emulator)
+  Scope: 50 samples (5 concurrent users) | Result: 386 ms | Range: 29 / 14,372 ms | Status: 0.00% Error
+* Callable: getMatrimonyStatus (JMeter Emulator)
+  Scope: 50 samples (5 concurrent users) | Result: 114 ms | Range: 48 / 577 ms | Status: 0.00% Error
+* Callable: getMatrimonyHomeSummary (JMeter Emulator)
+  Scope: 50 samples (5 concurrent users) | Result: 270 ms | Range: 76 / 3,119 ms | Status: 0.00% Error
+* JMeter Total Summary (Std. Dev. 931.81, 13.1/sec)
+  Scope: 250 total samples | Result: 182 ms avg | Range: 13 / 14,372 ms | Status: 0.00% Error
+* App TypeScript Verification (Final State)
+  Scope: tsc -p app/tsconfig.json --noEmit | Result: 0 errors | Range: N/A | Status: PASS (APP_TSC_EXIT=0)
+* Functions TypeScript Verification
+  Scope: tsc -p functions/tsconfig.json --noEmit | Result: 0 errors | Range: N/A | Status: PASS (FN_TSC_EXIT=0)
+* Android Metro Hermes Production Bundle
+  Scope: expo export --platform android --no-minify (pre-5-file Members/Celebrations follow-up) | Result: 35.4 MB .hbc bundle built | Range: N/A | Status: PASS (EXPO_EXPORT_EXIT=0)
+* Admin Babel & instantCache Runtime Smoke
+  Scope: 125 Admin files + instantCache overloads + 5 latest Members/Celebrations files | Result: 0 compile/runtime failures | Range: N/A | Status: PASS
+* Lazy require() Path & Export Audit
+  Scope: 77 dynamic require() call sites in Admin & Navigators | Result: 0 missing targets/exports | Range: N/A | Status: PASS (77/77)
+* Live Android Device Timing Capture
+  Scope: Run: npx expo start --dev-client --no-dev --minify | Result: Then run globalThis.__RHEMA_PERF_REPORT__() | Range: Cold vs Cached vs API vs Image | Status: PENDING DEVICE RUN
+
+============================================================================================
+END OF REPORT
+============================================================================================

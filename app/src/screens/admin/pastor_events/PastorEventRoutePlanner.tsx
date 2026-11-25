@@ -124,64 +124,51 @@ export const PastorEventRoutePlanner = ({ route, navigation }: { route: any; nav
     setStops(generatedStops);
 
     const calculateDistances = async () => {
-      const generatedLegs: RouteLeg[] = [];
-      
-      // Calculate distances between each consecutive stop
-      for (let i = 0; i < sortedEvents.length; i++) {
-        const destination = sortedEvents[i];
-        let originLat, originLng;
-        
+      const originPairs = sortedEvents.map((destination, i) => {
         if (i === 0) {
-          // Travel from Current Location to 1st Event
           if (currentLoc) {
-            originLat = currentLoc.lat;
-            originLng = currentLoc.lng;
-          } else {
-            originLat = destination.lat + 0.01;
-            originLng = destination.lng - 0.01;
+            return { originLat: currentLoc.lat, originLng: currentLoc.lng, destination };
           }
-        } else {
-          // Travel from Event(i-1) to Event(i)
-          originLat = sortedEvents[i - 1].lat;
-          originLng = sortedEvents[i - 1].lng;
+          return { originLat: destination.lat + 0.01, originLng: destination.lng - 0.01, destination };
         }
+        return { originLat: sortedEvents[i - 1].lat, originLng: sortedEvents[i - 1].lng, destination };
+      });
 
-        let distKm = 0;
-        let carMins = 0;
+      // Fetch all consecutive leg distances concurrently instead of serialized await-in-loop
+      const generatedLegs: RouteLeg[] = await Promise.all(
+        originPairs.map(async ({ originLat, originLng, destination }) => {
+          let distKm = 0;
+          let carMins = 0;
 
-        if (GOOGLE_KEY && originLat !== 0 && destination.lat !== 0) {
-          try {
-            const destStr = `${destination.lat},${destination.lng}`;
-            const originStr = `${originLat},${originLng}`;
-            const distResp = await fetch(
-              `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${originStr}&destinations=${destStr}&key=${GOOGLE_KEY}`
-            );
-            const distData = await distResp.json();
-            
-            if (distData.status === 'OK' && distData.rows[0].elements[0].status === 'OK') {
-              const element = distData.rows[0].elements[0];
-              distKm = element.distance.value / 1000; // meters to km
-              carMins = Math.round(element.duration.value / 60); // seconds to mins
+          if (GOOGLE_KEY && originLat !== 0 && destination.lat !== 0) {
+            try {
+              const destStr = `${destination.lat},${destination.lng}`;
+              const originStr = `${originLat},${originLng}`;
+              const distResp = await fetch(
+                `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${originStr}&destinations=${destStr}&key=${GOOGLE_KEY}`
+              );
+              const distData = await distResp.json();
+
+              if (distData.status === 'OK' && distData.rows?.[0]?.elements?.[0]?.status === 'OK') {
+                const element = distData.rows[0].elements[0];
+                distKm = element.distance.value / 1000;
+                carMins = Math.round(element.duration.value / 60);
+              }
+            } catch (err) {
+              console.warn('Distance API failed', err);
             }
-          } catch (err) {
-            console.warn('Distance API failed', err);
           }
-        }
 
-        // Apply defaults or estimates for other modes if car is 0
-        if (distKm === 0) distKm = 5.0; // fallback
-        if (carMins === 0) carMins = Math.round(distKm * 2); // rough estimate: 2 mins per km
+          if (distKm === 0) distKm = 5.0;
+          if (carMins === 0) carMins = Math.round(distKm * 2);
 
-        let duration = carMins; // car uses Google Maps time directly
-        if (mode === 'bike') duration = Math.round(carMins * 1.35); // ~70-80 km/h vs car 90-100
-        else if (mode === 'bus') duration = Math.round(carMins * 1.7); // ~50-60 km/h + stops
+          let duration = carMins;
+          if (mode === 'bike') duration = Math.round(carMins * 1.35);
+          else if (mode === 'bus') duration = Math.round(carMins * 1.7);
 
-        generatedLegs.push({
-          distKm: distKm,
-          minutes: duration,
-          mode: mode
-        });
-      }
+          return { distKm, minutes: duration, mode };
+        })
+      );
 
       setLegs(generatedLegs);
       setConflicts(detectConflicts(sortedEvents, generatedLegs));

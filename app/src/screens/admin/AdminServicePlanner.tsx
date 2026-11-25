@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo, useContext } from 'react';
+import React, { useState, useEffect, useMemo, useContext, useRef } from 'react';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../../utils/instantCache';
 import {
   View,
   Text,
@@ -179,15 +180,33 @@ export default function AdminServicePlanner({ navigation, routeParams }: any) {
   const { setActiveTab, setTabByName } = useContext(AdminTabContext);
 
   const churchId = activeChurch?.id || 'rhema';
+  const plansCacheKey = useMemo(
+    () => makeScopedCacheKey('admin_service_plans_v1', churchId, 'admin'),
+    [churchId]
+  );
+  const initialCachedPlans = useMemo(
+    () => getInstantMemory<ServicePlan[]>(plansCacheKey),
+    [plansCacheKey]
+  );
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Navigation / Tab state: 'calendar', 'builder', 'setlist', 'queue', 'attendance', 'analytics', 'teams', 'skills', 'templates'
   const [activePlannerTab, setActivePlannerTab] = useState<'calendar' | 'builder' | 'setlist' | 'queue' | 'attendance' | 'analytics' | 'teams' | 'skills' | 'templates'>('calendar');
 
   // Service Plans state
-  const [plans, setPlans] = useState<ServicePlan[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [plans, setPlans] = useState<ServicePlan[]>(() => initialCachedPlans || []);
+  const [loading, setLoading] = useState(!initialCachedPlans);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<ServicePlan | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState<ServicePlan | null>(() =>
+    initialCachedPlans && initialCachedPlans.length > 0 ? initialCachedPlans[0] : null
+  );
 
   // Church Members state
   const [churchMembers, setChurchMembers] = useState<any[]>([]);
@@ -531,27 +550,41 @@ export default function AdminServicePlanner({ navigation, routeParams }: any) {
   // ─────────────────────────────────────────────────────────────────────────────
 
   const fetchPlans = async (): Promise<ServicePlan[]> => {
-    try {
+    const mem = getInstantMemory<ServicePlan[]>(plansCacheKey);
+    if (mem && plans.length === 0) {
+      setPlans(mem);
+      setLoading(false);
+    } else if (!mem && plans.length === 0) {
       setLoading(true);
-      const data = await ServiceRosterService.getServicePlans(churchId);
-      setPlans(data);
-      if (data.length > 0) {
-        if (!selectedPlan || !data.some(p => p.id === selectedPlan.id)) {
-          setSelectedPlan(data[0]);
-        } else {
-          const fresh = data.find(p => p.id === selectedPlan.id);
-          if (fresh) setSelectedPlan(fresh);
-        }
-      } else {
-        setSelectedPlan(null);
-      }
+    }
+    try {
+      const data = await loadWithInstantCache<ServicePlan[]>(
+        plansCacheKey,
+        () => ServiceRosterService.getServicePlans(churchId),
+        (nextData) => {
+          if (!mountedRef.current) return;
+          setPlans(nextData);
+          if (nextData.length > 0) {
+            setSelectedPlan((prev) => {
+              if (!prev || !nextData.some(p => p.id === prev.id)) return nextData[0];
+              return nextData.find(p => p.id === prev.id) || nextData[0];
+            });
+          } else {
+            setSelectedPlan(null);
+          }
+          setLoading(false);
+        },
+        { ttlMs: 5 * 60 * 1000, freshSkipMs: 0 }
+      );
       return data;
     } catch (err) {
       console.error('Error loading service plans:', err);
       return [];
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (mountedRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   };
 

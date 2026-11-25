@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -25,6 +25,7 @@ import {
 import { QuizAnalyticsReport, QuizAttempt } from '../../../types/Quiz';
 import { QuizService } from '../../../services/QuizService';
 import { useChurch } from '../../../context/ChurchContext';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../../../utils/instantCache';
 import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
 
 interface Props {
@@ -35,23 +36,51 @@ interface Props {
 export default function AdminQuizReports({ quizId, onBack }: Props) {
   const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { activeChurch } = useChurch();
-  const [report, setReport] = useState<QuizAnalyticsReport | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const reportCacheKey = useMemo(
+    () => makeScopedCacheKey(`admin_quiz_report_${quizId}_v1`, activeChurch?.id || 'default', 'admin'),
+    [quizId, activeChurch?.id]
+  );
+  const initialCachedReport = useMemo(
+    () => getInstantMemory<QuizAnalyticsReport | null>(reportCacheKey),
+    [reportCacheKey]
+  );
+  const mountedRef = useRef(true);
+
+  const [report, setReport] = useState<QuizAnalyticsReport | null>(() => initialCachedReport || null);
+  const [loading, setLoading] = useState<boolean>(!initialCachedReport);
   const [selectedAttempt, setSelectedAttempt] = useState<QuizAttempt | null>(null);
 
   useEffect(() => {
-    loadAnalytics();
-  }, [quizId]);
+    mountedRef.current = true;
+    loadAnalytics(false);
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [quizId, reportCacheKey]);
 
-  const loadAnalytics = async () => {
-    try {
+  const loadAnalytics = async (forceRefresh = false) => {
+    const mem = getInstantMemory<QuizAnalyticsReport | null>(reportCacheKey);
+    if (mem && !forceRefresh) {
+      setReport(mem);
+      setLoading(false);
+    } else if (!report) {
       setLoading(true);
-      const data = await QuizService.getQuizAnalyticsReport(quizId, activeChurch?.id);
-      setReport(data);
+    }
+    try {
+      await loadWithInstantCache<QuizAnalyticsReport | null>(
+        reportCacheKey,
+        () => QuizService.getQuizAnalyticsReport(quizId, activeChurch?.id),
+        (data) => {
+          if (!mountedRef.current) return;
+          setReport(data);
+          setLoading(false);
+        },
+        { ttlMs: 10 * 60 * 1000, freshSkipMs: 0, force: forceRefresh }
+      );
     } catch (e) {
       console.error(e);
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   };
 
@@ -66,12 +95,11 @@ export default function AdminQuizReports({ quizId, onBack }: Props) {
           style: 'destructive',
           onPress: async () => {
             try {
-              setLoading(true);
-              await QuizService.deleteQuizAttempt(attempt.id, activeChurch?.id);
               if (selectedAttempt?.id === attempt.id) {
                 setSelectedAttempt(null);
               }
-              await loadAnalytics();
+              await QuizService.deleteQuizAttempt(attempt.id, activeChurch?.id);
+              await loadAnalytics(true);
             } catch {
               Alert.alert('Error', 'Failed to delete report.');
               setLoading(false);

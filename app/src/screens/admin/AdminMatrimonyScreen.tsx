@@ -1,8 +1,8 @@
-import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  Image,
+  Platform,
   RefreshControl,
   ScrollView,
   StatusBar,
@@ -26,13 +26,15 @@ import {
 } from 'lucide-react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { AdminTabContext } from '../../context/AdminTabContext';
+import { useChurch } from '../../context/ChurchContext';
 import { useAdminTheme } from '../../utils/adminThemeHelper';
+import CachedImage from '../../components/CachedImage';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../../utils/instantCache';
 import {
   AdminMatrimonyCounts,
   AdminMatrimonyProfileSummary,
   matrimonyApi,
 } from '../../modules/matrimony';
-import AdminMatrimonyPlansModal from './AdminMatrimonyPlansModal';
 
 const CORAL = '#E05A5A';
 const GREEN = '#16A34A';
@@ -53,6 +55,7 @@ const FILTER_TABS: { key: FilterTab; label: string }[] = [
 
 export default function AdminMatrimonyScreen({ navigation }: any) {
   const { goBack, setActiveTab } = useContext(AdminTabContext);
+  const { activeChurch } = useChurch();
   const isFocused = useIsFocused();
   const {
     isDark,
@@ -80,32 +83,67 @@ export default function AdminMatrimonyScreen({ navigation }: any) {
     reported: 0,
     openReports: 0,
   });
-  const [profiles, setProfiles] = useState<AdminMatrimonyProfileSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [profiles, setProfiles] = useState<AdminMatrimonyProfileSummary[]>(() => {
+    const cached = getInstantMemory<any>(makeScopedCacheKey('admin_matrimony_v1', activeChurch?.id || 'default', 'admin', 'all'));
+    return cached?.profiles || [];
+  });
+  const [loading, setLoading] = useState(() => !getInstantMemory<any>(makeScopedCacheKey('admin_matrimony_v1', activeChurch?.id || 'default', 'admin', 'all')));
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [plansModalVisible, setPlansModalVisible] = useState(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const fetchProfiles = useCallback(
     async (targetFilter: FilterTab, silent = false, search?: string) => {
-      if (!silent) setLoading(true);
+      const cacheKey = makeScopedCacheKey(
+        'admin_matrimony_v1',
+        activeChurch?.id || 'default',
+        'admin',
+        search ? `${targetFilter}_${search}` : targetFilter
+      );
+      const mem = getInstantMemory<{ counts?: AdminMatrimonyCounts; profiles: AdminMatrimonyProfileSummary[] }>(cacheKey);
+      if (mem) {
+        if (mem.counts) setCounts(mem.counts);
+        setProfiles(mem.profiles || []);
+        setLoading(false);
+      } else if (!silent) {
+        setLoading(true);
+      }
       setErrorMsg(null);
       try {
-        const res = await matrimonyApi.getAdminProfiles(targetFilter, search);
-        if (res.counts) {
-          setCounts(res.counts);
-        }
-        setProfiles(res.profiles || []);
+        await loadWithInstantCache(
+          cacheKey,
+          async () => {
+            const res = await matrimonyApi.getAdminProfiles(targetFilter, search);
+            return { counts: res.counts, profiles: res.profiles || [] };
+          },
+          (payload) => {
+            if (!mountedRef.current) return;
+            if (payload.counts) setCounts(payload.counts);
+            setProfiles(payload.profiles || []);
+            setLoading(false);
+          },
+          { ttlMs: 5 * 60 * 1000, freshSkipMs: 0 }
+        );
       } catch (err: any) {
         console.warn('AdminMatrimony fetch error:', err);
-        setErrorMsg(err?.message || 'Unable to load Rhema Matrimony profiles.');
+        if (mountedRef.current) setErrorMsg(err?.message || 'Unable to load Rhema Matrimony profiles.');
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (mountedRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     },
-    []
+    [activeChurch?.id]
   );
 
   useEffect(() => {
@@ -231,7 +269,7 @@ export default function AdminMatrimonyScreen({ navigation }: any) {
         <View style={styles.cardTopRow}>
           <View style={styles.avatarCol}>
             {photoUrl ? (
-              <Image source={{ uri: photoUrl }} style={styles.avatar} resizeMode="cover" />
+              <CachedImage uri={photoUrl} style={styles.avatar} resizeMode="cover" />
             ) : (
               <View style={[styles.avatarPlaceholder, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
                 <User size={26} color={secondaryText} />
@@ -511,6 +549,10 @@ export default function AdminMatrimonyScreen({ navigation }: any) {
           keyExtractor={(item) => item.uid}
           renderItem={renderProfileCard}
           contentContainerStyle={styles.listContent}
+          initialNumToRender={10}
+          maxToRenderPerBatch={8}
+          windowSize={7}
+          removeClippedSubviews={Platform.OS === 'android'}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -535,11 +577,16 @@ export default function AdminMatrimonyScreen({ navigation }: any) {
         />
       )}
 
-      <AdminMatrimonyPlansModal
-        visible={plansModalVisible}
-        onClose={() => setPlansModalVisible(false)}
-        profiles={profiles}
-      />
+      {plansModalVisible && (() => {
+        const AdminMatrimonyPlansModal = require('./AdminMatrimonyPlansModal').default;
+        return (
+          <AdminMatrimonyPlansModal
+            visible={plansModalVisible}
+            onClose={() => setPlansModalVisible(false)}
+            profiles={profiles}
+          />
+        );
+      })()}
     </View>
   );
 }

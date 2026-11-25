@@ -1,15 +1,15 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { 
-  StyleSheet, View, Text, ScrollView, TouchableOpacity, 
+import {
+  StyleSheet, View, Text, ScrollView, TouchableOpacity,
   TextInput, Modal, Platform, KeyboardAvoidingView, Alert, Image
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { 
-  CalendarDays, Receipt, PlusCircle, Trash2, Check, 
+import {
+  CalendarDays, Receipt, PlusCircle, Trash2, Check,
   ChevronLeft, Plus
 } from 'lucide-react-native';
-import { 
-  fmt, todayISO, uid, CATEGORY_CONFIG, 
+import {
+  fmt, todayISO, uid, CATEGORY_CONFIG,
   DEFAULT_CATEGORY_CFG, CATEGORY_NAMES, PAYMENT_METHODS,
   getCategoryIconComponent, formatDateToDDMMYYYY, parseDDMMYYYYToISO
 } from './AdminExpenseUtils';
@@ -118,7 +118,7 @@ export default function AdminExpenseAdd({ onSave, suggestedEvents, suggestedCate
 
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [draftValues, setDraftValues] = useState<any>({});
-  
+
   const [expenseType, setExpenseType] = useState("normal");
   const [eventName, setEventName] = useState("");
   const [eventPickerOpen, setEventPickerOpen] = useState(false);
@@ -134,26 +134,26 @@ export default function AdminExpenseAdd({ onSave, suggestedEvents, suggestedCate
       setNotes(initialExpense.notes || "");
       setReceiptName(initialExpense.receiptName || "");
       setReceiptUri(initialExpense.receiptUri || null);
-      
+
       const cats = Array.from(new Set(initialExpense.items.map((i: any) => i.category))) as string[];
       setSelectedCategories(cats);
-      
+
       const drafts: any = {};
       initialExpense.items.forEach((i: any) => {
         if (!drafts[i.category]) drafts[i.category] = [];
-        
+
         let qty = i.qty ? String(i.qty) : "";
         let rate = i.rate ? String(i.rate) : "";
         let flatAmt = i.flatAmt ? String(i.flatAmt) : (i.amount ? String(i.amount) : "");
         let empName = i.empName || "";
-        
+
         const cfg = getCfg(i.category);
-        
+
         if (cfg.type === "qty" && !qty && !rate && i.amount) {
           qty = "1";
           rate = String(i.amount);
         }
-        
+
         if (!empName && i.detail) {
           const match = i.detail.match(/^(.*?)\s*\(.*?\)$/);
           if (match) {
@@ -164,12 +164,12 @@ export default function AdminExpenseAdd({ onSave, suggestedEvents, suggestedCate
             empName = i.detail;
           }
         }
-        
+
         let rowVendor = i.vendor || "";
         drafts[i.category].push({ qty, rate, flatAmt, empName, vendor: rowVendor });
       });
       setDraftValues(drafts);
-      
+
       if (initialExpense.eventName) {
         setExpenseType("event");
         setEventName(initialExpense.eventName);
@@ -178,7 +178,7 @@ export default function AdminExpenseAdd({ onSave, suggestedEvents, suggestedCate
         setEventName("");
       }
     }
-    
+
     AsyncStorage.getItem('custom_categories').then(val => {
       if (val) setLocalCategories(JSON.parse(val));
     }).catch(console.error);
@@ -250,29 +250,40 @@ export default function AdminExpenseAdd({ onSave, suggestedEvents, suggestedCate
     setNewEventInput("");
   };
 
-  const batchTotal = selectedCategories.reduce((s, name) => s + getComputedAmount(name), 0);
-
-  const getDraftItems = () => {
+  const draftItems = useMemo(() => {
     return selectedCategories.flatMap(name => {
       const cfg = getCfg(name);
-      return getDrafts(name).map((d: any) => {
+      return getDrafts(name).map((d: any, idx: number) => {
         const amount = cfg.type === "qty" ? (Number(d.qty) || 0) * (Number(d.rate) || 0) : Number(d.flatAmt) || 0;
         if (amount <= 0) return null;
         let detail;
         if (cfg.type === "qty") detail = d.empName ? `${d.empName} (${d.qty} ${cfg.qtyLabel} \u00d7 ${fmt(d.rate)})` : `${d.qty} ${cfg.qtyLabel} \u00d7 ${fmt(d.rate)}`;
         else if (cfg.type === "named") detail = d.empName || cfg.amountLabel;
         else detail = cfg.amountLabel;
-        return { id: uid(), category: name, detail, amount, qty: d.qty, rate: d.rate, flatAmt: d.flatAmt, empName: d.empName || "", vendor: d.vendor || "" };
+        return { id: `draft_${name}_${idx}`, category: name, detail, amount, qty: d.qty, rate: d.rate, flatAmt: d.flatAmt, empName: d.empName || "", vendor: d.vendor || "" };
       }).filter(Boolean);
     });
-  };
+  }, [selectedCategories, draftValues, localCategories]);
 
-  const total = items.reduce((s, i) => s + Number(i.amount), 0) + getDraftItems().reduce((s, i: any) => s + Number(i.amount), 0);
+  const batchTotal = useMemo(
+    () => draftItems.reduce((s: number, i: any) => s + Number(i.amount || 0), 0),
+    [draftItems]
+  );
+
+  const displayItems = useMemo(() => [...items, ...draftItems], [items, draftItems]);
+
+  const total = useMemo(
+    () => items.reduce((s, i) => s + Number(i.amount), 0) + batchTotal,
+    [items, batchTotal]
+  );
 
   const handleSave = async () => {
-    const finalItems = [...items, ...getDraftItems()];
+    const finalItems = [
+      ...items,
+      ...draftItems.map((d: any) => ({ ...d, id: uid() })),
+    ];
     if (finalItems.length === 0) return;
-    
+
     setIsSaving(true);
     await onSave({
       id: initialExpense?.id || uid(),
@@ -291,7 +302,6 @@ export default function AdminExpenseAdd({ onSave, suggestedEvents, suggestedCate
     });
     setIsSaving(false);
   };
-  const displayItems = [...items, ...getDraftItems()];
 
   return (
     <KeyboardAvoidingView style={[styles.container, { backgroundColor: screenBg }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -317,7 +327,7 @@ export default function AdminExpenseAdd({ onSave, suggestedEvents, suggestedCate
               <Text style={[styles.modalSub, { color: secondaryText }]}>
                 Are you sure you want to delete '{deleteCategoryTarget}'? This action cannot be undone.
               </Text>
-              
+
               <View style={styles.modalBtnRow}>
                 <TouchableOpacity
                   style={[styles.modalBtnCancel, { backgroundColor: secondarySurface }]}
@@ -344,7 +354,7 @@ export default function AdminExpenseAdd({ onSave, suggestedEvents, suggestedCate
       )}
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        
+
         {/* Top Details Card */}
         <View style={[styles.ledgerCard, { backgroundColor: cardSurface, borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : borderColor }]}>
           <Text style={[styles.fieldLabelStandalone, { color: secondaryText }]}>Expense Date</Text>
@@ -358,23 +368,23 @@ export default function AdminExpenseAdd({ onSave, suggestedEvents, suggestedCate
 
           <Text style={[styles.fieldLabelStandalone, { color: secondaryText, marginTop: 14 }]}>Expense Type</Text>
           <View style={[styles.chipRow, { marginBottom: expenseType === "event" ? 12 : 0 }]}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[
                 styles.chip,
                 { backgroundColor: secondarySurface, borderColor },
                 expenseType === "normal" && { backgroundColor: '#10B981', borderColor: '#10B981' }
-              ]} 
+              ]}
               onPress={() => setExpenseType("normal")}
             >
               <Receipt size={14} color={expenseType === "normal" ? "#fff" : primaryText} />
               <Text style={[styles.chipText, { color: expenseType === "normal" ? '#fff' : primaryText }]}>Normal Expense</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[
                 styles.chip,
                 { backgroundColor: secondarySurface, borderColor },
                 expenseType === "event" && { backgroundColor: '#10B981', borderColor: '#10B981' }
-              ]} 
+              ]}
               onPress={() => setExpenseType("event")}
             >
               <CalendarDays size={14} color={expenseType === "event" ? "#fff" : primaryText} />
@@ -435,7 +445,7 @@ export default function AdminExpenseAdd({ onSave, suggestedEvents, suggestedCate
                     return (
                       <View key={index} style={{ marginBottom: index < getDrafts(name).length - 1 ? 20 : 0 }}>
                         {index > 0 && <View style={[styles.rowDivider, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : borderColor }]} />}
-                        
+
                         {cfg.type === "qty" && (
                           <View style={styles.calcStack}>
                             {(name === 'Vegetables' || name === 'Groceries' || name === 'Snacks') && (
@@ -460,7 +470,7 @@ export default function AdminExpenseAdd({ onSave, suggestedEvents, suggestedCate
                               placeholder="0"
                               placeholderTextColor={secondaryText}
                             />
-                            
+
                             <Text style={[styles.fieldLabelStandalone, { color: secondaryText, marginTop: 10 }]}>{cfg.rateLabel}</Text>
                             <TextInput
                               style={[styles.input, { backgroundColor: secondarySurface, borderColor, color: primaryText }]}
@@ -470,7 +480,7 @@ export default function AdminExpenseAdd({ onSave, suggestedEvents, suggestedCate
                               placeholder="0"
                               placeholderTextColor={secondaryText}
                             />
-                            
+
                             <Text style={[styles.fieldLabelStandalone, { color: secondaryText, marginTop: 10 }]}>Vendor / Shop (Optional)</Text>
                             <TextInput
                               style={[styles.input, { backgroundColor: secondarySurface, borderColor, color: primaryText }]}
@@ -479,14 +489,14 @@ export default function AdminExpenseAdd({ onSave, suggestedEvents, suggestedCate
                               placeholder="e.g. Local Shop"
                               placeholderTextColor={secondaryText}
                             />
-                            
+
                             <View style={[styles.calcResultRow, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F8FAFC', borderColor }]}>
                               <Text style={[styles.calcResultLabel, { color: secondaryText }]}>AMOUNT</Text>
                               <Text style={[styles.calcResultAmt, { color: '#10B981' }]}>{fmt(rowAmt)}</Text>
                             </View>
                           </View>
                         )}
-                        
+
                         {cfg.type === "named" && (
                           <View style={styles.calcStack}>
                             <Text style={[styles.fieldLabelStandalone, { color: secondaryText }]}>{cfg.nameLabel}</Text>
@@ -497,7 +507,7 @@ export default function AdminExpenseAdd({ onSave, suggestedEvents, suggestedCate
                               placeholder="Name"
                               placeholderTextColor={secondaryText}
                             />
-                            
+
                             <Text style={[styles.fieldLabelStandalone, { color: secondaryText, marginTop: 10 }]}>{cfg.amountLabel}</Text>
                             <TextInput
                               style={[styles.input, { backgroundColor: secondarySurface, borderColor, color: primaryText }]}
@@ -507,7 +517,7 @@ export default function AdminExpenseAdd({ onSave, suggestedEvents, suggestedCate
                               placeholder="0"
                               placeholderTextColor={secondaryText}
                             />
-                            
+
                             <Text style={[styles.fieldLabelStandalone, { color: secondaryText, marginTop: 10 }]}>Vendor / Shop (Optional)</Text>
                             <TextInput
                               style={[styles.input, { backgroundColor: secondarySurface, borderColor, color: primaryText }]}
@@ -516,14 +526,14 @@ export default function AdminExpenseAdd({ onSave, suggestedEvents, suggestedCate
                               placeholder="e.g. Local Shop"
                               placeholderTextColor={secondaryText}
                             />
-                            
+
                             <View style={[styles.calcResultRow, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F8FAFC', borderColor }]}>
                               <Text style={[styles.calcResultLabel, { color: secondaryText }]}>AMOUNT</Text>
                               <Text style={[styles.calcResultAmt, { color: '#10B981' }]}>{fmt(rowAmt)}</Text>
                             </View>
                           </View>
                         )}
-                        
+
                         {cfg.type === "flat" && (
                           <View style={styles.calcStack}>
                             <Text style={[styles.fieldLabelStandalone, { color: secondaryText }]}>{cfg.amountLabel}</Text>
@@ -535,7 +545,7 @@ export default function AdminExpenseAdd({ onSave, suggestedEvents, suggestedCate
                               placeholder="0"
                               placeholderTextColor={secondaryText}
                             />
-                            
+
                             <Text style={[styles.fieldLabelStandalone, { color: secondaryText, marginTop: 10 }]}>Vendor / Shop (Optional)</Text>
                             <TextInput
                               style={[styles.input, { backgroundColor: secondarySurface, borderColor, color: primaryText }]}
@@ -606,13 +616,13 @@ export default function AdminExpenseAdd({ onSave, suggestedEvents, suggestedCate
                 {PAYMENT_METHODS.map(p => {
                   const active = paymentMethod === p.id;
                   return (
-                    <TouchableOpacity 
-                      key={p.id} 
+                    <TouchableOpacity
+                      key={p.id}
                       style={[
                         styles.chip,
                         { backgroundColor: secondarySurface, borderColor },
                         active && { backgroundColor: '#10B981', borderColor: '#10B981' }
-                      ]} 
+                      ]}
                       onPress={() => setPaymentMethod(p.id)}
                     >
                       <p.icon size={14} color={active ? "#fff" : primaryText} strokeWidth={2} />
@@ -680,15 +690,15 @@ export default function AdminExpenseAdd({ onSave, suggestedEvents, suggestedCate
               const active = selectedCategories.includes(name);
               const CatIcon = getCategoryIconComponent(name);
               return (
-                <TouchableOpacity 
-                  key={name} 
+                <TouchableOpacity
+                  key={name}
                   style={[
                     styles.categoryChip,
                     {
                       backgroundColor: active ? '#10B981' : secondarySurface,
                       borderColor: active ? '#10B981' : borderColor
                     }
-                  ]} 
+                  ]}
                   onPress={() => toggleCategory(name)}
                   onLongPress={() => {
                     if (localCategories.includes(name)) {
@@ -786,7 +796,7 @@ export default function AdminExpenseAdd({ onSave, suggestedEvents, suggestedCate
               </TouchableOpacity>
             </View>
           </View>
-          
+
           <View style={[styles.rowDivider, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : borderColor, marginVertical: 20 }]} />
           <Text style={[styles.fieldLabelStandalone, { color: secondaryText, marginBottom: 10 }]}>Categories</Text>
           <View style={styles.categoryGrid}>
@@ -794,15 +804,15 @@ export default function AdminExpenseAdd({ onSave, suggestedEvents, suggestedCate
               const active = selectedCategories.includes(name);
               const CatIcon = getCategoryIconComponent(name);
               return (
-                <TouchableOpacity 
-                  key={name} 
+                <TouchableOpacity
+                  key={name}
                   style={[
                     styles.categoryChip,
                     {
                       backgroundColor: active ? '#10B981' : secondarySurface,
                       borderColor: active ? '#10B981' : borderColor
                     }
-                  ]} 
+                  ]}
                   onPress={() => toggleCategory(name)}
                   onLongPress={() => {
                     if (localCategories.includes(name)) {

@@ -155,9 +155,12 @@ export default function AdminExpenseHistory({
       }
       return true;
     }).sort((a: any, b: any) => (a.date < b.date ? 1 : -1));
-  }, [expenses, range, category, method, eventFilter, q]);
+  }, [expenses, range, customStart, customEnd, category, method, eventFilter, q]);
 
-  const filteredTotal = filtered.reduce((s: number, e: any) => s + e.items.reduce((s2: number, i: any) => s2 + Number(i.amount), 0), 0);
+  const filteredTotal = useMemo(
+    () => filtered.reduce((s: number, e: any) => s + e.items.reduce((s2: number, i: any) => s2 + Number(i.amount), 0), 0),
+    [filtered]
+  );
   const activeFilterCount = (range !== "all" ? 1 : 0) + (category !== "all" ? 1 : 0) + (method !== "all" ? 1 : 0) + (eventFilter !== "all" ? 1 : 0);
 
   const eventGroups = useMemo(() => {

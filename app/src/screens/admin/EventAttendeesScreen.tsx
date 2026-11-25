@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { 
-  StyleSheet, 
-  View, 
-  Text, 
-  FlatList, 
-  TouchableOpacity, 
+import {
+  StyleSheet,
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
   ActivityIndicator,
   Dimensions,
   StatusBar,
@@ -15,7 +15,7 @@ import {
   ToastAndroid,
   Image
 } from 'react-native';
-import { 
+import {
   ArrowLeft,
   Search,
   Download,
@@ -32,6 +32,13 @@ import AttendanceService, { AttendanceRecord } from '../../services/AttendanceSe
 import { useChurch } from '../../context/ChurchContext';
 import firestore from '@react-native-firebase/firestore';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
+import { CachedImage } from '../../components/CachedImage';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  readInstantCache,
+  writeInstantCache,
+} from '../../utils/instantCache';
 
 const { width } = Dimensions.get('window');
 
@@ -54,22 +61,76 @@ export default function EventAttendeesScreen({ navigation, route }: any) {
   const churchId = activeChurch?.id || routeChurchId || '';
   const churchName = activeChurch?.name || route.params?.churchName || 'Church';
   const churchCode = activeChurch?.churchCode || '';
-  
-  const [loading, setLoading] = useState(true);
+  const attendeesCacheKey = useMemo(
+    () => makeScopedCacheKey('admin_event_attendees_v1', churchId, eventId || 'event'),
+    [churchId, eventId]
+  );
+  const initialCache = useMemo(
+    () =>
+      getInstantMemory<{
+        allMembers: UnifiedMember[];
+        presentCount: number;
+        absentCount: number;
+        userPhotos: Record<string, string>;
+      }>(attendeesCacheKey),
+    [attendeesCacheKey]
+  );
+
+  const [loading, setLoading] = useState(!initialCache);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterType>('Present');
   const [showQRModal, setShowQRModal] = useState(false);
   const qrRef = useRef<any>(null);
-  
-  const [allMembers, setAllMembers] = useState<UnifiedMember[]>([]);
-  const [presentCount, setPresentCount] = useState(0);
-  const [absentCount, setAbsentCount] = useState(0);
-  const [userPhotos, setUserPhotos] = useState<Record<string, string>>({});
+
+  const [allMembers, setAllMembers] = useState<UnifiedMember[]>(initialCache?.allMembers || []);
+  const [presentCount, setPresentCount] = useState(initialCache?.presentCount || 0);
+  const [absentCount, setAbsentCount] = useState(initialCache?.absentCount || 0);
+  const [userPhotos, setUserPhotos] = useState<Record<string, string>>(initialCache?.userPhotos || {});
+  const photosMapRef = useRef<Record<string, string> | null>(initialCache?.userPhotos || null);
+  const churchMembersRef = useRef<any[] | null>(null);
+  const hasLoadedRef = useRef(Boolean(initialCache));
 
   useEffect(() => {
-    fetchData();
+    let active = true;
+    photosMapRef.current = null;
+    churchMembersRef.current = null;
+    hasLoadedRef.current = Boolean(getInstantMemory(attendeesCacheKey));
 
-    if (!churchId || !eventId) return;
+    const mem = getInstantMemory<{
+      allMembers: UnifiedMember[];
+      presentCount: number;
+      absentCount: number;
+      userPhotos: Record<string, string>;
+    }>(attendeesCacheKey);
+    if (mem) {
+      setAllMembers(mem.allMembers || []);
+      setPresentCount(mem.presentCount || 0);
+      setAbsentCount(mem.absentCount || 0);
+      setUserPhotos(mem.userPhotos || {});
+      setLoading(false);
+    } else {
+      readInstantCache<{
+        allMembers: UnifiedMember[];
+        presentCount: number;
+        absentCount: number;
+        userPhotos: Record<string, string>;
+      }>(attendeesCacheKey).then((cached) => {
+        if (!active || !cached?.data) return;
+        hasLoadedRef.current = true;
+        setAllMembers(cached.data.allMembers || []);
+        setPresentCount(cached.data.presentCount || 0);
+        setAbsentCount(cached.data.absentCount || 0);
+        setUserPhotos(cached.data.userPhotos || {});
+        setLoading(false);
+      });
+    }
+
+    if (!churchId || !eventId) {
+      fetchData();
+      return () => {
+        active = false;
+      };
+    }
 
     const unsub = firestore()
       .collection('Rhema Church')
@@ -78,13 +139,16 @@ export default function EventAttendeesScreen({ navigation, route }: any) {
       .doc(eventId)
       .collection('attendees')
       .onSnapshot(() => {
-        fetchData();
+        if (active) fetchData();
       }, (err) => {
         console.warn('[EventAttendees] Realtime listener error:', err?.message);
       });
 
-    return () => unsub();
-  }, [eventId, churchId]);
+    return () => {
+      active = false;
+      unsub();
+    };
+  }, [eventId, churchId, attendeesCacheKey]);
 
   const fetchUserPhotos = async (): Promise<Record<string, string>> => {
     try {
@@ -110,20 +174,28 @@ export default function EventAttendeesScreen({ navigation, route }: any) {
     }
   };
 
-  const fetchData = async () => {
+  const fetchData = async (forceReloadMembers = false) => {
     if (!churchId) {
       setLoading(false);
       return;
     }
 
-    setLoading(true);
+    if (!hasLoadedRef.current && allMembers.length === 0) {
+      setLoading(true);
+    }
     try {
-      // Fetch photos and multi-church data in parallel
+      // Reuse cached member roster/photos across live attendee snapshots
       const [photosMap, attendees, churchMembers] = await Promise.all([
-        fetchUserPhotos(),
+        !forceReloadMembers && photosMapRef.current
+          ? Promise.resolve(photosMapRef.current)
+          : fetchUserPhotos(),
         AttendanceService.getEventAttendees(churchId, eventId),
-        AttendanceService.getChurchMembers(churchId)
+        !forceReloadMembers && churchMembersRef.current
+          ? Promise.resolve(churchMembersRef.current)
+          : AttendanceService.getChurchMembers(churchId),
       ]);
+      photosMapRef.current = photosMap;
+      churchMembersRef.current = churchMembers;
 
       const attendedMap = new Map<string, any>();
       attendees.forEach(a => {
@@ -143,7 +215,7 @@ export default function EventAttendeesScreen({ navigation, route }: any) {
           const cleanPhone = String(phoneToUse).replace(/\D/g, '').slice(-10);
           photoUrl = photosMap[cleanPhone];
         }
-        
+
         const mId = m.id || m.Id;
         if (mId) {
           unifiedMap.set(mId, {
@@ -171,22 +243,31 @@ export default function EventAttendeesScreen({ navigation, route }: any) {
       });
 
       const unifiedList = Array.from(unifiedMap.values());
-      
+
       // Sort: Present first (sorted by time desc), then Absent (sorted by name)
       unifiedList.sort((a, b) => {
         if (a.status === 'Present' && b.status === 'Present') {
-           const timeA = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp || 0).getTime();
-           const timeB = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp || 0).getTime();
-           return timeB - timeA;
+          const timeA = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp || 0).getTime();
+          const timeB = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp || 0).getTime();
+          return timeB - timeA;
         }
         if (a.status === 'Present') return -1;
         if (b.status === 'Present') return 1;
         return a.name.localeCompare(b.name);
       });
 
+      const nextPresentCount = unifiedList.filter(m => m.status === 'Present').length;
+      const nextAbsentCount = unifiedList.filter(m => m.status === 'Absent').length;
+      hasLoadedRef.current = true;
       setAllMembers(unifiedList);
-      setPresentCount(unifiedList.filter(m => m.status === 'Present').length);
-      setAbsentCount(unifiedList.filter(m => m.status === 'Absent').length);
+      setPresentCount(nextPresentCount);
+      setAbsentCount(nextAbsentCount);
+      writeInstantCache(attendeesCacheKey, {
+        allMembers: unifiedList,
+        presentCount: nextPresentCount,
+        absentCount: nextAbsentCount,
+        userPhotos: photosMap,
+      }).catch(() => { });
 
     } catch (error) {
       console.error('[EventAttendees] Error fetching event data:', error);
@@ -197,15 +278,15 @@ export default function EventAttendeesScreen({ navigation, route }: any) {
 
   const displayList = useMemo(() => {
     let filtered = allMembers;
-    
+
     if (activeFilter === 'Present') filtered = filtered.filter(m => m.status === 'Present');
     if (activeFilter === 'Absent') filtered = filtered.filter(m => m.status === 'Absent');
-    
+
     if (searchQuery.trim().length > 0) {
       const q = searchQuery.toLowerCase();
       filtered = filtered.filter(m => m.name.toLowerCase().includes(q));
     }
-    
+
     return filtered;
   }, [allMembers, activeFilter, searchQuery]);
 
@@ -250,9 +331,9 @@ export default function EventAttendeesScreen({ navigation, route }: any) {
           await FileSystem.writeAsStringAsync(filepath, data, {
             encoding: FileSystem.EncodingType.Base64,
           });
-          
+
           await MediaLibrary.saveToLibraryAsync(filepath);
-          
+
           if (Platform.OS === 'android') {
             ToastAndroid.show('QR Code saved to gallery', ToastAndroid.SHORT);
           } else {
@@ -274,7 +355,7 @@ export default function EventAttendeesScreen({ navigation, route }: any) {
           await FileSystem.writeAsStringAsync(filepath, data, {
             encoding: FileSystem.EncodingType.Base64,
           });
-          
+
           if (await Sharing.isAvailableAsync()) {
             await Sharing.shareAsync(filepath, {
               mimeType: 'image/png',
@@ -304,11 +385,11 @@ export default function EventAttendeesScreen({ navigation, route }: any) {
   const renderItem = ({ item }: { item: UnifiedMember }) => {
     const avatar = getAvatarColor(item.name);
     const photoUrl = item.profilePicture || userPhotos[item.id];
-    
+
     return (
       <View style={styles.attendeeCard}>
         {photoUrl ? (
-          <Image source={{ uri: photoUrl }} style={styles.avatarImage} />
+          <CachedImage source={{ uri: photoUrl }} style={styles.avatarImage} resizeMode="cover" />
         ) : (
           <View style={[styles.avatar, { backgroundColor: avatar.bg }]}>
             <Text style={[styles.avatarText, { color: avatar.text }]}>{getInitials(item.name)}</Text>
@@ -321,11 +402,11 @@ export default function EventAttendeesScreen({ navigation, route }: any) {
           )}
         </View>
         <View style={[
-          styles.badge, 
+          styles.badge,
           { backgroundColor: item.status === 'Present' ? '#dcfce7' : '#f1f5f9' }
         ]}>
           <Text style={[
-            styles.badgeText, 
+            styles.badgeText,
             { color: item.status === 'Present' ? '#16a34a' : '#64748b' }
           ]}>{item.status}</Text>
         </View>
@@ -336,14 +417,14 @@ export default function EventAttendeesScreen({ navigation, route }: any) {
   return (
     <View style={[styles.container, { backgroundColor: screenBg }]}>
       <StatusBar barStyle={barStyle} backgroundColor="transparent" translucent />
-      
+
       {/* ── Page Header ── */}
       <View style={[styles.header, { backgroundColor: screenBg, borderBottomWidth: 1.2, borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1' }]}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
             <ArrowLeft size={22} color={primaryText} />
           </TouchableOpacity>
-          
+
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 }}>
             <Text style={[styles.headerTitle, { color: primaryText, textAlign: 'center' }]} numberOfLines={1} adjustsFontSizeToFit>{eventName || 'Event Attendees'}</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 2 }}>
@@ -356,10 +437,10 @@ export default function EventAttendeesScreen({ navigation, route }: any) {
               ) : null}
             </View>
           </View>
-          
+
           <View style={{ flexDirection: 'row', gap: 12 }}>
-            <TouchableOpacity 
-              style={[styles.iconBtn, { backgroundColor: cardSurface, borderColor: adminBorderColor }]} 
+            <TouchableOpacity
+              style={[styles.iconBtn, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}
               onPress={() => setShowQRModal(true)}
               accessibilityLabel="Show QR Code"
             >
@@ -373,7 +454,7 @@ export default function EventAttendeesScreen({ navigation, route }: any) {
       <Modal visible={showQRModal} transparent={true} animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            
+
             <View style={styles.modalHeaderRow}>
               <View style={{ flex: 1, paddingRight: 8 }}>
                 <Text style={styles.modalTitle}>Scan for Attendance</Text>
@@ -386,10 +467,10 @@ export default function EventAttendeesScreen({ navigation, route }: any) {
                 <X size={24} color="#64748b" />
               </TouchableOpacity>
             </View>
-            
+
             {/* Branded QR Container */}
             <View style={styles.qrContainer}>
-              <QRCode 
+              <QRCode
                 getRef={(c) => (qrRef.current = c)}
                 value={qrCodeValue}
                 size={220}
@@ -401,18 +482,18 @@ export default function EventAttendeesScreen({ navigation, route }: any) {
             <Text style={styles.qrInstructions}>
               Members scan this code with the Rhema app to mark attendance for this church.
             </Text>
-            
+
             <View style={{ flexDirection: 'row', gap: 16, marginTop: 12 }}>
-              <TouchableOpacity 
-                style={styles.modalActionIconBtn} 
+              <TouchableOpacity
+                style={styles.modalActionIconBtn}
                 onPress={handleDownloadQR}
                 accessibilityLabel="Save QR to Gallery"
               >
                 <Download size={24} color="#1e293b" />
               </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.modalActionIconBtn} 
+
+              <TouchableOpacity
+                style={styles.modalActionIconBtn}
                 onPress={handleShareQR}
                 accessibilityLabel="Share QR Code"
               >
@@ -444,10 +525,10 @@ export default function EventAttendeesScreen({ navigation, route }: any) {
           if (f === 'All') countStr = ` ${allMembers.length}`;
           if (f === 'Present') countStr = ` ${presentCount}`;
           if (f === 'Absent') countStr = ` ${absentCount}`;
-          
+
           return (
-            <TouchableOpacity 
-              key={f} 
+            <TouchableOpacity
+              key={f}
               style={[styles.pill, activeFilter === f && styles.pillActive]}
               onPress={() => setActiveFilter(f)}
             >
@@ -458,7 +539,7 @@ export default function EventAttendeesScreen({ navigation, route }: any) {
           );
         })}
       </View>
-      
+
       {/* ── List ── */}
       {loading ? (
         <View style={styles.loader}>
@@ -529,7 +610,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#ffffff'
   },
-  
+
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.65)',
@@ -654,7 +735,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   },
 
   listContainer: { paddingBottom: 40, paddingHorizontal: 24 },
-  
+
   attendeeCard: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -17,38 +17,42 @@ export default function AdminDonationsList({ donations = [], onNavigate }: any) 
   const [dateFilter, setDateFilter] = useState('All');
   const [showPdfModal, setShowPdfModal] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  
+
   const { user, member } = useAuth();
   const authorizerName = member?.name || user?.displayName || user?.email || 'Authorized Administrator';
 
   const dateOpts = ["All", "Today", "This Week", "This Month", "This Year"];
 
-  const filteredList = donations.filter((d: any) => {
-    const q = searchQuery.toLowerCase();
-    const matchQ = !q || (d.name?.toLowerCase() || '').includes(q) || (d.id?.toLowerCase() || '').includes(q) || (d.ref?.toLowerCase() || '').includes(q);
-    
-    let matchDate = true;
-    if (d.date && dateFilter !== 'All') {
-      const dt = new Date(d.date);
-      const today = new Date();
-      if (dateFilter === "Today") matchDate = dt.toDateString() === today.toDateString();
-      if (dateFilter === "This Week") {
-        const startWeek = new Date(today);
-        startWeek.setDate(today.getDate() - today.getDay());
-        matchDate = dt >= startWeek;
-      }
-      if (dateFilter === "This Month") matchDate = dt >= new Date(today.getFullYear(), today.getMonth(), 1);
-      if (dateFilter === "This Year") matchDate = dt >= new Date(today.getFullYear(), 0, 1);
-    }
-    
-    // Hide corrupt literal template string IDs
-    const isCorrupt = d.id?.includes('${');
-    if (isCorrupt) {
-      db.collection('ledger_donations').doc(d.id).delete().catch(console.error);
-    }
+  const filteredList = React.useMemo(
+    () =>
+      donations.filter((d: any) => {
+        const isCorrupt = d.id?.includes('${');
+        if (isCorrupt) return false;
+        const q = searchQuery.toLowerCase();
+        const matchQ =
+          !q ||
+          (d.name?.toLowerCase() || '').includes(q) ||
+          (d.id?.toLowerCase() || '').includes(q) ||
+          (d.ref?.toLowerCase() || '').includes(q);
 
-    return matchQ && matchDate && !isCorrupt;
-  });
+        let matchDate = true;
+        if (d.date && dateFilter !== 'All') {
+          const dt = new Date(d.date);
+          const today = new Date();
+          if (dateFilter === 'Today') matchDate = dt.toDateString() === today.toDateString();
+          if (dateFilter === 'This Week') {
+            const startWeek = new Date(today);
+            startWeek.setDate(today.getDate() - today.getDay());
+            matchDate = dt >= startWeek;
+          }
+          if (dateFilter === 'This Month') matchDate = dt >= new Date(today.getFullYear(), today.getMonth(), 1);
+          if (dateFilter === 'This Year') matchDate = dt >= new Date(today.getFullYear(), 0, 1);
+        }
+
+        return matchQ && matchDate;
+      }),
+    [donations, searchQuery, dateFilter]
+  );
 
   const handleLongPress = (id: string) => {
     const newSet = new Set(selectedIds);
@@ -68,8 +72,8 @@ export default function AdminDonationsList({ donations = [], onNavigate }: any) 
   const isSelectionMode = selectedIds.size > 0;
   const canGenerateReceipt = isSelectionMode || filteredList.length > 0;
   const receiptList = isSelectionMode ? filteredList.filter((d: any) => selectedIds.has(d.id)) : filteredList;
-  const displayType = isSelectionMode 
-    ? (Array.from(new Set(receiptList.map((d: any) => d.type))).length === 1 ? receiptList[0].type : 'CUSTOM') 
+  const displayType = isSelectionMode
+    ? (Array.from(new Set(receiptList.map((d: any) => d.type))).length === 1 ? receiptList[0].type : 'CUSTOM')
     : 'ALL';
 
   const totalAmount = filteredList.reduce((sum: number, d: any) => sum + (Number(d.amount) || 0), 0);
@@ -93,8 +97,8 @@ export default function AdminDonationsList({ donations = [], onNavigate }: any) 
         ]}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <TouchableOpacity 
-            style={styles.backBtn} 
+          <TouchableOpacity
+            style={styles.backBtn}
             onPress={() => onNavigate('dashboard')}
             activeOpacity={0.7}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -128,7 +132,7 @@ export default function AdminDonationsList({ donations = [], onNavigate }: any) 
           </View>
 
           {/* Monochrome Add Button */}
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[
               styles.addBtn,
               {
@@ -136,7 +140,7 @@ export default function AdminDonationsList({ donations = [], onNavigate }: any) 
                 borderColor: isDark ? '#FFFFFF' : '#000000',
                 borderWidth: 1.5,
               },
-            ]} 
+            ]}
             onPress={() => onNavigate('create')}
             activeOpacity={0.8}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -194,8 +198,8 @@ export default function AdminDonationsList({ donations = [], onNavigate }: any) 
             {dateOpts.map(o => {
               const active = dateFilter === o;
               return (
-                <TouchableOpacity 
-                  key={o} 
+                <TouchableOpacity
+                  key={o}
                   style={[
                     styles.filterPill,
                     {
@@ -203,12 +207,12 @@ export default function AdminDonationsList({ donations = [], onNavigate }: any) 
                       borderColor: active ? (isDark ? '#FFFFFF' : '#000000') : (isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1'),
                       borderWidth: 1.5,
                     },
-                  ]} 
+                  ]}
                   onPress={() => setDateFilter(o)}
                 >
-                  <Text 
+                  <Text
                     style={[
-                      styles.filterPillText, 
+                      styles.filterPillText,
                       {
                         color: active ? (isDark ? '#000000' : '#FFFFFF') : (isDark ? '#94A3B8' : '#64748B'),
                         fontWeight: active ? '700' : '600',
@@ -226,7 +230,7 @@ export default function AdminDonationsList({ donations = [], onNavigate }: any) 
         {/* Search Input (below Badges) */}
         <View style={styles.searchWrap}>
           <Search color={isDark ? '#94A3B8' : '#64748B'} size={18} style={styles.searchIcon} />
-          <TextInput 
+          <TextInput
             style={[
               styles.searchInput,
               {
@@ -245,7 +249,7 @@ export default function AdminDonationsList({ donations = [], onNavigate }: any) 
 
         {/* Monochrome Bulk Action Button */}
         {canGenerateReceipt && receiptList.length > 0 && (
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[
               styles.bulkBtn,
               {
@@ -253,7 +257,7 @@ export default function AdminDonationsList({ donations = [], onNavigate }: any) 
                 borderColor: isDark ? '#FFFFFF' : '#000000',
                 borderWidth: 1.5,
               },
-            ]} 
+            ]}
             onPress={() => setShowPdfModal(true)}
             activeOpacity={0.8}
           >
@@ -272,7 +276,7 @@ export default function AdminDonationsList({ donations = [], onNavigate }: any) 
             </Text>
           </View>
         ) : (
-          <FlatList 
+          <FlatList
             data={filteredList}
             keyExtractor={item => item.id}
             showsVerticalScrollIndicator={false}
@@ -280,30 +284,30 @@ export default function AdminDonationsList({ donations = [], onNavigate }: any) 
             renderItem={({ item }) => {
               const isSelected = selectedIds.has(item.id);
               return (
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[
-                    styles.donItem, 
+                    styles.donItem,
                     {
                       backgroundColor: isDark ? '#18181B' : '#FFFFFF',
-                      borderColor: isSelected 
-                        ? (isDark ? '#FFFFFF' : '#000000') 
+                      borderColor: isSelected
+                        ? (isDark ? '#FFFFFF' : '#000000')
                         : (isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1'),
                       borderWidth: 1.5,
                     },
-                  ]} 
+                  ]}
                   onPress={() => handlePress(item)}
                   onLongPress={() => handleLongPress(item.id)}
                   delayLongPress={300}
                 >
                   <View style={styles.donTop}>
                     <View style={{ flex: 1, paddingRight: 10 }}>
-                      <Text 
-                        style={[styles.donName, { color: isDark ? '#FFFFFF' : '#0F172A' }]} 
+                      <Text
+                        style={[styles.donName, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
                         numberOfLines={1}
                       >
                         {item.name === 'Anonymous' ? 'Unknown Donor' : item.name}
                       </Text>
-                      <View 
+                      <View
                         style={[
                           styles.donTypeWrap,
                           {
@@ -325,7 +329,7 @@ export default function AdminDonationsList({ donations = [], onNavigate }: any) 
                       </Text>
                     </View>
                   </View>
-                  <View 
+                  <View
                     style={[
                       styles.donMeta,
                       {
@@ -347,13 +351,13 @@ export default function AdminDonationsList({ donations = [], onNavigate }: any) 
       <Modal visible={showPdfModal} animationType="slide" presentationStyle="pageSheet">
         <View style={{ flex: 1, backgroundColor: isDark ? '#000000' : '#F8FAFC' }}>
           <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#000000' : '#FFFFFF'} />
-          <View 
-            style={{ 
-              flexDirection: 'row', 
-              alignItems: 'center', 
-              justifyContent: 'space-between', 
-              padding: 16, 
-              paddingTop: Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight || 28) : 44) + 12, 
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: 16,
+              paddingTop: Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight || 28) : 44) + 12,
               backgroundColor: isDark ? '#000000' : '#FFFFFF',
               borderBottomWidth: 1.5,
               borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#CBD5E1',
@@ -364,15 +368,15 @@ export default function AdminDonationsList({ donations = [], onNavigate }: any) 
               <Text style={{ color: isDark ? '#FFFFFF' : '#0F172A', fontSize: 15, fontWeight: '700' }}>Close</Text>
             </TouchableOpacity>
           </View>
-          
-          <View 
-            style={{ 
-              flex: 1, 
-              margin: 16, 
-              borderRadius: 12, 
-              overflow: 'hidden', 
-              borderWidth: 1.5, 
-              borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1', 
+
+          <View
+            style={{
+              flex: 1,
+              margin: 16,
+              borderRadius: 12,
+              overflow: 'hidden',
+              borderWidth: 1.5,
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1',
               backgroundColor: '#FFFFFF',
             }}
           >
@@ -380,36 +384,36 @@ export default function AdminDonationsList({ donations = [], onNavigate }: any) 
           </View>
 
           <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 10, padding: 20, paddingBottom: 40 }}>
-            <TouchableOpacity 
-              style={{ 
-                backgroundColor: isDark ? '#FFFFFF' : '#000000', 
+            <TouchableOpacity
+              style={{
+                backgroundColor: isDark ? '#FFFFFF' : '#000000',
                 borderColor: isDark ? '#FFFFFF' : '#000000',
                 borderWidth: 1.5,
-                paddingHorizontal: 20, 
-                paddingVertical: 12, 
-                borderRadius: 24, 
-                alignItems: 'center', 
-                flexDirection: 'row', 
+                paddingHorizontal: 20,
+                paddingVertical: 12,
+                borderRadius: 24,
+                alignItems: 'center',
+                flexDirection: 'row',
                 gap: 8,
-              }} 
+              }}
               onPress={() => generateBulkDonationReceipt(receiptList, displayType, false, authorizerName)}
             >
               <Download size={16} color={isDark ? '#000000' : '#FFFFFF'} />
               <Text style={{ color: isDark ? '#000000' : '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Download</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={{ 
-                backgroundColor: isDark ? '#FFFFFF' : '#000000', 
+            <TouchableOpacity
+              style={{
+                backgroundColor: isDark ? '#FFFFFF' : '#000000',
                 borderColor: isDark ? '#FFFFFF' : '#000000',
                 borderWidth: 1.5,
-                paddingHorizontal: 20, 
-                paddingVertical: 12, 
-                borderRadius: 24, 
-                alignItems: 'center', 
-                flexDirection: 'row', 
+                paddingHorizontal: 20,
+                paddingVertical: 12,
+                borderRadius: 24,
+                alignItems: 'center',
+                flexDirection: 'row',
                 gap: 8,
-              }} 
+              }}
               onPress={() => generateBulkDonationReceipt(receiptList, displayType, true, authorizerName)}
             >
               <Share2 size={16} color={isDark ? '#000000' : '#FFFFFF'} />

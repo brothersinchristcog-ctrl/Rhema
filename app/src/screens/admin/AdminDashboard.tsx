@@ -57,6 +57,13 @@ import { AdminTabContext } from '../../context/AdminTabContext';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme, FONT_STYLE_OPTIONS } from '../../context/ThemeContext';
 import { AdminMatrimonyCounts, matrimonyApi } from '../../modules/matrimony';
+import { CachedImage } from '../../components/CachedImage';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  readInstantCache,
+  writeInstantCache,
+} from '../../utils/instantCache';
 
 // ── Modern Vector Icon Configuration for Each Tab ──
 const TAB_ICONS: Record<string, { icon: any; color: string }> = {
@@ -147,10 +154,18 @@ const EXCLUDED_TAB_NAMES = [
 ];
 
 export default function AdminDashboard({ navigation, allTabs = [] }: any) {
-  const { setActiveTab, dashboardScrollY, setDashboardScrollY } = useContext(AdminTabContext);
+  const { setActiveTab, dashboardScrollY, getDashboardScrollY, setDashboardScrollY } = useContext(AdminTabContext);
   const { member, user, signOut, setViewMode } = useAuth();
   const { activeChurch } = useChurch();
   const { isDark, colors, fontStyle, scaleFont } = useTheme();
+  const countsCacheKey = useMemo(
+    () => makeScopedCacheKey('admin_dashboard_matrimony_v1', activeChurch?.id, user?.uid),
+    [activeChurch?.id, user?.uid]
+  );
+  const initialMatrimonyCounts = useMemo(
+    () => getInstantMemory<AdminMatrimonyCounts>(countsCacheKey),
+    [countsCacheKey]
+  );
 
   const appFontFamily = FONT_STYLE_OPTIONS.find(o => o.id === fontStyle)?.family || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
   const screenBg = isDark ? '#09090B' : (colors.background || '#FAF7F2');
@@ -162,12 +177,13 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
   const scrollRef = useRef<ScrollView>(null);
 
   useLayoutEffect(() => {
-    if (dashboardScrollY && scrollRef.current) {
+    const savedY = getDashboardScrollY ? getDashboardScrollY() : (dashboardScrollY || 0);
+    if (savedY && scrollRef.current) {
       setTimeout(() => {
-        scrollRef.current?.scrollTo({ y: dashboardScrollY, animated: false });
+        scrollRef.current?.scrollTo({ y: savedY, animated: false });
       }, 0);
     }
-  }, []);
+  }, [getDashboardScrollY]);
 
   const handleScroll = (event: any) => {
     const y = event.nativeEvent.contentOffset.y;
@@ -201,20 +217,26 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
   const renderedTabNames = new Set<string>();
 
   const isFocused = useIsFocused();
-  const [matrimonyCounts, setMatrimonyCounts] = useState<AdminMatrimonyCounts | null>(null);
+  const [matrimonyCounts, setMatrimonyCounts] = useState<AdminMatrimonyCounts | null>(initialMatrimonyCounts);
   const [seedingTestUsers, setSeedingTestUsers] = useState(false);
   const [deletingTestUsers, setDeletingTestUsers] = useState(false);
+  const lastCountsFetchAtRef = useRef<number>(0);
 
-  const loadMatrimonyCounts = useCallback(async () => {
+  const loadMatrimonyCounts = useCallback(async (force = false) => {
+    if (!force && lastCountsFetchAtRef.current > 0 && Date.now() - lastCountsFetchAtRef.current < 90 * 1000) {
+      return;
+    }
     try {
       const res = await matrimonyApi.getAdminDashboard();
+      lastCountsFetchAtRef.current = Date.now();
       if (res?.counts) {
         setMatrimonyCounts(res.counts);
+        writeInstantCache(countsCacheKey, res.counts).catch(() => {});
       }
     } catch (err: any) {
       console.warn('AdminDashboard matrimony counts error:', err?.code, err?.message);
     }
-  }, []);
+  }, [countsCacheKey]);
 
   const handleAdd30TestUsers = () => {
     if (seedingTestUsers || deletingTestUsers) return;
@@ -229,7 +251,7 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
             setSeedingTestUsers(true);
             try {
               const res = await matrimonyApi.seedTestUsers();
-              await loadMatrimonyCounts();
+              await loadMatrimonyCounts(true);
               Alert.alert(
                 'Test Users Created',
                 `Added ${res.createdCount} test users (${res.maleCount} Men, ${res.femaleCount} Women) to Rhema & Rhema Matrimony.`
@@ -259,7 +281,7 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
             setDeletingTestUsers(true);
             try {
               const res = await matrimonyApi.deleteTestUsers();
-              await loadMatrimonyCounts();
+              await loadMatrimonyCounts(true);
               Alert.alert(
                 'Test Users Deleted',
                 res.deletedCount > 0
@@ -278,12 +300,25 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
   };
 
   useEffect(() => {
-    loadMatrimonyCounts();
-  }, [loadMatrimonyCounts]);
+    let active = true;
+    const mem = getInstantMemory<AdminMatrimonyCounts>(countsCacheKey);
+    if (mem) {
+      setMatrimonyCounts(mem);
+    } else {
+      readInstantCache<AdminMatrimonyCounts>(countsCacheKey).then((cached) => {
+        if (active && cached?.data) {
+          setMatrimonyCounts(cached.data);
+        }
+      });
+    }
+    return () => {
+      active = false;
+    };
+  }, [countsCacheKey]);
 
   useEffect(() => {
     if (isFocused) {
-      loadMatrimonyCounts();
+      loadMatrimonyCounts(false);
     }
   }, [isFocused, loadMatrimonyCounts]);
 
@@ -308,7 +343,7 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
       <ScrollView 
         ref={scrollRef}
         onScroll={handleScroll}
-        scrollEventThrottle={16}
+        scrollEventThrottle={64}
         showsVerticalScrollIndicator={false} 
         contentContainerStyle={styles.scroll}
         bounces={true}
@@ -344,7 +379,7 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
               }
             ]}>
               {activeChurch?.theme?.logoUrl ? (
-                <Image 
+                <CachedImage 
                   source={{ uri: activeChurch.theme.logoUrl }} 
                   style={styles.heroLogoImg} 
                   resizeMode="cover" 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,12 +11,13 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { Info, Save, ChevronLeft, RefreshCw, Edit2, Eye, Target , ArrowLeft } from 'lucide-react-native';
+import { Info, Save, ChevronLeft, RefreshCw, Edit2, Eye, Target, ArrowLeft } from 'lucide-react-native';
 import firestore from '@react-native-firebase/firestore';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import firestoreService from '../../services/FirestoreService';
 import { useChurch } from '../../context/ChurchContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey, writeInstantCache } from '../../utils/instantCache';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 interface AboutUsData {
@@ -41,51 +42,79 @@ export default function AdminAboutUsEditor() {
   const { goBack } = useContext(AdminTabContext);
   const { activeChurch } = useChurch();
   const insets = useSafeAreaInsets();
+  const aboutCacheKey = useMemo(
+    () => makeScopedCacheKey('admin_about_us_v1', activeChurch?.id || 'default', 'admin'),
+    [activeChurch?.id]
+  );
+  const initialCached = useMemo(
+    () => getInstantMemory<AboutUsData>(aboutCacheKey),
+    [aboutCacheKey]
+  );
+  const mountedRef = useRef(true);
 
-  const [data, setData] = useState<AboutUsData>(DEFAULT_ABOUT);
-  const [draft, setDraft] = useState<AboutUsData>(DEFAULT_ABOUT);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<AboutUsData>(() => initialCached || DEFAULT_ABOUT);
+  const [draft, setDraft] = useState<AboutUsData>(() => initialCached || DEFAULT_ABOUT);
+  const [loading, setLoading] = useState(!initialCached);
   const [saving, setSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (forceRefresh = false) => {
+    const mem = getInstantMemory<AboutUsData>(aboutCacheKey);
+    if (mem && !forceRefresh) {
+      setData(mem);
+      setDraft(mem);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     try {
-      const col = await firestoreService.getCollection('settings');
-      const doc = await col.doc('about').get();
-      if (doc.exists()) {
-        const d = doc.data() as AboutUsData;
-        const fetched: AboutUsData = {
-          churchName: d.churchName || activeChurch?.name || '',
-          churchSubtitle: d.churchSubtitle || '',
-          description: d.description || activeChurch?.aboutUs || '',
-          mission: d.mission || '',
-          vision: d.vision || '',
-        };
-        setData(fetched);
-        setDraft(fetched);
-      } else {
-        const fallback: AboutUsData = {
-          churchName: activeChurch?.name || '',
-          churchSubtitle: '',
-          description: activeChurch?.aboutUs || '',
-          mission: '',
-          vision: '',
-        };
-        setData(fallback);
-        setDraft(fallback);
-        setIsEditing(true); // Automatically open in edit mode if empty
-      }
-      // If doc doesn't exist yet, silently use defaults
+      await loadWithInstantCache<AboutUsData>(
+        aboutCacheKey,
+        async () => {
+          const col = await firestoreService.getCollection('settings');
+          const doc = await col.doc('about').get();
+          if (doc.exists()) {
+            const d = doc.data() as AboutUsData;
+            return {
+              churchName: d.churchName || activeChurch?.name || '',
+              churchSubtitle: d.churchSubtitle || '',
+              description: d.description || activeChurch?.aboutUs || '',
+              mission: d.mission || '',
+              vision: d.vision || '',
+            };
+          }
+          return {
+            churchName: activeChurch?.name || '',
+            churchSubtitle: '',
+            description: activeChurch?.aboutUs || '',
+            mission: '',
+            vision: '',
+          };
+        },
+        (fetched) => {
+          if (!mountedRef.current) return;
+          setData(fetched);
+          setDraft(fetched);
+          if (!fetched.churchName && !fetched.description) setIsEditing(true);
+          setLoading(false);
+        },
+        { ttlMs: 10 * 60 * 1000, freshSkipMs: 0, force: forceRefresh }
+      );
     } catch (err) {
       // Silently fall back to defaults (document may not exist yet)
       console.warn('AboutUs fetch:', err);
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    fetchData(false);
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [aboutCacheKey]);
 
   const handleEdit = () => { setDraft({ ...data }); setIsEditing(true); };
   const handleCancel = () => { setDraft({ ...data }); setIsEditing(false); };
@@ -101,6 +130,7 @@ export default function AdminAboutUsEditor() {
         updatedAt: firestore.FieldValue.serverTimestamp(),
       });
       setData({ ...draft });
+      writeInstantCache(aboutCacheKey, { ...draft }).catch(() => { });
       setIsEditing(false);
       Alert.alert('✅ Saved', 'About Us content updated successfully!');
     } catch (err) {
@@ -111,7 +141,7 @@ export default function AdminAboutUsEditor() {
   };
 
   if (loading) {
-        return (
+    return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#BE9A3A" />
         <Text style={styles.loadingText}>Loading About Us…</Text>
@@ -135,7 +165,7 @@ export default function AdminAboutUsEditor() {
 
           {/* Right actions: Refresh + single Edit/View toggle */}
           <View style={styles.headerRight}>
-            <TouchableOpacity onPress={fetchData} style={styles.iconBtn}>
+            <TouchableOpacity onPress={() => fetchData(true)} style={styles.iconBtn}>
               <RefreshCw size={16} color="#1a2d5a" />
             </TouchableOpacity>
             <TouchableOpacity
@@ -269,7 +299,7 @@ export default function AdminAboutUsEditor() {
                 <TouchableOpacity style={styles.cancelBtn} onPress={handleCancel}>
                   <Text style={styles.cancelTxt}>Cancel</Text>
                 </TouchableOpacity>
-                                <TouchableOpacity
+                <TouchableOpacity
                   style={[styles.saveBtn, saving && styles.btnDisabled]}
                   onPress={handleSave}
                   disabled={saving}
@@ -311,13 +341,13 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   loadingText: { color: '#64748B', fontSize: 14 },
 
   /* Header */
-  header: { 
-    backgroundColor: 'transparent', 
+  header: {
+    backgroundColor: 'transparent',
     paddingTop: 8,
     paddingHorizontal: 16,
     paddingBottom: 12,
-    
-    
+
+
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,

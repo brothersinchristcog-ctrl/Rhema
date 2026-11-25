@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useRef } from 'react';
+import React, { useState, useEffect, useContext, useRef, useMemo } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -9,7 +9,6 @@ import {
   Dimensions, 
   StatusBar,
   Platform,
-  Image,
   Modal,
   Alert
 } from 'react-native';
@@ -22,10 +21,13 @@ import * as MediaLibrary from 'expo-media-library';
 import AttendanceService from '../../services/AttendanceService';
 import { useNavigation } from '@react-navigation/native';
 import { AdminTabContext } from '../../context/AdminTabContext';
+import { useChurch } from '../../context/ChurchContext';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import FirestoreService from '../../services/FirestoreService';
 import EventRsvpService from '../../services/EventRsvpService';
+import CachedImage from '../../components/CachedImage';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey, writeInstantCache } from '../../utils/instantCache';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const { width } = Dimensions.get('window');
@@ -56,24 +58,40 @@ export default function AdminEventList() {
   const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const navigation = useNavigation<any>();
   const { setActiveTab, setEditingData, setTabByName } = useContext(AdminTabContext);
-  const [events, setEvents] = useState<any[]>([]);
+  const { activeChurch } = useChurch();
+  const eventsCacheKey = useMemo(
+    () => makeScopedCacheKey('admin_events_v1', activeChurch?.id || 'default', 'admin'),
+    [activeChurch?.id]
+  );
+  const initialCachedEvents = useMemo(
+    () => getInstantMemory<any[]>(eventsCacheKey),
+    [eventsCacheKey]
+  );
+
+  const [events, setEvents] = useState<any[]>(() => initialCachedEvents || []);
   const [filterType, setFilterType] = useState<'Upcoming' | 'Past' | 'Published'>('Upcoming');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialCachedEvents);
   const [eventToDelete, setEventToDelete] = useState<any>(null);
   const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
   const [selectedQrEvent, setSelectedQrEvent] = useState<any>(null);
   const [selectedRsvpEvent, setSelectedRsvpEvent] = useState<any>(null);
   const [rsvpCounts, setRsvpCounts] = useState<Record<string, number>>({});
   const qrRef = useRef<any>(null);
-  const [churchDetails, setChurchDetails] = useState({ id: '', name: 'Rhema Global Ministries', code: 'RHEMA' });
+  const mountedRef = useRef(true);
+  const [churchDetails, setChurchDetails] = useState({
+    id: activeChurch?.id || '',
+    name: activeChurch?.name || 'Rhema Global Ministries',
+    code: (activeChurch as any)?.churchCode || (activeChurch as any)?.code || 'RHEMA',
+  });
 
-  // Real-time live Going counts for active RSVP events
+  // Real-time live Going counts for active RSVP events (wait until resolved churchId exists)
   useEffect(() => {
+    const resolvedChurchId = churchDetails.id || activeChurch?.id || '';
     const rsvpEvents = events.filter((e) => e.rsvpEnabled === true && e.id);
-    if (!rsvpEvents.length) return;
+    if (!rsvpEvents.length || !resolvedChurchId) return;
 
     const unsubs = rsvpEvents.map((ev) =>
-      EventRsvpService.listenToEventStats(churchDetails.id, ev.id, (stats) => {
+      EventRsvpService.listenToEventStats(resolvedChurchId, ev.id, (stats) => {
         setRsvpCounts((prev) => ({
           ...prev,
           [ev.id]: stats.goingCount,
@@ -84,17 +102,28 @@ export default function AdminEventList() {
     return () => {
       unsubs.forEach((u) => u && u());
     };
-  }, [events, churchDetails.id]);
+  }, [events, churchDetails.id, activeChurch?.id]);
 
   useEffect(() => {
-    fetchEvents();
+    mountedRef.current = true;
+    fetchEvents(false);
     (async () => {
       try {
-        const id = await FirestoreService.getChurchId();
+        const id = activeChurch?.id || (await FirestoreService.getChurchId());
+        if (activeChurch?.name) {
+          if (mountedRef.current) {
+            setChurchDetails({
+              id: id || '',
+              name: activeChurch.name,
+              code: (activeChurch as any)?.churchCode || (activeChurch as any)?.code || 'RHEMA',
+            });
+          }
+          return;
+        }
         const doc = await FirestoreService.getChurchDoc();
         if (doc) {
           const snap = await doc.get();
-          if (snap.exists) {
+          if (snap.exists && mountedRef.current) {
             const data = snap.data();
             setChurchDetails({
               id: id || '',
@@ -107,7 +136,10 @@ export default function AdminEventList() {
         console.warn('⚠️ [AdminEventList] Failed to load church info for QR:', err);
       }
     })();
-  }, []);
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [eventsCacheKey, activeChurch?.id, activeChurch?.name]);
 
   const handleSaveQR = async () => {
     if (qrRef.current) {
@@ -152,16 +184,29 @@ export default function AdminEventList() {
     }
   };
 
-  const fetchEvents = async () => {
-    setLoading(true);
+  const fetchEvents = async (forceRefresh = false) => {
+    const mem = getInstantMemory<any[]>(eventsCacheKey);
+    if (mem && !forceRefresh) {
+      setEvents(mem);
+      setLoading(false);
+    } else if (events.length === 0) {
+      setLoading(true);
+    }
     try {
-      const data = await FirestoreService.getEvents();
-      console.log('📊 [AdminEventList] Fetched Events:', JSON.stringify(data.slice(0, 2), null, 2));
-      setEvents(data);
+      await loadWithInstantCache<any[]>(
+        eventsCacheKey,
+        () => FirestoreService.getEvents(),
+        (data) => {
+          if (!mountedRef.current) return;
+          setEvents(data);
+          setLoading(false);
+        },
+        { ttlMs: 10 * 60 * 1000, freshSkipMs: 0, force: forceRefresh }
+      );
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   };
 
@@ -621,7 +666,7 @@ export default function AdminEventList() {
                 activeOpacity={0.8}
               >
                 {event.bannerUrl ? (
-                  <Image source={{ uri: event.bannerUrl }} style={styles.eiThumbImg} resizeMode="cover" />
+                  <CachedImage uri={event.bannerUrl} style={styles.eiThumbImg} resizeMode="cover" />
                 ) : (
                   <View style={{ alignItems: 'center', justifyContent: 'center' }}>
                     <Calendar size={20} color={isDark ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.75)'} />

@@ -89,23 +89,23 @@ export default function AdminCareCellsHub() {
       const filtered = isPlatformSuperAdmin
         ? list
         : list.filter(
-            (c) =>
-              (Array.isArray(c.assignedAdminIds) && c.assignedAdminIds.includes(user?.uid)) ||
-              c.leaderId === member?.id ||
-              c.leaderId === user?.uid ||
-              c.assistantLeaderId === member?.id ||
-              c.assistantLeaderId === user?.uid
-          );
+          (c) =>
+            (Array.isArray(c.assignedAdminIds) && c.assignedAdminIds.includes(user?.uid)) ||
+            c.leaderId === member?.id ||
+            c.leaderId === user?.uid ||
+            c.assistantLeaderId === member?.id ||
+            c.assistantLeaderId === user?.uid
+        );
       setCells(filtered);
-      if (filtered.length > 0 && !selectedCellId) {
-        setSelectedCellId(filtered[0].id);
+      if (filtered.length > 0) {
+        setSelectedCellId((prev) => prev || filtered[0].id);
       }
     } catch (e) {
       console.error('Error loading Care Cells in AdminCareCellsHub:', e);
     } finally {
       setLoadingCells(false);
     }
-  }, [selectedCellId, isPlatformSuperAdmin, user?.uid, member?.id]);
+  }, [isPlatformSuperAdmin, user?.uid, member?.id]);
 
   useEffect(() => {
     loadAllCells();
@@ -348,29 +348,33 @@ export default function AdminCareCellsHub() {
         )}
       </View>
 
-      {/* Create / Edit Care Cell Modal */}
-      <CareCellFormModal
-        visible={createCellModalVisible}
-        cellToEdit={editingCell}
-        onClose={() => {
-          setCreateCellModalVisible(false);
-          setEditingCell(null);
-        }}
-        onSaved={loadAllCells}
-      />
+      {/* Create / Edit Care Cell Modal (lazy-mounted only while open) */}
+      {createCellModalVisible && (
+        <CareCellFormModal
+          visible={createCellModalVisible}
+          cellToEdit={editingCell}
+          onClose={() => {
+            setCreateCellModalVisible(false);
+            setEditingCell(null);
+          }}
+          onSaved={loadAllCells}
+        />
+      )}
 
-      {/* Create / Edit Meeting Modal */}
-      <MeetingFormModal
-        visible={createMeetingModalVisible}
-        cells={cells}
-        defaultCellId={selectedCellId}
-        meetingToEdit={editingMeeting}
-        onClose={() => {
-          setCreateMeetingModalVisible(false);
-          setEditingMeeting(null);
-        }}
-        onSaved={loadAllCells}
-      />
+      {/* Create / Edit Meeting Modal (lazy-mounted only while open) */}
+      {createMeetingModalVisible && (
+        <MeetingFormModal
+          visible={createMeetingModalVisible}
+          cells={cells}
+          defaultCellId={selectedCellId}
+          meetingToEdit={editingMeeting}
+          onClose={() => {
+            setCreateMeetingModalVisible(false);
+            setEditingMeeting(null);
+          }}
+          onSaved={loadAllCells}
+        />
+      )}
     </SafeAreaView>
   );
 }

@@ -236,8 +236,13 @@ export default function AdminVolunteerManagement({ navigation, route, routeParam
   }>({ visible: false, title: '', message: '' });
 
   const churchId = activeChurch?.id || 'rhema';
+  const appsUnsubRef = React.useRef<(() => void) | null>(null);
 
   const fetchApplications = () => {
+    if (appsUnsubRef.current) {
+      appsUnsubRef.current();
+      appsUnsubRef.current = null;
+    }
     setRefreshing(true);
     // Trigger snapshot listener reload
     const unsubscribe = VolunteerService.subscribeApplications(
@@ -261,19 +266,23 @@ export default function AdminVolunteerManagement({ navigation, route, routeParam
         setRefreshing(false);
       }
     );
+    appsUnsubRef.current = unsubscribe;
     return unsubscribe;
   };
 
   useEffect(() => {
     setLoading(true);
-    const unsubApps = fetchApplications();
+    fetchApplications();
     const unsubPosts = VolunteerService.subscribeVolunteerPosts(
       churchId,
       (posts) => setVolunteerPosts(posts),
       () => {}
     );
     return () => {
-      unsubApps();
+      if (appsUnsubRef.current) {
+        appsUnsubRef.current();
+        appsUnsubRef.current = null;
+      }
       unsubPosts();
     };
   }, [churchId, targetAppId]);

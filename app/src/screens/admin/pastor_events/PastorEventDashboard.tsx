@@ -88,14 +88,17 @@ export const PastorEventDashboard = ({ navigation }: { navigation: any }) => {
     }
   };
 
-  useEffect(() => {
-    fetchEvents();
-  }, []);
+  const lastFetchedAtRef = React.useRef<number>(0);
 
   useFocusEffect(
     useCallback(() => {
-      fetchEvents(true);
-    }, [])
+      const hasOptimistic = Boolean(route.params?.optimisticEvent);
+      const isStale = Date.now() - lastFetchedAtRef.current > 45_000;
+      if (lastFetchedAtRef.current === 0 || hasOptimistic || isStale) {
+        lastFetchedAtRef.current = Date.now();
+        fetchEvents(lastFetchedAtRef.current > 0 && events.length > 0);
+      }
+    }, [route.params?.optimisticEvent, events.length])
   );
 
   useEffect(() => {

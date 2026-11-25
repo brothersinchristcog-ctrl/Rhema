@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -549,19 +549,49 @@ export default function AdminMatrimonyPlansModal({ visible, onClose, profiles = 
     })}`;
   };
 
-  const findProfileByUid = (uid: string) =>
-    grantProfiles.find((p) => p.uid === uid) || profiles.find((p) => p.uid === uid) || null;
+  const profileByUidMap = useMemo(() => {
+    const map = new Map<string, AdminMatrimonyProfileSummary>();
+    for (let i = 0; i < profiles.length; i++) {
+      const p = profiles[i];
+      if (p?.uid && !map.has(p.uid)) map.set(p.uid, p);
+    }
+    for (let i = 0; i < grantProfiles.length; i++) {
+      const p = grantProfiles[i];
+      if (p?.uid) map.set(p.uid, p);
+    }
+    return map;
+  }, [grantProfiles, profiles]);
 
-  const findSubscriptionByUid = (uid: string) =>
-    (data?.subscriptions || []).find((s) => s.uid === uid) || null;
+  const subscriptionByUidMap = useMemo(() => {
+    const map = new Map<string, any>();
+    const subs = data?.subscriptions || [];
+    for (let i = 0; i < subs.length; i++) {
+      const s = subs[i];
+      if (s?.uid && !map.has(s.uid)) map.set(s.uid, s);
+    }
+    return map;
+  }, [data?.subscriptions]);
 
-  const nameByUid = (uid: string, fallbackName?: string | null) => {
-    if (fallbackName && fallbackName.trim()) return fallbackName.trim();
-    const subName = findSubscriptionByUid(uid)?.memberName;
-    if (subName && subName.trim()) return subName.trim();
-    const found = findProfileByUid(uid);
-    return found?.displayName || `${uid.slice(0, 10)}...`;
-  };
+  const findProfileByUid = useCallback(
+    (uid: string) => profileByUidMap.get(uid) || null,
+    [profileByUidMap]
+  );
+
+  const findSubscriptionByUid = useCallback(
+    (uid: string) => subscriptionByUidMap.get(uid) || null,
+    [subscriptionByUidMap]
+  );
+
+  const nameByUid = useCallback(
+    (uid: string, fallbackName?: string | null) => {
+      if (fallbackName && fallbackName.trim()) return fallbackName.trim();
+      const subName = subscriptionByUidMap.get(uid)?.memberName;
+      if (subName && subName.trim()) return subName.trim();
+      const found = profileByUidMap.get(uid);
+      return found?.displayName || `${uid.slice(0, 10)}...`;
+    },
+    [profileByUidMap, subscriptionByUidMap]
+  );
 
   const codeByUid = (uid: string, fallbackCode?: string | null) => {
     if (fallbackCode && fallbackCode.trim()) return fallbackCode.trim().toUpperCase();

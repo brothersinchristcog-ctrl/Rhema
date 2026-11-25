@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,11 +11,13 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { Phone, Mail, MapPin, Save, ChevronLeft, Plus, Trash2, RefreshCw, Edit2, Eye, Link , ArrowLeft } from 'lucide-react-native';
+import { Phone, Mail, MapPin, Save, ChevronLeft, Plus, Trash2, RefreshCw, Edit2, Eye, Link, ArrowLeft } from 'lucide-react-native';
 import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import firestore from '@react-native-firebase/firestore';
 import { AdminTabContext } from '../../context/AdminTabContext';
+import { useChurch } from '../../context/ChurchContext';
 import firestoreService from '../../services/FirestoreService';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey, writeInstantCache } from '../../utils/instantCache';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 interface ContactData {
@@ -75,46 +77,79 @@ const WaIcon = () => (
 export default function AdminContactUsEditor() {
   const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { goBack } = useContext(AdminTabContext);
+  const { activeChurch } = useChurch();
+  const contactCacheKey = useMemo(
+    () => makeScopedCacheKey('admin_contact_us_v1', activeChurch?.id || 'default', 'admin'),
+    [activeChurch?.id]
+  );
+  const initialCached = useMemo(
+    () => getInstantMemory<ContactData>(contactCacheKey),
+    [contactCacheKey]
+  );
+  const mountedRef = useRef(true);
 
-  const [data, setData] = useState<ContactData>(DEFAULT_CONTACT);
-  const [draft, setDraft] = useState<ContactData>(DEFAULT_CONTACT);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<ContactData>(() => initialCached || DEFAULT_CONTACT);
+  const [draft, setDraft] = useState<ContactData>(() => initialCached || DEFAULT_CONTACT);
+  const [loading, setLoading] = useState(!initialCached);
   const [saving, setSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (forceRefresh = false) => {
+    const mem = getInstantMemory<ContactData>(contactCacheKey);
+    if (mem && !forceRefresh) {
+      setData(mem);
+      setDraft(mem);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     try {
-      const col = await firestoreService.getCollection('settings');
-      const doc = await col.doc('contact').get();
-      if (doc.exists()) {
-        const d = doc.data() as ContactData;
-        const fetched: ContactData = {
-          churchName: d.churchName || DEFAULT_CONTACT.churchName,
-          churchSubtitle: d.churchSubtitle || DEFAULT_CONTACT.churchSubtitle,
-          address: d.address || DEFAULT_CONTACT.address,
-          phoneNumbers: d.phoneNumbers?.length ? d.phoneNumbers : DEFAULT_CONTACT.phoneNumbers,
-          emails: d.emails?.length ? d.emails : DEFAULT_CONTACT.emails,
-          socialLinks: {
-            youtube: d.socialLinks?.youtube || DEFAULT_CONTACT.socialLinks.youtube,
-            instagram: d.socialLinks?.instagram || DEFAULT_CONTACT.socialLinks.instagram,
-            facebook: d.socialLinks?.facebook || DEFAULT_CONTACT.socialLinks.facebook,
-            whatsapp: d.socialLinks?.whatsapp || DEFAULT_CONTACT.socialLinks.whatsapp,
-          },
-        };
-        setData(fetched);
-        setDraft(fetched);
-      }
-      // If doc doesn't exist, silently use defaults
+      await loadWithInstantCache<ContactData>(
+        contactCacheKey,
+        async () => {
+          const col = await firestoreService.getCollection('settings');
+          const doc = await col.doc('contact').get();
+          if (doc.exists()) {
+            const d = doc.data() as ContactData;
+            return {
+              churchName: d.churchName || DEFAULT_CONTACT.churchName,
+              churchSubtitle: d.churchSubtitle || DEFAULT_CONTACT.churchSubtitle,
+              address: d.address || DEFAULT_CONTACT.address,
+              phoneNumbers: d.phoneNumbers?.length ? d.phoneNumbers : DEFAULT_CONTACT.phoneNumbers,
+              emails: d.emails?.length ? d.emails : DEFAULT_CONTACT.emails,
+              socialLinks: {
+                youtube: d.socialLinks?.youtube || DEFAULT_CONTACT.socialLinks.youtube,
+                instagram: d.socialLinks?.instagram || DEFAULT_CONTACT.socialLinks.instagram,
+                facebook: d.socialLinks?.facebook || DEFAULT_CONTACT.socialLinks.facebook,
+                whatsapp: d.socialLinks?.whatsapp || DEFAULT_CONTACT.socialLinks.whatsapp,
+              },
+            };
+          }
+          return DEFAULT_CONTACT;
+        },
+        (fetched) => {
+          if (!mountedRef.current) return;
+          setData(fetched);
+          setDraft(fetched);
+          setLoading(false);
+        },
+        { ttlMs: 10 * 60 * 1000, freshSkipMs: 0, force: forceRefresh }
+      );
     } catch (err) {
       // Silently fall back to defaults (document may not exist yet)
       console.warn('ContactUs fetch:', err);
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    fetchData(false);
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [contactCacheKey]);
 
   const handleEdit = () => { setDraft({ ...data }); setIsEditing(true); };
   const handleCancel = () => { setDraft({ ...data }); setIsEditing(false); };
@@ -129,7 +164,9 @@ export default function AdminContactUsEditor() {
       const toSave = { ...draft, phoneNumbers: cleanedPhones, emails: cleanedEmails, updatedAt: firestore.FieldValue.serverTimestamp() };
       const col = await firestoreService.getCollection('settings');
       await col.doc('contact').set(toSave);
-      setData({ ...draft, phoneNumbers: cleanedPhones, emails: cleanedEmails });
+      const savedData = { ...draft, phoneNumbers: cleanedPhones, emails: cleanedEmails };
+      setData(savedData);
+      writeInstantCache(contactCacheKey, savedData).catch(() => { });
       setIsEditing(false);
       Alert.alert('✅ Saved', 'Contact Us information updated!');
     } catch (err) {
@@ -147,7 +184,7 @@ export default function AdminContactUsEditor() {
   const removeEmail = (idx: number) => { if (draft.emails.length === 1) return; setDraft((p) => ({ ...p, emails: p.emails.filter((_, i) => i !== idx) })); };
 
   if (loading) {
-        return (
+    return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#BE9A3A" />
         <Text style={styles.loadingText}>Loading Contact Info…</Text>
@@ -159,7 +196,7 @@ export default function AdminContactUsEditor() {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.container}>
 
-                {/* ── Fixed Header ── */}
+        {/* ── Fixed Header ── */}
         <View style={styles.header}>
           <TouchableOpacity onPress={goBack} style={styles.circularBackBtn} activeOpacity={0.7}>
             <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
@@ -169,9 +206,9 @@ export default function AdminContactUsEditor() {
             <Text style={styles.headerSub}>CHURCH COMPANION</Text>
           </View>
 
-                    {/* Right: Refresh + single Edit/View toggle */}
+          {/* Right: Refresh + single Edit/View toggle */}
           <View style={styles.headerRight}>
-            <TouchableOpacity onPress={fetchData} style={styles.iconBtn}>
+            <TouchableOpacity onPress={() => fetchData(true)} style={styles.iconBtn}>
               <RefreshCw size={16} color="#1a2d5a" />
             </TouchableOpacity>
             <TouchableOpacity
@@ -280,12 +317,12 @@ export default function AdminContactUsEditor() {
 
               {/* Church Name */}
               <View style={styles.fieldCard}>
-                <View style={styles.fieldLabelRow}><Text style={{fontSize:16}}>⛪</Text><Text style={styles.fieldLabel}>Church Name</Text></View>
+                <View style={styles.fieldLabelRow}><Text style={{ fontSize: 16 }}>⛪</Text><Text style={styles.fieldLabel}>Church Name</Text></View>
                 <TextInput style={styles.input} value={draft.churchName} onChangeText={(t) => setDraft((p) => ({ ...p, churchName: t }))} placeholder="E.g. Your Church Name" placeholderTextColor="#94a3b8" />
               </View>
 
               <View style={styles.fieldCard}>
-                <View style={styles.fieldLabelRow}><Text style={{fontSize:16}}>🏷️</Text><Text style={styles.fieldLabel}>Church Subtitle</Text></View>
+                <View style={styles.fieldLabelRow}><Text style={{ fontSize: 16 }}>🏷️</Text><Text style={styles.fieldLabel}>Church Subtitle</Text></View>
                 <TextInput style={styles.input} value={draft.churchSubtitle} onChangeText={(t) => setDraft((p) => ({ ...p, churchSubtitle: t }))} placeholder="E.g. Brothers in Christ Fellowship" placeholderTextColor="#94a3b8" />
               </View>
 
@@ -355,7 +392,7 @@ export default function AdminContactUsEditor() {
                 <TouchableOpacity style={styles.cancelBtn} onPress={handleCancel}>
                   <Text style={styles.cancelTxt}>Cancel</Text>
                 </TouchableOpacity>
-                                <TouchableOpacity style={[styles.saveBtn, saving && styles.btnDisabled]} onPress={handleSave} disabled={saving}>
+                <TouchableOpacity style={[styles.saveBtn, saving && styles.btnDisabled]} onPress={handleSave} disabled={saving}>
                   {saving
                     ? <ActivityIndicator color="#162057" size="small" />
                     : <><Save size={16} color="#162057" /><Text style={styles.saveTxt}>Save Changes</Text></>
@@ -391,13 +428,13 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   loadingContainer: { flex: 1, backgroundColor: '#FAF8F0', justifyContent: 'center', alignItems: 'center', gap: 12 },
   loadingText: { color: '#64748B', fontSize: 14 },
 
-  header: { 
-    backgroundColor: 'transparent', 
+  header: {
+    backgroundColor: 'transparent',
     paddingTop: 8,
     paddingHorizontal: 16,
     paddingBottom: 12,
-    
-    
+
+
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,

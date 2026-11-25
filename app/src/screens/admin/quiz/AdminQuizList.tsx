@@ -47,10 +47,13 @@ import { QuizService } from '../../../services/QuizService';
 import { useChurch } from '../../../context/ChurchContext';
 import { RHEMA_CHURCH_ID } from '../../../constants/ChurchConfig';
 import { AdminTabContext } from '../../../context/AdminTabContext';
-import AdminQuizEditor from './AdminQuizEditor';
-import AdminQuizReports from './AdminQuizReports';
 import { formatQuizTime } from '../../../utils/QuizScheduleUtils';
 import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  loadWithInstantCache,
+} from '../../../utils/instantCache';
 
 export default function AdminQuizList() {
   const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
@@ -60,9 +63,17 @@ export default function AdminQuizList() {
   const { activeChurch } = useChurch();
   const churchId = activeChurch?.id || RHEMA_CHURCH_ID;
   const churchName = activeChurch?.name || 'WeChristian Church';
+  const quizzesCacheKey = React.useMemo(
+    () => makeScopedCacheKey('admin_quiz_list_v1', churchId, 'admin'),
+    [churchId]
+  );
+  const initialQuizzesCache = React.useMemo(
+    () => getInstantMemory<BibleQuiz[]>(quizzesCacheKey),
+    [quizzesCacheKey]
+  );
 
-  const [quizzes, setQuizzes] = useState<BibleQuiz[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [quizzes, setQuizzes] = useState<BibleQuiz[]>(initialQuizzesCache || []);
+  const [loading, setLoading] = useState<boolean>(!initialQuizzesCache);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
@@ -110,12 +121,29 @@ export default function AdminQuizList() {
 
   const loadQuizzes = async (isManualRefresh = false) => {
     try {
-      if (quizzes.length === 0 && !isManualRefresh) {
+      const mem = getInstantMemory<BibleQuiz[]>(quizzesCacheKey);
+      if (mem) {
+        setQuizzes(mem);
+        setLoading(false);
+      } else if (quizzes.length === 0 && !isManualRefresh) {
         setLoading(true);
       }
-      QuizService.clearCache();
-      const list = await QuizService.getQuizzes(churchId, { isAdmin: true, forceRefresh: true });
-      setQuizzes(list);
+      await loadWithInstantCache<BibleQuiz[]>({
+        key: quizzesCacheKey,
+        screenName: 'AdminQuizList',
+        freshSkipMs: 60 * 1000,
+        forceRefresh: isManualRefresh,
+        fetcher: () =>
+          QuizService.getQuizzes(churchId, { isAdmin: true, forceRefresh: isManualRefresh }),
+        onCached: (cached) => {
+          setQuizzes(cached);
+          setLoading(false);
+        },
+        onFresh: (fresh) => {
+          setQuizzes(fresh);
+          setLoading(false);
+        },
+      });
     } catch (err) {
       console.error(err);
     } finally {
@@ -213,22 +241,26 @@ export default function AdminQuizList() {
     }
   };
 
-  // Filter quizzes
-  const filteredQuizzes = quizzes.filter(q => {
-    const matchesSearch =
-      q.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (q.book && q.book.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (q.category && q.category.toLowerCase().includes(searchQuery.toLowerCase()));
+  // Filter quizzes (memoized)
+  const filteredQuizzes = useMemo(() => {
+    const queryLower = searchQuery.toLowerCase();
+    return quizzes.filter(q => {
+      const matchesSearch =
+        !queryLower ||
+        q.title.toLowerCase().includes(queryLower) ||
+        (q.book && q.book.toLowerCase().includes(queryLower)) ||
+        (q.category && q.category.toLowerCase().includes(queryLower));
 
-    if (!matchesSearch) return false;
+      if (!matchesSearch) return false;
 
-    if (statusFilter === 'Published') return q.status === 'published';
-    if (statusFilter === 'Scheduled') return q.status === 'scheduled';
-    if (statusFilter === 'Drafts') return q.status === 'draft';
-    if (statusFilter === 'Daily') return q.isDailyQuiz;
+      if (statusFilter === 'Published') return q.status === 'published';
+      if (statusFilter === 'Scheduled') return q.status === 'scheduled';
+      if (statusFilter === 'Drafts') return q.status === 'draft';
+      if (statusFilter === 'Daily') return q.isDailyQuiz;
 
-    return true;
-  });
+      return true;
+    });
+  }, [quizzes, searchQuery, statusFilter]);
 
   // Helper: format duration in minutes and seconds
   const formatCompletionTime = (seconds?: number): string => {
@@ -287,13 +319,22 @@ export default function AdminQuizList() {
     return Array.from(map.entries()).map(([id, title]) => ({ id, title }));
   }, [attempts]);
 
-  // Calculate high-level metrics
-  const totalCount = quizzes.length;
-  const publishedCount = quizzes.filter(q => q.status === 'published' || !q.status).length;
-  const scheduledCount = quizzes.filter(q => q.status === 'scheduled').length;
-  const draftCount = quizzes.filter(q => q.status === 'draft').length;
+  // Calculate high-level metrics in a single pass
+  const { totalCount, publishedCount, scheduledCount, draftCount } = useMemo(() => {
+    let published = 0;
+    let scheduled = 0;
+    let draft = 0;
+    for (let i = 0; i < quizzes.length; i++) {
+      const status = quizzes[i].status;
+      if (!status || status === 'published') published++;
+      else if (status === 'scheduled') scheduled++;
+      else if (status === 'draft') draft++;
+    }
+    return { totalCount: quizzes.length, publishedCount: published, scheduledCount: scheduled, draftCount: draft };
+  }, [quizzes]);
 
   if (currentView === 'editor') {
+    const AdminQuizEditor = require('./AdminQuizEditor').default;
     return (
       <AdminQuizEditor
         initialQuiz={selectedQuiz}
@@ -313,6 +354,7 @@ export default function AdminQuizList() {
   }
 
   if (currentView === 'reports' && selectedQuiz) {
+    const AdminQuizReports = require('./AdminQuizReports').default;
     return (
       <AdminQuizReports
         quizId={selectedQuiz.id}

@@ -28,7 +28,7 @@ import { getStartingLocation } from '../../../utils/locationStore';
 import MapView from 'react-native-maps';
 import * as Speech from 'expo-speech';
 import { SavedLocation } from '../../../utils/locationStore';
-import { Image } from 'react-native';
+import CachedImage from '../../../components/CachedImage';
 
 export const PastorEventDetail = ({ route, navigation }: { route: any; navigation: any }) => {
   const { event, allEvents = [] } = route.params as { event: PastorEvent; allEvents: PastorEvent[] };
@@ -131,31 +131,37 @@ export const PastorEventDetail = ({ route, navigation }: { route: any; navigatio
         const destLat = globalNextEvent.lat;
         const destLng = globalNextEvent.lng;
 
-        // 1. Current Event -> Next Event
+        const [curToNextRes, homeToNextRes] = await Promise.all([
+          event.lat && event.lng
+            ? fetch(`https://maps.googleapis.com/maps/api/distancematrix/json?origins=${event.lat},${event.lng}&destinations=${destLat},${destLng}&key=${GOOGLE_KEY}`)
+                .then((r) => r.json())
+                .catch(() => null)
+            : Promise.resolve(null),
+          (async () => {
+            const home = await getStartingLocation();
+            if (home && home.lat && home.lng) {
+              return fetch(`https://maps.googleapis.com/maps/api/distancematrix/json?origins=${home.lat},${home.lng}&destinations=${destLat},${destLng}&key=${GOOGLE_KEY}`)
+                .then((r) => r.json())
+                .catch(() => null);
+            }
+            return null;
+          })(),
+        ]);
+
         let curToNextKm = 0;
         let curToNextMins = 0;
-        if (event.lat && event.lng) {
-          const res1 = await fetch(`https://maps.googleapis.com/maps/api/distancematrix/json?origins=${event.lat},${event.lng}&destinations=${destLat},${destLng}&key=${GOOGLE_KEY}`);
-          const data1 = await res1.json();
-          if (data1.status === 'OK' && data1.rows[0].elements[0].status === 'OK') {
-            const element = data1.rows[0].elements[0];
-            curToNextKm = element.distance.value / 1000;
-            curToNextMins = Math.round(element.duration.value / 60);
-          }
+        if (curToNextRes?.status === 'OK' && curToNextRes.rows?.[0]?.elements?.[0]?.status === 'OK') {
+          const element = curToNextRes.rows[0].elements[0];
+          curToNextKm = element.distance.value / 1000;
+          curToNextMins = Math.round(element.duration.value / 60);
         }
 
-        // 2. Home -> Next Event
         let homeToNextKm = 0;
         let homeToNextMins = 0;
-        const home = await getStartingLocation();
-        if (home && home.lat && home.lng) {
-          const res2 = await fetch(`https://maps.googleapis.com/maps/api/distancematrix/json?origins=${home.lat},${home.lng}&destinations=${destLat},${destLng}&key=${GOOGLE_KEY}`);
-          const data2 = await res2.json();
-          if (data2.status === 'OK' && data2.rows[0].elements[0].status === 'OK') {
-            const element = data2.rows[0].elements[0];
-            homeToNextKm = element.distance.value / 1000;
-            homeToNextMins = Math.round(element.duration.value / 60);
-          }
+        if (homeToNextRes?.status === 'OK' && homeToNextRes.rows?.[0]?.elements?.[0]?.status === 'OK') {
+          const element = homeToNextRes.rows[0].elements[0];
+          homeToNextKm = element.distance.value / 1000;
+          homeToNextMins = Math.round(element.duration.value / 60);
         }
 
         setNextEventTravel({
@@ -319,8 +325,8 @@ export const PastorEventDetail = ({ route, navigation }: { route: any; navigatio
               ) : (
                 <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' }]}>
                   {process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY ? (
-                    <Image
-                      source={{ uri: `https://static-maps.yandex.ru/1.x/?ll=${event.lng},${event.lat}&size=600,300&z=15&l=map&pt=${event.lng},${event.lat},pm2rdl` }}
+                    <CachedImage
+                      uri={`https://static-maps.yandex.ru/1.x/?ll=${event.lng},${event.lat}&size=600,300&z=15&l=map&pt=${event.lng},${event.lat},pm2rdl`}
                       style={StyleSheet.absoluteFillObject}
                       resizeMode="cover"
                     />

@@ -8,8 +8,12 @@ import { Plus, MoreVertical, Sparkles, Globe, Calendar, Image as ImageIcon, Tras
 import { AdminGalleryStackParamList } from './AdminGalleryNavigator';
 import { AdminTabContext } from '../../../context/AdminTabContext';
 import GalleryService, { GalleryAlbum } from '../../../services/GalleryService';
+import { CachedImage } from '../../../components/CachedImage';
+import { useAuth } from '../../../context/AuthContext';
+import { useChurch } from '../../../context/ChurchContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../../../utils/instantCache';
 
 const { width } = Dimensions.get('window');
 
@@ -18,12 +22,24 @@ type NavigationProp = NativeStackNavigationProp<AdminGalleryStackParamList, 'Adm
 export default function AdminGalleryDashboard() {
   const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const navigation = useNavigation<NavigationProp>();
+  const { user } = useAuth();
+  const { churchId } = useChurch();
   const adminContext = useContext(AdminTabContext);
   const insets = useSafeAreaInsets();
   const openDrawer = (adminContext as any)?.openDrawer || (() => {});
-  const [albums, setAlbums] = useState<GalleryAlbum[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [totalPhotos, setTotalPhotos] = useState(0);
+  const galleryCacheKey = React.useMemo(
+    () => makeScopedCacheKey('admin_gallery_albums_v1', churchId, user?.uid),
+    [churchId, user?.uid]
+  );
+  const initialAlbums = React.useMemo(
+    () => getInstantMemory<GalleryAlbum[]>(galleryCacheKey),
+    [galleryCacheKey]
+  );
+  const [albums, setAlbums] = useState<GalleryAlbum[]>(initialAlbums || []);
+  const [loading, setLoading] = useState(!initialAlbums);
+  const [totalPhotos, setTotalPhotos] = useState(() =>
+    (initialAlbums || []).reduce((acc, a) => acc + (a.photoCount || 0), 0)
+  );
 
   // Toast State
   const toastOpacity = useRef(new Animated.Value(0)).current;
@@ -57,32 +73,48 @@ export default function AdminGalleryDashboard() {
     return () => subscription.remove();
   }, []);
 
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      loadAlbums();
-    });
-    return unsubscribe;
-  }, [navigation]);
-
-  useEffect(() => {
-    loadAlbums();
-  }, []);
-
-  const loadAlbums = async () => {
+  const loadAlbums = React.useCallback(async (forceRefresh = false) => {
     try {
-      setLoading(true);
-      const data = await GalleryService.getAlbums();
-      setAlbums(data);
-      
-      let photoCount = 0;
-      data.forEach(a => photoCount += (a.photoCount || 0));
-      setTotalPhotos(photoCount);
+      const mem = getInstantMemory<GalleryAlbum[]>(galleryCacheKey);
+      if (mem) {
+        setAlbums(mem);
+        setTotalPhotos(mem.reduce((acc, a) => acc + (a.photoCount || 0), 0));
+        setLoading(false);
+      } else if (albums.length === 0) {
+        setLoading(true);
+      }
+
+      await loadWithInstantCache<GalleryAlbum[]>({
+        key: galleryCacheKey,
+        screenName: 'AdminGalleryDashboard',
+        freshSkipMs: 2 * 60 * 1000,
+        forceRefresh,
+        fetcher: () => GalleryService.getAlbums(),
+        onCached: (cached) => {
+          setAlbums(cached);
+          setTotalPhotos(cached.reduce((acc, a) => acc + (a.photoCount || 0), 0));
+          setLoading(false);
+        },
+        onFresh: (fresh) => {
+          setAlbums(fresh);
+          setTotalPhotos(fresh.reduce((acc, a) => acc + (a.photoCount || 0), 0));
+          setLoading(false);
+        },
+      });
     } catch (error) {
       console.error(error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [galleryCacheKey, albums.length]);
+
+  useEffect(() => {
+    loadAlbums(false);
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadAlbums(false);
+    });
+    return unsubscribe;
+  }, [navigation, loadAlbums]);
 
   const getLatestTime = () => {
     if (albums.length === 0) return '--';
@@ -209,7 +241,7 @@ export default function AdminGalleryDashboard() {
     >
       <View style={styles.albumImageContainer}>
         {item.coverPhotoUrl ? (
-          <Image source={{ uri: item.coverPhotoUrl }} style={styles.albumCover} />
+          <CachedImage source={{ uri: item.coverPhotoUrl }} style={styles.albumCover} resizeMode="cover" />
         ) : (
           <View style={[styles.albumCover, { backgroundColor: isDark ? '#1E293B' : '#E2E8F0', justifyContent: 'center', alignItems: 'center' }]}>
             <ImageIcon color={secondaryText} size={40} />
@@ -317,6 +349,10 @@ export default function AdminGalleryDashboard() {
           ListHeaderComponent={renderHeader}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          initialNumToRender={8}
+          maxToRenderPerBatch={8}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
         />
       )}
 
