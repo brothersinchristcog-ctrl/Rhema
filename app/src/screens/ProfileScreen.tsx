@@ -23,6 +23,7 @@ import {
   Easing,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { CachedImage } from '../components/CachedImage';
 import MotherTonguePickerModal from '../modules/matrimony/components/MotherTonguePickerModal';
 import { 
   ArrowLeft,
@@ -724,7 +725,7 @@ export default function ProfileScreen({
                   activeOpacity={0.85}
                 >
                   {localPhotoUrl ? (
-                    <Image source={{ uri: localPhotoUrl }} style={styles.drawerAvatar} />
+                    <CachedImage source={{ uri: localPhotoUrl }} style={styles.drawerAvatar} resizeMode="cover" />
                   ) : (
                     <View style={[styles.drawerAvatar, { backgroundColor: colors.accent || '#2563EB', justifyContent: 'center', alignItems: 'center' }]}>
                       <Text style={styles.drawerAvatarInitial}>{getInitials(displayMemberName)}</Text>
@@ -781,7 +782,7 @@ export default function ProfileScreen({
                   {localPhotoUrl ? (
                     <View style={StyleSheet.absoluteFillObject}>
                       {/* Clean, unblurred original photo */}
-                      <Image
+                      <CachedImage
                         source={{ uri: localPhotoUrl }}
                         style={styles.bannerImgFullTop}
                         resizeMode="cover"
@@ -835,7 +836,7 @@ export default function ProfileScreen({
                     activeOpacity={0.9}
                   >
                     {localPhotoUrl ? (
-                      <Image source={{ uri: localPhotoUrl }} style={styles.avatarOverlapImg} />
+                      <CachedImage source={{ uri: localPhotoUrl }} style={styles.avatarOverlapImg} resizeMode="cover" />
                     ) : (
                       <View style={[styles.avatarFallbackCircle, { backgroundColor: colors.accent || '#2563EB' }]}>
                         <User size={46} color="#FFFFFF" strokeWidth={1.8} />
@@ -1557,7 +1558,7 @@ export default function ProfileScreen({
                       elevation: 6,
                     }}
                   >
-                    <Image 
+                    <CachedImage 
                       source={{ uri: localPhotoUrl }} 
                       style={{ width: '100%', height: '100%', borderRadius: 65 }} 
                       resizeMode="cover" 

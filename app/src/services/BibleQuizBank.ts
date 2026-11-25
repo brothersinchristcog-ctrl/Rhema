@@ -819,6 +819,10 @@ export class BibleQuizBank {
   private static PROGRESS_KEY_PREFIX = '@wechristian_quiz_progress_';
   private static progressMemoryCache: Map<string, MemberCategoryProgress> = new Map();
 
+  static clearProgressCache() {
+    this.progressMemoryCache.clear();
+  }
+
   /**
    * Get questions for a specific category, difficulty, and level.
    * Merges questions from Firestore (if an admin created one for this category/difficulty/level),
@@ -894,9 +898,10 @@ export class BibleQuizBank {
   static async getMemberCategoryProgress(
     userId: string = 'guest',
     category: string,
-    difficulty: QuizDifficulty = 'easy'
+    difficulty: QuizDifficulty = 'easy',
+    churchId: string = 'rhema'
   ): Promise<MemberCategoryProgress> {
-    const key = `${this.PROGRESS_KEY_PREFIX}${userId}_${category}_${difficulty}`;
+    const key = `${this.PROGRESS_KEY_PREFIX}${churchId || 'rhema'}_${userId}_${category}_${difficulty}`;
     if (this.progressMemoryCache.has(key)) {
       return this.progressMemoryCache.get(key)!;
     }
@@ -952,12 +957,13 @@ export class BibleQuizBank {
     level: number,
     score: number,
     total: number,
-    passPercentage: number = 70
+    passPercentage: number = 70,
+    churchId: string = 'rhema'
   ): Promise<{ passed: boolean; nextLevelUnlocked: boolean; newUnlockedLevel: number }> {
     const percentage = total > 0 ? Math.round((score / total) * 100) : 0;
     const passed = percentage >= passPercentage;
 
-    const currentProgress = await this.getMemberCategoryProgress(userId, category, difficulty);
+    const currentProgress = await this.getMemberCategoryProgress(userId, category, difficulty, churchId);
     const prevCompleted = currentProgress.completedLevels[level];
 
     // Calculate stars: 100% = 3 stars, 80%+ = 2 stars, 70%+ = 1 star
@@ -979,7 +985,7 @@ export class BibleQuizBank {
       nextLevelUnlocked = true;
     }
 
-    const key = `${this.PROGRESS_KEY_PREFIX}${userId}_${category}_${difficulty}`;
+    const key = `${this.PROGRESS_KEY_PREFIX}${churchId || 'rhema'}_${userId}_${category}_${difficulty}`;
     this.progressMemoryCache.set(key, currentProgress);
     AsyncStorage.setItem(key, JSON.stringify(currentProgress)).catch((e) => {
       console.warn('[BibleQuizBank] Failed to persist progress:', e);

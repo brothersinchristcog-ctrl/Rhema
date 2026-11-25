@@ -50,6 +50,12 @@ import {
 import AvatarWithStatus from '../components/AvatarWithStatus';
 import ChatListRow from '../components/ChatListRow';
 import FloatingBottomDock from '../components/FloatingBottomDock';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  readInstantCache,
+  writeInstantCache,
+} from '../../../utils/instantCache';
 
 type FilterChip = 'all' | 'favorites' | 'teams' | 'groups';
 
@@ -61,6 +67,14 @@ export default function RhemaChatsScreen({ navigation }: any) {
 
   const churchId = activeChurch?.id || RHEMA_CHURCH_ID;
   const myUid = user?.uid || '';
+  const chatInboxCacheKey = useMemo(
+    () => makeScopedCacheKey('church_chat_inbox_v1', churchId, myUid),
+    [churchId, myUid]
+  );
+  const initialInboxCache = useMemo(
+    () => getInstantMemory<ChatInboxItem[]>(chatInboxCacheKey),
+    [chatInboxCacheKey]
+  );
   const myName =
     member?.name ||
     `${member?.firstName || ''} ${member?.lastName || ''}`.trim() ||
@@ -69,12 +83,12 @@ export default function RhemaChatsScreen({ navigation }: any) {
   const myPhoto = (member as any)?.profilePhoto || (member as any)?.photoUrl || null;
   const isChurchAdmin = isRhemaAdminRole(member);
 
-  const [inbox, setInbox] = useState<ChatInboxItem[]>([]);
+  const [inbox, setInbox] = useState<ChatInboxItem[]>(initialInboxCache || []);
   const [members, setMembers] = useState<ChurchMemberContact[]>([]);
   const [presenceMap, setPresenceMap] = useState<Record<string, ChatPresenceState>>({});
   const [typingMap, setTypingMap] = useState<Record<string, ChatTypingUser[]>>({});
   const [blockedMap, setBlockedMap] = useState<Record<string, ChatBlockRecord>>({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialInboxCache);
 
   const [filterChip, setFilterChip] = useState<FilterChip>('all');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -114,12 +128,27 @@ export default function RhemaChatsScreen({ navigation }: any) {
 
   useEffect(() => {
     if (!myUid) return;
+    let active = true;
+    const mem = getInstantMemory<ChatInboxItem[]>(chatInboxCacheKey);
+    if (mem) {
+      setInbox(mem);
+      setLoading(false);
+    } else {
+      readInstantCache<ChatInboxItem[]>(chatInboxCacheKey).then((cached) => {
+        if (!active || !cached?.data) return;
+        setInbox(cached.data);
+        setLoading(false);
+      });
+    }
+
     loadDirectory();
 
     const stopPresence = rhemaChatService.startPresenceTracking(churchId, myUid, null);
     const unsubInbox = rhemaChatService.subscribeInbox(churchId, myUid, (items) => {
+      if (!active) return;
       setInbox(items);
       setLoading(false);
+      writeInstantCache(chatInboxCacheKey, items).catch(() => {});
     });
     const unsubBlocks = rhemaDirectoryService.subscribeBlockedUsers(
       churchId,
@@ -130,12 +159,13 @@ export default function RhemaChatsScreen({ navigation }: any) {
     const safety = setTimeout(() => setLoading(false), 1800);
 
     return () => {
+      active = false;
       clearTimeout(safety);
       unsubInbox();
       unsubBlocks();
       stopPresence();
     };
-  }, [churchId, myUid, loadDirectory]);
+  }, [churchId, myUid, loadDirectory, chatInboxCacheKey]);
 
   useEffect(() => {
     const unsub = navigation.addListener('focus', () => {

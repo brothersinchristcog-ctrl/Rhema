@@ -6,9 +6,6 @@ import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getStorage } from 'firebase-admin/storage';
-import { SalesforceBackend } from './services/SalesforceBackend.js';
-import { sendWhatsAppTemplateInternal } from './whatsapp.js';
-import { generateCelebrationImage } from './imageGenerator.js';
 import { checkChurchYouTubeLive, dispatchYouTubeLivePush } from './notifications.js';
 import { randomUUID } from 'crypto';
 // Initialize Firebase Admin once at top level
@@ -16,14 +13,15 @@ initializeApp();
 // TODO: When Salesforce integration becomes multi-tenant, remove this and loop over churches.
 // Single-church configuration for Rhema Global Ministries
 const DEFAULT_CHURCH_ID = 'rhema';
-// Lazy initialization helpers
+// Lazy initialization helpers (avoids slow cold-start & discovery timeouts)
 let _db;
 let _messaging;
 let _sfBackend;
 const getDb = () => _db || (_db = getFirestore());
 const getMsg = () => _messaging || (_messaging = getMessaging());
-const getSf = () => {
+const getSf = async () => {
     if (!_sfBackend) {
+        const { SalesforceBackend } = await import('./services/SalesforceBackend.js');
         _sfBackend = new SalesforceBackend({
             consumerKey: process.env.SF_CONSUMER_KEY || '',
             username: process.env.SF_USERNAME || '',
@@ -32,6 +30,14 @@ const getSf = () => {
         });
     }
     return _sfBackend;
+};
+const generateCelebrationImage = async (...args) => {
+    const mod = await import('./imageGenerator.js');
+    return mod.generateCelebrationImage(...args);
+};
+const sendWhatsAppTemplateInternal = async (...args) => {
+    const mod = await import('./whatsapp.js');
+    return mod.sendWhatsAppTemplateInternal(...args);
 };
 // Helper to remove HTML tags from rich text before sending push notifications
 const stripHtml = (html) => {
@@ -44,7 +50,8 @@ const stripHtml = (html) => {
  */
 const getDailyPromise = onCall({ invoker: 'public' }, async (request) => {
     try {
-        const promise = await getSf().getDailyPromise();
+        const sf = await getSf();
+        const promise = await sf.getDailyPromise();
         return { success: true, data: promise };
     }
     catch (error) {
@@ -58,7 +65,8 @@ const getDailyPromise = onCall({ invoker: 'public' }, async (request) => {
 const getUpcomingEvents = onCall({ invoker: 'public' }, async (request) => {
     try {
         const limit = request.data?.limit || 5;
-        const events = await getSf().getUpcomingEvents(limit);
+        const sf = await getSf();
+        const events = await sf.getUpcomingEvents(limit);
         return { success: true, data: events };
     }
     catch (error) {
@@ -75,7 +83,8 @@ const checkContactExists = onCall({ invoker: 'public' }, async (request) => {
         if (!phone) {
             throw new HttpsError('invalid-argument', 'Phone number is required');
         }
-        const result = await getSf().checkContact(phone);
+        const sf = await getSf();
+        const result = await sf.checkContact(phone);
         return { success: true, ...result };
     }
     catch (error) {

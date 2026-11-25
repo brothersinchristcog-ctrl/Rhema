@@ -55,7 +55,7 @@ interface MessageBubbleProps {
   onToggleSelect?: (msg: ChatMessage) => void;
 }
 
-export default function MessageBubble({
+const MessageBubble = React.memo(function MessageBubble({
   message,
   isMine,
   isGroup,
@@ -489,7 +489,9 @@ export default function MessageBubble({
       )}
     </View>
   );
-}
+});
+
+export default MessageBubble;
 
 const styles = StyleSheet.create({
   block: {

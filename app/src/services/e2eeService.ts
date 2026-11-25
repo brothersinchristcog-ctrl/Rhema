@@ -242,6 +242,7 @@ class E2EEService {
     this.backupDismissedThisSession = false;
     this.fingerprint = '';
     this.initPromise = null;
+    this.publicKeyCache.clear();
     this.emitState();
   }
 

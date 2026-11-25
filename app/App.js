@@ -11,6 +11,7 @@ import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import SpInAppUpdates, { IAUUpdateKind } from 'sp-react-native-in-app-updates';
 import { loadTeluguFonts } from './src/utils/ThumbnailTypography';
 import './src/utils/FontSizeManager';
+import { perfMonitor } from './src/utils/perfMonitor';
 
 // Import Firebase config to initialize it on app start
 import './src/services/firebaseConfig';
@@ -35,6 +36,7 @@ export const navigationRef = createNavigationContainerRef();
 const { width } = Dimensions.get('window');
 
 export default function App() {
+  const routeNameRef = useRef(null);
   const [notification, setNotification] = useState(null);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const slideAnim = useRef(new Animated.Value(-150)).current;
@@ -241,7 +243,25 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-    <NavigationContainer ref={navigationRef} linking={linking}>
+    <NavigationContainer
+      ref={navigationRef}
+      linking={linking}
+      onReady={() => {
+        const current = navigationRef.getCurrentRoute()?.name;
+        if (current) {
+          routeNameRef.current = current;
+          perfMonitor.startRouteTransition(current);
+        }
+      }}
+      onStateChange={() => {
+        const prevRoute = routeNameRef.current;
+        const currentRoute = navigationRef.getCurrentRoute()?.name;
+        if (currentRoute && prevRoute !== currentRoute) {
+          routeNameRef.current = currentRoute;
+          perfMonitor.startRouteTransition(currentRoute);
+        }
+      }}
+    >
       <StatusBar style="light" />
       <RootNavigator />
       

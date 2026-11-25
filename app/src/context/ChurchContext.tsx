@@ -2,8 +2,8 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { firestore } from '../services/firebaseConfig';
 import ChurchService, { ChurchDetails } from '../services/ChurchService';
-import { useAuth } from './AuthContext';
 import { RHEMA_CHURCH_ID, RHEMA_CHURCH_NAME, RHEMA_DEFAULT_THEME } from '../constants/ChurchConfig';
+import { resetAllClientCaches } from '../utils/cacheReset';
 
 interface ChurchContextType {
   activeChurch: ChurchDetails | null;
@@ -44,7 +44,6 @@ const DEFAULT_RHEMA_DETAILS: ChurchDetails = {
 const ChurchContext = createContext<ChurchContextType | undefined>(undefined);
 
 export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { member } = useAuth();
   const [activeChurch, setActiveChurch] = useState<ChurchDetails | null>(DEFAULT_RHEMA_DETAILS);
   const [churchId, setChurchIdState] = useState<string>(RHEMA_CHURCH_ID);
   const [loading, setLoading] = useState(false);
@@ -54,11 +53,12 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [impersonatedBranchName, setImpersonatedBranchName] = useState<string | null>(null);
   const isImpersonating = !!originalChurchId;
 
-  // Real-time listener for Rhema Global Ministries church document
+  // Real-time listener for the currently selected churchId
   useEffect(() => {
+    const activeTargetId = churchId || RHEMA_CHURCH_ID;
     const unsub = firestore()
       .collection('Rhema Church')
-      .doc(RHEMA_CHURCH_ID)
+      .doc(activeTargetId)
       .onSnapshot(
         (docSnap) => {
           if (docSnap && docSnap.exists()) {
@@ -71,17 +71,19 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
       );
 
-    // Initial sync with FirestoreService and Notifications
-    require('../services/FirestoreService').default.setChurchId(RHEMA_CHURCH_ID).catch(() => {});
-    require('../services/NotificationService').default.subscribeToChurchTopic(RHEMA_CHURCH_ID).catch(() => {});
+    // Sync active church with FirestoreService and notification topic
+    require('../services/FirestoreService').default.setChurchId(activeTargetId).catch(() => {});
+    require('../services/NotificationService').default.subscribeToChurchTopic(activeTargetId).catch(() => {});
 
     return () => unsub();
-  }, []);
+  }, [churchId]);
 
   const setChurchId = async (id: string) => {
-    // Single church app: churchId is locked to Rhema Global Ministries
     const targetId = id || RHEMA_CHURCH_ID;
     try {
+      if (targetId !== churchId) {
+        await resetAllClientCaches('church_switch');
+      }
       const details = await ChurchService.getChurchDetails(targetId);
       if (details) {
         setActiveChurch(details);
@@ -99,6 +101,9 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     try {
       const details = await ChurchService.getChurchDetails(branchId);
       if (details) {
+        if (branchId !== churchId) {
+          await resetAllClientCaches('church_switch');
+        }
         if (!originalChurchId) {
           setOriginalChurchId(churchId);
         }
@@ -120,6 +125,9 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       try {
         const details = await ChurchService.getChurchDetails(originalChurchId);
         if (details) {
+          if (originalChurchId !== churchId) {
+            await resetAllClientCaches('church_switch');
+          }
           setActiveChurch(details);
           setChurchIdState(originalChurchId);
           await require('../services/FirestoreService').default.setChurchId(originalChurchId);

@@ -429,26 +429,34 @@ class VerseNotificationService {
         }
       }
 
-      for (let i = 0; i < verses.length; i++) {
-        const v = verses[i];
-        const period = PERIODS[i] || 'Morning';
-        if (!v) continue;
+      const results = await Promise.all(
+        verses.map(async (v, i) => {
+          const period = PERIODS[i] || 'Morning';
+          if (!v) return null;
 
-        const hasFreshDynamic =
-          v.isDynamicUnsplash === true &&
-          v.backgroundDateKey === dateKey &&
-          v.backgroundUrl &&
-          !isStaticCuratedBackgroundUrl(v.backgroundUrl);
+          const hasFreshDynamic =
+            v.isDynamicUnsplash === true &&
+            v.backgroundDateKey === dateKey &&
+            v.backgroundUrl &&
+            !isStaticCuratedBackgroundUrl(v.backgroundUrl);
 
-        if (hasFreshDynamic) continue;
+          if (hasFreshDynamic) return null;
 
-        const fetched = await fetchRelevantUnsplashForVerse(v, period, dayNumber, usedSet);
+          const fetched = await fetchRelevantUnsplashForVerse(v, period, dayNumber, usedSet);
+          return { v, i, period, fetched };
+        })
+      );
+
+      for (const item of results) {
+        if (!item) continue;
+        const { v, i, period, fetched } = item;
         if (fetched && fetched.url) {
           v.backgroundUrl = fetched.url;
           v.isDynamicUnsplash = true;
           v.backgroundDateKey = dateKey;
           v.unsplashPhotographer = fetched.photographer;
           v.backgroundTheme = fetched.theme;
+          usedSet.add(fetched.url);
           cacheChanged = true;
 
           if (typeof v.index === 'number') {

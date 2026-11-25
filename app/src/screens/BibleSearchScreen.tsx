@@ -1,35 +1,38 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  StyleSheet, 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  ScrollView, 
-  StatusBar, 
-  ActivityIndicator, 
-  TextInput, 
-  Modal, 
-  FlatList, 
-  Platform 
+import {
+  StyleSheet,
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  StatusBar,
+  ActivityIndicator,
+  TextInput,
+  Modal,
+  FlatList,
+  Platform
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, Search, BookOpen, CheckSquare, Square, BookMarked, ChevronDown, X } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { useAuth } from '../context/AuthContext';
+import { useChurch } from '../context/ChurchContext';
 import { SupportedLanguage } from '../locales';
 import { BibleService } from '../services/BibleService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appendScopedPersonalNote } from '../utils/instantCache';
 
 const HighlightText = ({ text, highlight, style, highlightStyle }: any) => {
   if (!highlight || !highlight.trim() || !text) return <Text style={style}>{text}</Text>;
-  
+
   const escapedHighlight = highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const parts = text.split(new RegExp(`(${escapedHighlight})`, 'gi'));
-  
+
   return (
     <Text style={style}>
-      {parts.map((part: string, i: number) => 
+      {parts.map((part: string, i: number) =>
         part.toLowerCase() === highlight.toLowerCase() ? (
           <Text key={i} style={highlightStyle}>{part}</Text>
         ) : (
@@ -45,6 +48,8 @@ export default function BibleSearchScreen({ route, navigation }: any) {
   const { initialQuery, initialLang } = route.params || {};
   const { isDark, colors } = useTheme();
   const { language, t } = useLanguage();
+  const { user } = useAuth();
+  const { activeChurch } = useChurch();
   const [savedBibleLang, setSavedBibleLang] = useState<SupportedLanguage | null>(null);
 
   useEffect(() => {
@@ -54,7 +59,7 @@ export default function BibleSearchScreen({ route, navigation }: any) {
       });
     }
   }, [initialLang]);
-  
+
   const activeLang = (initialLang || savedBibleLang || language) as SupportedLanguage;
   const [query, setQuery] = useState(initialQuery || '');
   const [results, setResults] = useState<any[]>([]);
@@ -75,7 +80,7 @@ export default function BibleSearchScreen({ route, navigation }: any) {
   const [modalType, setModalType] = useState<'Testament' | 'Book' | 'Chapter' | 'Verse'>('Testament');
 
   const getModalOptions = () => {
-    switch(modalType) {
+    switch (modalType) {
       case 'Testament':
         return [
           { label: 'All', value: 'All' },
@@ -86,14 +91,14 @@ export default function BibleSearchScreen({ route, navigation }: any) {
         let start = 0, end = 66;
         if (filterTestament === 'Old') end = 39;
         if (filterTestament === 'New') start = 39;
-        
+
         const books: any[] = [{ label: 'All Books', value: null }];
         for (let i = start; i < end; i++) {
           const localized = BibleService.getBookName(i, activeLang);
           const en = BibleService.getBookName(i, 'en');
-          books.push({ 
-            label: localized === en ? en : `${en} · ${localized}`, 
-            value: i 
+          books.push({
+            label: localized === en ? en : `${en} · ${localized}`,
+            value: i
           });
         }
         return books;
@@ -117,7 +122,7 @@ export default function BibleSearchScreen({ route, navigation }: any) {
 
   const handleSelectFilter = (val: any) => {
     let tVal = filterTestament, b = filterBook, c = filterChapter, v = filterVerse;
-    switch(modalType) {
+    switch (modalType) {
       case 'Testament':
         setFilterTestament(val); tVal = val;
         setFilterBook(null); b = null;
@@ -138,7 +143,7 @@ export default function BibleSearchScreen({ route, navigation }: any) {
         break;
     }
     setModalVisible(false);
-    
+
     if (query.trim().length > 0) {
       setTimeout(() => performSearch(query, { testament: tVal, book: b, chapter: c, verse: v }), 100);
     }
@@ -166,7 +171,7 @@ export default function BibleSearchScreen({ route, navigation }: any) {
   const saveToSermonNotes = async () => {
     const content = getSelectedVersesText();
     if (!content) return;
-    
+
     const dateStr = new Date().toLocaleDateString('en-US', {
       month: 'long',
       day: 'numeric',
@@ -189,10 +194,7 @@ export default function BibleSearchScreen({ route, navigation }: any) {
         timestamp: timestampStr
       };
 
-      const stored = await AsyncStorage.getItem('@SermonPersonalNotes');
-      const existingNotes = stored ? JSON.parse(stored) : [];
-      const updatedNotes = [newNote, ...existingNotes];
-      await AsyncStorage.setItem('@SermonPersonalNotes', JSON.stringify(updatedNotes));
+      await appendScopedPersonalNote(activeChurch?.id, user?.uid, newNote);
 
       setSelectedVerses(new Set());
       navigation.navigate('MemberNotes', { refreshId: Date.now() });
@@ -214,7 +216,7 @@ export default function BibleSearchScreen({ route, navigation }: any) {
         setSuggestions([]);
         return;
       }
-      
+
       const isEnglishQuery = /[a-zA-Z]/.test(query);
       if (isEnglishQuery && activeLang !== 'en') {
         try {
@@ -241,7 +243,7 @@ export default function BibleSearchScreen({ route, navigation }: any) {
 
   const performSearch = async (searchStr: string, overrideFilters?: { testament: any, book: any, chapter: any, verse: any }) => {
     if (!searchStr.trim()) return;
-    
+
     setLoading(true);
     setHasSearched(true);
     setError(null);
@@ -262,13 +264,13 @@ export default function BibleSearchScreen({ route, navigation }: any) {
         const parsedChapter = parseInt(match[2], 10);
         const parsedVerse = match[3] ? parseInt(match[3], 10) : null;
         const bIdx = BibleService.getBookIndex(parsedBook);
-        
+
         try {
           const chapterVerses = await BibleService.fetchChapterVerses(bIdx, parsedChapter, activeLang);
           const filteredVerses = parsedVerse
             ? chapterVerses.filter(v => v.verse === parsedVerse)
             : chapterVerses;
-          
+
           if (filteredVerses.length > 0) {
             const mapped = filteredVerses.map(v => ({
               id: `${activeLang}-${bIdx + 1}-${parsedChapter}-${v.verse}`,
@@ -318,11 +320,11 @@ export default function BibleSearchScreen({ route, navigation }: any) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar 
-        barStyle={colors.barStyle || (isDark ? 'light-content' : 'dark-content')} 
-        backgroundColor={colors.background} 
+      <StatusBar
+        barStyle={colors.barStyle || (isDark ? 'light-content' : 'dark-content')}
+        backgroundColor={colors.background}
       />
-      
+
       {/* ── Screen Header (Clean back button & title) ── */}
       <View
         style={[
@@ -353,14 +355,14 @@ export default function BibleSearchScreen({ route, navigation }: any) {
       {/* Search Input */}
       <View style={{ marginHorizontal: 20, zIndex: 100 }}>
         <View style={[
-          styles.searchContainer, 
-          { 
-            backgroundColor: colors.surface, 
+          styles.searchContainer,
+          {
+            backgroundColor: colors.surface,
             borderColor: colors.border,
             borderWidth: 1,
-            marginHorizontal: 0, 
-            marginTop: 16, 
-            marginBottom: 0 
+            marginHorizontal: 0,
+            marginTop: 16,
+            marginBottom: 0
           }
         ]}>
           <TouchableOpacity onPress={() => performSearch(query)} style={{ padding: 4, flexShrink: 0 }}>
@@ -409,7 +411,7 @@ export default function BibleSearchScreen({ route, navigation }: any) {
         <TouchableOpacity
           style={[
             styles.filterBtn,
-            { 
+            {
               backgroundColor: filterTestament !== 'All' ? colors.accent : colors.surface,
               borderColor: filterTestament !== 'All' ? colors.accent : colors.border,
               borderWidth: 1,
@@ -426,7 +428,7 @@ export default function BibleSearchScreen({ route, navigation }: any) {
         <TouchableOpacity
           style={[
             styles.filterBtn,
-            { 
+            {
               backgroundColor: filterBook !== null ? colors.accent : colors.surface,
               borderColor: filterBook !== null ? colors.accent : colors.border,
               borderWidth: 1,
@@ -443,7 +445,7 @@ export default function BibleSearchScreen({ route, navigation }: any) {
         <TouchableOpacity
           style={[
             styles.filterBtn,
-            { 
+            {
               backgroundColor: filterChapter !== null ? colors.accent : colors.surface,
               borderColor: filterChapter !== null ? colors.accent : colors.border,
               borderWidth: 1,
@@ -460,7 +462,7 @@ export default function BibleSearchScreen({ route, navigation }: any) {
         <TouchableOpacity
           style={[
             styles.filterBtn,
-            { 
+            {
               backgroundColor: filterVerse !== null ? colors.accent : colors.surface,
               borderColor: filterVerse !== null ? colors.accent : colors.border,
               borderWidth: 1,
@@ -512,14 +514,14 @@ export default function BibleSearchScreen({ route, navigation }: any) {
             {results.map((item) => {
               const isSelected = selectedVerses.has(item.id);
               return (
-                <TouchableOpacity 
-                  key={item.id} 
+                <TouchableOpacity
+                  key={item.id}
                   style={[
-                    styles.resultCard, 
-                    { 
+                    styles.resultCard,
+                    {
                       backgroundColor: colors.surface,
-                      borderWidth: 1, 
-                      borderColor: isSelected ? (colors.accent || '#38BDF8') : colors.border 
+                      borderWidth: 1,
+                      borderColor: isSelected ? (colors.accent || '#38BDF8') : colors.border
                     }
                   ]}
                   onPress={() => handleVerseClick(item)}
@@ -534,7 +536,7 @@ export default function BibleSearchScreen({ route, navigation }: any) {
                       ? <CheckSquare size={20} color={colors.accent || (isDark ? '#38BDF8' : '#0F766E')} />
                       : <Square size={20} color={colors.border} />}
                   </TouchableOpacity>
-                  
+
                   <View style={[styles.referenceBadge, { backgroundColor: colors.accent || (isDark ? '#38BDF8' : '#0F766E') }]}>
                     <BookOpen size={14} color="#fff" style={{ marginRight: 6 }} />
                     <Text style={styles.referenceText}>
@@ -542,16 +544,16 @@ export default function BibleSearchScreen({ route, navigation }: any) {
                       {item.bookEn && item.bookEn !== item.book ? ` · ${item.bookEn} ${item.chapter}:${item.verse}` : ''}
                     </Text>
                   </View>
-                  
+
                   {item.text ? (
-                    <HighlightText 
+                    <HighlightText
                       text={item.text}
                       highlight={item.highlight}
                       style={[styles.verseTextEn, { color: colors.text }]}
-                      highlightStyle={{ 
-                        backgroundColor: isDark ? 'rgba(250, 204, 21, 0.25)' : 'rgba(250, 204, 21, 0.4)', 
-                        color: isDark ? '#fde047' : '#854d0e', 
-                        fontWeight: 'bold' 
+                      highlightStyle={{
+                        backgroundColor: isDark ? 'rgba(250, 204, 21, 0.25)' : 'rgba(250, 204, 21, 0.4)',
+                        color: isDark ? '#fde047' : '#854d0e',
+                        fontWeight: 'bold'
                       }}
                     />
                   ) : null}
@@ -572,8 +574,8 @@ export default function BibleSearchScreen({ route, navigation }: any) {
       {/* Floating Save to Notes Bar */}
       {selectedVerses.size > 0 && (
         <View style={[
-          styles.saveNotesBar, 
-          { 
+          styles.saveNotesBar,
+          {
             backgroundColor: isDark ? '#18181B' : (colors.accent || '#0F766E'),
             borderWidth: isDark ? 1 : 0,
             borderColor: colors.border
@@ -628,7 +630,7 @@ export default function BibleSearchScreen({ route, navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-    headerRow: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -724,7 +726,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 10,
   },
-  
+
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -742,7 +744,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     paddingHorizontal: 8,
   },
-  
+
   suggestionDropdown: {
     position: 'absolute',
     top: 56,

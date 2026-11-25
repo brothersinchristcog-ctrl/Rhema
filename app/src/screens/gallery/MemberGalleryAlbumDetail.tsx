@@ -33,9 +33,12 @@ import * as MediaLibrary from 'expo-media-library';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MemberGalleryStackParamList } from './MemberGalleryNavigator';
 import GalleryService, { GalleryPhoto } from '../../services/GalleryService';
+import { CachedImage } from '../../components/CachedImage';
+import { useChurch } from '../../context/ChurchContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 import { useLanguage } from '../../context/LanguageContext';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../../utils/instantCache';
 
 const { width } = Dimensions.get('window');
 const COLUMN_COUNT = 2;
@@ -53,6 +56,7 @@ export default function MemberGalleryAlbumDetail() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RouteProps>();
   const { albumId, albumName, albumDescription } = route.params;
+  const { churchId } = useChurch();
   const { isDark } = useTheme();
   const {
     screenBg,
@@ -62,9 +66,11 @@ export default function MemberGalleryAlbumDetail() {
     borderColor: adminBorderColor,
   } = useAdminTheme();
   const { t } = useLanguage();
+  const albumCacheKey = makeScopedCacheKey('gallery_album_photos_v1', churchId, albumId);
+  const initialPhotos = getInstantMemory<GalleryPhoto[]>(albumCacheKey);
 
-  const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [photos, setPhotos] = useState<GalleryPhoto[]>(() => initialPhotos || []);
+  const [loading, setLoading] = useState(() => !initialPhotos);
 
   // Image Viewer State
   const [isViewerVisible, setIsViewerVisible] = useState(false);
@@ -81,13 +87,32 @@ export default function MemberGalleryAlbumDetail() {
 
   useEffect(() => {
     loadPhotos();
-  }, [albumId]);
+  }, [albumId, albumCacheKey]);
 
   const loadPhotos = async () => {
     try {
-      setLoading(true);
-      const data = await GalleryService.getAlbumPhotos(albumId);
-      setPhotos(data);
+      const memHit = getInstantMemory<GalleryPhoto[]>(albumCacheKey);
+      if (memHit) {
+        setPhotos(memHit);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+
+      await loadWithInstantCache<GalleryPhoto[]>({
+        key: albumCacheKey,
+        screenName: 'MemberGalleryAlbumDetail',
+        freshSkipMs: 3 * 60 * 1000,
+        fetcher: () => GalleryService.getAlbumPhotos(albumId),
+        onCached: (cached) => {
+          setPhotos(cached);
+          setLoading(false);
+        },
+        onFresh: (fresh) => {
+          setPhotos(fresh);
+          setLoading(false);
+        },
+      });
     } catch (error) {
       console.error(error);
     } finally {
@@ -212,7 +237,7 @@ export default function MemberGalleryAlbumDetail() {
         activeOpacity={0.8}
         onPress={() => openViewer(index)}
       >
-        <Image
+        <CachedImage
           source={{ uri: item.url }}
           style={[styles.photo, { height: isTall ? 250 : 200 }]}
           resizeMode="cover"
@@ -238,6 +263,10 @@ export default function MemberGalleryAlbumDetail() {
         contentContainerStyle={styles.listContent}
         columnWrapperStyle={styles.row}
         showsVerticalScrollIndicator={false}
+        initialNumToRender={10}
+        maxToRenderPerBatch={8}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
         ListEmptyComponent={
           !loading ? (
             <Text style={[styles.emptyText, { color: secondaryText }]}>
@@ -286,6 +315,9 @@ export default function MemberGalleryAlbumDetail() {
                 horizontal
                 pagingEnabled
                 showsHorizontalScrollIndicator={false}
+                initialNumToRender={2}
+                maxToRenderPerBatch={2}
+                windowSize={3}
                 initialScrollIndex={currentPhotoIndex}
                 onMomentumScrollEnd={(e) => {
                   const newIdx = Math.round(e.nativeEvent.contentOffset.x / width);
@@ -309,7 +341,7 @@ export default function MemberGalleryAlbumDetail() {
                       }}
                     >
                       <View style={styles.instaCard}>
-                        <Image
+                        <CachedImage
                           source={{ uri: item.url }}
                           style={styles.instaImage}
                           resizeMode="contain"

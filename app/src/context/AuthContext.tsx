@@ -117,6 +117,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     let subscriber: (() => void) | undefined;
+    let lastActiveUid: string | null = null;
     // Safety fallback so loading can NEVER hang on splash screen due to slow network/Firestore
     const safetyTimer = setTimeout(() => {
       setLoading(false);
@@ -249,6 +250,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(userState);
 
         if (!userState.isAnonymous) {
+          if (lastActiveUid && lastActiveUid !== userState.uid) {
+            await require('../utils/cacheReset').resetAllClientCaches('account_switch');
+          }
+          lastActiveUid = userState.uid;
           // Persist user session so user is NEVER asked to log in again unless they tap Sign Out
           const persistentUser = {
             uid: userState.uid,
@@ -325,21 +330,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             let memberProfile = await FirestoreService.getMemberProfile(targetChurchId, userState.uid);
 
             const searchPhone = userState.phoneNumber || globalUser?.phone || memberProfile?.phone || cachedMemberObj?.phone;
-            if (searchPhone) {
+            const needsContactMerge =
+              Boolean(searchPhone) &&
+              (!memberProfile ||
+                memberProfile.isGuest === true ||
+                !(memberProfile.firstName || memberProfile.name || memberProfile.displayName));
+
+            if (needsContactMerge && searchPhone) {
               try {
-                // First sync any unmerged admin contact by phone
+                // Only run phone merge/sync when profile isn't already linked cleanly
                 const synced = await FirestoreService.syncMemberByPhone(targetChurchId, searchPhone, userState.uid);
                 if (synced) {
                   memberProfile = { ...(memberProfile || {}), ...synced };
                   globalUser = { ...(globalUser || {}), ...synced } as any;
                 }
 
-                const contactCheck = await FirestoreService.checkContactExists(searchPhone);
-                if (contactCheck?.exists && contactCheck.member) {
-                  if (contactCheck.member.id !== userState.uid) {
-                    await FirestoreService.syncMember(targetChurchId, contactCheck.member.id, userState.uid);
+                if (!memberProfile || memberProfile.isGuest === true) {
+                  const contactCheck = await FirestoreService.checkContactExists(searchPhone);
+                  if (contactCheck?.exists && contactCheck.member) {
+                    if (contactCheck.member.id !== userState.uid) {
+                      await FirestoreService.syncMember(targetChurchId, contactCheck.member.id, userState.uid);
+                    }
+                    memberProfile = { ...memberProfile, ...contactCheck.member, id: userState.uid } as AppMember;
                   }
-                  memberProfile = { ...memberProfile, ...contactCheck.member, id: userState.uid } as AppMember;
                 }
               } catch (e) {
                 console.warn('⚠️ [Auth] checkContactExists failed during login:', e);
@@ -355,7 +368,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               )
             );
 
-            if (!hasValidMemberProfile && !isPlatformSuperAdmin) {
+            if (!hasValidMemberProfile && !isSuperResult) {
               // If the user is actively completing OTP + saving registration details, let VerifyOtp finish
               // persisting formData to Firestore & AsyncStorage before switching to ApprovalPending.
               if (isCompletingSignUpRef.current) {
@@ -602,8 +615,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (auth().currentUser) {
         await auth().signOut().catch(() => {});
       }
-      require('../services/roomKeyManager').roomKeyManager.clearCache();
-      require('../services/e2eeService').e2eeService.clearSessionMemory();
+      await require('../utils/cacheReset').resetAllClientCaches('logout');
       await AsyncStorage.multiRemove([
         '@cached_member', 
         '@cached_user', 

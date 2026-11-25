@@ -1,19 +1,19 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { 
-  StyleSheet, 
-  View, 
-  Text, 
-  FlatList, 
-  TouchableOpacity, 
-  ActivityIndicator, 
-  Dimensions, 
-  StatusBar, 
-  TextInput, 
-  Alert, 
-  Platform, 
-  Modal, 
-  ToastAndroid, 
+import {
+  StyleSheet,
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  ActivityIndicator,
+  Dimensions,
+  StatusBar,
+  TextInput,
+  Alert,
+  Platform,
+  Modal,
+  ToastAndroid,
   Image,
   ScrollView,
   RefreshControl,
@@ -24,21 +24,23 @@ import {
   KeyboardAvoidingView
 } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
-import { 
-  ArrowLeft, 
-  Search, 
-  Download, 
-  QrCode, 
+import { CachedImage } from '../components/CachedImage';
+import { getInstantMemory, readInstantCache, writeInstantCache, makeScopedCacheKey } from '../utils/instantCache';
+import {
+  ArrowLeft,
+  Search,
+  Download,
+  QrCode,
   Eye,
-  X, 
-  Share2, 
-  Camera, 
-  Image as ImageIcon, 
-  CheckCircle2, 
-  Building2, 
-  Calendar, 
-  Clock, 
-  Award, 
+  X,
+  Share2,
+  Camera,
+  Image as ImageIcon,
+  CheckCircle2,
+  Building2,
+  Calendar,
+  Clock,
+  Award,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -274,7 +276,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
   useEffect(() => {
     if (!churchId || !memberId) return;
     // Wipe any legacy persistent marked event IDs from AsyncStorage so deleted records are never revived on disk
-    AsyncStorage.removeItem(`@attended_events_${churchId}_${memberId}`).catch(() => {});
+    AsyncStorage.removeItem(`@attended_events_${churchId}_${memberId}`).catch(() => { });
   }, [churchId, memberId]);
 
   // QR Code View Modal (for admin/sharing)
@@ -340,9 +342,9 @@ export default function AttendanceScreen({ navigation, route }: any) {
   const toastAnim = useRef(new Animated.Value(0)).current;
   const toastTimerRef = useRef<any>(null);
 
-  const churchLogoUrl = activeChurch?.theme?.logoUrl || 
-    (activeChurch as any)?.logoUrl || 
-    (activeChurch as any)?.profilePhoto || 
+  const churchLogoUrl = activeChurch?.theme?.logoUrl ||
+    (activeChurch as any)?.logoUrl ||
+    (activeChurch as any)?.profilePhoto ||
     null;
 
   const showChurchToast = (message: string) => {
@@ -449,17 +451,62 @@ export default function AttendanceScreen({ navigation, route }: any) {
             setUserLocation({ coords: res.coords, timestamp: Date.now() });
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     }
   }, [showLiveScanner]);
 
-  // Load all data
+  const attendanceCacheKey = useMemo(
+    () => makeScopedCacheKey('attendance_screen_v1', churchId, memberId || user?.uid),
+    [churchId, memberId, user?.uid]
+  );
+
+  // Persist attendance snapshot whenever events or attendance records update for 0ms instant revisit
+  useEffect(() => {
+    if (allEvents.length > 0 || attendanceRecords.length > 0) {
+      writeInstantCache(attendanceCacheKey, {
+        allEvents,
+        attendanceRecords,
+      }).catch(() => { });
+    }
+  }, [allEvents, attendanceRecords, attendanceCacheKey]);
+
+  // Load all data (Cache-First instant display + parallel refresh)
   useEffect(() => {
     loadScreenData();
   }, [churchId, memberId]);
 
   const loadScreenData = async () => {
-    setLoading(true);
+    const memCached = getInstantMemory<{ allEvents: any[]; attendanceRecords: AttendanceRecord[] }>(attendanceCacheKey);
+    let hasCached = false;
+    if (memCached) {
+      setAllEvents((memCached.allEvents || []).map((ev: any) => ({ ...ev, dateObj: new Date(ev.dateObj) })));
+      setAttendanceRecords(memCached.attendanceRecords || []);
+      const vIds = new Set<string>();
+      (memCached.attendanceRecords || []).forEach((r: AttendanceRecord) => {
+        if (r.eventId && r.status === 'Present') vIds.add(r.eventId);
+      });
+      setMarkedEventIds(vIds);
+      setLoading(false);
+      hasCached = true;
+    } else {
+      const diskCached = await readInstantCache<{ allEvents: any[]; attendanceRecords: AttendanceRecord[] }>(attendanceCacheKey).catch(() => null);
+      if (diskCached?.data) {
+        setAllEvents((diskCached.data.allEvents || []).map((ev: any) => ({ ...ev, dateObj: new Date(ev.dateObj) })));
+        setAttendanceRecords(diskCached.data.attendanceRecords || []);
+        const vIds = new Set<string>();
+        (diskCached.data.attendanceRecords || []).forEach((r: AttendanceRecord) => {
+          if (r.eventId && r.status === 'Present') vIds.add(r.eventId);
+        });
+        setMarkedEventIds(vIds);
+        setLoading(false);
+        hasCached = true;
+      }
+    }
+
+    if (!hasCached && allEvents.length === 0) {
+      setLoading(true);
+    }
+
     try {
       // Parallel fetch of events and member attendance
       await Promise.all([
@@ -471,18 +518,17 @@ export default function AttendanceScreen({ navigation, route }: any) {
     } finally {
       setLoading(false);
       setRefreshing(false);
-      // Fetch user photos in background without blocking screen render
-      fetchUserPhotos().catch(() => {});
+      // Fetch user photos from cached church members list in background without blocking screen render
+      fetchUserPhotos().catch(() => { });
     }
   };
 
   const fetchUserPhotos = async (): Promise<Record<string, string>> => {
     try {
-      const churchId = activeChurch?.id || 'rhema';
-      const snap = await firestore().collection('Rhema Church').doc(churchId).collection('members').limit(200).get();
+      const targetCid = churchId || activeChurch?.id || 'rhema';
+      const membersList = await AttendanceService.getChurchMembers(targetCid);
       const photos: Record<string, string> = {};
-      snap.forEach(doc => {
-        const data = doc.data();
+      (membersList || []).forEach((data: any) => {
         const photo = data.photoURL || data.photoUrl || data.profilePhoto || data.profileImageUrl || data.avatarUrl || data.photo || data.picture;
         if (photo && typeof photo === 'string' && photo.trim() !== '') {
           const ph = data.phone || data.MobilePhone || data.phoneNumber || data.mobile;
@@ -493,7 +539,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
           if (data.sfContactId) photos[data.sfContactId] = photo;
           if (data.contactId) photos[data.contactId] = photo;
           if (data.memberId) photos[data.memberId] = photo;
-          photos[doc.id] = photo;
+          if (data.id) photos[data.id] = photo;
         }
       });
       setUserPhotos(photos);
@@ -528,7 +574,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
         }
       });
 
-      // Also check recent attendanceRequests responses for this member ONLY if the event record has not been deleted
+      // Also check recent attendanceRequests responses in parallel ONLY if the event record has not been deleted
       try {
         const reqSnap = await firestore()
           .collection('Rhema Church')
@@ -538,38 +584,44 @@ export default function AttendanceScreen({ navigation, route }: any) {
           .get();
 
         const checkIds = [targetMemberId, altMemberId].filter(Boolean);
-        for (const reqDoc of reqSnap.docs) {
-          for (const cId of checkIds) {
-            const respDoc = await firestore()
-              .collection('Rhema Church')
-              .doc(churchId)
-              .collection('attendanceRequests')
-              .doc(reqDoc.id)
-              .collection('responses')
-              .doc(cId)
-              .get()
-              .catch(() => null);
+        const existingEventIds = new Set(cleanRecords.map(r => r.eventId));
 
-            const isDocExisting = respDoc && (typeof (respDoc as any).exists === 'function' ? (respDoc as any).exists() : Boolean((respDoc as any).exists));
-            if (isDocExisting && respDoc) {
+        await Promise.all(
+          reqSnap.docs.map(async (reqDoc) => {
+            if (existingEventIds.has(reqDoc.id)) return;
+            const pairs = await Promise.all(
+              checkIds.map(async (cId) => {
+                const [respDoc, evAttDoc] = await Promise.all([
+                  firestore()
+                    .collection('Rhema Church')
+                    .doc(churchId)
+                    .collection('attendanceRequests')
+                    .doc(reqDoc.id)
+                    .collection('responses')
+                    .doc(cId)
+                    .get()
+                    .catch(() => null),
+                  firestore()
+                    .collection('Rhema Church')
+                    .doc(churchId)
+                    .collection('events')
+                    .doc(reqDoc.id)
+                    .collection('attendees')
+                    .doc(cId)
+                    .get()
+                    .catch(() => null),
+                ]);
+                return { respDoc, evAttDoc };
+              })
+            );
+
+            for (const { respDoc, evAttDoc } of pairs) {
+              const isDocExisting = respDoc && (typeof (respDoc as any).exists === 'function' ? (respDoc as any).exists() : Boolean((respDoc as any).exists));
+              if (!isDocExisting || !respDoc) continue;
               const respData = respDoc.data();
               if (respData?.status === 'Present' || respData?.response === 'Yes') {
-                // Verify whether this event exists under events and whether the attendee was deleted there
-                const evAttDoc = await firestore()
-                  .collection('Rhema Church')
-                  .doc(churchId)
-                  .collection('events')
-                  .doc(reqDoc.id)
-                  .collection('attendees')
-                  .doc(cId)
-                  .get()
-                  .catch(() => null);
                 const evAttExists = evAttDoc && (typeof (evAttDoc as any).exists === 'function' ? (evAttDoc as any).exists() : Boolean((evAttDoc as any).exists));
-                if (evAttDoc && !evAttExists) {
-                  // Deleted from the event's attendee collection! Do NOT resurrect!
-                  continue;
-                }
-
+                if (evAttDoc && !evAttExists) continue;
                 if (!cleanRecords.some(r => r.eventId === reqDoc.id)) {
                   cleanRecords.push({
                     id: respDoc.id,
@@ -582,11 +634,12 @@ export default function AttendanceScreen({ navigation, route }: any) {
                     churchId,
                   } as AttendanceRecord);
                 }
+                break;
               }
             }
-          }
-        }
-      } catch (e) {}
+          })
+        );
+      } catch (e) { }
 
       // Synchronize markedEventIds to EXACTLY the verified records from Firestore
       const verifiedIds = new Set<string>();
@@ -783,14 +836,14 @@ export default function AttendanceScreen({ navigation, route }: any) {
     try {
       const items: EventItem[] = [];
 
-      // 1. Fetch church events & attendance requests concurrently for fast loading
+      // 1. Fetch church events & attendance requests concurrently (skip duplicate FirestoreService.getEvents when churchId is set)
       const [eventsSnap, fsEvents, attRequestsSnap] = await Promise.all([
-        churchId 
-          ? firestore().collection('Rhema Church').doc(churchId).collection('events').get().catch(() => ({ docs: [] }))
-          : Promise.resolve({ docs: [] }),
-        FirestoreService.getEvents().catch(() => []),
         churchId
-          ? firestore().collection('Rhema Church').doc(churchId).collection('attendanceRequests').get().catch(() => ({ docs: [] }))
+          ? firestore().collection('Rhema Church').doc(churchId).collection('events').limit(150).get().catch(() => ({ docs: [] }))
+          : Promise.resolve({ docs: [] }),
+        !churchId ? FirestoreService.getEvents(150).catch(() => []) : Promise.resolve([]),
+        churchId
+          ? firestore().collection('Rhema Church').doc(churchId).collection('attendanceRequests').limit(40).get().catch(() => ({ docs: [] }))
           : Promise.resolve({ docs: [] })
       ]);
 
@@ -809,8 +862,8 @@ export default function AttendanceScreen({ navigation, route }: any) {
       if (attRequestsSnap && 'docs' in attRequestsSnap) {
         attRequestsSnap.docs.forEach((doc: any) => {
           const reqData = doc.data();
-          const existing = rawEvents.find(r => 
-            r.id === doc.id || 
+          const existing = rawEvents.find(r =>
+            r.id === doc.id ||
             ((r.title || r.name)?.trim().toLowerCase() === (reqData.title)?.trim().toLowerCase() && r.date === reqData.date)
           );
           if (existing) {
@@ -964,7 +1017,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
               })
             );
           }
-        }).catch(() => {});
+        }).catch(() => { });
       }
     } catch (e) {
       console.error('[AttendanceScreen] Error fetching church events:', e);
@@ -1357,8 +1410,8 @@ export default function AttendanceScreen({ navigation, route }: any) {
         if (mId) {
           const isMe = mId === memberId || (user?.uid && mId === user.uid);
           const isGuest = Boolean(
-            (a as any).isGuest || 
-            mId.startsWith('guest_') || 
+            (a as any).isGuest ||
+            mId.startsWith('guest_') ||
             (a.memberName && /\(guest\)\s*$/i.test(a.memberName))
           );
           const phoneToUse = a.memberPhone || (isMe ? (user?.phoneNumber || member?.phone) : '');
@@ -1486,7 +1539,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
                     isMarked = true;
                     markTimestamp = attData.timestamp || attData.scannedAt;
                   }
-                } catch {}
+                } catch { }
               }
 
               if (!isMarked) {
@@ -1546,9 +1599,9 @@ export default function AttendanceScreen({ navigation, route }: any) {
 
     // Validate QR payload strictly: correct church AND specific event
     const parsed = AttendanceService.parseAttendanceQRPayload(
-      data, 
-      churchId, 
-      churchName, 
+      data,
+      churchId,
+      churchName,
       churchCode,
       expectedId,
       expectedTitle
@@ -1557,7 +1610,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
     if (!parsed.valid || !parsed.payload) {
       try {
         Vibration.vibrate(400);
-      } catch {}
+      } catch { }
       setInvalidQrMessage(
         parsed.error || `Please scan the official ${churchName || 'Church of God'} attendance QR code.`
       );
@@ -1573,7 +1626,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
       if (!existsInChurch && allEvents.length > 0) {
         try {
           Vibration.vibrate(400);
-        } catch {}
+        } catch { }
         setInvalidQrMessage(
           `This event ("${payload.eventName || payload.eventId}") does not exist in your church's event list.`
         );
@@ -1682,7 +1735,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
                 isMarked = true;
                 markTimestamp = attData.timestamp || attData.scannedAt;
               }
-            } catch {}
+            } catch { }
           }
 
           if (!isMarked) {
@@ -1881,10 +1934,10 @@ export default function AttendanceScreen({ navigation, route }: any) {
             inviteStatus: data.inviteStatus || 'invited',
             inviteLink: phoneStr
               ? InviteLinkService.buildGuestInviteUrl({
-                  churchId: targetChurchId,
-                  phone: phoneStr,
-                  eventId: targetEventId,
-                })
+                churchId: targetChurchId,
+                phone: phoneStr,
+                eventId: targetEventId,
+              })
               : undefined,
             invitedByName: data.invitedByMemberName || memberName,
           });
@@ -2288,15 +2341,15 @@ export default function AttendanceScreen({ navigation, route }: any) {
       const expectedId = selectedEventForScan?.id;
       const expectedTitle = selectedEventForScan?.title;
 
-      const parsed = preParsed 
-        ? { valid: true, payload: preParsed, error: undefined } 
+      const parsed = preParsed
+        ? { valid: true, payload: preParsed, error: undefined }
         : AttendanceService.parseAttendanceQRPayload(data, churchId, churchName, churchCode, expectedId, expectedTitle);
 
       if (!parsed.valid || !parsed.payload) {
         setIsDecoding(false);
         try {
           Vibration.vibrate(400);
-        } catch {}
+        } catch { }
         setInvalidQrMessage(
           parsed.error || `Please scan the official ${churchName || 'Church of God'} attendance QR code.`
         );
@@ -2333,7 +2386,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
           setIsDecoding(false);
           try {
             Vibration.vibrate(400);
-          } catch {}
+          } catch { }
           setInvalidQrMessage(
             `This QR code is for "${qr.eventName || 'another event'}", not for "${expectedTitle}". Please scan the correct event QR code.`
           );
@@ -2357,7 +2410,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
           if (churchSnap.exists()) {
             churchToValidate = { id: churchSnap.id, ...churchSnap.data() };
           }
-        } catch {}
+        } catch { }
       }
 
       const churchCoords = LocationService.getChurchCoordinates(churchToValidate);
@@ -2365,7 +2418,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
       if (!churchCoords) {
         setIsDecoding(false);
         setHasScanned(false);
-        try { Vibration.vibrate(500); } catch {}
+        try { Vibration.vibrate(500); } catch { }
         setLocationErrorModal({
           visible: true,
           title: 'Church Location Not Registered',
@@ -2385,7 +2438,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
         if (!locResult.success || !locResult.coords) {
           setIsDecoding(false);
           setHasScanned(false);
-          try { Vibration.vibrate(500); } catch {}
+          try { Vibration.vibrate(500); } catch { }
           setLocationErrorModal({
             visible: true,
             title: 'Location Verification Required',
@@ -2412,7 +2465,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
       if (roundedDist > 100) {
         setIsDecoding(false);
         setHasScanned(false);
-        try { Vibration.vibrate(600); } catch {}
+        try { Vibration.vibrate(600); } catch { }
 
         const displayDist = roundedDist >= 1000
           ? `${(roundedDist / 1000).toFixed(1)} km`
@@ -2462,7 +2515,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
         if (targetEv?.requireEventQR) {
           setIsDecoding(false);
           setHasScanned(false);
-          try { Vibration.vibrate(400); } catch {}
+          try { Vibration.vibrate(400); } catch { }
           setInvalidQrMessage(
             `Attendance for "${targetEventName}" requires scanning its specific Event QR Code.\n\nThe general Church QR Code cannot be used for this event.`
           );
@@ -2478,7 +2531,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
           setIsDecoding(false);
           try {
             Vibration.vibrate(400);
-          } catch {}
+          } catch { }
           setInvalidQrMessage(
             `This event "${targetEventName}" is not in your church's schedule.`
           );
@@ -2658,9 +2711,9 @@ export default function AttendanceScreen({ navigation, route }: any) {
       const expectedTitle = selectedEventForScan?.title;
 
       const parsed = AttendanceService.parseAttendanceQRPayload(
-        qrData, 
-        churchId, 
-        churchName, 
+        qrData,
+        churchId,
+        churchName,
         churchCode,
         expectedId,
         expectedTitle
@@ -2670,7 +2723,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
         setIsDecoding(false);
         try {
           Vibration.vibrate(400);
-        } catch {}
+        } catch { }
         setInvalidQrMessage(
           parsed.error || `Please scan the official ${churchName || 'Church of God'} attendance QR code.`
         );
@@ -2703,8 +2756,8 @@ export default function AttendanceScreen({ navigation, route }: any) {
     }
 
     const payload = AttendanceService.generateAttendanceQRPayload(
-      churchId, 
-      churchName, 
+      churchId,
+      churchName,
       churchCode,
       activeEvent.id,
       activeEvent.title
@@ -2731,8 +2784,8 @@ export default function AttendanceScreen({ navigation, route }: any) {
     setManualCodeInput('');
 
     const payload = AttendanceService.generateAttendanceQRPayload(
-      churchId, 
-      churchName, 
+      churchId,
+      churchName,
       code,
       activeEvent.id,
       activeEvent.title
@@ -2860,7 +2913,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
 
     if (profilePicture && !imgError) {
       return (
-        <Image
+        <CachedImage
           source={{ uri: profilePicture }}
           style={[styles.avatarImg, { backgroundColor: att.surfaceAlt }]}
           onError={() => setImgError(true)}
@@ -2883,10 +2936,10 @@ export default function AttendanceScreen({ navigation, route }: any) {
     const scanBtnFg = isDark ? '#09090B' : '#FFFFFF';
 
     return (
-      <View 
-        key={eventItem.id} 
+      <View
+        key={eventItem.id}
         style={[
-          styles.featuredCard, 
+          styles.featuredCard,
           isCarousel && { width: width - 40, marginBottom: 0 },
           {
             backgroundColor: att.surface,
@@ -3067,7 +3120,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
               activeOpacity={0.8}
             >
               <Text
-                 {...({ skipFontSizeScaling: true } as any)}
+                {...({ skipFontSizeScaling: true } as any)}
                 maxFontSizeMultiplier={1.1}
                 style={[
                   styles.tabPillTxt,
@@ -3091,7 +3144,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
           TAB 1: HOME
           ──────────────────────────────────────────────────────────────────────── */}
       {activeTab === 'Home' && (
-        <ScrollView 
+        <ScrollView
           contentContainerStyle={[
             styles.scrollContent,
             { paddingBottom: Math.max(insets.bottom, 36) + 72 },
@@ -3116,7 +3169,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
               </View>
               <Text style={[styles.noEventsTitle, { color: att.text }]}>No Events Today</Text>
               <Text style={[styles.noEventsSub, { color: att.textMuted }]}>
-                {nextUpcomingEvent 
+                {nextUpcomingEvent
                   ? `Next event: "${nextUpcomingEvent.title}" on ${nextUpcomingEvent.dateStr} (${nextUpcomingEvent.timeStr})`
                   : 'There are no church services or events scheduled for today.'}
               </Text>
@@ -3268,7 +3321,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
           TAB 2: MY ATTENDANCE
           ──────────────────────────────────────────────────────────────────────── */}
       {activeTab === 'My attendance' && (
-        <ScrollView 
+        <ScrollView
           contentContainerStyle={[
             styles.scrollContent,
             { paddingBottom: Math.max(insets.bottom, 36) + 72 },
@@ -3371,7 +3424,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
           TAB 3: EVENTS
           ──────────────────────────────────────────────────────────────────────── */}
       {activeTab === 'Events' && (
-        <ScrollView 
+        <ScrollView
           contentContainerStyle={[
             styles.scrollContent,
             { paddingBottom: Math.max(insets.bottom, 36) + 72 },
@@ -3466,11 +3519,11 @@ export default function AttendanceScreen({ navigation, route }: any) {
       <Modal visible={showAttendeesModal} animationType="slide" onRequestClose={() => setShowAttendeesModal(false)}>
         <View style={[styles.modalContainer, { backgroundColor: att.bg }]}>
           <StatusBar barStyle={colors.barStyle || (isDark ? 'light-content' : 'dark-content')} backgroundColor={att.bg} />
-          
+
           {/* Header */}
           <View style={[styles.rosterHeader, { borderBottomColor: att.border }]}>
-            <TouchableOpacity 
-              style={styles.backCircleBtn} 
+            <TouchableOpacity
+              style={styles.backCircleBtn}
               onPress={() => setShowAttendeesModal(false)}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               activeOpacity={0.7}
@@ -3486,7 +3539,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
 
             <View style={{ width: 40, alignItems: 'flex-end', justifyContent: 'center' }}>
               {!(selectedEventForList && isEventAttendanceMarked(selectedEventForList)) && (
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.rosterQrBtn, { backgroundColor: att.surface, borderColor: att.border }]}
                   onPress={() => {
                     setShowAttendeesModal(false);
@@ -3591,12 +3644,12 @@ export default function AttendanceScreen({ navigation, route }: any) {
               renderItem={({ item }) => {
                 const isMe = item.id === memberId;
                 const isPresent = item.status === 'Present';
-                const time = item.timestamp 
+                const time = item.timestamp
                   ? (item.timestamp.toDate ? formatSimpleTime(item.timestamp.toDate()) : formatSimpleTime(new Date(item.timestamp)))
                   : '';
 
                 return (
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.attendeeRow}
                     onPress={() => handleOpenFamilyPopup(item)}
                     activeOpacity={0.7}
@@ -3667,9 +3720,9 @@ export default function AttendanceScreen({ navigation, route }: any) {
         statusBarTranslucent
         onRequestClose={() => setFamilyModalMember(null)}
       >
-        <TouchableOpacity 
-          style={styles.modalOverlay} 
-          activeOpacity={1} 
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
           onPress={() => setFamilyModalMember(null)}
         >
           <Animated.View
@@ -3704,7 +3757,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
                     {familyModalMember?.name}
                   </Text>
                   <Text style={[styles.familyPopupSub, { color: att.textMuted }]}>
-                    {familyModalMember?.isGuest 
+                    {familyModalMember?.isGuest
                       ? `Guest Attendee · ${familyModalMember.status}`
                       : `Family Members · ${familyModalMember?.status || 'Member'}`}
                   </Text>
@@ -3740,8 +3793,8 @@ export default function AttendanceScreen({ navigation, route }: any) {
                 </View>
                 <Text style={[styles.familyPopupEmptyTitle, { color: att.text }]}>Guest Attendee</Text>
                 <Text style={[styles.familyPopupEmptySub, { color: att.textMuted }]}>
-                  {familyModalMember?.guestOf 
-                    ? `Invited to this event by ${familyModalMember.guestOf}.` 
+                  {familyModalMember?.guestOf
+                    ? `Invited to this event by ${familyModalMember.guestOf}.`
                     : 'Registered as a guest attendee for this church event.'}
                 </Text>
               </View>
@@ -3756,8 +3809,8 @@ export default function AttendanceScreen({ navigation, route }: any) {
                 </Text>
               </View>
             ) : (
-              <ScrollView 
-                style={styles.familyPopupScroll} 
+              <ScrollView
+                style={styles.familyPopupScroll}
                 contentContainerStyle={{ paddingVertical: 8 }}
                 showsVerticalScrollIndicator={false}
               >
@@ -3772,8 +3825,8 @@ export default function AttendanceScreen({ navigation, route }: any) {
 
                 {familyModalList.map((fam, idx) => {
                   const isPresent = fam.checked || fam.alreadyMarked;
-                  const timeStr = fam.timestamp 
-                    ? (fam.timestamp.toDate ? formatSimpleTime(fam.timestamp.toDate()) : formatSimpleTime(new Date(fam.timestamp))) 
+                  const timeStr = fam.timestamp
+                    ? (fam.timestamp.toDate ? formatSimpleTime(fam.timestamp.toDate()) : formatSimpleTime(new Date(fam.timestamp)))
                     : '';
 
                   return (
@@ -3848,8 +3901,8 @@ export default function AttendanceScreen({ navigation, route }: any) {
           {!cameraPermission?.granted ? (
             // Permission Request State
             <View style={[styles.scannerPermissionWrap, { backgroundColor: '#000000', paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}>
-              <TouchableOpacity 
-                style={[styles.scannerPermCloseBtn, { backgroundColor: '#1F1F1F', borderWidth: 1, borderColor: '#3F3F46' }]} 
+              <TouchableOpacity
+                style={[styles.scannerPermCloseBtn, { backgroundColor: '#1F1F1F', borderWidth: 1, borderColor: '#3F3F46' }]}
                 onPress={() => setShowLiveScanner(false)}
                 activeOpacity={0.8}
               >
@@ -3865,7 +3918,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
                   To scan the attendance QR code displayed at your church service, please allow camera access.
                 </Text>
 
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.scannerPermGrantBtn, { backgroundColor: '#F5F5F4' }]}
                   onPress={requestCameraPermission}
                   activeOpacity={0.85}
@@ -3880,7 +3933,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
                 </View>
 
                 <View style={{ flexDirection: 'row', width: '100%' }}>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={[styles.scannerPermAltBtn, { backgroundColor: '#1F1F1F', borderColor: '#3F3F46' }]}
                     onPress={() => { setShowLiveScanner(false); handleLaunchGallery(); }}
                     activeOpacity={0.8}
@@ -3946,7 +3999,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
                   ]}
                 >
                   <View style={styles.scannerHeaderRow}>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={styles.scannerHeaderCircleBtn}
                       onPress={() => {
                         setShowLiveScanner(false);
@@ -3961,16 +4014,16 @@ export default function AttendanceScreen({ navigation, route }: any) {
 
                     <Text style={[styles.scannerHeaderTitle, { color: '#FFFFFF' }]}>Scan QR Code</Text>
 
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={styles.scannerHeaderCircleBtn}
                       onPress={() => setIsTorchOn(!isTorchOn)}
                       hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                       activeOpacity={0.7}
                     >
-                      <Zap 
-                        size={21} 
-                        color={isTorchOn ? '#FBBF24' : '#FFFFFF'} 
-                        fill={isTorchOn ? '#FBBF24' : 'transparent'} 
+                      <Zap
+                        size={21}
+                        color={isTorchOn ? '#FBBF24' : '#FFFFFF'}
+                        fill={isTorchOn ? '#FBBF24' : 'transparent'}
                       />
                     </TouchableOpacity>
                   </View>
@@ -4017,17 +4070,17 @@ export default function AttendanceScreen({ navigation, route }: any) {
                           opacity: hasScanned
                             ? 1
                             : reticlePulseAnim.interpolate({
-                                inputRange: [0, 1],
-                                outputRange: [0.65, 1],
-                              }),
+                              inputRange: [0, 1],
+                              outputRange: [0.65, 1],
+                            }),
                           transform: [
                             {
                               scale: hasScanned
                                 ? 1
                                 : reticlePulseAnim.interpolate({
-                                    inputRange: [0, 1],
-                                    outputRange: [0.94, 1],
-                                  }),
+                                  inputRange: [0, 1],
+                                  outputRange: [0.94, 1],
+                                }),
                             },
                           ],
                         },
@@ -4105,8 +4158,8 @@ export default function AttendanceScreen({ navigation, route }: any) {
 
                   <View style={styles.scannerInstructionWrap}>
                     <Text style={[styles.scannerInstructionMain, { color: '#FFFFFF' }]}>
-                      {hasScanned 
-                        ? 'Recording your attendance...' 
+                      {hasScanned
+                        ? 'Recording your attendance...'
                         : 'Center the QR code inside the frame to\nrecord your attendance.'}
                     </Text>
                   </View>
@@ -4250,7 +4303,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
                 <Text style={[styles.optionsModalTitle, { color: att.text }]}>Record Attendance</Text>
                 <Text style={[styles.optionsModalSub, { color: att.textMuted }]}>{selectedEventForScan?.title || activeEvent.title}</Text>
               </View>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.optionsCloseBtn, { backgroundColor: att.surfaceAlt }]}
                 onPress={() => setShowScanOptionsModal(false)}
               >
@@ -4260,7 +4313,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
 
             <View style={styles.optionsList}>
               {/* Option 1: Native Camera QR Scan */}
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.optionItem, { backgroundColor: att.surfaceAlt, borderColor: att.border }]}
                 onPress={handleLaunchCamera}
                 activeOpacity={0.75}
@@ -4275,7 +4328,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
               </TouchableOpacity>
 
               {/* Option 2: Gallery Image QR */}
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.optionItem, { backgroundColor: att.surfaceAlt, borderColor: att.border }]}
                 onPress={handleLaunchGallery}
                 activeOpacity={0.75}
@@ -4319,13 +4372,13 @@ export default function AttendanceScreen({ navigation, route }: any) {
             />
 
             <View style={styles.manualBtnRow}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.manualCancelBtn, { backgroundColor: att.surfaceAlt, borderWidth: 1, borderColor: att.border }]}
                 onPress={() => { setManualCodeModal(false); setManualCodeInput(''); }}
               >
                 <Text style={[styles.manualCancelTxt, { color: att.text }]}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.manualConfirmBtn}
                 onPress={handleManualCodeSubmit}
               >
@@ -4352,24 +4405,24 @@ export default function AttendanceScreen({ navigation, route }: any) {
       {/* ────────────────────────────────────────────────────────────────────────
           ATTENDANCE MARKED CONFIRMATION SCREEN (Matches Screenshot 2)
           ──────────────────────────────────────────────────────────────────────── */}
-      <Modal 
-        visible={scanResultModal.visible} 
-        animationType="slide" 
-        statusBarTranslucent 
+      <Modal
+        visible={scanResultModal.visible}
+        animationType="slide"
+        statusBarTranslucent
         onRequestClose={() => setScanResultModal(prev => ({ ...prev, visible: false }))}
       >
-        <KeyboardAvoidingView 
+        <KeyboardAvoidingView
           style={[styles.confirmScreenContainer, { backgroundColor: att.bg }]}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <StatusBar barStyle={colors.barStyle || (isDark ? 'light-content' : 'dark-content')} backgroundColor={att.bg} translucent />
 
-          <ScrollView 
+          <ScrollView
             style={styles.confirmScrollView}
             contentContainerStyle={[
-              styles.confirmScrollWrap, 
-              { 
-                paddingTop: Math.max(insets.top, 24) + 16, 
+              styles.confirmScrollWrap,
+              {
+                paddingTop: Math.max(insets.top, 24) + 16,
                 paddingBottom: Math.max(insets.bottom, 24) + 80,
                 flexGrow: 1,
               }
@@ -4393,7 +4446,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
                 : "You're marked present"}
             </Text>
             <Text style={[styles.confirmSubTitle, { color: att.textMuted }]}>
-              {scanResultModal.alreadyMarked 
+              {scanResultModal.alreadyMarked
                 ? 'Thank you! Attendance was already recorded.'
                 : 'Thank you! Attendance has been recorded.'}
             </Text>
@@ -4896,7 +4949,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
 
             {/* Action Buttons */}
             <View style={styles.confirmButtonsWrap}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.confirmDoneBtn, { backgroundColor: isDark ? '#F8FAFC' : '#1E293B' }]}
                 onPress={() => {
                   if (scanResultModal.eventId) {
@@ -4909,7 +4962,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
                 <Text style={[styles.confirmDoneBtnTxt, { color: isDark ? '#0F172A' : '#FFFFFF' }]}>Done</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.confirmViewBtn, { backgroundColor: att.surface, borderColor: att.border }]}
                 onPress={() => {
                   setScanResultModal(prev => ({ ...prev, visible: false }));
@@ -5072,7 +5125,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 10,
   },
-  
+
   greetingSub: {
     fontSize: 14,
     color: '#0f172a',

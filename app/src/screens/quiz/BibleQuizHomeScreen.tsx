@@ -50,6 +50,8 @@ import { QuizService } from '../../services/QuizService';
 import { BibleQuiz, QuizAttempt } from '../../types/Quiz';
 import { isQuizScheduledLocked, formatQuizTime } from '../../utils/QuizScheduleUtils';
 import { formatDateDisplay } from '../../utils/DateUtils';
+import { CachedImageBackground } from '../../components/CachedImage';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../../utils/instantCache';
 import QuizLanguageModal from './QuizLanguageModal';
 import QuizAlertModal from './QuizAlertModal';
 
@@ -71,6 +73,9 @@ export default function BibleQuizHomeScreen() {
   const { quizLanguage, quizLanguageOption } = useQuizLanguage();
   const { isDark, colors } = useTheme();
   const { activeChurch } = useChurch();
+  const churchId = activeChurch?.id || RHEMA_CHURCH_ID;
+  const quizHomeCacheKey = makeScopedCacheKey('quiz_home_v1', churchId, user?.uid, quizLanguage);
+  const initialHomeCache = getInstantMemory<{ quizzes: BibleQuiz[]; userAttempts: Record<string, QuizAttempt> }>(quizHomeCacheKey);
 
   const [langModalVisible, setLangModalVisible] = useState<boolean>(false);
   const [pointsModalVisible, setPointsModalVisible] = useState<boolean>(false);
@@ -78,8 +83,8 @@ export default function BibleQuizHomeScreen() {
   const [leaderboardLoading, setLeaderboardLoading] = useState<boolean>(false);
   const [leaderboardData, setLeaderboardData] = useState<QuizAttempt[]>([]);
 
-  const [quizzes, setQuizzes] = useState<BibleQuiz[]>([]);
-  const [userAttempts, setUserAttempts] = useState<Record<string, QuizAttempt>>({});
+  const [quizzes, setQuizzes] = useState<BibleQuiz[]>(() => initialHomeCache?.quizzes || []);
+  const [userAttempts, setUserAttempts] = useState<Record<string, QuizAttempt>>(() => initialHomeCache?.userAttempts || {});
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [now, setNow] = useState<Date>(() => new Date());
 
@@ -94,45 +99,67 @@ export default function BibleQuizHomeScreen() {
   });
 
   const ui = getQuizStrings(quizLanguage);
-  const churchId = activeChurch?.id || RHEMA_CHURCH_ID;
-
-  // Real-time timer to unlock scheduled quizzes
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(new Date());
-    }, 10000);
-    return () => clearInterval(timer);
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      loadData();
-    }, [churchId, user?.uid, quizLanguage])
+  const hasLockedScheduledQuiz = useMemo(
+    () => quizzes.some(q => q.status === 'scheduled' && isQuizScheduledLocked(q, now)),
+    [quizzes, now]
   );
 
-  const loadData = async (isManualRefresh = false) => {
-    try {
-      QuizService.clearCache();
-      // Fetch all prepared church quizzes (including pastor/admin prepared quizzes from admin dashboard)
-      const [list, attempts] = await Promise.all([
-        QuizService.getQuizzes(churchId, {
-          isAdmin: true, // Ensures all pastor/admin prepared quizzes from admin dashboard are loaded
-          forceRefresh: true,
-          targetLanguage: quizLanguage,
-        }),
-        user?.uid
-          ? QuizService.getUserAttemptsMap(user.uid, churchId, true)
-          : Promise.resolve({} as Record<string, QuizAttempt>),
-      ]);
+  // Real-time timer to unlock scheduled quizzes (runs only when a scheduled quiz is pending unlock)
+  useEffect(() => {
+    if (!hasLockedScheduledQuiz) return;
+    const timer = setInterval(() => {
+      setNow(new Date());
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [hasLockedScheduledQuiz]);
 
-      setQuizzes(list);
-      setUserAttempts(attempts);
+  const loadData = useCallback(async (isManualRefresh = false) => {
+    try {
+      const memHit = getInstantMemory<{ quizzes: BibleQuiz[]; userAttempts: Record<string, QuizAttempt> }>(quizHomeCacheKey);
+      if (memHit) {
+        setQuizzes(memHit.quizzes);
+        setUserAttempts(memHit.userAttempts);
+      }
+
+      await loadWithInstantCache<{ quizzes: BibleQuiz[]; userAttempts: Record<string, QuizAttempt> }>({
+        key: quizHomeCacheKey,
+        screenName: 'BibleQuizHome',
+        freshSkipMs: 90 * 1000,
+        forceRefresh: isManualRefresh,
+        fetcher: async () => {
+          const [list, attempts] = await Promise.all([
+            QuizService.getQuizzes(churchId, {
+              isAdmin: false,
+              forceRefresh: isManualRefresh,
+              targetLanguage: quizLanguage,
+            }),
+            user?.uid
+              ? QuizService.getUserAttemptsMap(user.uid, churchId, isManualRefresh)
+              : Promise.resolve({} as Record<string, QuizAttempt>),
+          ]);
+          return { quizzes: list, userAttempts: attempts };
+        },
+        onCached: (cached) => {
+          setQuizzes(cached.quizzes || []);
+          setUserAttempts(cached.userAttempts || {});
+        },
+        onFresh: (fresh) => {
+          setQuizzes(fresh.quizzes || []);
+          setUserAttempts(fresh.userAttempts || {});
+        },
+      });
     } catch (err) {
       console.warn('[BibleQuizHomeScreen] Error loading quiz data:', err);
     } finally {
       setRefreshing(false);
     }
-  };
+  }, [churchId, user?.uid, quizLanguage, quizHomeCacheKey]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData(false);
+    }, [loadData])
+  );
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -601,7 +628,7 @@ export default function BibleQuizHomeScreen() {
                 onPress={() => handleSelectCategory(cat)}
                 activeOpacity={0.88}
               >
-                <ImageBackground
+                <CachedImageBackground
                   source={{ uri: cat.imageUrl }}
                   style={styles.catGridImageBg}
                   imageStyle={styles.catGridImage}
@@ -620,7 +647,7 @@ export default function BibleQuizHomeScreen() {
                       </View>
                     </View>
                   </LinearGradient>
-                </ImageBackground>
+                </CachedImageBackground>
               </TouchableOpacity>
             );
           })}

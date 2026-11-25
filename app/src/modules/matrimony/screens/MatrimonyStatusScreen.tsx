@@ -69,8 +69,8 @@ export default function MatrimonyStatusScreen({ navigation }: any) {
   }, [navigation]);
 
   useEffect(() => {
-    loadStatus(true);
-    const unsubFocus = navigation.addListener('focus', () => loadStatus(true));
+    loadStatus(false);
+    const unsubFocus = navigation.addListener('focus', () => loadStatus(false));
     const uid = auth().currentUser?.uid;
     const unsubDoc = uid
       ? firestore()

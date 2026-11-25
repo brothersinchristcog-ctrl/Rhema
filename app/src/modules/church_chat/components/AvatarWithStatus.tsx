@@ -1,6 +1,7 @@
 import React from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { Users } from 'lucide-react-native';
+import { CachedImage } from '../../../components/CachedImage';
 
 interface AvatarWithStatusProps {
   uri?: string | null;
@@ -60,7 +61,7 @@ export default function AvatarWithStatus({
   return (
     <View style={{ width: size, height: size, position: 'relative' }}>
       {uri ? (
-        <Image
+        <CachedImage
           source={{ uri }}
           style={{
             width: size,
@@ -68,6 +69,7 @@ export default function AvatarWithStatus({
             borderRadius: radius,
             backgroundColor: '#1E293B',
           }}
+          resizeMode="cover"
         />
       ) : (
         <View

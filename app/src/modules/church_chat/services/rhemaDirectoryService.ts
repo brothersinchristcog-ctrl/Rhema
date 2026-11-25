@@ -4,6 +4,8 @@ import { isGuestMemberDoc, normalizePhone10 } from '../../../utils/phoneUtils';
 import { ChatBlockRecord, ChatReportPayload, ChurchMemberContact } from '../types/chat';
 
 const memberCache = new Map<string, ChurchMemberContact>();
+const directoryListCache = new Map<string, { ts: number; list: ChurchMemberContact[] }>();
+const DIRECTORY_LIST_TTL_MS = 60_000;
 
 export function isRhemaAdminRole(memberLike?: { userType?: string | null; role?: string | null; isSuperAdmin?: boolean; superadmin?: boolean } | null): boolean {
   if (!memberLike) return false;
@@ -45,11 +47,24 @@ function isSignedInAppUid(uid: string): boolean {
 }
 
 export const rhemaDirectoryService = {
+  clearCache(): void {
+    memberCache.clear();
+    directoryListCache.clear();
+  },
+
   async getChurchMembers(
     churchId: string = RHEMA_CHURCH_ID,
-    excludeUid?: string
+    excludeUid?: string,
+    forceRefresh: boolean = false
   ): Promise<ChurchMemberContact[]> {
     const cid = churchId || RHEMA_CHURCH_ID;
+    const cachedList = directoryListCache.get(cid);
+    if (!forceRefresh && cachedList && Date.now() - cachedList.ts < DIRECTORY_LIST_TTL_MS) {
+      return excludeUid
+        ? cachedList.list.filter((c) => c.uid !== excludeUid)
+        : cachedList.list;
+    }
+
     const snap = await firestore()
       .collection(RHEMA_ROOT_COLLECTION)
       .doc(cid)
@@ -68,7 +83,6 @@ export const rhemaDirectoryService = {
 
       const resolvedUid = String(data.authUid || data.uid || doc.id).trim();
       if (!isSignedInAppUid(resolvedUid)) return;
-      if (excludeUid && resolvedUid === excludeUid) return;
 
       const contact: ChurchMemberContact = {
         uid: resolvedUid,
@@ -98,7 +112,8 @@ export const rhemaDirectoryService = {
 
     const list = Array.from(byUid.values());
     list.sort((a, b) => a.name.localeCompare(b.name));
-    return list;
+    directoryListCache.set(cid, { ts: Date.now(), list });
+    return excludeUid ? list.filter((c) => c.uid !== excludeUid) : list;
   },
 
   async getMemberByUid(

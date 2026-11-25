@@ -286,12 +286,23 @@ class TestimonyService {
    * Batch fetches member profile photos and names from the church's existing member records.
    * Maps memberId, clean phone (last 10 digits), and full phone to { photoURL, name }.
    */
+  private memberPhotosCache = new Map<string, { ts: number; map: Record<string, { photoURL: string; name: string }> }>();
+
+  clearCache(): void {
+    this.memberPhotosCache.clear();
+  }
+
   async getChurchMemberPhotos(
     churchId: string,
     memberIds: string[] = [],
     phones: string[] = []
   ): Promise<Record<string, { photoURL: string; name: string }>> {
     const targetChurchId = this.resolveChurchId(churchId);
+    const cached = this.memberPhotosCache.get(targetChurchId);
+    if (cached && Date.now() - cached.ts < 3 * 60_000) {
+      const hasAll = memberIds.every((id) => !id || Boolean(cached.map[id]));
+      if (hasAll) return cached.map;
+    }
     const photosMap: Record<string, { photoURL: string; name: string }> = {};
 
     try {
@@ -371,6 +382,7 @@ class TestimonyService {
           }
         })
       );
+      this.memberPhotosCache.set(targetChurchId, { ts: Date.now(), map: photosMap });
     } catch (err: any) {
       console.warn('⚠️ [TestimonyService] Error batch loading church member photos:', err?.message);
     }
@@ -737,11 +749,13 @@ class TestimonyService {
   subscribeToPublicFeed(
     churchId: string,
     onUpdate: (items: Testimony[]) => void,
-    onError?: (err: any) => void
+    onError?: (err: any) => void,
+    limitCount = 60
   ): () => void {
     const ref = this.getCollectionRef(churchId)
       .where('privacy', '==', 'Public')
-      .where('status', '==', 'Published');
+      .where('status', '==', 'Published')
+      .limit(limitCount);
 
     return ref.onSnapshot(
       (snapshot) => {
@@ -770,14 +784,15 @@ class TestimonyService {
     churchId: string,
     memberId: string,
     onUpdate: (items: Testimony[]) => void,
-    onError?: (err: any) => void
+    onError?: (err: any) => void,
+    limitCount = 50
   ): () => void {
     if (!memberId) {
       onUpdate([]);
-      return () => {};
+      return () => { };
     }
 
-    const ref = this.getCollectionRef(churchId).where('memberId', '==', memberId);
+    const ref = this.getCollectionRef(churchId).where('memberId', '==', memberId).limit(limitCount);
 
     return ref.onSnapshot(
       (snapshot) => {
@@ -850,7 +865,7 @@ class TestimonyService {
   ): () => void {
     if (!testimonyId) {
       onUpdate(null);
-      return () => {};
+      return () => { };
     }
     return this.getCollectionRef(churchId)
       .doc(testimonyId)

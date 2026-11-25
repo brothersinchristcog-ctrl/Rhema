@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { perfMonitor } from './perfMonitor';
 
 interface MemoryCacheEntry<T> {
   data: T;
@@ -8,6 +9,27 @@ interface MemoryCacheEntry<T> {
 const MEMORY_CACHE = new Map<string, MemoryCacheEntry<any>>();
 const IN_FLIGHT_FETCHES = new Map<string, Promise<any>>();
 const CACHE_STORAGE_PREFIX = '@rhema_instant_v1_';
+
+function sanitizeScopePart(val?: string | null, fallback = 'anon'): string {
+  const cleaned = String(val || '').trim().replace(/[^a-zA-Z0-9._-]/g, '_');
+  return cleaned || fallback;
+}
+
+/**
+ * Builds a tenant- and user-isolated cache key so church or account switches
+ * can never expose another church's or member's cached content.
+ */
+export function makeScopedCacheKey(
+  feature: string,
+  churchId?: string | null,
+  uid?: string | null,
+  suffix?: string | number | null
+): string {
+  const base = `${sanitizeScopePart(feature, 'cache')}_c_${sanitizeScopePart(churchId, 'rhema')}_u_${sanitizeScopePart(uid, 'guest')}`;
+  return suffix !== undefined && suffix !== null && String(suffix).trim() !== ''
+    ? `${base}_${sanitizeScopePart(String(suffix), '')}`
+    : base;
+}
 
 /**
  * Synchronous in-memory cache read for zero-frame-delay initial React state.
@@ -112,6 +134,7 @@ export interface StaleWhileRevalidateOptions<T> {
   maxAgeMs?: number;
   freshSkipMs?: number;
   forceRefresh?: boolean;
+  screenName?: string;
 }
 
 /**
@@ -128,14 +151,23 @@ export async function loadWithInstantCache<T>({
   maxAgeMs,
   freshSkipMs = 0,
   forceRefresh = false,
+  screenName,
 }: StaleWhileRevalidateOptions<T>): Promise<T> {
   let hasDeliveredCached = false;
+  const startedAt = Date.now();
 
   if (!forceRefresh) {
+    const hasRam = MEMORY_CACHE.has(key);
     const cached = await readInstantCache<T>(key, maxAgeMs);
     if (cached) {
       onCached?.(cached.data);
       hasDeliveredCached = true;
+      if (screenName) {
+        perfMonitor.recordScreenLoad(screenName, {
+          source: hasRam ? 'ram' : 'disk',
+          totalMs: Date.now() - startedAt,
+        });
+      }
       const age = Date.now() - cached.fetchedAt;
       if (freshSkipMs > 0 && age < freshSkipMs) {
         return cached.data;
@@ -152,9 +184,17 @@ export async function loadWithInstantCache<T>({
   }
 
   try {
+    const netStart = Date.now();
     const fresh = await pending;
     await writeInstantCache(key, fresh);
     onFresh?.(fresh);
+    if (screenName) {
+      perfMonitor.recordScreenLoad(screenName, {
+        source: 'network',
+        totalMs: Date.now() - startedAt,
+        apiMs: Date.now() - netStart,
+      });
+    }
     return fresh;
   } catch (err) {
     if (hasDeliveredCached) {
@@ -164,4 +204,130 @@ export async function loadWithInstantCache<T>({
     }
     throw err;
   }
+}
+
+export async function readScopedPersonalNotes<T = any>(
+  churchId?: string | null,
+  uid?: string | null
+): Promise<T[]> {
+  const key = makeScopedCacheKey('sermon_personal_notes_v2', churchId, uid);
+  const mem = getInstantMemory<T[]>(key);
+  if (Array.isArray(mem)) return mem;
+  try {
+    const raw = await AsyncStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        writeInstantCache(key, parsed).catch(() => {});
+        return parsed;
+      }
+    }
+    const legacy = await AsyncStorage.getItem('@SermonPersonalNotes');
+    if (legacy) {
+      const parsedLegacy = JSON.parse(legacy);
+      if (Array.isArray(parsedLegacy)) {
+        AsyncStorage.setItem(key, legacy).catch(() => {});
+        writeInstantCache(key, parsedLegacy).catch(() => {});
+        return parsedLegacy;
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+  return [];
+}
+
+export async function appendScopedPersonalNote<T = any>(
+  churchId: string | null | undefined,
+  uid: string | null | undefined,
+  note: T
+): Promise<T[]> {
+  const key = makeScopedCacheKey('sermon_personal_notes_v2', churchId, uid);
+  const existing = await readScopedPersonalNotes<T>(churchId, uid);
+  const updated = [note, ...existing];
+  writeInstantCache(key, updated).catch(() => {});
+  await AsyncStorage.setItem(key, JSON.stringify(updated));
+  return updated;
+}
+
+export async function readScopedBibleProgress(
+  churchId?: string | null,
+  uid?: string | null
+): Promise<string[]> {
+  const key = makeScopedCacheKey('bible_read_progress_v1', churchId, uid);
+  const mem = getInstantMemory<string[]>(key);
+  if (Array.isArray(mem)) return mem;
+  try {
+    const raw = await AsyncStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        writeInstantCache(key, parsed).catch(() => {});
+        return parsed;
+      }
+    }
+    const legacy = await AsyncStorage.getItem('@BibleReadProgress');
+    if (legacy) {
+      const parsedLegacy = JSON.parse(legacy);
+      if (Array.isArray(parsedLegacy)) {
+        AsyncStorage.setItem(key, legacy).catch(() => {});
+        writeInstantCache(key, parsedLegacy).catch(() => {});
+        return parsedLegacy;
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+  return [];
+}
+
+export async function writeScopedBibleProgress(
+  churchId: string | null | undefined,
+  uid: string | null | undefined,
+  progress: string[]
+): Promise<void> {
+  const key = makeScopedCacheKey('bible_read_progress_v1', churchId, uid);
+  writeInstantCache(key, progress).catch(() => {});
+  await AsyncStorage.setItem(key, JSON.stringify(progress));
+}
+
+export async function readScopedDeletedNotifIds(
+  churchId?: string | null,
+  uid?: string | null
+): Promise<string[]> {
+  const key = makeScopedCacheKey('deleted_notification_ids_v1', churchId, uid);
+  const mem = getInstantMemory<string[]>(key);
+  if (Array.isArray(mem)) return mem;
+  try {
+    const raw = await AsyncStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        writeInstantCache(key, parsed).catch(() => {});
+        return parsed;
+      }
+    }
+    const legacy = await AsyncStorage.getItem('@deleted_notification_ids');
+    if (legacy) {
+      const parsedLegacy = JSON.parse(legacy);
+      if (Array.isArray(parsedLegacy)) {
+        AsyncStorage.setItem(key, legacy).catch(() => {});
+        writeInstantCache(key, parsedLegacy).catch(() => {});
+        return parsedLegacy;
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+  return [];
+}
+
+export async function writeScopedDeletedNotifIds(
+  churchId: string | null | undefined,
+  uid: string | null | undefined,
+  ids: string[]
+): Promise<void> {
+  const key = makeScopedCacheKey('deleted_notification_ids_v1', churchId, uid);
+  writeInstantCache(key, ids).catch(() => {});
+  await AsyncStorage.setItem(key, JSON.stringify(ids));
 }

@@ -14,13 +14,21 @@ import { useNavigation } from '@react-navigation/native';
 import { MapPin, Clock, ChevronRight, Calendar as CalendarIcon, ChevronLeft } from 'lucide-react-native';
 import Theme from '../theme/Theme';
 import FirestoreService, { ScheduleEvent } from '../services/FirestoreService';
+import { useAuth } from '../context/AuthContext';
+import { useChurch } from '../context/ChurchContext';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../utils/instantCache';
 
 const { width } = Dimensions.get('window');
 
 export default function EventsCalendarScreen() {
   const navigation = useNavigation<any>();
-  const [events, setEvents] = useState<ScheduleEvent[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { churchId } = useChurch();
+  const { user } = useAuth();
+  const cacheKey = makeScopedCacheKey('events_calendar_v1', churchId, user?.uid);
+  const initialCached = getInstantMemory<ScheduleEvent[]>(cacheKey);
+
+  const [events, setEvents] = useState<ScheduleEvent[]>(() => initialCached || []);
+  const [loading, setLoading] = useState(() => !initialCached?.length);
   const [selectedDate, setSelectedDate] = useState(new Date().getDate());
   const [dates, setDates] = useState<{ day: string, date: number, full: Date }[]>([]);
 
@@ -39,20 +47,39 @@ export default function EventsCalendarScreen() {
     }
     setDates(weekDates);
     setSelectedDate(now.getDate());
-
-    fetchEvents();
   }, []);
 
-  const fetchEvents = async () => {
-    try {
-      const sfEvents = await FirestoreService.getUpcomingEvents(15);
-      setEvents(sfEvents);
-    } catch (error) {
-      console.error('Error fetching events:', error);
-    } finally {
+  useEffect(() => {
+    let active = true;
+    const memHit = getInstantMemory<ScheduleEvent[]>(cacheKey);
+    if (memHit?.length) {
+      setEvents(memHit);
       setLoading(false);
     }
-  };
+    loadWithInstantCache<ScheduleEvent[]>({
+      key: cacheKey,
+      screenName: 'EventsCalendar',
+      freshSkipMs: 2 * 60 * 1000,
+      fetcher: () => FirestoreService.getUpcomingEvents(25),
+      onCached: (cached) => {
+        if (active && cached?.length) {
+          setEvents(cached);
+          setLoading(false);
+        }
+      },
+      onFresh: (fresh) => {
+        if (active) {
+          setEvents(fresh);
+          setLoading(false);
+        }
+      },
+    }).catch((error) => {
+      console.error('Error fetching events:', error);
+    }).finally(() => {
+      if (active) setLoading(false);
+    });
+    return () => { active = false; };
+  }, [cacheKey]);
 
   const formatEventDate = (dateStr?: string) => {
     if (!dateStr) return { day: '--', month: '---' };
@@ -177,6 +204,10 @@ export default function EventsCalendarScreen() {
           keyExtractor={item => item.id}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          initialNumToRender={10}
+          maxToRenderPerBatch={8}
+          windowSize={5}
+          removeClippedSubviews={true}
         />
       )}
     </View>

@@ -37,6 +37,7 @@ import {
   parseMeetingTimestamp,
   resolveMeetingStatus,
 } from '../utils/meetingActions';
+import { getInstantMemory, readInstantCache, writeInstantCache, makeScopedCacheKey } from '../utils/instantCache';
 
 const SHOW_YOUTUBE_LIVE = false;
 
@@ -49,11 +50,13 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const { activeChurch } = useChurch();
   const { user, member } = useAuth();
-  const {  isDark, toggleTheme , colors } = useTheme();
+  const { isDark, toggleTheme, colors } = useTheme();
   const { t } = useLanguage();
+  const meetingsCacheKey = makeScopedCacheKey('online_meetings_v1', activeChurch?.id);
+  const initialMeetingsCache = getInstantMemory<any[]>(meetingsCacheKey);
 
-  const [meetings, setMeetings] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [meetings, setMeetings] = useState<any[]>(() => initialMeetingsCache || []);
+  const [loading, setLoading] = useState(() => !initialMeetingsCache);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<'live' | 'upcoming' | 'completed'>('upcoming');
   const hasAutoSelectedTabRef = React.useRef(false);
@@ -66,10 +69,12 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
         .doc(activeChurch.id)
         .collection('online_meetings')
         .orderBy('startTime', 'desc')
+        .limit(40)
         .get();
 
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setMeetings(data);
+      writeInstantCache(meetingsCacheKey, data).catch(() => { });
     } catch (error) {
       console.error('Error fetching meetings:', error);
     } finally {
@@ -84,15 +89,31 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
       return;
     }
 
+    let isActive = true;
+    const memHit = getInstantMemory<any[]>(meetingsCacheKey);
+    if (memHit?.length) {
+      setMeetings(memHit);
+      setLoading(false);
+    } else {
+      readInstantCache<any[]>(meetingsCacheKey).then((disk) => {
+        if (isActive && disk?.data?.length) {
+          setMeetings(disk.data);
+          setLoading(false);
+        }
+      }).catch(() => { });
+    }
+
     const unsubscribe = firestore()
       .collection('Rhema Church')
       .doc(activeChurch.id)
       .collection('online_meetings')
       .orderBy('startTime', 'desc')
+      .limit(40)
       .onSnapshot(
         (snapshot) => {
           const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
           setMeetings(data);
+          writeInstantCache(meetingsCacheKey, data).catch(() => { });
           if (!hasAutoSelectedTabRef.current) {
             hasAutoSelectedTabRef.current = true;
             const hasLive = data.some(m => resolveMeetingStatus(m, true) === 'live');
@@ -107,8 +128,11 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
         }
       );
 
-    return () => unsubscribe();
-  }, [activeChurch?.id]);
+    return () => {
+      isActive = false;
+      unsubscribe();
+    };
+  }, [activeChurch?.id, meetingsCacheKey]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -159,7 +183,7 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
           profilePhoto: (member as any)?.profilePhoto || (member as any)?.photoURL || user?.photoURL || null,
           joinedAt: firestore.FieldValue.serverTimestamp()
         }, { merge: true })
-        .catch(() => {});
+        .catch(() => { });
     }
 
     try {
@@ -192,8 +216,8 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
     const timeStr = startDt && endDt
       ? `${startDt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – ${endDt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
       : startDt
-      ? startDt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      : item.startTimeLabel || 'TBA';
+        ? startDt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : item.startTimeLabel || 'TBA';
 
     const subtitleText = String(item.topic || item.subtitle || '').trim();
     const bookText = String(item.bibleBook || '').trim();
@@ -210,55 +234,55 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
 
           {/* Platform Badge + Status Pill + Passcode */}
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 6, flexWrap: 'wrap' }}>
-              {isLive ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.22)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.6)' }}>
-                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#4ADE80', marginRight: 5 }} />
-                  <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '800', letterSpacing: 0.3 }}>LIVE NOW</Text>
-                </View>
-              ) : isCompleted ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.14)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
-                  <Text style={{ color: '#E5E7EB', fontSize: 11, fontWeight: '700' }}>COMPLETED</Text>
-                </View>
-              ) : (
-                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(245, 158, 11, 0.25)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#FBBF24' }}>
-                  <Text style={{ color: '#FDE68A', fontSize: 11, fontWeight: '800' }}>SCHEDULED</Text>
-                </View>
-              )}
+            {isLive ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.22)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.6)' }}>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#4ADE80', marginRight: 5 }} />
+                <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '800', letterSpacing: 0.3 }}>LIVE NOW</Text>
+              </View>
+            ) : isCompleted ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.14)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
+                <Text style={{ color: '#E5E7EB', fontSize: 11, fontWeight: '700' }}>COMPLETED</Text>
+              </View>
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(245, 158, 11, 0.25)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#FBBF24' }}>
+                <Text style={{ color: '#FDE68A', fontSize: 11, fontWeight: '800' }}>SCHEDULED</Text>
+              </View>
+            )}
 
-              {item.meetingType === 'zoom' || item.provider === 'zoom' ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(45, 140, 255, 0.35)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#2D8CFF' }}>
-                  <Video size={12} color="#ffffff" style={{ marginRight: 4 }} />
-                  <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '700' }}>Zoom Meeting</Text>
-                </View>
-              ) : (
-                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(16, 185, 129, 0.35)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#10B981' }}>
-                  <Video size={12} color="#ffffff" style={{ marginRight: 4 }} />
-                  <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '700' }}>Google Meet</Text>
-                </View>
-              )}
-              {item.password ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(252, 211, 77, 0.25)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#FCD34D' }}>
-                  <Key size={11} color="#FCD34D" style={{ marginRight: 4 }} />
-                  <Text style={{ color: '#FCD34D', fontSize: 11, fontWeight: '700' }}>Passcode: {item.password}</Text>
-                </View>
-              ) : null}
-              {SHOW_YOUTUBE_LIVE && item.youtubeLive?.enabled ? (
-                <View style={{ 
-                  flexDirection: 'row', 
-                  alignItems: 'center', 
-                  backgroundColor: item.youtubeLive.status === 'live' ? 'rgba(220, 38, 38, 0.5)' : 'rgba(239, 68, 68, 0.25)', 
-                  paddingHorizontal: 8, 
-                  paddingVertical: 3, 
-                  borderRadius: 6, 
-                  borderWidth: 1, 
-                  borderColor: '#EF4444' 
-                }}>
-                  <Radio size={11} color="#ffffff" style={{ marginRight: 4 }} />
-                  <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '700' }}>
-                    {item.youtubeLive.status === 'live' ? '🔴 Live on YouTube' : 'YouTube Live'}
-                  </Text>
-                </View>
-              ) : null}
+            {item.meetingType === 'zoom' || item.provider === 'zoom' ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(45, 140, 255, 0.35)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#2D8CFF' }}>
+                <Video size={12} color="#ffffff" style={{ marginRight: 4 }} />
+                <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '700' }}>Zoom Meeting</Text>
+              </View>
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(16, 185, 129, 0.35)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#10B981' }}>
+                <Video size={12} color="#ffffff" style={{ marginRight: 4 }} />
+                <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '700' }}>Google Meet</Text>
+              </View>
+            )}
+            {item.password ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(252, 211, 77, 0.25)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#FCD34D' }}>
+                <Key size={11} color="#FCD34D" style={{ marginRight: 4 }} />
+                <Text style={{ color: '#FCD34D', fontSize: 11, fontWeight: '700' }}>Passcode: {item.password}</Text>
+              </View>
+            ) : null}
+            {SHOW_YOUTUBE_LIVE && item.youtubeLive?.enabled ? (
+              <View style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: item.youtubeLive.status === 'live' ? 'rgba(220, 38, 38, 0.5)' : 'rgba(239, 68, 68, 0.25)',
+                paddingHorizontal: 8,
+                paddingVertical: 3,
+                borderRadius: 6,
+                borderWidth: 1,
+                borderColor: '#EF4444'
+              }}>
+                <Radio size={11} color="#ffffff" style={{ marginRight: 4 }} />
+                <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '700' }}>
+                  {item.youtubeLive.status === 'live' ? '🔴 Live on YouTube' : 'YouTube Live'}
+                </Text>
+              </View>
+            ) : null}
           </View>
 
           {/* Title */}
@@ -416,15 +440,15 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
             {activeTab === 'live'
               ? t('meetings.empty.noLiveTitle')
               : activeTab === 'upcoming'
-              ? t('meetings.empty.noUpcomingTitle')
-              : t('meetings.empty.noCompletedTitle')}
+                ? t('meetings.empty.noUpcomingTitle')
+                : t('meetings.empty.noCompletedTitle')}
           </Text>
           <Text style={[styles.emptySubtitle, { color: textMuted }]}>
             {activeTab === 'live'
               ? t('meetings.empty.noLiveSub')
               : activeTab === 'upcoming'
-              ? t('meetings.empty.noUpcomingSub')
-              : t('meetings.empty.noCompletedSub')}
+                ? t('meetings.empty.noUpcomingSub')
+                : t('meetings.empty.noCompletedSub')}
           </Text>
         </View>
       ) : (
@@ -433,6 +457,10 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
           keyExtractor={item => item.id}
           renderItem={renderMeeting}
           contentContainerStyle={styles.listContent}
+          initialNumToRender={8}
+          maxToRenderPerBatch={6}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={BRAND} />}
           showsVerticalScrollIndicator={false}
         />

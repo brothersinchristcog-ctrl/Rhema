@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Platform, Share, ActivityIndicator, ScrollView, ImageBackground, Image, RefreshControl, Alert, StatusBar, Animated } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
@@ -8,10 +8,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import VerseNotificationService, { DailyVerse } from '../services/VerseNotificationService';
 import { getVerseBackgroundUrl } from '../constants/VerseBackgrounds';
+import { CachedImage, CachedImageBackground } from '../components/CachedImage';
+import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useChurch } from '../context/ChurchContext';
 import { useLanguage } from '../context/LanguageContext';
 import { getLocalizedVerse, getPeriodGreeting } from './HomeScreen';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../utils/instantCache';
 import ViewShot from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import * as MediaLibrary from 'expo-media-library';
@@ -201,62 +204,46 @@ export default function VerseOfTheDayScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [showTelugu, setShowTelugu] = useState(true);
 
-  // Smooth loading animation when opening from a notification tap
+  // Instant paint from synchronous bundled data (no blocking 1.2s artificial notification splash!)
   const isFromNotification = !!(notificationPeriod || verseId || route.params?.fromNotification);
-  const [notifLoading, setNotifLoading] = useState(isFromNotification);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const [notifLoading, setNotifLoading] = useState(false);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  useEffect(() => {
-    if (isFromNotification) {
-      const pulse = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1.08,
-            duration: 450,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 450,
-            useNativeDriver: true,
-          }),
-        ])
-      );
-      pulse.start();
-
-      const timer = setTimeout(() => {
-        Animated.timing(fadeAnim, {
-          toValue: 0,
-          duration: 350,
-          useNativeDriver: true,
-        }).start(() => {
-          pulse.stop();
-          setNotifLoading(false);
-          const idx = notificationPeriod && PERIOD_INDEX[notificationPeriod] !== undefined
-            ? PERIOD_INDEX[notificationPeriod]
-            : getTargetIndex();
-          todayCarouselRef.current?.scrollTo({ x: idx * width, animated: true });
-        });
-      }, 850);
-
-      return () => {
-        clearTimeout(timer);
-        pulse.stop();
-      };
-    }
-  }, [isFromNotification, notificationPeriod]);
-  
   const captureRef = useRef<ViewShot>(null);
-  const [captureConfig, setCaptureConfig] = useState<{verse: DailyVerse, period: string, theme: any, periodIndex: number, date: Date} | null>(null);
+  const [captureConfig, setCaptureConfig] = useState<{ verse: DailyVerse, period: string, theme: any, periodIndex: number, date: Date } | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const [showSuccessToast, setShowSuccessToast] = useState(false);
 
+  const { user } = useAuth();
   const { isDark, colors } = useTheme();
-  const { activeChurch } = useChurch();
+  const { activeChurch, churchId } = useChurch();
   const { t, language, languages } = useLanguage();
 
-  const styles = getStyles(isDark, colors);
+  const styles = useMemo(() => getStyles(isDark, colors), [isDark, colors]);
+  const verseCacheKey = useMemo(
+    () => makeScopedCacheKey('verse_of_the_day_v1', churchId || activeChurch?.id, language),
+    [churchId, activeChurch?.id, language]
+  );
+
+  // Hydrate immediately from RAM/disk cache if available for this language & church
+  useEffect(() => {
+    const memHit = getInstantMemory<{ date: string; verses: DailyVerse[] }[]>(verseCacheKey);
+    if (memHit?.length) {
+      setVerseData(memHit.map(item => ({ date: new Date(item.date), verses: item.verses })));
+    }
+  }, [verseCacheKey]);
+
+  useEffect(() => {
+    if (isFromNotification) {
+      const idx = notificationPeriod && PERIOD_INDEX[notificationPeriod] !== undefined
+        ? PERIOD_INDEX[notificationPeriod]
+        : getTargetIndex();
+      requestAnimationFrame(() => {
+        todayCarouselRef.current?.scrollTo({ x: idx * width, animated: false });
+      });
+    }
+  }, [isFromNotification, notificationPeriod]);
 
   // --- Auto-scroll carousel logic ---
   const todayCarouselRef = useRef<ScrollView>(null);
@@ -295,7 +282,7 @@ export default function VerseOfTheDayScreen() {
 
   const handleScrollEnd = (e: any) => {
     currentIndexRef.current = Math.round(e.nativeEvent.contentOffset.x / width);
-    
+
     // Restart auto-scroll timer when user manually scrolls
     clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
@@ -305,63 +292,60 @@ export default function VerseOfTheDayScreen() {
   };
   // ----------------------------------
 
-  useEffect(() => {
-    const init = async () => {
-      if (verseId) {
-        VerseNotificationService.markVerseAsShown(verseId);
-      }
-      
-      // Silently refresh in background (non-blocking, keeps instant initial paint intact)
-      loadVerses(false, true);
-    };
-    init();
-  }, [verseId]);
-
-  // Localize verses when language changes
-  useEffect(() => {
-    if (verseData.length > 0 && language !== 'en') {
-      let isMounted = true;
-      Promise.all(
-        verseData.map(async item => ({
-          ...item,
-          verses: await VerseNotificationService.localizeVerses(item.verses, language as any)
-        }))
-      ).then(localizedData => {
-        if (isMounted) setVerseData(localizedData);
-      }).catch(() => {});
-
-      return () => {
-        isMounted = false;
-      };
-    }
-  }, [language]);
-
-  const loadVerses = async (forceRefresh = false, silent = false) => {
+  const loadVerses = useCallback(async (forceRefresh = false, silent = false) => {
     if (forceRefresh) {
       if (!silent) setRefreshing(true);
-    } else {
-      if (!silent) setLoading(true);
+    } else if (!silent && verseData.length === 0) {
+      setLoading(true);
     }
-    
-    // Fetch today + past 7 days = last one week total
-    const data = await VerseNotificationService.getRecentVerses(7, true, forceRefresh);
-    if (language !== 'en') {
-      const localizedData = await Promise.all(
-        data.map(async item => ({
-          ...item,
-          verses: await VerseNotificationService.localizeVerses(item.verses, language as any)
-        }))
-      );
-      setVerseData(localizedData);
-    } else {
-      setVerseData(data);
+
+    try {
+      await loadWithInstantCache<{ date: string; verses: DailyVerse[] }[]>({
+        key: verseCacheKey,
+        screenName: 'VerseOfTheDay',
+        freshSkipMs: 2 * 60 * 1000,
+        forceRefresh,
+        fetcher: async () => {
+          const data = await VerseNotificationService.getRecentVerses(7, true, forceRefresh);
+          const localized = language !== 'en'
+            ? await Promise.all(
+              data.map(async item => ({
+                date: item.date instanceof Date ? item.date.toISOString() : String(item.date),
+                verses: await VerseNotificationService.localizeVerses(item.verses, language as any),
+              }))
+            )
+            : data.map(item => ({
+              date: item.date instanceof Date ? item.date.toISOString() : String(item.date),
+              verses: item.verses,
+            }));
+          return localized;
+        },
+        onCached: (cached) => {
+          if (cached?.length) {
+            setVerseData(cached.map(item => ({ date: new Date(item.date), verses: item.verses })));
+          }
+        },
+        onFresh: (fresh) => {
+          if (fresh?.length) {
+            setVerseData(fresh.map(item => ({ date: new Date(item.date), verses: item.verses })));
+          }
+        },
+      });
+    } finally {
+      if (!silent) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-    
-    if (!silent) {
-      setLoading(false);
-      setRefreshing(false);
+  }, [verseCacheKey, language, verseData.length]);
+
+  useEffect(() => {
+    if (verseId) {
+      VerseNotificationService.markVerseAsShown(verseId);
     }
-  };
+    // Load via SWR (displays cached/synchronous verses immediately and only hits network when stale)
+    loadVerses(false, true);
+  }, [verseId, loadVerses]);
 
   const handleDownload = async (verse: DailyVerse, period: string, theme: any, periodIndex: number, date: Date) => {
     try {
@@ -378,7 +362,7 @@ export default function VerseOfTheDayScreen() {
           if (captureRef.current?.capture) {
             const uri = await captureRef.current.capture();
             await MediaLibrary.saveToLibraryAsync(uri);
-            
+
             // Show beautiful toast instead of native alert
             setShowSuccessToast(true);
             setTimeout(() => setShowSuccessToast(false), 3000);
@@ -528,92 +512,92 @@ export default function VerseOfTheDayScreen() {
         <View style={styles.headerRightSpacer} />
       </View>
 
-      <ScrollView 
-        showsVerticalScrollIndicator={false} 
+      <ScrollView
+        showsVerticalScrollIndicator={false}
         style={[styles.mainScroll, { backgroundColor: colors.background }]}
         contentContainerStyle={{ paddingBottom: 140, backgroundColor: colors.background }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => loadVerses(true)} tintColor="#1a2d5a" />
         }
       >
-          {verseData.map((dayData, dayIndex) => {
-            const isToday = dayIndex === 0;
-            
-            return (
-              <View key={dayIndex} style={styles.daySection}>
-                
-                {/* SECTION HEADER */}
-                {isToday ? (
-                  <View style={styles.sectionHeader}>
-                    <View style={styles.todayHeaderRow}>
-                      <Sun color="#f59e0b" size={24} />
-                      <Text style={styles.sectionTitle}>{t('common.today')}</Text>
+        {verseData.map((dayData, dayIndex) => {
+          const isToday = dayIndex === 0;
+
+          return (
+            <View key={dayIndex} style={styles.daySection}>
+
+              {/* SECTION HEADER */}
+              {isToday ? (
+                <View style={styles.sectionHeader}>
+                  <View style={styles.todayHeaderRow}>
+                    <Sun color="#f59e0b" size={24} />
+                    <Text style={styles.sectionTitle}>{t('common.today')}</Text>
+                  </View>
+                  <Text style={styles.dateText}>{formatDate(dayData.date)}</Text>
+                </View>
+              ) : (
+                <View style={[styles.sectionHeader, { marginTop: dayIndex === 1 ? 20 : 10 }]}>
+                  {dayIndex === 1 && (
+                    <View style={styles.pastTitleRow}>
+                      <CalendarIcon color="#64748b" size={20} />
+                      <Text style={styles.pastTitle}>Past Daily Verses</Text>
                     </View>
-                    <Text style={styles.dateText}>{formatDate(dayData.date)}</Text>
-                  </View>
-                ) : (
-                  <View style={[styles.sectionHeader, { marginTop: dayIndex === 1 ? 20 : 10 }]}>
-                    {dayIndex === 1 && (
-                      <View style={styles.pastTitleRow}>
-                        <CalendarIcon color="#64748b" size={20} />
-                        <Text style={styles.pastTitle}>Past Daily Verses</Text>
-                      </View>
-                    )}
-                    <Text style={styles.pastDateText}>{formatDate(dayData.date)}</Text>
-                  </View>
-                )}
+                  )}
+                  <Text style={styles.pastDateText}>{formatDate(dayData.date)}</Text>
+                </View>
+              )}
 
-                {/* HORIZONTAL CAROUSEL FOR THE DAY */}
-                <ScrollView 
-                  ref={isToday ? todayCarouselRef : null}
-                  horizontal 
-                  pagingEnabled 
-                  showsHorizontalScrollIndicator={false}
-                  bounces={false}
-                  contentOffset={isToday ? { x: initialTargetIndex * width, y: 0 } : undefined}
-                  snapToInterval={width}
-                  decelerationRate="fast"
-                  style={styles.carousel}
-                  onMomentumScrollEnd={isToday ? handleScrollEnd : undefined}
-                >
-                  {dayData.verses.map((verse, periodIndex) => {
-                    const period = periods[periodIndex];
-                    const theme = getThemeForPeriod(period, dayData.date);
-                    const Icon = theme.Icon;
-                    const FooterIcon = theme.FooterIcon;
-                    const dynamicColors = getDynamicGradient(dayData.date, period, periodIndex);
+              {/* HORIZONTAL CAROUSEL FOR THE DAY */}
+              <ScrollView
+                ref={isToday ? todayCarouselRef : null}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                bounces={false}
+                contentOffset={isToday ? { x: initialTargetIndex * width, y: 0 } : undefined}
+                snapToInterval={width}
+                decelerationRate="fast"
+                style={styles.carousel}
+                onMomentumScrollEnd={isToday ? handleScrollEnd : undefined}
+              >
+                {dayData.verses.map((verse, periodIndex) => {
+                  const period = periods[periodIndex];
+                  const theme = getThemeForPeriod(period, dayData.date);
+                  const Icon = theme.Icon;
+                  const FooterIcon = theme.FooterIcon;
+                  const dynamicColors = getDynamicGradient(dayData.date, period, periodIndex);
 
-                    return (
-                      <View key={periodIndex} style={[styles.cardWrapper, { width }]}>
-                        <ImageBackground 
-                          source={{ uri: getVerseBackgroundUrl(verse, period, typeof verse.index === 'number' ? verse.index : periodIndex, dayData.date) }} 
-                          style={styles.cardGradient}
-                          imageStyle={{ borderRadius: 24 }}
-                          resizeMode="cover"
-                        >
-                          <LinearGradient 
-                            colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0.85)']} 
-                            style={StyleSheet.absoluteFillObject} 
-                          />
-                          {renderCardContent(verse, period, theme, periodIndex, dayData.date)}
-                        </ImageBackground>
-                      </View>
-                    );
-                  })}
-                </ScrollView>
-              </View>
-            );
-          })}
-        </ScrollView>
+                  return (
+                    <View key={periodIndex} style={[styles.cardWrapper, { width }]}>
+                      <CachedImageBackground
+                        source={{ uri: getVerseBackgroundUrl(verse, period, typeof verse.index === 'number' ? verse.index : periodIndex, dayData.date) }}
+                        style={styles.cardGradient}
+                        imageStyle={{ borderRadius: 24 }}
+                        resizeMode="cover"
+                      >
+                        <LinearGradient
+                          colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0.85)']}
+                          style={StyleSheet.absoluteFillObject}
+                        />
+                        {renderCardContent(verse, period, theme, periodIndex, dayData.date)}
+                      </CachedImageBackground>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          );
+        })}
+      </ScrollView>
       {renderHiddenCaptureView()}
-      
+
       {/* Show an overlay spinner if capturing */}
       {isCapturing && (
         <View style={StyleSheet.absoluteFillObject}>
-           <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}>
-             <ActivityIndicator size="large" color="#ffffff" />
-             <Text style={{ color: '#ffffff', marginTop: 12, fontWeight: '600' }}>Preparing image...</Text>
-           </View>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}>
+            <ActivityIndicator size="large" color="#ffffff" />
+            <Text style={{ color: '#ffffff', marginTop: 12, fontWeight: '600' }}>Preparing image...</Text>
+          </View>
         </View>
       )}
 
@@ -636,7 +620,7 @@ export default function VerseOfTheDayScreen() {
     const Icon = theme.Icon;
     const loc = getLocalizedVerse(verse, language);
     const greeting = getPeriodGreeting(period, t);
-    
+
     return (
       <>
         <View style={styles.cardInner}>
@@ -669,13 +653,13 @@ export default function VerseOfTheDayScreen() {
         {/* PAGINATION DOTS */}
         <View style={styles.paginationContainer}>
           {periods.map((_, i) => (
-            <View 
-              key={i} 
+            <View
+              key={i}
               style={[
-                styles.dot, 
+                styles.dot,
                 periodIndex === i && styles.activeDot,
                 periodIndex === i && { backgroundColor: '#ffffff' }
-              ]} 
+              ]}
             />
           ))}
         </View>
@@ -683,15 +667,15 @@ export default function VerseOfTheDayScreen() {
         {/* SEMI-TRANSPARENT FOOTER */}
         <View style={[styles.footer, { backgroundColor: 'rgba(0,0,0,0.5)', paddingVertical: 12, justifyContent: 'flex-end' }]}>
           <View style={{ flexDirection: 'row', alignItems: 'center', paddingRight: 16, gap: 16 }}>
-            <TouchableOpacity 
-              style={styles.actionBtn} 
+            <TouchableOpacity
+              style={styles.actionBtn}
               onPress={() => handleDownload(verse, period, theme, periodIndex, date)}
               disabled={isCapturing}
             >
               <Download color="#ffffff" size={20} />
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.actionBtn} 
+            <TouchableOpacity
+              style={styles.actionBtn}
               onPress={() => handleShareCard(verse, period, theme, periodIndex, date)}
               disabled={isCapturing}
             >
@@ -728,7 +712,7 @@ export default function VerseOfTheDayScreen() {
             <View style={[styles.verticalLine, { backgroundColor: theme.color }]} />
             <View style={styles.verseTextContainer}>
               <Text style={[styles.quoteMark, { color: theme.color }]}>“</Text>
-              
+
               <Text style={[styles.verseText, { color: '#ffffff', marginBottom: loc.secondaryVerse && loc.secondaryVerse !== loc.primaryVerse ? 12 : 0 }]}>
                 {loc.primaryVerse}
               </Text>
@@ -737,7 +721,7 @@ export default function VerseOfTheDayScreen() {
                   {loc.secondaryVerse}
                 </Text>
               ) : null}
-              
+
               <Text style={[styles.quoteMarkBottom, { color: theme.color }]}>”</Text>
             </View>
           </View>
@@ -766,17 +750,17 @@ export default function VerseOfTheDayScreen() {
         <ViewShot ref={captureRef} options={{ format: 'png', quality: 1 }}>
           <View style={[styles.cardWrapper, { width, height: width * 1.5 }]} collapsable={false}>
             <View style={[styles.cardGradient, { backgroundColor: '#111' }]} collapsable={false}>
-                <Image 
-                  source={{ uri: getVerseBackgroundUrl(verse, captureConfig?.period, typeof verse.index === 'number' ? verse.index : (captureConfig?.periodIndex ?? 0), captureConfig?.date) }} 
-                  style={[StyleSheet.absoluteFillObject, { borderRadius: 24 }]} 
-                  resizeMode="cover"
-                />
-                <LinearGradient 
-                  colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0.85)']} 
-                  style={StyleSheet.absoluteFillObject} 
-                />
-                {captureContent}
-              </View>
+              <CachedImage
+                source={{ uri: getVerseBackgroundUrl(verse, captureConfig?.period, typeof verse.index === 'number' ? verse.index : (captureConfig?.periodIndex ?? 0), captureConfig?.date) }}
+                style={[StyleSheet.absoluteFillObject, { borderRadius: 24 }]}
+                resizeMode="cover"
+              />
+              <LinearGradient
+                colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0.85)']}
+                style={StyleSheet.absoluteFillObject}
+              />
+              {captureContent}
+            </View>
           </View>
         </ViewShot>
       </View>
@@ -797,7 +781,7 @@ const getStyles = (isDark: boolean, colors: any) => StyleSheet.create({
     flex: 1,
     backgroundColor: '#FAF7F2',
   },
-    headerRow: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -950,7 +934,7 @@ const getStyles = (isDark: boolean, colors: any) => StyleSheet.create({
   },
   cardWrapper: {
     paddingHorizontal: 16,
-    minHeight: 480, 
+    minHeight: 480,
   },
   cardGradient: {
     flex: 1,

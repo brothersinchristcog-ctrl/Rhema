@@ -155,6 +155,7 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
   const lastTypingSentAtRef = useRef<number>(0);
   const isTypingActiveRef = useRef<boolean>(false);
   const syncedStaleInboxRef = useRef<boolean>(false);
+  const didInitialReadRef = useRef<boolean>(false);
 
   const roomType = roomDetails?.meta?.type || initialRoomType;
   const isGroup = roomType === 'group';
@@ -222,6 +223,7 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
   useEffect(() => {
     if (!myUid || !roomId) return;
     syncedStaleInboxRef.current = false;
+    didInitialReadRef.current = false;
     const unsubMsgs = rhemaChatService.subscribeRoomMessages(
       churchId,
       roomId,
@@ -236,14 +238,17 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
         const unreadIncoming = list
           .filter((m) => m.senderUid !== myUid && m.type !== 'system' && !m.readBy?.[myUid])
           .map((m) => m.id);
-        rhemaChatService.markRoomRead(
-          churchId,
-          roomId,
-          myUid,
-          !isGroup,
-          peerUid,
-          unreadIncoming
-        );
+        if (unreadIncoming.length > 0 || !didInitialReadRef.current) {
+          didInitialReadRef.current = true;
+          rhemaChatService.markRoomRead(
+            churchId,
+            roomId,
+            myUid,
+            !isGroup,
+            peerUid,
+            unreadIncoming
+          );
+        }
       }
     );
     return () => unsubMsgs();

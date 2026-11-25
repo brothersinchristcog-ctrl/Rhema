@@ -1,18 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, StatusBar, Platform, ActivityIndicator, Modal, PanResponder, Animated, Dimensions, Linking, Alert, Image, BackHandler, Clipboard, ToastAndroid } from 'react-native';
-import { ChevronLeft, ArrowLeft, Bell, Calendar, Info, MessageCircle, AlertTriangle, X, Gift, Heart, Sparkles, Droplets, Trash2, Tv, BookOpen, Music, Mic , Video, Layers, UserCheck, Zap, HeartHandshake, Briefcase, CheckCircle2, Wallet } from 'lucide-react-native';
+import { StyleSheet, View, Text, ScrollView, FlatList, TouchableOpacity, StatusBar, Platform, ActivityIndicator, Modal, PanResponder, Animated, Dimensions, Linking, Alert, Image, BackHandler, Clipboard, ToastAndroid } from 'react-native';
+import { ChevronLeft, ArrowLeft, Bell, Calendar, Info, MessageCircle, AlertTriangle, X, Gift, Heart, Sparkles, Droplets, Trash2, Tv, BookOpen, Music, Mic, Video, Layers, UserCheck, Zap, HeartHandshake, Briefcase, CheckCircle2, Wallet } from 'lucide-react-native';
 import { openZoomMeeting } from '../utils/ZoomLauncher';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import firestore, { 
-  getFirestore, 
-  collection, 
-  query, 
+import firestore, {
+  getFirestore,
+  collection,
+  query,
   where,
-  orderBy, 
-  limit, 
-  onSnapshot 
+  orderBy,
+  limit,
+  onSnapshot
 } from '@react-native-firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { isSuperAdminMember } from '../utils/roleUtils';
@@ -20,6 +20,79 @@ import { formatDateDisplay } from '../utils/DateUtils';
 import { useChurch } from '../context/ChurchContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  readInstantCache,
+  writeInstantCache,
+  readScopedDeletedNotifIds,
+  writeScopedDeletedNotifIds,
+} from '../utils/instantCache';
+
+const resolveUpdateIcon = (type?: string) => {
+  switch (type) {
+    case 'online_meeting':
+    case 'online_meeting_scheduled':
+      return Video;
+    case 'service_assignment':
+      return UserCheck;
+    case 'service_responsibility_broadcast':
+      return Zap;
+    case 'rehearsal_alert':
+    case 'song':
+      return Music;
+    case 'sermon':
+      return Mic;
+    case 'promise':
+      return BookOpen;
+    case 'birthday':
+      return Gift;
+    case 'baptism':
+    case 'baptism_request':
+    case 'baptism_request_admin':
+    case 'baptism_request_member':
+      return Droplets;
+    case 'anniversary':
+    case 'prayer_request':
+    case 'prayer_request_admin':
+    case 'prayer_request_member':
+    case 'prayer':
+      return Heart;
+    case 'celebration':
+    case 'testimony_admin':
+    case 'testimony_published':
+    case 'testimony_member_status':
+      return Sparkles;
+    case 'youtube_live':
+      return Tv;
+    case 'job_opportunity_new':
+    case 'job_application_admin':
+    case 'job_application_member':
+      return Briefcase;
+    case 'volunteer_application_admin':
+    case 'volunteer_application_member':
+    case 'volunteer_assignment':
+    case 'volunteer_event_change':
+    case 'volunteer_post_new':
+      return HeartHandshake;
+    case 'donation':
+    case 'expense_approval':
+    case 'expense_approved':
+    case 'expense_rejected':
+    case 'invoice':
+      return Wallet;
+    default:
+      return Bell;
+  }
+};
+
+const hydrateUpdateIcons = (items: any[]) =>
+  Array.isArray(items)
+    ? items.map((item) => ({
+      ...item,
+      icon: typeof item?.icon === 'function' ? item.icon : resolveUpdateIcon(item?.type),
+    }))
+    : [];
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.35;
@@ -139,6 +212,18 @@ export default function UpdatesScreen({ navigation, route }: any) {
   const { colors, isDark } = useTheme();
   const { highlightId, highlightType, filterCategory, filterTitle } = route?.params || {};
   const { t } = useLanguage();
+  const { user, member, isPlatformSuperAdmin } = useAuth();
+  const { activeChurch } = useChurch();
+  const scopedChurchId = activeChurch?.id || member?.churchId || 'rhema';
+  const scopedUid = user?.uid || member?.id || 'guest';
+  const updatesCacheKey = React.useMemo(
+    () => makeScopedCacheKey('updates_feed_v1', scopedChurchId, scopedUid),
+    [scopedChurchId, scopedUid]
+  );
+  const initialCachedUpdates = React.useMemo(() => {
+    const mem = getInstantMemory<any[]>(updatesCacheKey);
+    return mem && mem.length > 0 ? hydrateUpdateIcons(mem) : null;
+  }, [updatesCacheKey]);
 
   const getTypeName = (type: string) => {
     if (type === 'online_meeting') return 'LIVE MEETING';
@@ -180,11 +265,31 @@ export default function UpdatesScreen({ navigation, route }: any) {
     return trans && trans !== `updates.types.${type}` ? trans.toUpperCase() : type.toUpperCase();
   };
 
-  const [dynamicUpdates, setDynamicUpdates] = useState<any[]>([]);
+  const [dynamicUpdates, setDynamicUpdates] = useState<any[]>(initialCachedUpdates || []);
   const [broadcastsList, setBroadcastsList] = useState<any[]>([]);
   const [churchNotifsList, setChurchNotifsList] = useState<any[]>([]);
   const [meetingsList, setMeetingsList] = useState<any[]>([]);
   const [memberNotifsList, setMemberNotifsList] = useState<any[]>([]);
+  const hasLiveSnapshotRef = React.useRef(false);
+
+  useEffect(() => {
+    let active = true;
+    hasLiveSnapshotRef.current = false;
+    const mem = getInstantMemory<any[]>(updatesCacheKey);
+    if (mem && mem.length > 0) {
+      setDynamicUpdates(hydrateUpdateIcons(mem));
+      setLoading(false);
+    } else {
+      readInstantCache<any[]>(updatesCacheKey).then((cached) => {
+        if (!active || hasLiveSnapshotRef.current || !cached?.data?.length) return;
+        setDynamicUpdates(hydrateUpdateIcons(cached.data));
+        setLoading(false);
+      });
+    }
+    return () => {
+      active = false;
+    };
+  }, [updatesCacheKey]);
 
   useEffect(() => {
     const combined = [...churchNotifsList, ...broadcastsList, ...meetingsList, ...memberNotifsList].sort((a, b) => (b.rawDate || 0) - (a.rawDate || 0));
@@ -250,9 +355,14 @@ export default function UpdatesScreen({ navigation, route }: any) {
       return true;
     });
     setDynamicUpdates(deduplicated);
-  }, [broadcastsList, churchNotifsList, meetingsList, memberNotifsList]);
+    if (deduplicated.length > 0 || hasLiveSnapshotRef.current) {
+      hasLiveSnapshotRef.current = true;
+      const serializable = deduplicated.map(({ icon, sourceRef, ...rest }) => rest);
+      writeInstantCache(updatesCacheKey, serializable).catch(() => { });
+    }
+  }, [broadcastsList, churchNotifsList, meetingsList, memberNotifsList, updatesCacheKey]);
   const [selectedUpdate, setSelectedUpdate] = useState<any | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(() => !(initialCachedUpdates && initialCachedUpdates.length > 0));
   const [clearingAll, setClearingAll] = useState(false);
   const [showClearConfirmModal, setShowClearConfirmModal] = useState(false);
   const [showClearSuccessModal, setShowClearSuccessModal] = useState(false);
@@ -260,8 +370,6 @@ export default function UpdatesScreen({ navigation, route }: any) {
   const [hasAutoOpened, setHasAutoOpened] = useState(false);
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const [clearedBeforeTimestamp, setClearedBeforeTimestamp] = useState<number>(0);
-  const { user, member, isPlatformSuperAdmin } = useAuth();
-  const { activeChurch } = useChurch();
   const adminRoleStr = `${member?.userType || ''} ${(member as any)?.role || ''}`.toUpperCase();
   const isSuperAdmin = isSuperAdminMember(member, isPlatformSuperAdmin);
   const isAdmin = isSuperAdmin || adminRoleStr.includes('ADMIN') || adminRoleStr.includes('PASTOR');
@@ -300,9 +408,9 @@ export default function UpdatesScreen({ navigation, route }: any) {
   useEffect(() => {
     const loadDeletedIds = async () => {
       try {
-        const stored = await AsyncStorage.getItem('@deleted_notification_ids');
-        if (stored) {
-          setDeletedIds(JSON.parse(stored));
+        const storedIds = await readScopedDeletedNotifIds(scopedChurchId, scopedUid);
+        if (storedIds.length > 0) {
+          setDeletedIds(storedIds);
         }
         const userKey = user?.uid || member?.id || 'guest';
         const storedClearedAt = await AsyncStorage.getItem(`@notifications_cleared_at_${userKey}`);
@@ -314,7 +422,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
       }
     };
     loadDeletedIds();
-  }, [user?.uid, member?.id]);
+  }, [scopedChurchId, scopedUid, user?.uid, member?.id]);
 
   /**
    * Permanently delete notification document(s) from Firebase across notifications, broadcasts,
@@ -396,9 +504,9 @@ export default function UpdatesScreen({ navigation, route }: any) {
       setMeetingsList((prev) => prev.filter((i) => !deleteSet.has(String(i.id))));
       setDynamicUpdates((prev) => prev.filter((i) => !deleteSet.has(String(i.id))));
 
-      await AsyncStorage.setItem('@deleted_notification_ids', JSON.stringify(updated));
+      await writeScopedDeletedNotifIds(scopedChurchId, scopedUid, updated);
       await markJobCircleNotificationsRead(idsToRemove);
-      permanentlyDeleteFromFirebase(idsToRemove, refsToRemove).catch(() => {});
+      permanentlyDeleteFromFirebase(idsToRemove, refsToRemove).catch(() => { });
     } catch (e) {
       console.error('Error deleting notification:', e);
     }
@@ -477,10 +585,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
       setSelectedUpdate(null);
 
       // 2. Persist state in AsyncStorage
-      await AsyncStorage.setItem(
-        '@deleted_notification_ids',
-        JSON.stringify(updatedDeletedIds)
-      );
+      await writeScopedDeletedNotifIds(scopedChurchId, scopedUid, updatedDeletedIds);
       if (!filterCategory) {
         await AsyncStorage.setItem(
           `@notifications_cleared_at_${userKey}`,
@@ -713,17 +818,17 @@ export default function UpdatesScreen({ navigation, route }: any) {
       color = '#7C3AED';
       resolvedType = 'prayer_request_admin';
     } else if (
-      data.type === 'prayer_request_member' || 
-      data.title?.includes('Prayer Request Approved') || 
+      data.type === 'prayer_request_member' ||
+      data.title?.includes('Prayer Request Approved') ||
       data.title?.includes('Pastoral Prayer Response')
     ) {
       icon = Heart;
       color = '#7C3AED';
       resolvedType = 'prayer_request_member';
     } else if (
-      data.type === 'baptism_request_member' || 
-      data.type === 'baptism_request' || 
-      data.title?.includes('Baptism Request Update') || 
+      data.type === 'baptism_request_member' ||
+      data.type === 'baptism_request' ||
+      data.title?.includes('Baptism Request Update') ||
       data.title?.includes('Baptism Request Approved')
     ) {
       icon = Droplets;
@@ -794,7 +899,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
     }
 
     let dateStr = '';
-    
+
     // Extract and format exact publication date & time from createdAt
     if (data.createdAt && typeof data.createdAt.toDate === 'function') {
       const dt = data.createdAt.toDate();
@@ -949,7 +1054,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
 
     // Query church notifications directly without a 12-item `where('type', 'in', ...)`
     // (which exceeded Firestore's 10-element `in` filter limit and threw a synchronous error)
-    let unsubscribeChurchNotifs = () => {};
+    let unsubscribeChurchNotifs = () => { };
     try {
       const qChurchNotifs = query(
         collection(db, 'Rhema Church', churchToQuery, 'notifications'),
@@ -1022,10 +1127,10 @@ export default function UpdatesScreen({ navigation, route }: any) {
           }
         );
         memberUnsubs.push(unsubMem);
-      } catch (_) {}
+      } catch (_) { }
     }
 
-    let unsubscribeMeetings = () => {};
+    let unsubscribeMeetings = () => { };
     try {
       const qMeetings = query(
         collection(db, 'Rhema Church', churchToQuery, 'online_meetings'),
@@ -1100,7 +1205,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
           console.error('Error fetching meetings:', error);
         }
       );
-    } catch (_) {}
+    } catch (_) { }
 
     return () => {
       unsubscribe();
@@ -1111,26 +1216,28 @@ export default function UpdatesScreen({ navigation, route }: any) {
   }, [activeChurch?.id, member?.churchId, user?.phoneNumber, member?.phone, member?.id, user?.uid, isAdmin]);
   const allUpdates = dynamicUpdates;
   const deletedSet = React.useMemo(() => new Set(deletedIds.map(String)), [deletedIds]);
-  const visibleUpdates = allUpdates.filter(update => {
-    if (!update || !update.id) return false;
-    if (deletedSet.has(String(update.id))) return false;
-    if (clearedBeforeTimestamp > 0 && update.rawDate && update.rawDate <= clearedBeforeTimestamp) {
-      return false;
-    }
-    if (filterCategory === 'job_circle') {
-      const isJobCircle =
-        update.type === 'job_opportunity_new' ||
-        update.type === 'job_application_admin' ||
-        update.type === 'job_application_member' ||
-        update.opportunityId ||
-        update.applicationId ||
-        update.title?.includes('Ministry Opportunity') ||
-        update.title?.includes('Ministry Application') ||
-        update.title?.includes('Ministry Interview');
-      return isJobCircle;
-    }
-    return true;
-  });
+  const visibleUpdates = React.useMemo(() => {
+    return allUpdates.filter(update => {
+      if (!update || !update.id) return false;
+      if (deletedSet.has(String(update.id))) return false;
+      if (clearedBeforeTimestamp > 0 && update.rawDate && update.rawDate <= clearedBeforeTimestamp) {
+        return false;
+      }
+      if (filterCategory === 'job_circle') {
+        const isJobCircle =
+          update.type === 'job_opportunity_new' ||
+          update.type === 'job_application_admin' ||
+          update.type === 'job_application_member' ||
+          update.opportunityId ||
+          update.applicationId ||
+          update.title?.includes('Ministry Opportunity') ||
+          update.title?.includes('Ministry Application') ||
+          update.title?.includes('Ministry Interview');
+        return isJobCircle;
+      }
+      return true;
+    });
+  }, [allUpdates, deletedSet, clearedBeforeTimestamp, filterCategory]);
 
   const markJobCircleNotificationsRead = React.useCallback(
     async (idsToMark: string[]) => {
@@ -1217,7 +1324,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
         barStyle={isDark ? 'light-content' : 'dark-content'}
         backgroundColor={isDark ? colors.background : '#FAF7F2'}
       />
-      
+
       {/* ── Page Header Hero Card ── */}
       {/* ── Screen Header (Clean circular back button, title & Clear All button) ── */}
       <View
@@ -1274,9 +1381,18 @@ export default function UpdatesScreen({ navigation, route }: any) {
         )}
       </View>
 
-      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-        <View style={styles.content}>
-          {loading && visibleUpdates.length === 0 ? (
+      <FlatList
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        data={visibleUpdates}
+        keyExtractor={(item) => String(item.id)}
+        showsVerticalScrollIndicator={false}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={7}
+        removeClippedSubviews={Platform.OS === 'android'}
+        ListHeaderComponent={
+          loading && visibleUpdates.length === 0 ? (
             <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 100 }}>
               <ActivityIndicator size="large" color="#f0b429" />
               <Text style={{ marginTop: 16, fontSize: 14, color: '#94a3b8' }}>{t('updates.loadingUpdates')}</Text>
@@ -1286,252 +1402,252 @@ export default function UpdatesScreen({ navigation, route }: any) {
               <ActivityIndicator size="small" color={isDark ? '#E4E4E7' : '#1a2d5a'} />
               <Text style={[styles.loadingTxt, isDark && { color: colors.textSecondary }]}>{t('updates.syncingAlerts')}</Text>
             </View>
-          ) : null}
-
-          {visibleUpdates.map((update) => (
-            <SwipeableRow key={update.id} onDelete={() => handleDeleteUpdate(update.id, update)}>
-              <TouchableOpacity 
-                style={[
-                  styles.updateCard,
-                  isDark && { backgroundColor: colors.surface, borderColor: colors.border },
-                ]}
-                activeOpacity={0.7}
-                onPress={() => {
-                  if (update.type === 'song') {
-                    navigation.navigate('Songs', { songId: update.relatedId });
-                  } else if (update.type === 'promise') {
-                    navigation.navigate('Tabs', { screen: 'Promise' });
-                  } else if (update.type === 'sermon') {
-                    const sId = update.sermonId || update.relatedId || (update.id && !update.id.startsWith('sermon_') ? update.id : null);
-                    navigation.navigate('SermonVideo', { 
-                      sermonId: sId,
-                      sermonTitle: update.title,
-                      title: update.title
-                    });
-                  } else if (
-                    update.type === 'quiz' ||
-                    update.type === 'quiz_scheduled' ||
-                    update.type === 'bible_quiz' ||
-                    update.screen === 'BibleQuizDetail' ||
-                    update.quizId
-                  ) {
-                    const qId = update.quizId || update.relatedId || update.id;
-                    navigation.navigate('BibleQuizDetail', { quizId: qId, churchId: update.churchId });
-                  } else if (update.type === 'event') {
-                    if (update.eventId) {
-                      navigation.navigate('EventDetails', { eventId: update.eventId, id: update.eventId });
-                    } else {
-                      navigation.navigate('Events');
-                    }
-                  } else if (update.type === 'admin_roster_alert') {
-                    navigation.navigate('AdminRoot', {
-                      targetTab: 'Service Roster',
-                      serviceId: update.serviceId,
-                      roleId: update.roleId,
-                      timestamp: Date.now(),
-                    });
-                  } else if (update.type === 'service_roster' || update.type === 'rehearsal_alert') {
-                    navigation.navigate('MyService', {
-                      serviceId: update.serviceId,
-                      initialTab: 'roster',
-                    });
-                  } else if (
-                    update.type === 'service_assignment' ||
-                    update.type === 'service_responsibility_broadcast' ||
-                    update.type === 'service_reminder'
-                  ) {
-                    navigation.navigate('MyService', {
-                      serviceId: update.serviceId,
-                      initialTab: 'responsibilities',
-                    });
-                  } else if (update.type === 'volunteer_application_admin') {
-                    const appId = update.applicationId || update.relatedId || update.id;
-                    navigation.navigate('AdminRoot', {
-                      targetTab: 'Volunteer Management',
-                      applicationId: appId,
-                      subType: update.volunteerType || 'general',
-                      timestamp: Date.now(),
-                    });
-                  } else if (update.type === 'volunteer_post_new') {
-                    const postId = String(update.postId || update.referenceId || update.id || '').replace(/^vol_post_/, '');
-                    if (postId) {
-                      navigation.navigate('Volunteer', { postId });
-                    } else {
-                      navigation.navigate('Volunteer');
-                    }
-                  } else if (
-                    update.type === 'volunteer_application_member' ||
-                    update.type === 'volunteer_assignment' ||
-                    update.type === 'volunteer_event_change' ||
-                    update.type === 'volunteer_reminder'
-                  ) {
-                    if (update.eventId) {
-                      navigation.navigate('EventDetails', { eventId: update.eventId, id: update.eventId });
-                    } else {
-                      navigation.navigate('Volunteer');
-                    }
-                  } else if (
-                    update.type === 'baptism_request_admin' ||
-                    update.type === 'baptism_request' ||
-                    update.type === 'baptism'
-                  ) {
-                    const reqId = update.requestId || update.id;
-                    if (isAdmin) {
-                      navigation.navigate('AdminRoot', { targetTab: 'Baptism', requestId: reqId, timestamp: Date.now() });
-                    } else {
-                      navigation.navigate('BaptismRequest', { requestId: reqId });
-                    }
-                  } else if (update.type === 'prayer_request_admin' || update.type === 'prayer_request' || update.type === 'prayer' || update.type === 'prayer_request_member') {
-                    const pId = update.prayerId || update.requestId || update.id;
-                    if (isAdmin && update.type !== 'prayer_request_member') {
-                      navigation.navigate('AdminRoot', { targetTab: 'Prayers', prayerId: pId, requestId: pId, timestamp: Date.now() });
-                    } else {
-                      navigation.navigate('PrayerWall', { prayerId: pId });
-                    }
-                  } else if (update.type === 'attendance') {
-                    navigation.navigate('AttendanceScreen');
-                  } else if (update.type === 'testimony_admin') {
-                    const tId = update.testimonyId || update.relatedId || update.id;
-                    navigation.navigate('AdminRoot', {
-                      targetTab: 'Testimonies',
-                      testimonyId: tId,
-                      timestamp: Date.now(),
-                    });
-                  } else if (update.type === 'testimony_published' || update.type === 'testimony_member_status' || update.type === 'testimony') {
-                    const tId = update.testimonyId || update.relatedId || update.id;
-                    if (tId) {
-                      navigation.navigate('TestimonyDetail', {
-                        testimonyId: tId,
-                        churchId: update.churchId || activeChurch?.id || member?.churchId || 'rhema',
-                      });
-                    } else {
-                      navigation.navigate('Testimonies', { initialTab: 'mine' });
-                    }
-                  } else if (update.type === 'registration_request_admin') {
-                    navigation.navigate('AdminRoot', {
-                      targetTab: 'Approvals',
-                      requestId: update.requestId || update.referenceId || update.id,
-                      timestamp: Date.now(),
-                    });
-                  } else if ((update.type === 'expense_approval' || update.type === 'expense_approved' || update.type === 'expense_rejected' || update.type === 'invoice') && isSuperAdmin) {
-                    const approvalSubTab =
-                      update.type === 'expense_approved'
-                        ? 'approved'
-                        : update.type === 'expense_rejected'
-                        ? 'rejected'
-                        : 'pending';
-                    navigation.navigate('AdminRoot', {
-                      targetTab: 'Expense',
-                      innerTab: update.type === 'invoice' ? 'invoice' : 'approvals',
-                      approvalSubTab,
-                      expenseId: update.expenseId || update.relatedId || update.id,
-                      timestamp: Date.now(),
-                    });
-                  } else if (
-                    update.type === 'kids_check_in' ||
-                    update.type === 'kids_check_out' ||
-                    update.type === 'kids_absent' ||
-                    update.type === 'kids_teacher_enrollment'
-                  ) {
-                    navigation.navigate('KidsMinistry', {
-                      initialCategory:
-                        update.initialCategory ||
-                        (update.type === 'kids_teacher_enrollment' ? 'consent' : 'attendance'),
-                      childDocId: update.childDocId || undefined,
-                      programSessionId: update.programSessionId || undefined,
-                    });
-                  } else if (update.type === 'job_opportunity_new') {
-                    markJobCircleNotificationsRead([String(update.id)]);
-                    if (update.opportunityId) {
-                      navigation.navigate('OpportunityDetailScreen', { opportunityId: update.opportunityId });
-                    } else {
-                      navigation.navigate('JobCircle', { skipSplash: true });
-                    }
-                  } else if (update.type === 'job_application_admin') {
-                    markJobCircleNotificationsRead([String(update.id)]);
-                    navigation.navigate('AdminRoot', {
-                      targetTab: 'Job Circle',
-                      applicationId: update.applicationId,
-                      timestamp: Date.now(),
-                    });
-                  } else if (update.type === 'job_application_member') {
-                    markJobCircleNotificationsRead([String(update.id)]);
-                    if (update.opportunityId) {
-                      navigation.navigate('OpportunityDetailScreen', {
-                        opportunityId: update.opportunityId,
-                        applicationId: update.applicationId,
-                        timestamp: Date.now(),
-                      });
-                    } else {
-                      navigation.navigate('JobCircle', {
-                        skipSplash: true,
-                        initialTab: 'applications',
-                        applicationId: update.applicationId,
-                        timestamp: Date.now(),
-                      });
-                    }
-                  } else if (update.type === 'online_meeting' || update.type === 'online_meeting_scheduled') {
-                    const targetChurchId = update.churchId || activeChurch?.id || member?.churchId || 'rhema';
-                    const rawMeetingId =
-                      update.meetingId ||
-                      String(update.id || '')
-                        .replace(/^meeting_live_/, '')
-                        .replace(/^meeting_sched_/, '');
-                    if (rawMeetingId) {
-                      navigation.navigate('OnlineMeetingDetail', {
-                        meetingId: rawMeetingId,
-                        churchId: targetChurchId,
-                        meeting: {
-                          id: rawMeetingId,
-                          churchId: targetChurchId,
-                          title: update.title?.replace(/^🔴 Live Now:\s*/i, '').replace(/^New Meeting Scheduled:\s*/i, '') || 'Online Meeting',
-                          meetingLink: update.meetingLink || update.url || '',
-                          meetingUrl: update.meetingLink || update.url || '',
-                          url: update.meetingLink || update.url || '',
-                          provider: update.provider || 'google_meet',
-                          meetingType: update.provider || 'google_meet',
-                          password: update.password || '',
-                          date: update.meetingDate || '',
-                          startTimeLabel: update.startTimeLabel || '',
-                          endTimeLabel: update.endTimeLabel || '',
-                          teacherName: update.teacherName || '',
-                          topic: update.topic || '',
-                          bibleBook: update.bibleBook || '',
-                          status: update.type === 'online_meeting' ? 'live' : 'scheduled',
-                        },
-                      });
-                    } else {
-                      navigation.navigate('OnlineMeetings');
-                    }
-                  } else {
-                    setSelectedUpdate(update);
-                  }
-                }}
-              >
-                <View style={[styles.iconBox, { backgroundColor: update.color + '15' }]}>
-                  <update.icon size={22} color={update.color} />
-                </View>
-                <View style={styles.updateInfo}>
-                  <View style={styles.metaRow}>
-                    <Text style={[styles.typeTag, { color: update.color }]}>{getTypeName(update.type)}</Text>
-                    <Text style={[styles.dateTxt, isDark && { color: colors.textSecondary }]}>{formatDateDisplay(update.date)}</Text>
-                  </View>
-                  <Text style={[styles.updateTitle, isDark && { color: colors.text }]}>{update.title}</Text>
-                  <Text style={[styles.updateContent, isDark && { color: colors.textSecondary }]} numberOfLines={2}>{update.content}</Text>
-                </View>
-              </TouchableOpacity>
-            </SwipeableRow>
-          ))}
-
-          {visibleUpdates.length === 0 && !loading && (
+          ) : null
+        }
+        ListEmptyComponent={
+          !loading ? (
             <View style={styles.emptyContainer}>
               <Bell size={48} color={isDark ? '#64748B' : '#94a3b8'} style={{ marginBottom: 12 }} />
               <Text style={[styles.emptyText, { color: colors.text }]}>{t('updates.allCaughtUp')}</Text>
               <Text style={[styles.emptySubText, { color: colors.textSecondary }]}>{t('updates.emptySub')}</Text>
             </View>
-          )}
-        </View>
-      </ScrollView>
+          ) : null
+        }
+        renderItem={({ item: update }) => (
+          <SwipeableRow onDelete={() => handleDeleteUpdate(update.id, update)}>
+            <TouchableOpacity
+              style={[
+                styles.updateCard,
+                isDark && { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+              activeOpacity={0.7}
+              onPress={() => {
+                if (update.type === 'song') {
+                  navigation.navigate('Songs', { songId: update.relatedId });
+                } else if (update.type === 'promise') {
+                  navigation.navigate('Tabs', { screen: 'Promise' });
+                } else if (update.type === 'sermon') {
+                  const sId = update.sermonId || update.relatedId || (update.id && !update.id.startsWith('sermon_') ? update.id : null);
+                  navigation.navigate('SermonVideo', {
+                    sermonId: sId,
+                    sermonTitle: update.title,
+                    title: update.title
+                  });
+                } else if (
+                  update.type === 'quiz' ||
+                  update.type === 'quiz_scheduled' ||
+                  update.type === 'bible_quiz' ||
+                  update.screen === 'BibleQuizDetail' ||
+                  update.quizId
+                ) {
+                  const qId = update.quizId || update.relatedId || update.id;
+                  navigation.navigate('BibleQuizDetail', { quizId: qId, churchId: update.churchId });
+                } else if (update.type === 'event') {
+                  if (update.eventId) {
+                    navigation.navigate('EventDetails', { eventId: update.eventId, id: update.eventId });
+                  } else {
+                    navigation.navigate('Events');
+                  }
+                } else if (update.type === 'admin_roster_alert') {
+                  navigation.navigate('AdminRoot', {
+                    targetTab: 'Service Roster',
+                    serviceId: update.serviceId,
+                    roleId: update.roleId,
+                    timestamp: Date.now(),
+                  });
+                } else if (update.type === 'service_roster' || update.type === 'rehearsal_alert') {
+                  navigation.navigate('MyService', {
+                    serviceId: update.serviceId,
+                    initialTab: 'roster',
+                  });
+                } else if (
+                  update.type === 'service_assignment' ||
+                  update.type === 'service_responsibility_broadcast' ||
+                  update.type === 'service_reminder'
+                ) {
+                  navigation.navigate('MyService', {
+                    serviceId: update.serviceId,
+                    initialTab: 'responsibilities',
+                  });
+                } else if (update.type === 'volunteer_application_admin') {
+                  const appId = update.applicationId || update.relatedId || update.id;
+                  navigation.navigate('AdminRoot', {
+                    targetTab: 'Volunteer Management',
+                    applicationId: appId,
+                    subType: update.volunteerType || 'general',
+                    timestamp: Date.now(),
+                  });
+                } else if (update.type === 'volunteer_post_new') {
+                  const postId = String(update.postId || update.referenceId || update.id || '').replace(/^vol_post_/, '');
+                  if (postId) {
+                    navigation.navigate('Volunteer', { postId });
+                  } else {
+                    navigation.navigate('Volunteer');
+                  }
+                } else if (
+                  update.type === 'volunteer_application_member' ||
+                  update.type === 'volunteer_assignment' ||
+                  update.type === 'volunteer_event_change' ||
+                  update.type === 'volunteer_reminder'
+                ) {
+                  if (update.eventId) {
+                    navigation.navigate('EventDetails', { eventId: update.eventId, id: update.eventId });
+                  } else {
+                    navigation.navigate('Volunteer');
+                  }
+                } else if (
+                  update.type === 'baptism_request_admin' ||
+                  update.type === 'baptism_request' ||
+                  update.type === 'baptism'
+                ) {
+                  const reqId = update.requestId || update.id;
+                  if (isAdmin) {
+                    navigation.navigate('AdminRoot', { targetTab: 'Baptism', requestId: reqId, timestamp: Date.now() });
+                  } else {
+                    navigation.navigate('BaptismRequest', { requestId: reqId });
+                  }
+                } else if (update.type === 'prayer_request_admin' || update.type === 'prayer_request' || update.type === 'prayer' || update.type === 'prayer_request_member') {
+                  const pId = update.prayerId || update.requestId || update.id;
+                  if (isAdmin && update.type !== 'prayer_request_member') {
+                    navigation.navigate('AdminRoot', { targetTab: 'Prayers', prayerId: pId, requestId: pId, timestamp: Date.now() });
+                  } else {
+                    navigation.navigate('PrayerWall', { prayerId: pId });
+                  }
+                } else if (update.type === 'attendance') {
+                  navigation.navigate('AttendanceScreen');
+                } else if (update.type === 'testimony_admin') {
+                  const tId = update.testimonyId || update.relatedId || update.id;
+                  navigation.navigate('AdminRoot', {
+                    targetTab: 'Testimonies',
+                    testimonyId: tId,
+                    timestamp: Date.now(),
+                  });
+                } else if (update.type === 'testimony_published' || update.type === 'testimony_member_status' || update.type === 'testimony') {
+                  const tId = update.testimonyId || update.relatedId || update.id;
+                  if (tId) {
+                    navigation.navigate('TestimonyDetail', {
+                      testimonyId: tId,
+                      churchId: update.churchId || activeChurch?.id || member?.churchId || 'rhema',
+                    });
+                  } else {
+                    navigation.navigate('Testimonies', { initialTab: 'mine' });
+                  }
+                } else if (update.type === 'registration_request_admin') {
+                  navigation.navigate('AdminRoot', {
+                    targetTab: 'Approvals',
+                    requestId: update.requestId || update.referenceId || update.id,
+                    timestamp: Date.now(),
+                  });
+                } else if ((update.type === 'expense_approval' || update.type === 'expense_approved' || update.type === 'expense_rejected' || update.type === 'invoice') && isSuperAdmin) {
+                  const approvalSubTab =
+                    update.type === 'expense_approved'
+                      ? 'approved'
+                      : update.type === 'expense_rejected'
+                        ? 'rejected'
+                        : 'pending';
+                  navigation.navigate('AdminRoot', {
+                    targetTab: 'Expense',
+                    innerTab: update.type === 'invoice' ? 'invoice' : 'approvals',
+                    approvalSubTab,
+                    expenseId: update.expenseId || update.relatedId || update.id,
+                    timestamp: Date.now(),
+                  });
+                } else if (
+                  update.type === 'kids_check_in' ||
+                  update.type === 'kids_check_out' ||
+                  update.type === 'kids_absent' ||
+                  update.type === 'kids_teacher_enrollment'
+                ) {
+                  navigation.navigate('KidsMinistry', {
+                    initialCategory:
+                      update.initialCategory ||
+                      (update.type === 'kids_teacher_enrollment' ? 'consent' : 'attendance'),
+                    childDocId: update.childDocId || undefined,
+                    programSessionId: update.programSessionId || undefined,
+                  });
+                } else if (update.type === 'job_opportunity_new') {
+                  markJobCircleNotificationsRead([String(update.id)]);
+                  if (update.opportunityId) {
+                    navigation.navigate('OpportunityDetailScreen', { opportunityId: update.opportunityId });
+                  } else {
+                    navigation.navigate('JobCircle', { skipSplash: true });
+                  }
+                } else if (update.type === 'job_application_admin') {
+                  markJobCircleNotificationsRead([String(update.id)]);
+                  navigation.navigate('AdminRoot', {
+                    targetTab: 'Job Circle',
+                    applicationId: update.applicationId,
+                    timestamp: Date.now(),
+                  });
+                } else if (update.type === 'job_application_member') {
+                  markJobCircleNotificationsRead([String(update.id)]);
+                  if (update.opportunityId) {
+                    navigation.navigate('OpportunityDetailScreen', {
+                      opportunityId: update.opportunityId,
+                      applicationId: update.applicationId,
+                      timestamp: Date.now(),
+                    });
+                  } else {
+                    navigation.navigate('JobCircle', {
+                      skipSplash: true,
+                      initialTab: 'applications',
+                      applicationId: update.applicationId,
+                      timestamp: Date.now(),
+                    });
+                  }
+                } else if (update.type === 'online_meeting' || update.type === 'online_meeting_scheduled') {
+                  const targetChurchId = update.churchId || activeChurch?.id || member?.churchId || 'rhema';
+                  const rawMeetingId =
+                    update.meetingId ||
+                    String(update.id || '')
+                      .replace(/^meeting_live_/, '')
+                      .replace(/^meeting_sched_/, '');
+                  if (rawMeetingId) {
+                    navigation.navigate('OnlineMeetingDetail', {
+                      meetingId: rawMeetingId,
+                      churchId: targetChurchId,
+                      meeting: {
+                        id: rawMeetingId,
+                        churchId: targetChurchId,
+                        title: update.title?.replace(/^🔴 Live Now:\s*/i, '').replace(/^New Meeting Scheduled:\s*/i, '') || 'Online Meeting',
+                        meetingLink: update.meetingLink || update.url || '',
+                        meetingUrl: update.meetingLink || update.url || '',
+                        url: update.meetingLink || update.url || '',
+                        provider: update.provider || 'google_meet',
+                        meetingType: update.provider || 'google_meet',
+                        password: update.password || '',
+                        date: update.meetingDate || '',
+                        startTimeLabel: update.startTimeLabel || '',
+                        endTimeLabel: update.endTimeLabel || '',
+                        teacherName: update.teacherName || '',
+                        topic: update.topic || '',
+                        bibleBook: update.bibleBook || '',
+                        status: update.type === 'online_meeting' ? 'live' : 'scheduled',
+                      },
+                    });
+                  } else {
+                    navigation.navigate('OnlineMeetings');
+                  }
+                } else {
+                  setSelectedUpdate(update);
+                }
+              }}
+            >
+              <View style={[styles.iconBox, { backgroundColor: update.color + '15' }]}>
+                <update.icon size={22} color={update.color} />
+              </View>
+              <View style={styles.updateInfo}>
+                <View style={styles.metaRow}>
+                  <Text style={[styles.typeTag, { color: update.color }]}>{getTypeName(update.type)}</Text>
+                  <Text style={[styles.dateTxt, isDark && { color: colors.textSecondary }]}>{formatDateDisplay(update.date)}</Text>
+                </View>
+                <Text style={[styles.updateTitle, isDark && { color: colors.text }]}>{update.title}</Text>
+                <Text style={[styles.updateContent, isDark && { color: colors.textSecondary }]} numberOfLines={2}>{update.content}</Text>
+              </View>
+            </TouchableOpacity>
+          </SwipeableRow>
+        )}
+      />
 
       {/* ── Visual Celebration & Details Modal ── */}
       <Modal
@@ -1540,13 +1656,13 @@ export default function UpdatesScreen({ navigation, route }: any) {
         animationType="fade"
         onRequestClose={() => setSelectedUpdate(null)}
       >
-        <TouchableOpacity 
-          style={styles.modalOverlay} 
-          activeOpacity={1} 
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
           onPress={() => setSelectedUpdate(null)}
         >
-          <TouchableOpacity 
-            activeOpacity={1} 
+          <TouchableOpacity
+            activeOpacity={1}
             style={[
               styles.modalCard,
               isDark && { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
@@ -1557,19 +1673,19 @@ export default function UpdatesScreen({ navigation, route }: any) {
             ]}
           >
             {/* Modal Close Button */}
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[
                 styles.modalCloseBtn,
                 isDark &&
-                  selectedUpdate?.type !== 'birthday' &&
-                  selectedUpdate?.type !== 'anniversary' && { backgroundColor: colors.background },
+                selectedUpdate?.type !== 'birthday' &&
+                selectedUpdate?.type !== 'anniversary' && { backgroundColor: colors.background },
                 (selectedUpdate?.type === 'birthday' || selectedUpdate?.type === 'anniversary') && styles.modalCloseBtnGold
-              ]} 
+              ]}
               onPress={() => setSelectedUpdate(null)}
             >
               <X size={20} color={
                 selectedUpdate?.type === 'birthday' ? '#b45309' :
-                selectedUpdate?.type === 'anniversary' ? '#be185d' : (isDark ? colors.textSecondary : '#475569')
+                  selectedUpdate?.type === 'anniversary' ? '#be185d' : (isDark ? colors.textSecondary : '#475569')
               } />
             </TouchableOpacity>
 
@@ -1586,7 +1702,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
                 <Text style={styles.celebrationTitleEn}>{t('updates.birthdayGreeting')}</Text>
                 <Text style={styles.celebrationTitleTe}>{t('updates.birthdaySubGreeting')}</Text>
                 <View style={styles.dividerGold} />
-                
+
                 <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
                   <Text style={styles.celebrationGreeting}>
                     {selectedUpdate?.content}
@@ -1652,7 +1768,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
               <View style={styles.standardModalContainer}>
                 <View style={styles.standardModalHeader}>
                   <View style={[
-                    styles.stdIconBox, 
+                    styles.stdIconBox,
                     (selectedUpdate?.type === 'emergency' || selectedUpdate?.title?.includes('🚨') || selectedUpdate?.type === 'youtube_live' || selectedUpdate?.type === 'admin_roster_alert') && styles.stdIconBoxEmergency,
                     (selectedUpdate?.type === 'service_roster' || selectedUpdate?.type === 'volunteer_application_member' || selectedUpdate?.type === 'service_reminder') && { backgroundColor: '#ECFDF5' },
                     (selectedUpdate?.type === 'service_assignment' || selectedUpdate?.type === 'service_responsibility_broadcast' || selectedUpdate?.type === 'volunteer_assignment') && { backgroundColor: '#EFF6FF' },
@@ -1749,7 +1865,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     onPress={() => {
                       const sId = selectedUpdate?.sermonId || selectedUpdate?.relatedId || (selectedUpdate?.id && !selectedUpdate?.id.startsWith('sermon_') ? selectedUpdate?.id : null);
                       setSelectedUpdate(null);
-                      navigation.navigate('SermonVideo', { 
+                      navigation.navigate('SermonVideo', {
                         sermonId: sId,
                         sermonTitle: selectedUpdate?.title,
                         title: selectedUpdate?.title
@@ -1924,8 +2040,8 @@ export default function UpdatesScreen({ navigation, route }: any) {
                           selectedUpdate?.type === 'expense_approved'
                             ? '#10B981'
                             : selectedUpdate?.type === 'expense_rejected'
-                            ? '#EF4444'
-                            : '#F43F5E',
+                              ? '#EF4444'
+                              : '#F43F5E',
                         marginTop: 16,
                       },
                     ]}
@@ -1936,8 +2052,8 @@ export default function UpdatesScreen({ navigation, route }: any) {
                         selectedUpdate?.type === 'expense_approved'
                           ? 'approved'
                           : selectedUpdate?.type === 'expense_rejected'
-                          ? 'rejected'
-                          : 'pending';
+                            ? 'rejected'
+                            : 'pending';
                       setSelectedUpdate(null);
                       navigation.navigate('AdminRoot', {
                         targetTab: 'Expense',
@@ -1952,8 +2068,8 @@ export default function UpdatesScreen({ navigation, route }: any) {
                       {selectedUpdate?.type === 'expense_approved'
                         ? '✅ View Approved Expense'
                         : selectedUpdate?.type === 'expense_rejected'
-                        ? '❌ View Rejected Expense'
-                        : '💼 Review Expense Approval'}
+                          ? '❌ View Rejected Expense'
+                          : '💼 Review Expense Approval'}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -1963,41 +2079,41 @@ export default function UpdatesScreen({ navigation, route }: any) {
                   selectedUpdate?.type === 'volunteer_event_change' ||
                   selectedUpdate?.type === 'volunteer_reminder' ||
                   selectedUpdate?.type === 'volunteer_post_new') && (
-                  <TouchableOpacity
-                    style={[
-                      styles.joinLiveBtn,
-                      {
-                        backgroundColor:
-                          selectedUpdate?.volunteerStatus === 'rejected' || selectedUpdate?.volunteerStatus === 'declined'
-                            ? '#475569'
-                            : selectedUpdate?.type === 'volunteer_assignment'
-                            ? '#2563EB'
-                            : '#059669',
-                        marginTop: 16,
-                      },
-                    ]}
-                    onPress={() => {
-                      const evId = selectedUpdate?.eventId;
-                      const postId = String(selectedUpdate?.postId || selectedUpdate?.referenceId || '').replace(/^vol_post_/, '');
-                      setSelectedUpdate(null);
-                      if (evId) {
-                        navigation.navigate('EventDetails', { eventId: evId, id: evId });
-                      } else if (selectedUpdate?.type === 'volunteer_post_new' && postId) {
-                        navigation.navigate('Volunteer', { postId });
-                      } else {
-                        navigation.navigate('Volunteer');
-                      }
-                    }}
-                  >
-                    <Text style={styles.joinLiveBtnTxt}>
-                      {selectedUpdate?.eventId
-                        ? '📅 View Event Volunteer Details'
-                        : selectedUpdate?.type === 'volunteer_post_new'
-                        ? '🤝 Apply to Volunteer'
-                        : '🤝 Open Volunteer Portal'}
-                    </Text>
-                  </TouchableOpacity>
-                )}
+                    <TouchableOpacity
+                      style={[
+                        styles.joinLiveBtn,
+                        {
+                          backgroundColor:
+                            selectedUpdate?.volunteerStatus === 'rejected' || selectedUpdate?.volunteerStatus === 'declined'
+                              ? '#475569'
+                              : selectedUpdate?.type === 'volunteer_assignment'
+                                ? '#2563EB'
+                                : '#059669',
+                          marginTop: 16,
+                        },
+                      ]}
+                      onPress={() => {
+                        const evId = selectedUpdate?.eventId;
+                        const postId = String(selectedUpdate?.postId || selectedUpdate?.referenceId || '').replace(/^vol_post_/, '');
+                        setSelectedUpdate(null);
+                        if (evId) {
+                          navigation.navigate('EventDetails', { eventId: evId, id: evId });
+                        } else if (selectedUpdate?.type === 'volunteer_post_new' && postId) {
+                          navigation.navigate('Volunteer', { postId });
+                        } else {
+                          navigation.navigate('Volunteer');
+                        }
+                      }}
+                    >
+                      <Text style={styles.joinLiveBtnTxt}>
+                        {selectedUpdate?.eventId
+                          ? '📅 View Event Volunteer Details'
+                          : selectedUpdate?.type === 'volunteer_post_new'
+                            ? '🤝 Apply to Volunteer'
+                            : '🤝 Open Volunteer Portal'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
 
                 {(selectedUpdate?.type === 'online_meeting' || selectedUpdate?.type === 'online_meeting_scheduled') && (
                   <View style={{ marginTop: 14, gap: 10 }}>
@@ -2095,7 +2211,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
                                 profilePhoto: (member as any)?.profilePhoto || (member as any)?.photoURL || user?.photoURL || null,
                                 joinedAt: firestore.FieldValue.serverTimestamp()
                               }, { merge: true })
-                              .catch(() => {});
+                              .catch(() => { });
                           }
 
                           const isZoom = cleanUrl.includes('zoom.us') || selectedUpdate.provider === 'zoom' || selectedUpdate.meetingType === 'zoom';
@@ -2463,7 +2579,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FAF7F2' },
-    headerRow: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -2586,10 +2702,10 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
   headerSub: { color: 'rgba(255,255,255,0.65)', fontSize: 11, fontWeight: '500' },
-  
+
   scroll: { flex: 1 },
   content: { padding: 16, gap: 16 },
-  
+
   loadingBox: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 10 },
   loadingTxt: { fontSize: 12, color: '#475569', fontWeight: '500' },
 

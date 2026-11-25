@@ -35,6 +35,7 @@ import { useChurch } from '../../context/ChurchContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 import { useQuizLanguage } from '../../context/QuizLanguageContext';
+import { getInstantMemory, makeScopedCacheKey, writeInstantCache } from '../../utils/instantCache';
 import QuizLanguageModal from './QuizLanguageModal';
 import { getQuizStrings } from '../../constants/BibleQuizTranslations';
 import {
@@ -72,69 +73,71 @@ export default function BibleQuizDetailScreen() {
     activeChurch?.id ||
     contextChurchId ||
     undefined;
-  const [loadedQuiz, setLoadedQuiz] = useState<BibleQuiz | null>(passedQuiz || null);
+  const detailCacheKey = targetQuizId
+    ? makeScopedCacheKey('quiz_detail_v1', targetChurchId, user?.uid, `${targetQuizId}_${quizLanguage}`)
+    : null;
+  const initialDetailCache = detailCacheKey
+    ? getInstantMemory<{ quiz: BibleQuiz; priorAttempt: QuizAttempt | null }>(detailCacheKey)
+    : null;
+
+  const [loadedQuiz, setLoadedQuiz] = useState<BibleQuiz | null>(passedQuiz || initialDetailCache?.quiz || null);
   const quiz = loadedQuiz || passedQuiz;
-  const [priorAttempt, setPriorAttempt] = useState<QuizAttempt | null>(null);
-  const [loading, setLoading] = useState<boolean>(!passedQuiz && Boolean(targetQuizId));
+  const [priorAttempt, setPriorAttempt] = useState<QuizAttempt | null>(initialDetailCache?.priorAttempt || null);
+  const [loading, setLoading] = useState<boolean>(!passedQuiz && !initialDetailCache?.quiz && Boolean(targetQuizId));
   const [notFound, setNotFound] = useState<boolean>(false);
   const [now, setNow] = useState<Date>(() => new Date());
-
-  // Live timer so the screen dynamically unlocks the moment the scheduled time arrives (e.g. 2:35 PM)
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(new Date());
-    }, 3000);
-    return () => clearInterval(timer);
-  }, []);
 
   // Strict lock check: Locked until scheduledDate & scheduledTime arrives
   const isScheduledLocked = isQuizScheduledLocked(quiz, now);
 
+  // Live timer runs ONLY when the quiz is actually locked waiting for its scheduled start time
   useEffect(() => {
-    let isMounted = true;
-    if (passedQuiz) {
-      if (quizLanguage && quizLanguage !== 'en') {
-        QuizService.localizeQuiz(passedQuiz, quizLanguage).then(loc => {
-          if (isMounted) {
-            setLoadedQuiz(loc);
-            setNotFound(false);
-            setLoading(false);
-          }
-        }).catch(() => {
-          if (isMounted) {
-            setLoadedQuiz(passedQuiz);
-            setNotFound(false);
-            setLoading(false);
-          }
-        });
-      } else {
-        setLoadedQuiz(passedQuiz);
-        setNotFound(false);
-        setLoading(false);
-      }
-    } else if (targetQuizId) {
-      setNotFound(false);
-      if (!loadedQuiz && !quiz) {
-        setLoading(true);
-      }
-      loadQuizDetail();
-    }
-    return () => { isMounted = false; };
-  }, [targetQuizId, targetChurchId, quizLanguage, passedQuiz]);
+    if (!isScheduledLocked) return;
+    const timer = setInterval(() => {
+      setNow(new Date());
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [isScheduledLocked]);
 
   useFocusEffect(
     useCallback(() => {
+      let isMounted = true;
       if (passedQuiz) {
         if (quizLanguage && quizLanguage !== 'en') {
-          QuizService.localizeQuiz(passedQuiz, quizLanguage).then(loc => setLoadedQuiz(loc)).catch(() => setLoadedQuiz(passedQuiz));
+          QuizService.localizeQuiz(passedQuiz, quizLanguage)
+            .then(loc => {
+              if (isMounted) {
+                setLoadedQuiz(loc);
+                setNotFound(false);
+                setLoading(false);
+              }
+            })
+            .catch(() => {
+              if (isMounted) {
+                setLoadedQuiz(passedQuiz);
+                setNotFound(false);
+                setLoading(false);
+              }
+            });
         } else {
           setLoadedQuiz(passedQuiz);
+          setNotFound(false);
+          setLoading(false);
         }
-        setNotFound(false);
-        setLoading(false);
+        if (user?.uid && targetQuizId) {
+          QuizService.getUserQuizAttempt(user.uid, targetQuizId, targetChurchId || passedQuiz?.churchId)
+            .then((attempt) => {
+              if (isMounted) setPriorAttempt(attempt);
+              if (detailCacheKey) {
+                writeInstantCache(detailCacheKey, { quiz: passedQuiz, priorAttempt: attempt }).catch(() => { });
+              }
+            })
+            .catch(() => { });
+        }
       } else if (targetQuizId) {
-        loadQuizDetail();
+        loadQuizDetail(0);
       }
+      return () => { isMounted = false; };
     }, [targetQuizId, targetChurchId, user?.uid, quizLanguage, passedQuiz])
   );
 
@@ -166,9 +169,13 @@ export default function BibleQuizDetailScreen() {
       if (q) {
         setLoadedQuiz(q);
         setNotFound(false);
+        let attempt: QuizAttempt | null = null;
         if (user?.uid) {
-          const attempt = await QuizService.getUserQuizAttempt(user.uid, targetQuizId, targetChurchId || q?.churchId);
+          attempt = await QuizService.getUserQuizAttempt(user.uid, targetQuizId, targetChurchId || q?.churchId);
           setPriorAttempt(attempt);
+        }
+        if (detailCacheKey) {
+          writeInstantCache(detailCacheKey, { quiz: q, priorAttempt: attempt }).catch(() => { });
         }
       } else if (!quiz && !passedQuiz) {
         setNotFound(true);
@@ -439,15 +446,15 @@ export default function BibleQuizDetailScreen() {
                     ? 'rgba(16, 185, 129, 0.12)'
                     : '#ecfdf5'
                   : isDark
-                  ? 'rgba(245, 158, 11, 0.12)'
-                  : '#fffbeb',
+                    ? 'rgba(245, 158, 11, 0.12)'
+                    : '#fffbeb',
                 borderColor: priorAttempt.passed
                   ? isDark
                     ? 'rgba(16, 185, 129, 0.3)'
                     : '#a7f3d0'
                   : isDark
-                  ? 'rgba(245, 158, 11, 0.3)'
-                  : '#fde68a',
+                    ? 'rgba(245, 158, 11, 0.3)'
+                    : '#fde68a',
               },
             ]}
           >

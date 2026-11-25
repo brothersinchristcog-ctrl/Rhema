@@ -1,13 +1,13 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { 
-  StyleSheet, 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  ScrollView, 
-  Dimensions, 
-  StatusBar, 
-  Platform 
+import {
+  StyleSheet,
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  Dimensions,
+  StatusBar,
+  Platform
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, CheckCircle2 } from 'lucide-react-native';
@@ -15,8 +15,11 @@ import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { useAuth } from '../context/AuthContext';
+import { useChurch } from '../context/ChurchContext';
 import { SupportedLanguage } from '../locales';
 import { BibleService } from '../services/BibleService';
+import { readScopedBibleProgress } from '../utils/instantCache';
 
 const { width } = Dimensions.get('window');
 
@@ -35,6 +38,8 @@ export default function BibleChaptersScreen({ route, navigation }: any) {
   const { bookName, lang: paramLang, bookIndex: paramBookIndex } = route.params || {};
   const { isDark, colors } = useTheme();
   const { language, t } = useLanguage();
+  const { user } = useAuth();
+  const { activeChurch } = useChurch();
   const [savedBibleLang, setSavedBibleLang] = useState<SupportedLanguage | null>(null);
   const [readChapters, setReadChapters] = useState<Set<number>>(new Set());
   const [selectedChapter, setSelectedChapter] = useState<number | null>(null);
@@ -49,10 +54,10 @@ export default function BibleChaptersScreen({ route, navigation }: any) {
   }, [paramLang]);
 
   const currentLang = (paramLang || savedBibleLang || language) as SupportedLanguage;
-  const resolvedBookIndex = paramBookIndex !== undefined 
-    ? paramBookIndex 
+  const resolvedBookIndex = paramBookIndex !== undefined
+    ? paramBookIndex
     : BibleService.getBookIndex(bookName);
-  
+
   const displayBookName = BibleService.getBookName(resolvedBookIndex, currentLang);
   const count = BibleService.getChapterCount(resolvedBookIndex);
   const chapters = Array.from({ length: count }, (_, i) => i + 1);
@@ -64,24 +69,21 @@ export default function BibleChaptersScreen({ route, navigation }: any) {
     useCallback(() => {
       const loadProgress = async () => {
         try {
-          const stored = await AsyncStorage.getItem('@BibleReadProgress');
-          if (stored) {
-            const progress = JSON.parse(stored);
-            const read = new Set<number>();
-            progress.forEach((key: string) => {
-              const [bIdx, c] = key.split('-');
-              if (parseInt(bIdx) === resolvedBookIndex) {
-                read.add(parseInt(c));
-              }
-            });
-            setReadChapters(read);
-          }
+          const progress = await readScopedBibleProgress(activeChurch?.id, user?.uid);
+          const read = new Set<number>();
+          progress.forEach((key: string) => {
+            const [bIdx, c] = key.split('-');
+            if (parseInt(bIdx) === resolvedBookIndex) {
+              read.add(parseInt(c));
+            }
+          });
+          setReadChapters(read);
         } catch (e) {
           console.log('Error loading progress:', e);
         }
       };
       loadProgress();
-    }, [resolvedBookIndex])
+    }, [resolvedBookIndex, activeChurch?.id, user?.uid])
   );
 
   const handleSelectChapter = (chapter: number) => {
@@ -107,7 +109,7 @@ export default function BibleChaptersScreen({ route, navigation }: any) {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar barStyle={colors.barStyle} backgroundColor={colors.background} />
-      
+
       {/* ── Screen Header (Clean back button & title) ── */}
       <View
         style={[
@@ -196,11 +198,11 @@ export default function BibleChaptersScreen({ route, navigation }: any) {
               {chapters.map((chapter) => {
                 const isRead = readChapters.has(chapter);
                 return (
-                  <TouchableOpacity 
-                    key={chapter} 
+                  <TouchableOpacity
+                    key={chapter}
                     activeOpacity={0.8}
                     style={[
-                      styles.chapterBox, 
+                      styles.chapterBox,
                       {
                         backgroundColor: isDark ? 'rgba(39, 39, 42, 0.7)' : 'rgba(255, 255, 255, 0.85)',
                         borderColor: cardBorder,
