@@ -186,8 +186,12 @@ async function loadWithInstantCacheImpl<T>({
   try {
     const netStart = Date.now();
     const fresh = await pending;
-    await writeInstantCache(key, fresh);
+    MEMORY_CACHE.set(key, { data: fresh, fetchedAt: Date.now() });
     onFresh?.(fresh);
+    // Persist to AsyncStorage in background so large lists (e.g. 600+ members) never block UI paint
+    setTimeout(() => {
+      writeInstantCache(key, fresh).catch(() => {});
+    }, 0);
     if (screenName) {
       perfMonitor.recordScreenLoad(screenName, {
         source: 'network',

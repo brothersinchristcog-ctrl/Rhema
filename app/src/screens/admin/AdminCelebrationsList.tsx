@@ -1,14 +1,49 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, ActivityIndicator, Alert, Dimensions, Platform, Image, Modal } from 'react-native';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, TextInput, ActivityIndicator, Alert, Dimensions, Platform, Modal } from 'react-native';
 import { ChevronLeft, Search, CheckCircle2, SlidersHorizontal, Gift, Send, Info, CheckCircle, X } from 'lucide-react-native';
 import FirestoreService from '../../services/FirestoreService';
 import { useChurch } from '../../context/ChurchContext';
 import Theme from '../../theme/Theme';
+import CachedImage from '../../components/CachedImage';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../../utils/instantCache';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const { width } = Dimensions.get('window');
 
-const MemberAvatar = ({ member, initials, styles, bgColor }: any) => {
+const parseCelebrationDateParts = (rawDate: any): { year: number; month: number; day: number } | null => {
+  if (!rawDate || typeof rawDate !== 'string') return null;
+  const clean = rawDate.trim().split('T')[0];
+  const parts = clean.split(/[-/]/);
+  if (parts.length < 3) return null;
+
+  let year = 0;
+  let month = 0;
+  let day = 0;
+  if (parts[0].length === 4) {
+    year = parseInt(parts[0], 10);
+    month = parseInt(parts[1], 10);
+    day = parseInt(parts[2], 10);
+  } else if (parts[2].length === 4) {
+    day = parseInt(parts[0], 10);
+    month = parseInt(parts[1], 10);
+    year = parseInt(parts[2], 10);
+  } else {
+    year = parseInt(parts[0], 10);
+    month = parseInt(parts[1], 10);
+    day = parseInt(parts[2], 10);
+  }
+  if (!month || !day || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return { year: isNaN(year) ? 0 : year, month, day };
+};
+
+const getUtcCalendarDiffDays = (month: number, day: number, now: Date): number => {
+  const cy = now.getFullYear();
+  const todayUtc = Date.UTC(cy, now.getMonth(), now.getDate());
+  const eventUtc = Date.UTC(cy, month - 1, day);
+  return Math.round((eventUtc - todayUtc) / 86400000);
+};
+
+const MemberAvatar = React.memo(({ member, initials, styles, bgColor }: any) => {
   const [imgError, setImgError] = React.useState(false);
   const possibleUrls = [
     member.profilePhoto, member.photoURL, member.photoUrl, 
@@ -19,8 +54,8 @@ const MemberAvatar = ({ member, initials, styles, bgColor }: any) => {
 
   if (validUrl && !imgError) {
     return (
-      <Image 
-        source={{ uri: validUrl.trim() }} 
+      <CachedImage 
+        uri={validUrl.trim()} 
         style={styles.avatar} 
         resizeMode="cover"
         onError={() => setImgError(true)}
@@ -33,167 +68,216 @@ const MemberAvatar = ({ member, initials, styles, bgColor }: any) => {
       <Text style={styles.avatarTxt}>{initials}</Text>
     </View>
   );
+});
+
+const getAvatarColor = (name: string) => {
+  const colors = ['#734062', '#1A4F5B', '#42518E', '#D97736'];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return colors[Math.abs(hash) % colors.length];
 };
 
-export default function AdminCelebrationsList({ category, activeTab, onSelectMember }: { category: string, activeTab: string, onSelectMember: (member: any) => void }) {
-  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
+export default function AdminCelebrationsList({
+  category,
+  activeTab,
+  onSelectMember,
+  listHeaderComponent = null,
+  listFooterComponent = null,
+}: {
+  category: string;
+  activeTab: string;
+  onSelectMember: (member: any) => void;
+  listHeaderComponent?: React.ReactElement | null;
+  listFooterComponent?: React.ReactElement | null;
+}) {
+  const { isDark, secondaryText } = useAdminTheme();
   const { activeChurch } = useChurch();
-  const [loading, setLoading] = useState(true);
+  const celebrationsListCacheKey = useMemo(
+    () => makeScopedCacheKey('admin_celebrations_all_list_v1', activeChurch?.id || 'default', 'admin'),
+    [activeChurch?.id]
+  );
+  const initialCachedAll = useMemo(
+    () => getInstantMemory<any[]>(celebrationsListCacheKey),
+    [celebrationsListCacheKey]
+  );
+  const mountedRef = useRef(true);
+
+  const [loading, setLoading] = useState(!initialCachedAll);
   const [isSendingAll, setIsSendingAll] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [members, setMembers] = useState<any[]>([]);
+  const [allRecords, setAllRecords] = useState<any[]>(() => initialCachedAll || []);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
 
   useEffect(() => {
+    mountedRef.current = true;
+    const mem = getInstantMemory<any[]>(celebrationsListCacheKey);
+    if (mem) {
+      setAllRecords(mem);
+      setLoading(false);
+    }
+
     const loadData = async () => {
       try {
-        const data = await FirestoreService.getAllCelebrations();
-        
-        const getValidPhotoUrl = (obj: any) => {
-          const fields = ['ProfilePhoto', 'profilePhoto', 'Photo', 'photoUrl', 'photoURL', 'PhotoUrl', 'photo', 'profileImageUrl'];
-          for (const f of fields) {
-            if (obj[f] && typeof obj[f] === 'string' && obj[f].trim() !== '' && obj[f] !== 'null' && obj[f] !== 'undefined') return obj[f].trim();
-          }
-          return null;
-        };
-
-        let processed: any[] = [];
-        
-        const processEvent = (d: any, dateField: string, type: string) => {
-            if (!d[dateField]) return null;
-            const parts = d[dateField].split('-');
-            if (parts.length < 3) return null;
-            
-            const year = parseInt(parts[0], 10);
-            const month = parseInt(parts[1], 10);
-            const day = parseInt(parts[2], 10);
-            
-            const currentYear = new Date().getFullYear();
-            const age = year > 1900 ? currentYear - year : 0;
-            
-            // Format date e.g. "Jul 15"
-            const dateObj = new Date(currentYear, month - 1, day);
-            const dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            
-            // Calculate initials safely
-            const nameParts = (d.Name || 'Unknown').trim().split(/\s+/);
-            const initials = nameParts.length > 1 
-              ? (nameParts[0][0] || '') + (nameParts[nameParts.length - 1][0] || '') 
-              : (nameParts[0][0] || '').substring(0, 2);
-
-            return {
-              ...d,
-              id: (d.Id || d.id) + '_' + type, // Make ID unique per event type
-              originalId: d.Id || d.id,
-              name: d.Name || 'Unknown',
-              initials: initials.toUpperCase(),
-              photoUrl: getValidPhotoUrl(d),
-              dateStr,
-              age,
-              phone: d.MobilePhone || d.directPhone || d.Phone || '',
-              referencePhone: d.referencePhone || '',
-              isReferencePhone: d.isReferencePhone || false,
-              rawMonth: month,
-              rawDay: day,
-              celebrationType: type // 'Birthday', 'Wedding Anniversary', 'Baptism Anniversary'
+        await loadWithInstantCache<any[]>(
+          celebrationsListCacheKey,
+          async () => {
+            const data = await FirestoreService.getAllCelebrations();
+            const getValidPhotoUrl = (obj: any) => {
+              const fields = ['ProfilePhoto', 'profilePhoto', 'Photo', 'photoUrl', 'photoURL', 'PhotoUrl', 'photo', 'profileImageUrl'];
+              for (const f of fields) {
+                if (obj[f] && typeof obj[f] === 'string' && obj[f].trim() !== '' && obj[f] !== 'null' && obj[f] !== 'undefined') return obj[f].trim();
+              }
+              return null;
             };
-        };
 
-        if (category === 'All') {
-            data.forEach((d: any) => {
-                const bday = processEvent(d, 'dob', 'Birthday');
-                const wedding = processEvent(d, 'anniversaryDate', 'Wedding Anniversary');
-                const baptism = processEvent(d, 'baptismDate', 'Baptism Anniversary');
-                
-                if (bday) processed.push(bday);
-                if (wedding) processed.push(wedding);
-                if (baptism) processed.push(baptism);
-            });
-        } else {
-            let dateField = '';
-            if (category === 'Birthday') dateField = 'dob';
-            else if (category === 'Wedding Anniversary') dateField = 'anniversaryDate';
-            else if (category === 'Baptism Anniversary') dateField = 'baptismDate';
-            
-            if (dateField) {
-                processed = data.filter((d: any) => !!d[dateField]).map((d: any) => processEvent(d, dateField, category)).filter(Boolean);
-            }
-        }
-        
-        // Sort processed list by closest date to today (upcoming)
-        processed.sort((a, b) => {
             const now = new Date();
             const currentYear = now.getFullYear();
-            const currentMonth = now.getMonth() + 1;
-            const currentDay = now.getDate();
-            const todayTime = new Date(currentYear, currentMonth - 1, currentDay).getTime();
-            
-            const aDate = new Date(currentYear, a.rawMonth - 1, a.rawDay).getTime();
-            const bDate = new Date(currentYear, b.rawMonth - 1, b.rawDay).getTime();
-            
-            let aDiff = aDate - todayTime;
-            let bDiff = bDate - todayTime;
-            
-            // Push past dates to end
-            if (aDiff < 0) aDiff += 31536000000; // rough year in ms
-            if (bDiff < 0) bDiff += 31536000000;
-            
-            return aDiff - bDiff;
-        });
-        
-        setMembers(processed);
+            const todayUtc = Date.UTC(currentYear, now.getMonth(), now.getDate());
+            const processed: any[] = [];
+
+            const processEvent = (d: any, rawDateVal: any, type: string) => {
+              const parsed = parseCelebrationDateParts(rawDateVal);
+              if (!parsed) return null;
+              const { year, month, day } = parsed;
+              const age = year > 1900 ? currentYear - year : 0;
+
+              const dateObj = new Date(currentYear, month - 1, day);
+              const dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+              const displayName = (d.Name || d.name || `${d.firstName || ''} ${d.lastName || ''}`.trim() || 'Unknown').trim();
+              const nameParts = displayName.split(/\s+/);
+              const initials = nameParts.length > 1
+                ? (nameParts[0][0] || '') + (nameParts[nameParts.length - 1][0] || '')
+                : (nameParts[0][0] || '').substring(0, 2);
+
+              const thisYearUtc = Date.UTC(currentYear, month - 1, day);
+              let sortDiff = thisYearUtc - todayUtc;
+              if (sortDiff < 0) sortDiff += 366 * 86400000;
+
+              return {
+                ...d,
+                id: `${d.Id || d.id}_${type}`,
+                originalId: d.Id || d.id,
+                name: displayName,
+                initials: initials.toUpperCase(),
+                photoUrl: getValidPhotoUrl(d),
+                dateStr,
+                age,
+                phone: d.MobilePhone || d.directPhone || d.Phone || d.phone || '',
+                referencePhone: d.referencePhone || '',
+                isReferencePhone: d.isReferencePhone || false,
+                rawMonth: month,
+                rawDay: day,
+                sortDiff,
+                celebrationType: type,
+              };
+            };
+
+            data.forEach((d: any) => {
+              const bDate = d.Birthdate || d.dob || d.birthdate || d.dateOfBirth || d.birthday;
+              const aDate = d.Anniversary_Date__c || d.anniversaryDate || d.marriageDate || d.anniversary;
+              const baptDate = d.Baptism_Date__c || d.baptismDate || d.baptism;
+
+              const bday = processEvent(d, bDate, 'Birthday');
+              const wedding = processEvent(d, aDate, 'Wedding Anniversary');
+              const baptism = processEvent(d, baptDate, 'Baptism Anniversary');
+
+              if (bday) processed.push(bday);
+              if (wedding) processed.push(wedding);
+              if (baptism) processed.push(baptism);
+            });
+
+            processed.sort((a, b) => a.sortDiff - b.sortDiff);
+            return processed;
+          },
+          (processed) => {
+            if (!mountedRef.current) return;
+            setAllRecords(processed);
+            setLoading(false);
+          },
+          { ttlMs: 5 * 60 * 1000, freshSkipMs: 0 }
+        );
       } catch (err) {
-        console.error("Error loading list:", err);
+        console.error('Error loading celebrations list:', err);
       } finally {
-        setLoading(false);
+        if (mountedRef.current) setLoading(false);
       }
     };
 
     loadData();
-  }, [category]);
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [celebrationsListCacheKey]);
 
-  const filteredMembers = members.filter(m => {
-    if (searchQuery) {
-      if (!m.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-    }
-    
-    if (activeTab === 'All') return true;
-
+  const filteredMembers = useMemo(() => {
+    const queryLower = searchQuery.trim().toLowerCase();
     const now = new Date();
     const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth() + 1; // 1-12
-    const currentDay = now.getDate();
+    const currentMonth = now.getMonth() + 1;
+    const todayUtc = Date.UTC(currentYear, now.getMonth(), now.getDate());
 
-    // Create a date object for this year's occurrence of the event
-    const eventThisYear = new Date(currentYear, m.rawMonth - 1, m.rawDay);
-    
-    // Calculate difference in days from today to the event (ignoring time)
-    const diffTime = eventThisYear.getTime() - new Date(currentYear, currentMonth - 1, currentDay).getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return allRecords.filter((m) => {
+      if (category !== 'All' && m.celebrationType !== category) return false;
+      if (queryLower && !(m.name || '').toLowerCase().includes(queryLower)) return false;
+      if (activeTab === 'All') return true;
 
-    if (activeTab === 'Today') {
-      return diffDays === 0;
-    } else if (activeTab === 'Upcoming') {
-      return diffDays > 0;
-    } else if (activeTab === 'Week') {
-      return diffDays >= 0 && diffDays <= 7;
-    } else if (activeTab === 'Month') {
-      return m.rawMonth === currentMonth;
-    } else if (activeTab === 'Past') {
-      return diffDays < 0;
-    }
+      const diffDays = getUtcCalendarDiffDays(m.rawMonth, m.rawDay, now);
 
-    return true;
-  });
+      if (activeTab === 'Today') {
+        return diffDays === 0;
+      } else if (activeTab === 'Upcoming') {
+        return diffDays > 0;
+      } else if (activeTab === 'Week') {
+        let wrapDiff = diffDays;
+        if (wrapDiff < 0) {
+          wrapDiff = Math.round((Date.UTC(currentYear + 1, m.rawMonth - 1, m.rawDay) - todayUtc) / 86400000);
+        }
+        return wrapDiff >= 0 && wrapDiff <= 7;
+      } else if (activeTab === 'Month') {
+        return m.rawMonth === currentMonth;
+      } else if (activeTab === 'Past') {
+        return diffDays < 0;
+      }
+      return true;
+    });
+  }, [allRecords, category, activeTab, searchQuery]);
 
-  const getAvatarColor = (name: string) => {
-    const colors = ['#734062', '#1A4F5B', '#42518E', '#D97736'];
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    return colors[Math.abs(hash) % colors.length];
-  };
+  const renderMemberCard = useCallback(({ item: member }: { item: any }) => (
+    <TouchableOpacity 
+      style={[
+        styles.memberCard,
+        {
+          borderWidth: 1.5,
+          borderColor: isDark ? '#27272A' : '#CBD5E1',
+          marginHorizontal: 20,
+        }
+      ]} 
+      onPress={() => onSelectMember(member)}
+      activeOpacity={0.75}
+    >
+      <MemberAvatar 
+        member={member} 
+        initials={member.initials || (member.name ? member.name.substring(0, 2).toUpperCase() : 'U')} 
+        styles={styles} 
+        bgColor={getAvatarColor(member.name || 'U')} 
+      />
+      
+      <View style={styles.memberInfo}>
+        <Text style={styles.memberName} numberOfLines={1}>{member.name}</Text>
+        <View style={styles.memberMetaRow}>
+          <View style={styles.tag}>
+            <Text style={styles.tagTxt} numberOfLines={1} adjustsFontSizeToFit>
+              {member.celebrationType ? member.celebrationType.toUpperCase() : category.toUpperCase()}
+            </Text>
+          </View>
+          <Text style={styles.metaTxt}>• {member.dateStr} {member.age ? `• ${member.age} yrs` : ''}</Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  ), [isDark, onSelectMember, category]);
 
   const handleAutoSendAll = async () => {
     if (filteredMembers.length === 0) return;
@@ -229,80 +313,70 @@ export default function AdminCelebrationsList({ category, activeTab, onSelectMem
     }
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#BE9A3A" />
+  const searchAndHeaderNode = (
+    <View>
+      {listHeaderComponent}
+      <View style={[styles.searchRow, { marginHorizontal: 20, marginRight: 20 }]}>
+        <View style={[
+          styles.searchBox, 
+          { 
+            marginRight: 0,
+            borderWidth: 1.5,
+            borderColor: isDark ? '#3F3F46' : '#94A3B8',
+            backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+          }
+        ]}>
+          <Search size={18} color={isDark ? '#A1A1AA' : '#64748B'} style={styles.searchIcon} />
+          <TextInput 
+            style={[styles.searchInput, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
+            placeholder="Search by name..."
+            placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <X size={16} color={isDark ? '#A1A1AA' : '#64748B'} />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
-    );
-  }
+
+      <View style={[styles.listHeaderRow, { marginHorizontal: 20 }]}>
+        <Text style={styles.foundText}>{filteredMembers.length} members found</Text>
+      </View>
+    </View>
+  );
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
-
-        <View style={[styles.searchRow, { marginRight: 0 }]}>
-          <View style={[
-            styles.searchBox, 
-            { 
-              marginRight: 0,
-              borderWidth: 1.5,
-              borderColor: isDark ? '#3F3F46' : '#94A3B8',
-              backgroundColor: isDark ? '#18181B' : '#FFFFFF',
-            }
-          ]}>
-            <Search size={18} color={isDark ? '#A1A1AA' : '#64748B'} style={styles.searchIcon} />
-            <TextInput 
-              style={[styles.searchInput, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
-              placeholder="Search by name..."
-              placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-          </View>
-        </View>
-
-        <View style={styles.listHeaderRow}>
-          <Text style={styles.foundText}>{filteredMembers.length} members found</Text>
-        </View>
-
-        {/* List */}
-        {filteredMembers.map((member, idx) => (
-          <TouchableOpacity 
-            key={member.id || idx} 
-            style={[
-              styles.memberCard,
-              {
-                borderWidth: 1.5,
-                borderColor: isDark ? '#27272A' : '#CBD5E1',
-              }
-            ]} 
-            onPress={() => onSelectMember(member)}
-            activeOpacity={0.75}
-          >
-            
-            {/* Avatar */}
-            <MemberAvatar 
-              member={member} 
-              initials={member.initials || (member.name ? member.name.substring(0, 2).toUpperCase() : 'U')} 
-              styles={styles} 
-              bgColor={getAvatarColor(member.name)} 
-            />
-            
-            {/* Info */}
-            <View style={styles.memberInfo}>
-              <Text style={styles.memberName} numberOfLines={1}>{member.name}</Text>
-              <View style={styles.memberMetaRow}>
-                <View style={styles.tag}>
-                  <Text style={styles.tagTxt} numberOfLines={1} adjustsFontSizeToFit>{member.celebrationType ? member.celebrationType.toUpperCase() : category.toUpperCase()}</Text>
-                </View>
-                <Text style={styles.metaTxt}>• {member.dateStr} {member.age ? `• ${member.age} yrs` : ''}</Text>
-              </View>
+      <FlatList
+        data={loading ? [] : filteredMembers}
+        keyExtractor={(item, idx) => String(item.id || idx)}
+        renderItem={renderMemberCard}
+        ListHeaderComponent={searchAndHeaderNode}
+        ListFooterComponent={listFooterComponent}
+        contentContainerStyle={{ paddingBottom: 110 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
+        ListEmptyComponent={
+          loading ? (
+            <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+              <ActivityIndicator size="large" color="#BE9A3A" />
             </View>
-          </TouchableOpacity>
-        ))}
-
-      </ScrollView>
+          ) : (
+            <View style={{ paddingVertical: 36, paddingHorizontal: 24, alignItems: 'center' }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: secondaryText, textAlign: 'center' }}>
+                No celebrations match the selected filter.
+              </Text>
+            </View>
+          )
+        }
+      />
 
       {/* Confirm Auto-Send Modal */}
       <Modal visible={showConfirmModal} transparent animationType="fade">

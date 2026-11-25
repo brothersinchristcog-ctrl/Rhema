@@ -1720,6 +1720,8 @@ class FirestoreService {
           userType: details.userType || 'member',
         });
       }
+      this._allMembersCache.clear();
+      this._celebrationsCache.clear();
       return { success: true, id: docRef.id };
     } catch (error: any) {
       console.error("Error adding member manually:", error);
@@ -1758,6 +1760,8 @@ class FirestoreService {
           ...(safeDetails.userType ? { userType: safeDetails.userType } : {}),
         });
       }
+      this._allMembersCache.clear();
+      this._celebrationsCache.clear();
       return { success: true };
     } catch (error: any) {
       console.error("Error updating member:", error);
@@ -1909,6 +1913,8 @@ class FirestoreService {
         throw firstRejected?.reason || new Error('Failed to delete member document in Firestore.');
       }
 
+      this._allMembersCache.clear();
+      this._celebrationsCache.clear();
       return { success: true, removedIds: Array.from(memberIdsToDelete) };
     } catch (error: any) {
       console.error("Error permanently deleting member:", error);
@@ -1932,6 +1938,8 @@ class FirestoreService {
         delete safeDetails.displayName;
       }
       await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(memberId).set(safeDetails, { merge: true });
+      this._allMembersCache.clear();
+      this._celebrationsCache.clear();
       return true;
     } catch (error) {
       console.error('Error updating member profile', error);
@@ -1989,6 +1997,8 @@ class FirestoreService {
         }
       }
       
+      this._allMembersCache.clear();
+      this._celebrationsCache.clear();
       return true;
     } catch (error) {
       console.error('Error updating member role', error);
@@ -2471,30 +2481,53 @@ class FirestoreService {
     return Array.from(byKey.values()).map(({ _hasRealName, ...rest }) => rest);
   }
 
-  async getAllMembers(): Promise<any[]> {
+  async getAllMembers(forceRefresh = false): Promise<any[]> {
     try {
-      const col = await this.getCollection('members');
-      const snapshot = await col.get();
-      const mapped = snapshot.docs
-        .filter((doc: any) => doc.data().status !== 'Left')
-        .map((doc: any) => {
-          const data = doc.data();
-          const rawName =
-            (data.name && data.name.trim()) ||
-            (data.displayName && data.displayName.trim()) ||
-            (data.fullName && data.fullName.trim()) ||
-            (`${data.firstName || ''} ${data.lastName || ''}`.trim());
-          const fullName = rawName || (data.phone ? `Member (${data.phone})` : 'Unknown');
-          return {
-            ...data,
-            name: fullName,
-            displayName: fullName,
-            email: data.email || '',
-            id: doc.id,
-            _hasRealName: Boolean(rawName),
-          };
-        });
-      return this.deduplicateMemberDocs(mapped, col);
+      const churchKey = (await this.getChurchId()) || RHEMA_CHURCH_ID;
+      if (!forceRefresh) {
+        const cached = this._allMembersCache.get(churchKey);
+        if (cached && Date.now() - cached.ts < 60_000) {
+          return cached.list;
+        }
+        const inFlight = this._allMembersInFlight.get(churchKey);
+        if (inFlight) {
+          return inFlight;
+        }
+      }
+
+      const fetchPromise = (async () => {
+        try {
+          const col = await this.getCollection('members');
+          const snapshot = await col.get();
+          const mapped = snapshot.docs
+            .filter((doc: any) => doc.data().status !== 'Left')
+            .map((doc: any) => {
+              const data = doc.data();
+              const rawName =
+                (data.name && data.name.trim()) ||
+                (data.displayName && data.displayName.trim()) ||
+                (data.fullName && data.fullName.trim()) ||
+                (`${data.firstName || ''} ${data.lastName || ''}`.trim());
+              const fullName = rawName || (data.phone ? `Member (${data.phone})` : 'Unknown');
+              return {
+                ...data,
+                name: fullName,
+                displayName: fullName,
+                email: data.email || '',
+                id: doc.id,
+                _hasRealName: Boolean(rawName),
+              };
+            });
+          const deduped = this.deduplicateMemberDocs(mapped, col);
+          this._allMembersCache.set(churchKey, { ts: Date.now(), list: deduped });
+          return deduped;
+        } finally {
+          this._allMembersInFlight.delete(churchKey);
+        }
+      })();
+
+      this._allMembersInFlight.set(churchKey, fetchPromise);
+      return await fetchPromise;
     } catch (error) {
       console.error('Error fetching all members:', error);
       return [];
@@ -2902,6 +2935,8 @@ class FirestoreService {
   // In-memory cache to avoid re-fetching on tab switches
   private _worshipSongsCache: WorshipSong[] | null = null;
   private _worshipSongsCacheChurchId: string | null = null;
+  private _allMembersCache = new Map<string, { ts: number; list: any[] }>();
+  private _allMembersInFlight = new Map<string, Promise<any[]>>();
   private _celebrationsCache = new Map<string, { ts: number; list: any[] }>();
   private _celebrationsInFlight = new Map<string, Promise<any[]>>();
 
@@ -2913,6 +2948,8 @@ class FirestoreService {
   clearMemberCaches() {
     this.clearWorshipSongsCache();
     this.contactExistsCache.clear();
+    this._allMembersCache.clear();
+    this._allMembersInFlight.clear();
     this._celebrationsCache.clear();
     this._celebrationsInFlight.clear();
     this.autoPublishLastRunByChurch.clear();

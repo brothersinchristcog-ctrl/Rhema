@@ -106,12 +106,16 @@ export default function AdminCelebrations({ navigation }: any) {
         const now = new Date();
         const currentMonth = now.getMonth() + 1;
         const currentDate = now.getDate();
+        const currentYear = now.getFullYear();
+        const todayUtc = Date.UTC(currentYear, now.getMonth(), currentDate);
 
-        // Simple week logic: within next 7 days
+        // Accurate UTC calendar-day week check (handles today + Dec -> Jan wraparound)
         const isThisWeek = (m: number, d: number) => {
-          const target = new Date(now.getFullYear(), m - 1, d);
-          const diffTime = target.getTime() - now.getTime();
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          if (!m || !d) return false;
+          let diffDays = Math.round((Date.UTC(currentYear, m - 1, d) - todayUtc) / 86400000);
+          if (diffDays < 0) {
+            diffDays = Math.round((Date.UTC(currentYear + 1, m - 1, d) - todayUtc) / 86400000);
+          }
           return diffDays >= 0 && diffDays <= 7;
         };
 
@@ -599,206 +603,203 @@ export default function AdminCelebrations({ navigation }: any) {
   }
 
 
-  return (
-    <View style={{ flex: 1 }}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+  const AdminCelebrationsList = require('./AdminCelebrationsList').default;
 
-        {/* ── Fixed Header ── */}
-        <View style={[
-          styles.header,
+  const dashboardHeader = (
+    <>
+      {/* Hero Card - Honey Amber Gradient Glassmorphism (same in dark & white theme) */}
+      <LinearGradient
+        colors={['#FFF2DF', '#FED5A5', '#FCAE68']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0.1, y: 1 }}
+        style={[
+          styles.heroCard,
           {
-            backgroundColor: isDark ? '#000000' : '#FFFFFF',
-            borderBottomWidth: 1.5,
-            borderBottomColor: isDark ? '#27272A' : '#CBD5E1',
-            paddingBottom: 14,
-            paddingTop: 12,
-            paddingHorizontal: 20,
+            borderColor: 'rgba(255, 255, 255, 0.8)',
+            borderWidth: 1.5,
+            shadowColor: '#8C3B0D',
+            shadowOffset: { width: 0, height: 8 },
+            shadowOpacity: 0.18,
+            shadowRadius: 18,
+            elevation: 6,
+            position: 'relative',
+            overflow: 'hidden',
+          }
+        ]}
+      >
+        {/* Semi-circle button at right top corner */}
+        <TouchableOpacity
+          style={[
+            styles.heroCornerBtn,
+            {
+              backgroundColor: 'rgba(255, 255, 255, 0.45)',
+              borderColor: 'rgba(255, 255, 255, 0.75)',
+            }
+          ]}
+          onPress={() => {
+            const next = activeDateFilter === 'Today' ? 'Upcoming' : 'Today';
+            setActiveDateFilter(next);
+            setToastMsg(`Filtered to ${next} Celebrations`);
+          }}
+          activeOpacity={0.75}
+        >
+          <Gift size={20} color="#3D1403" strokeWidth={2.2} />
+        </TouchableOpacity>
+
+        <Text style={[styles.heroEyebrow, { color: '#8C3B0D' }]}>THIS SEASON</Text>
+        <Text style={[
+          styles.heroTitle,
+          {
+            color: '#3D1403',
+            fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+          }
+        ]}>
+          Celebrations{'\n'}worth remembering
+        </Text>
+        <Text style={[styles.heroDesc, { color: '#78350F' }]}>
+          Browse birthdays, anniversaries and baptisms across the parish, and prepare a beautiful wish in moments.
+        </Text>
+
+        {/* Frosted Glassmorphism Stats Tray with perfect column alignment */}
+        <View style={[
+          styles.statsRow,
+          {
+            backgroundColor: 'rgba(255, 255, 255, 0.42)',
+            borderRadius: 14,
+            paddingVertical: 10,
+            paddingHorizontal: 8,
+            borderWidth: 1,
+            borderColor: 'rgba(255, 255, 255, 0.7)',
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'space-between',
+            marginTop: 4,
           }
         ]}>
-          <TouchableOpacity
-            style={styles.circularBackBtn}
-            onPress={() => setActiveTab(0)}
-            activeOpacity={0.7}
-          >
-            <ArrowLeft size={22} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.2} />
-          </TouchableOpacity>
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#0F172A', textAlign: 'center' }]}>Celebrations</Text>
-            <Text style={[styles.headerSub, { color: isDark ? '#A1A1AA' : '#64748B', textAlign: 'center' }]}>Manage birthdays & anniversaries</Text>
+          <View style={[styles.statItem, { flex: 1, alignItems: 'center', justifyContent: 'center', minWidth: 0, paddingHorizontal: 2, marginRight: 0 }]}>
+            <Text style={[styles.statNumber, { color: '#3D1403', textAlign: 'center' }]} numberOfLines={1}>{stats.total}</Text>
+            <Text style={[styles.statLabel, { color: '#8C3B0D', textAlign: 'center', fontSize: 9.5, letterSpacing: 0.3 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>TOTAL RECORDS</Text>
           </View>
-          <View style={{ width: 40 }} />
+          <View style={{ width: 1, height: 26, backgroundColor: 'rgba(61, 20, 3, 0.15)', alignSelf: 'center' }} />
+          <View style={[styles.statItem, { flex: 1, alignItems: 'center', justifyContent: 'center', minWidth: 0, paddingHorizontal: 2, marginRight: 0 }]}>
+            <Text style={[styles.statNumber, { color: '#3D1403', textAlign: 'center' }]} numberOfLines={1}>{stats.today}</Text>
+            <Text style={[styles.statLabel, { color: '#8C3B0D', textAlign: 'center', fontSize: 9.5, letterSpacing: 0.3 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>TODAY</Text>
+          </View>
+          <View style={{ width: 1, height: 26, backgroundColor: 'rgba(61, 20, 3, 0.15)', alignSelf: 'center' }} />
+          <View style={[styles.statItem, { flex: 1, alignItems: 'center', justifyContent: 'center', minWidth: 0, paddingHorizontal: 2, marginRight: 0 }]}>
+            <Text style={[styles.statNumber, { color: '#3D1403', textAlign: 'center' }]} numberOfLines={1}>{stats.thisWeek}</Text>
+            <Text style={[styles.statLabel, { color: '#8C3B0D', textAlign: 'center', fontSize: 9.5, letterSpacing: 0.3 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>THIS WEEK</Text>
+          </View>
         </View>
+      </LinearGradient>
 
-        {/* Hero Card - Honey Amber Gradient Glassmorphism (same in dark & white theme) */}
-        <LinearGradient
-          colors={['#FFF2DF', '#FED5A5', '#FCAE68']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0.1, y: 1 }}
-          style={[
-            styles.heroCard,
-            {
-              borderColor: 'rgba(255, 255, 255, 0.8)',
-              borderWidth: 1.5,
-              shadowColor: '#8C3B0D',
-              shadowOffset: { width: 0, height: 8 },
-              shadowOpacity: 0.18,
-              shadowRadius: 18,
-              elevation: 6,
-              position: 'relative',
-              overflow: 'hidden',
-            }
-          ]}
-        >
-          {/* Semi-circle button at right top corner */}
-          <TouchableOpacity
-            style={[
-              styles.heroCornerBtn,
-              {
-                backgroundColor: 'rgba(255, 255, 255, 0.45)',
-                borderColor: 'rgba(255, 255, 255, 0.75)',
-              }
-            ]}
-            onPress={() => {
-              const next = activeDateFilter === 'Today' ? 'Upcoming' : 'Today';
-              setActiveDateFilter(next);
-              setToastMsg(`Filtered to ${next} Celebrations`);
-            }}
-            activeOpacity={0.75}
-          >
-            <Gift size={20} color="#3D1403" strokeWidth={2.2} />
-          </TouchableOpacity>
-
-          <Text style={[styles.heroEyebrow, { color: '#8C3B0D' }]}>THIS SEASON</Text>
-          <Text style={[
-            styles.heroTitle,
-            {
-              color: '#3D1403',
-              fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-            }
-          ]}>
-            Celebrations{'\n'}worth remembering
-          </Text>
-          <Text style={[styles.heroDesc, { color: '#78350F' }]}>
-            Browse birthdays, anniversaries and baptisms across the parish, and prepare a beautiful wish in moments.
-          </Text>
-
-          {/* Frosted Glassmorphism Stats Tray with perfect column alignment */}
-          <View style={[
-            styles.statsRow,
-            {
-              backgroundColor: 'rgba(255, 255, 255, 0.42)',
-              borderRadius: 14,
-              paddingVertical: 10,
-              paddingHorizontal: 8,
-              borderWidth: 1,
-              borderColor: 'rgba(255, 255, 255, 0.7)',
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginTop: 4,
-            }
-          ]}>
-            <View style={[styles.statItem, { flex: 1, alignItems: 'center', justifyContent: 'center', minWidth: 0, paddingHorizontal: 2, marginRight: 0 }]}>
-              <Text style={[styles.statNumber, { color: '#3D1403', textAlign: 'center' }]} numberOfLines={1}>{stats.total}</Text>
-              <Text style={[styles.statLabel, { color: '#8C3B0D', textAlign: 'center', fontSize: 9.5, letterSpacing: 0.3 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>TOTAL RECORDS</Text>
-            </View>
-            <View style={{ width: 1, height: 26, backgroundColor: 'rgba(61, 20, 3, 0.15)', alignSelf: 'center' }} />
-            <View style={[styles.statItem, { flex: 1, alignItems: 'center', justifyContent: 'center', minWidth: 0, paddingHorizontal: 2, marginRight: 0 }]}>
-              <Text style={[styles.statNumber, { color: '#3D1403', textAlign: 'center' }]} numberOfLines={1}>{stats.today}</Text>
-              <Text style={[styles.statLabel, { color: '#8C3B0D', textAlign: 'center', fontSize: 9.5, letterSpacing: 0.3 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>TODAY</Text>
-            </View>
-            <View style={{ width: 1, height: 26, backgroundColor: 'rgba(61, 20, 3, 0.15)', alignSelf: 'center' }} />
-            <View style={[styles.statItem, { flex: 1, alignItems: 'center', justifyContent: 'center', minWidth: 0, paddingHorizontal: 2, marginRight: 0 }]}>
-              <Text style={[styles.statNumber, { color: '#3D1403', textAlign: 'center' }]} numberOfLines={1}>{stats.thisWeek}</Text>
-              <Text style={[styles.statLabel, { color: '#8C3B0D', textAlign: 'center', fontSize: 9.5, letterSpacing: 0.3 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>THIS WEEK</Text>
-            </View>
-          </View>
-        </LinearGradient>
-
-
-
-        {/* Date Filters */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 8, marginBottom: 20 }}>
-          {['Today', 'Upcoming', 'Week', 'Month', 'Past', 'All'].map(filter => {
-            const isActive = activeDateFilter === filter;
-            return (
-              <TouchableOpacity
-                key={filter}
+      {/* Date Filters */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 8, marginBottom: 14 }}>
+        {['Today', 'Upcoming', 'Week', 'Month', 'Past', 'All'].map(filter => {
+          const isActive = activeDateFilter === filter;
+          return (
+            <TouchableOpacity
+              key={filter}
+              style={[
+                styles.filterBtn,
+                isActive ? {
+                  backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                  borderColor: isDark ? '#FFFFFF' : '#000000',
+                  borderWidth: 1.5,
+                } : {
+                  backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                  borderColor: isDark ? '#27272A' : '#CBD5E1',
+                  borderWidth: 1.5,
+                }
+              ]}
+              onPress={() => setActiveDateFilter(filter)}
+              activeOpacity={0.75}
+            >
+              <Text
                 style={[
-                  styles.filterBtn,
+                  styles.filterBtnTxt,
                   isActive ? {
-                    backgroundColor: isDark ? '#FFFFFF' : '#000000',
-                    borderColor: isDark ? '#FFFFFF' : '#000000',
-                    borderWidth: 1.5,
+                    color: isDark ? '#000000' : '#FFFFFF',
+                    fontWeight: '700',
                   } : {
-                    backgroundColor: isDark ? '#18181B' : '#FFFFFF',
-                    borderColor: isDark ? '#27272A' : '#CBD5E1',
-                    borderWidth: 1.5,
+                    color: isDark ? '#A1A1AA' : '#64748B',
+                    fontWeight: '600',
                   }
                 ]}
-                onPress={() => setActiveDateFilter(filter)}
-                activeOpacity={0.75}
               >
-                <Text
-                  style={[
-                    styles.filterBtnTxt,
-                    isActive ? {
-                      color: isDark ? '#000000' : '#FFFFFF',
-                      fontWeight: '700',
-                    } : {
-                      color: isDark ? '#A1A1AA' : '#64748B',
-                      fontWeight: '600',
-                    }
-                  ]}
-                >
-                  {filter}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        {/* Category Buttons */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 10, marginBottom: 16 }}>
-          {['Birthday', 'Wedding Anniversary', 'Baptism Anniversary'].map(cat => {
-            let bgColor = cat === 'Birthday' ? '#F3E4B6' : cat === 'Wedding Anniversary' ? '#E2E5F2' : '#DDF1E7';
-            let textColor = cat === 'Birthday' ? '#B88A2E' : cat === 'Wedding Anniversary' ? '#455490' : '#358B6D';
-            return (
-              <TouchableOpacity
-                key={cat}
-                style={[{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: bgColor }, activeCategoryFilter === cat && { borderWidth: 2, borderColor: textColor }]}
-                onPress={() => setActiveCategoryFilter(activeCategoryFilter === cat ? 'All' : cat)}
-              >
-                <Text style={[{ fontSize: 13, color: textColor }, activeCategoryFilter === cat && { fontWeight: '800' }]}>{cat}</Text>
-              </TouchableOpacity>
-            )
-          })}
-        </ScrollView>
-
-        {/* Embedded List */}
-        <View style={{ flex: 1, minHeight: 400 }}>
-          {(() => {
-            const AdminCelebrationsList = require('./AdminCelebrationsList').default;
-            return (
-              <AdminCelebrationsList
-                category={activeCategoryFilter}
-                activeTab={activeDateFilter}
-                onSelectMember={(member: any) => {
-                  setSelectedMember(member);
-                  setViewMode('details');
-                }}
-              />
-            );
-          })()}
-        </View>
-
-        <Text style={styles.footerText}>
-          <Text style={{ color: '#1D4ED8', fontWeight: 'bold' }}>WeChristian</Text> - {activeChurch?.name?.toUpperCase() || ''}
-        </Text>
+                {filter}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </ScrollView>
+
+      {/* Category Buttons */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 10, marginBottom: 16 }}>
+        {['Birthday', 'Wedding Anniversary', 'Baptism Anniversary'].map(cat => {
+          let bgColor = cat === 'Birthday' ? '#F3E4B6' : cat === 'Wedding Anniversary' ? '#E2E5F2' : '#DDF1E7';
+          let textColor = cat === 'Birthday' ? '#B88A2E' : cat === 'Wedding Anniversary' ? '#455490' : '#358B6D';
+          return (
+            <TouchableOpacity
+              key={cat}
+              style={[{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: bgColor }, activeCategoryFilter === cat && { borderWidth: 2, borderColor: textColor }]}
+              onPress={() => setActiveCategoryFilter(activeCategoryFilter === cat ? 'All' : cat)}
+            >
+              <Text style={[{ fontSize: 13, color: textColor }, activeCategoryFilter === cat && { fontWeight: '800' }]}>{cat}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </>
+  );
+
+  const dashboardFooter = (
+    <Text style={styles.footerText}>
+      <Text style={{ color: '#1D4ED8', fontWeight: 'bold' }}>WeChristian</Text> - {activeChurch?.name?.toUpperCase() || ''}
+    </Text>
+  );
+
+  return (
+    <View style={[styles.container, { flex: 1 }]}>
+      {/* ── Fixed Header ── */}
+      <View style={[
+        styles.header,
+        {
+          backgroundColor: isDark ? '#000000' : '#FFFFFF',
+          borderBottomWidth: 1.5,
+          borderBottomColor: isDark ? '#27272A' : '#CBD5E1',
+          paddingBottom: 14,
+          paddingTop: 12,
+          paddingHorizontal: 20,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }
+      ]}>
+        <TouchableOpacity
+          style={styles.circularBackBtn}
+          onPress={() => setActiveTab(0)}
+          activeOpacity={0.7}
+        >
+          <ArrowLeft size={22} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.2} />
+        </TouchableOpacity>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#0F172A', textAlign: 'center' }]}>Celebrations</Text>
+          <Text style={[styles.headerSub, { color: isDark ? '#A1A1AA' : '#64748B', textAlign: 'center' }]}>Manage birthdays & anniversaries</Text>
+        </View>
+        <View style={{ width: 40 }} />
+      </View>
+
+      <AdminCelebrationsList
+        category={activeCategoryFilter}
+        activeTab={activeDateFilter}
+        listHeaderComponent={dashboardHeader}
+        listFooterComponent={dashboardFooter}
+        onSelectMember={(member: any) => {
+          setSelectedMember(member);
+          setViewMode('details');
+        }}
+      />
       <SuccessPopup visible={!!toastMsg} message={toastMsg} onDismiss={() => setToastMsg('')} />
     </View>
   );

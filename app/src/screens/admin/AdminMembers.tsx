@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
   StyleSheet, 
   View, 
   Text, 
   TouchableOpacity, 
   ScrollView, 
+  FlatList,
   TextInput, 
   Dimensions, 
   Platform,
@@ -191,7 +192,7 @@ export default function AdminMembers() {
     try {
       await loadWithInstantCache<any[]>(
         membersCacheKey,
-        () => FirestoreService.getAllMembers(),
+        () => FirestoreService.getAllMembers(isRefresh),
         (data) => {
           if (!mountedRef.current) return;
           setMembers(data);
@@ -495,8 +496,8 @@ export default function AdminMembers() {
     setSkillPickerModalVisible(true);
   };
 
-  // Village Filtered Members (used for stats based on the selected village)
-  const villageFilteredMembers = useMemo(() => {
+  // Deduplicate members once when members change (separate from village filter)
+  const dedupedMembers = useMemo(() => {
     const seenKeys = new Set<string>();
     const uniqueMembers: any[] = [];
     for (const m of members) {
@@ -525,12 +526,21 @@ export default function AdminMembers() {
       if (nameKey && !isDependent) seenKeys.add(`name:${nameKey}`);
       uniqueMembers.push(m);
     }
-    return uniqueMembers.filter(m => villageFilter === 'All' || (m.city || m.village || '').trim() === villageFilter);
-  }, [members, villageFilter]);
+    return uniqueMembers;
+  }, [members]);
 
-  // Stats calculation
+  // Village Filtered Members (used for stats based on the selected village)
+  const villageFilteredMembers = useMemo(() => {
+    if (villageFilter === 'All') return dedupedMembers;
+    return dedupedMembers.filter(m => (m.city || m.village || '').trim() === villageFilter);
+  }, [dedupedMembers, villageFilter]);
+
+  // Stats calculation (memoized)
   const totalMembers = villageFilteredMembers.length;
-  const guestMembersCount = villageFilteredMembers.filter(m => isGuestMemberDoc(m)).length;
+  const guestMembersCount = useMemo(
+    () => villageFilteredMembers.filter(m => isGuestMemberDoc(m)).length,
+    [villageFilteredMembers]
+  );
   const fullMembersCount = totalMembers - guestMembersCount;
   const activeMembers = villageFilteredMembers.length; // Assuming all firebase members are active for now
   const inactiveMembers = 0;
@@ -831,6 +841,14 @@ May God bless you abundantly! ❤️`;
       return matchesSearch && matchesStatus && matchesRole;
     });
   }, [villageFilteredMembers, searchQuery, statusFilter, roleFilter]);
+
+  const membersByIdMap = useMemo(() => {
+    const map = new Map<string, any>();
+    for (let i = 0; i < members.length; i++) {
+      if (members[i]?.id) map.set(members[i].id, members[i]);
+    }
+    return map;
+  }, [members]);
 
   if (loading && members.length === 0) {
     return (
@@ -1606,585 +1624,595 @@ May God bless you abundantly! ❤️`;
         </View>
       </View>
 
-      <ScrollView 
-        showsVerticalScrollIndicator={false} 
-        contentContainerStyle={styles.scroll}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => fetchMembers(true)}
-            colors={['#1a2d5a']}
-          />
-        }
-      >
-        
-        <View style={{ height: 4 }} />
+      {(() => {
+        const membersListHeader = (
+          <View>
+            <View style={{ height: 4 }} />
 
-        {/* Stats Row (Matching Promise Screen Glassmorphic Stat Cards) */}
-        <View style={styles.statsRow}>
-          {/* 1. Total Members Card */}
-          <TouchableOpacity 
-            style={[
-              styles.statBox, 
-              {
-                backgroundColor: isDark ? '#18181B' : '#FFFFFF',
-                borderColor: isDark ? '#60A5FA' : '#1A2D5A',
-                borderWidth: statusFilter === 'All' ? 2 : 1.5,
-                paddingVertical: 0,
-                overflow: 'hidden',
-              }
-            ]}
-            onPress={() => setStatusFilter('All')}
-            activeOpacity={0.75}
-          >
-            <LinearGradient
-              colors={
-                isDark
-                  ? ['rgba(59, 130, 246, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
-                  : ['#FFFFFF', '#F8FAFC', '#EFF6FF']
-              }
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.statGlassInner}
-            >
-              <View style={[styles.statNotch, { backgroundColor: isDark ? '#60A5FA' : '#1A2D5A' }]} />
-              <Text style={[styles.num, { color: isDark ? '#60A5FA' : '#1A2D5A' }]}>{totalMembers}</Text>
-              <View style={styles.statLabelRow}>
-                <Text style={[styles.statLabel, { color: isDark ? '#E4E4E7' : '#475569' }, statusFilter === 'All' && { color: isDark ? '#60A5FA' : '#1A2D5A' }]}>Total</Text>
-                {statusFilter === 'All' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#60A5FA' : '#1A2D5A' }]} />}
-              </View>
-              <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>{statusFilter === 'All' ? 'Active ✓' : 'Tap to filter'}</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-
-          {/* 2. Active Card */}
-          <TouchableOpacity 
-            style={[
-              styles.statBox, 
-              {
-                backgroundColor: isDark ? '#18181B' : '#FFFFFF',
-                borderColor: isDark ? '#34D399' : '#15803D',
-                borderWidth: statusFilter === 'Active' ? 2 : 1.5,
-                paddingVertical: 0,
-                overflow: 'hidden',
-              }
-            ]}
-            onPress={() => setStatusFilter(prev => prev === 'Active' ? 'All' : 'Active')}
-            activeOpacity={0.75}
-          >
-            <LinearGradient
-              colors={
-                isDark
-                  ? ['rgba(52, 211, 153, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
-                  : ['#FFFFFF', '#F7FCF9', '#ECFDF5']
-              }
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.statGlassInner}
-            >
-              <View style={[styles.statNotch, { backgroundColor: isDark ? '#34D399' : '#15803D' }]} />
-              <Text style={[styles.num, { color: isDark ? '#34D399' : '#15803D' }]}>{activeMembers}</Text>
-              <View style={styles.statLabelRow}>
-                <Text style={[styles.statLabel, { color: isDark ? '#E4E4E7' : '#475569' }, statusFilter === 'Active' && { color: isDark ? '#34D399' : '#15803D' }]}>Active</Text>
-                {statusFilter === 'Active' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#34D399' : '#15803D' }]} />}
-              </View>
-              <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>{statusFilter === 'Active' ? 'Active ✓' : 'Tap to filter'}</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-
-          {/* 3. Inactive Card */}
-          <TouchableOpacity 
-            style={[
-              styles.statBox, 
-              {
-                backgroundColor: isDark ? '#18181B' : '#FFFFFF',
-                borderColor: isDark ? '#F87171' : '#DC2626',
-                borderWidth: statusFilter === 'Inactive' ? 2 : 1.5,
-                paddingVertical: 0,
-                overflow: 'hidden',
-              }
-            ]}
-            onPress={() => setStatusFilter(prev => prev === 'Inactive' ? 'All' : 'Inactive')}
-            activeOpacity={0.75}
-          >
-            <LinearGradient
-              colors={
-                isDark
-                  ? ['rgba(248, 113, 113, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
-                  : ['#FFFFFF', '#FFF9F8', '#FEE2E2']
-              }
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.statGlassInner}
-            >
-              <View style={[styles.statNotch, { backgroundColor: isDark ? '#F87171' : '#DC2626' }]} />
-              <Text style={[styles.num, { color: isDark ? '#F87171' : '#DC2626' }]}>{inactiveMembers}</Text>
-              <View style={styles.statLabelRow}>
-                <Text style={[styles.statLabel, { color: isDark ? '#E4E4E7' : '#475569' }, statusFilter === 'Inactive' && { color: isDark ? '#F87171' : '#DC2626' }]}>Inactive</Text>
-                {statusFilter === 'Inactive' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#F87171' : '#DC2626' }]} />}
-              </View>
-              <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>{statusFilter === 'Inactive' ? 'Active ✓' : 'Tap to filter'}</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-
-        {/* Search Bar */}
-        <View style={[
-          styles.searchBarContainer,
-          !isDark && {
-            backgroundColor: '#FFFFFF',
-            borderWidth: 1.5,
-            borderColor: '#94A3B8',
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 1 },
-            shadowOpacity: 0.06,
-            shadowRadius: 4,
-            elevation: 2,
-          },
-          isDark && {
-            backgroundColor: '#18181B',
-            borderWidth: 1,
-            borderColor: 'rgba(255, 255, 255, 0.14)',
-          }
-        ]}>
-          <Search size={18} color={isDark ? '#94A3B8' : '#64748B'} style={{ marginRight: 8 }} />
-          <TextInput
-            placeholder="Search members..."
-            placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
-            style={[styles.searchInput, isDark && { color: '#FFFFFF' }, !isDark && { color: '#0F172A' }]}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <X size={16} color={isDark ? '#94A3B8' : '#64748B'} />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Filter Badges Row: Guests | All | Active | Inactive | Village/City */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ alignItems: 'center', gap: 8, paddingRight: 16 }}
-          style={{ marginBottom: 14 }}
-        >
-          {/* Guests Badge */}
-          <TouchableOpacity
-            key="role-Guests"
-            style={[
-              styles.filterChip,
-              isDark
-                ? (roleFilter === 'Guests'
-                    ? { backgroundColor: '#7C3AED', borderColor: '#7C3AED' }
-                    : { backgroundColor: '#18181B', borderColor: 'rgba(167,139,250,0.4)' })
-                : (roleFilter === 'Guests'
-                    ? { backgroundColor: '#6D28D9', borderColor: '#6D28D9' }
-                    : { backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' })
-            ]}
-            onPress={() => setRoleFilter(prev => prev === 'Guests' ? 'All' : 'Guests')}
-            activeOpacity={0.8}
-          >
-            <Text
-              style={[
-                styles.filterChipTxt,
-                isDark
-                  ? (roleFilter === 'Guests' ? { color: '#FFFFFF', fontWeight: '800' } : { color: '#C4B5FD' })
-                  : (roleFilter === 'Guests' ? { color: '#FFFFFF', fontWeight: '800' } : { color: '#6D28D9' })
-              ]}
-            >
-              {`Guests (${guestMembersCount})`}
-            </Text>
-          </TouchableOpacity>
-
-          {(['All', 'Active', 'Inactive'] as const).map(filter => {
-            const isActive = statusFilter === filter;
-            return (
+            {/* Stats Row (Matching Promise Screen Glassmorphic Stat Cards) */}
+            <View style={styles.statsRow}>
+              {/* 1. Total Members Card */}
               <TouchableOpacity 
-                key={filter} 
+                style={[
+                  styles.statBox, 
+                  {
+                    backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                    borderColor: isDark ? '#60A5FA' : '#1A2D5A',
+                    borderWidth: statusFilter === 'All' ? 2 : 1.5,
+                    paddingVertical: 0,
+                    overflow: 'hidden',
+                  }
+                ]}
+                onPress={() => setStatusFilter('All')}
+                activeOpacity={0.75}
+              >
+                <LinearGradient
+                  colors={
+                    isDark
+                      ? ['rgba(59, 130, 246, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
+                      : ['#FFFFFF', '#F8FAFC', '#EFF6FF']
+                  }
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.statGlassInner}
+                >
+                  <View style={[styles.statNotch, { backgroundColor: isDark ? '#60A5FA' : '#1A2D5A' }]} />
+                  <Text style={[styles.num, { color: isDark ? '#60A5FA' : '#1A2D5A' }]}>{totalMembers}</Text>
+                  <View style={styles.statLabelRow}>
+                    <Text style={[styles.statLabel, { color: isDark ? '#E4E4E7' : '#475569' }, statusFilter === 'All' && { color: isDark ? '#60A5FA' : '#1A2D5A' }]}>Total</Text>
+                    {statusFilter === 'All' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#60A5FA' : '#1A2D5A' }]} />}
+                  </View>
+                  <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>{statusFilter === 'All' ? 'Active ✓' : 'Tap to filter'}</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+
+              {/* 2. Active Card */}
+              <TouchableOpacity 
+                style={[
+                  styles.statBox, 
+                  {
+                    backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                    borderColor: isDark ? '#34D399' : '#15803D',
+                    borderWidth: statusFilter === 'Active' ? 2 : 1.5,
+                    paddingVertical: 0,
+                    overflow: 'hidden',
+                  }
+                ]}
+                onPress={() => setStatusFilter(prev => prev === 'Active' ? 'All' : 'Active')}
+                activeOpacity={0.75}
+              >
+                <LinearGradient
+                  colors={
+                    isDark
+                      ? ['rgba(52, 211, 153, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
+                      : ['#FFFFFF', '#F7FCF9', '#ECFDF5']
+                  }
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.statGlassInner}
+                >
+                  <View style={[styles.statNotch, { backgroundColor: isDark ? '#34D399' : '#15803D' }]} />
+                  <Text style={[styles.num, { color: isDark ? '#34D399' : '#15803D' }]}>{activeMembers}</Text>
+                  <View style={styles.statLabelRow}>
+                    <Text style={[styles.statLabel, { color: isDark ? '#E4E4E7' : '#475569' }, statusFilter === 'Active' && { color: isDark ? '#34D399' : '#15803D' }]}>Active</Text>
+                    {statusFilter === 'Active' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#34D399' : '#15803D' }]} />}
+                  </View>
+                  <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>{statusFilter === 'Active' ? 'Active ✓' : 'Tap to filter'}</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+
+              {/* 3. Inactive Card */}
+              <TouchableOpacity 
+                style={[
+                  styles.statBox, 
+                  {
+                    backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                    borderColor: isDark ? '#F87171' : '#DC2626',
+                    borderWidth: statusFilter === 'Inactive' ? 2 : 1.5,
+                    paddingVertical: 0,
+                    overflow: 'hidden',
+                  }
+                ]}
+                onPress={() => setStatusFilter(prev => prev === 'Inactive' ? 'All' : 'Inactive')}
+                activeOpacity={0.75}
+              >
+                <LinearGradient
+                  colors={
+                    isDark
+                      ? ['rgba(248, 113, 113, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
+                      : ['#FFFFFF', '#FFF9F8', '#FEE2E2']
+                  }
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.statGlassInner}
+                >
+                  <View style={[styles.statNotch, { backgroundColor: isDark ? '#F87171' : '#DC2626' }]} />
+                  <Text style={[styles.num, { color: isDark ? '#F87171' : '#DC2626' }]}>{inactiveMembers}</Text>
+                  <View style={styles.statLabelRow}>
+                    <Text style={[styles.statLabel, { color: isDark ? '#E4E4E7' : '#475569' }, statusFilter === 'Inactive' && { color: isDark ? '#F87171' : '#DC2626' }]}>Inactive</Text>
+                    {statusFilter === 'Inactive' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#F87171' : '#DC2626' }]} />}
+                  </View>
+                  <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>{statusFilter === 'Inactive' ? 'Active ✓' : 'Tap to filter'}</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+
+            {/* Search Bar */}
+            <View style={[
+              styles.searchBarContainer,
+              !isDark && {
+                backgroundColor: '#FFFFFF',
+                borderWidth: 1.5,
+                borderColor: '#94A3B8',
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.06,
+                shadowRadius: 4,
+                elevation: 2,
+              },
+              isDark && {
+                backgroundColor: '#18181B',
+                borderWidth: 1,
+                borderColor: 'rgba(255, 255, 255, 0.14)',
+              }
+            ]}>
+              <Search size={18} color={isDark ? '#94A3B8' : '#64748B'} style={{ marginRight: 8 }} />
+              <TextInput
+                key="admin-members-search-input"
+                placeholder="Search members..."
+                placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+                style={[styles.searchInput, isDark && { color: '#FFFFFF' }, !isDark && { color: '#0F172A' }]}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <X size={16} color={isDark ? '#94A3B8' : '#64748B'} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Filter Badges Row: Guests | All | Active | Inactive | Village/City */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ alignItems: 'center', gap: 8, paddingRight: 16 }}
+              style={{ marginBottom: 14 }}
+            >
+              {/* Guests Badge */}
+              <TouchableOpacity
+                key="role-Guests"
                 style={[
                   styles.filterChip,
                   isDark
-                    ? (isActive
-                        ? { backgroundColor: '#FFFFFF', borderColor: '#FFFFFF' }
-                        : { backgroundColor: '#18181B', borderColor: 'rgba(255, 255, 255, 0.14)' })
-                    : (isActive
-                        ? { backgroundColor: '#000000', borderColor: '#000000' }
-                        : { backgroundColor: '#F8FAFC', borderColor: '#CBD5E1' })
+                    ? (roleFilter === 'Guests'
+                        ? { backgroundColor: '#7C3AED', borderColor: '#7C3AED' }
+                        : { backgroundColor: '#18181B', borderColor: 'rgba(167,139,250,0.4)' })
+                    : (roleFilter === 'Guests'
+                        ? { backgroundColor: '#6D28D9', borderColor: '#6D28D9' }
+                        : { backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' })
                 ]}
-                onPress={() => setStatusFilter(filter)}
+                onPress={() => setRoleFilter(prev => prev === 'Guests' ? 'All' : 'Guests')}
                 activeOpacity={0.8}
               >
                 <Text
                   style={[
                     styles.filterChipTxt,
                     isDark
-                      ? (isActive ? { color: '#000000', fontWeight: '800' } : { color: '#A1A1AA' })
-                      : (isActive ? { color: '#FFFFFF', fontWeight: '800' } : { color: '#64748B' })
+                      ? (roleFilter === 'Guests' ? { color: '#FFFFFF', fontWeight: '800' } : { color: '#C4B5FD' })
+                      : (roleFilter === 'Guests' ? { color: '#FFFFFF', fontWeight: '800' } : { color: '#6D28D9' })
                   ]}
                 >
-                  {filter}
+                  {`Guests (${guestMembersCount})`}
                 </Text>
               </TouchableOpacity>
-            );
-          })}
 
-          {/* Village / City Dropdown Badge */}
-          <TouchableOpacity 
-            style={[
-              styles.filterChip,
-              { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14 },
-              isDark
-                ? (villageFilter !== 'All'
-                    ? { backgroundColor: '#FFFFFF', borderColor: '#FFFFFF' }
-                    : { backgroundColor: '#18181B', borderColor: 'rgba(255, 255, 255, 0.14)' })
-                : (villageFilter !== 'All'
-                    ? { backgroundColor: '#000000', borderColor: '#000000' }
-                    : { backgroundColor: '#F8FAFC', borderColor: '#CBD5E1' })
-            ]}
-            onPress={() => setVillageDropdownVisible(true)}
-            activeOpacity={0.8}
-          >
-            <Text
-              style={[
-                styles.filterChipTxt,
-                { marginRight: 4, maxWidth: 120 },
-                isDark
-                  ? (villageFilter !== 'All' ? { color: '#000000', fontWeight: '800' } : { color: '#A1A1AA' })
-                  : (villageFilter !== 'All' ? { color: '#FFFFFF', fontWeight: '800' } : { color: '#64748B' })
-              ]}
-              numberOfLines={1}
-            >
-              {villageFilter === 'All' ? 'Village/City' : villageFilter}
-            </Text>
-            <ChevronDown
-              size={14}
-              color={
-                isDark
-                  ? (villageFilter !== 'All' ? '#000000' : '#A1A1AA')
-                  : (villageFilter !== 'All' ? '#FFFFFF' : '#64748B')
-              }
-            />
-          </TouchableOpacity>
-        </ScrollView>
+              {(['All', 'Active', 'Inactive'] as const).map(filter => {
+                const isActive = statusFilter === filter;
+                return (
+                  <TouchableOpacity 
+                    key={filter} 
+                    style={[
+                      styles.filterChip,
+                      isDark
+                        ? (isActive
+                            ? { backgroundColor: '#FFFFFF', borderColor: '#FFFFFF' }
+                            : { backgroundColor: '#18181B', borderColor: 'rgba(255, 255, 255, 0.14)' })
+                        : (isActive
+                            ? { backgroundColor: '#000000', borderColor: '#000000' }
+                            : { backgroundColor: '#F8FAFC', borderColor: '#CBD5E1' })
+                    ]}
+                    onPress={() => setStatusFilter(filter)}
+                    activeOpacity={0.8}
+                  >
+                    <Text
+                      style={[
+                        styles.filterChipTxt,
+                        isDark
+                          ? (isActive ? { color: '#000000', fontWeight: '800' } : { color: '#A1A1AA' })
+                          : (isActive ? { color: '#FFFFFF', fontWeight: '800' } : { color: '#64748B' })
+                      ]}
+                    >
+                      {filter}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
 
-        {/* Member Cards List */}
-        <View style={styles.membersList}>
-          {filteredMembers.map((member, index) => {
-            const isExpanded = expandedId === member.id;
-            const associated = member.accountId
-              ? (membersByAccountId.get(member.accountId) || []).filter(m => m.id !== member.id)
-              : [];
-            const isActive = true; // Placeholder for future active/inactive flag in Firebase
-            const rawDisplayName = (member.name && member.name.trim()) ||
-              (member.displayName && member.displayName.trim()) ||
-              (member.fullName && member.fullName.trim()) ||
-              (`${member.firstName || ''} ${member.lastName || ''}`.trim()) ||
-              (member.phone ? `Member (${member.phone})` : 'Unknown');
-            const displayName = stripGuestSuffix(rawDisplayName) || rawDisplayName;
-            const displayRole = member.userType || 'member';
-            const normalizedRole = displayRole.trim().toLowerCase().replace('_', ' ');
-            const isSuperAdmin = normalizedRole === 'super admin' || normalizedRole === 'superadmin';
-            const isAdmin = normalizedRole === 'admin';
-            const isGuest = !isSuperAdmin && !isAdmin && isGuestMemberDoc(member);
-
-            return (
-              <View 
-                key={`${member.id || 'admin-member'}-${index}`} 
+              {/* Village / City Dropdown Badge */}
+              <TouchableOpacity 
                 style={[
-                  styles.memberCard,
-                  !isDark && {
-                    backgroundColor: '#FFFFFF',
-                    borderWidth: 1.5,
-                    borderColor: isGuest ? '#DDD6FE' : '#CBD5E1',
-                    shadowColor: '#000',
-                    shadowOffset: { width: 0, height: 2 },
-                    shadowOpacity: 0.05,
-                    shadowRadius: 6,
-                    elevation: 2,
-                  },
-                  isDark && {
-                    backgroundColor: '#18181B',
-                    borderWidth: 1,
-                    borderColor: isGuest ? 'rgba(167, 139, 250, 0.35)' : 'rgba(255, 255, 255, 0.12)',
-                  },
-                  isExpanded && styles.memberCardExpanded,
-                  { position: 'relative', overflow: 'hidden' }
+                  styles.filterChip,
+                  { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14 },
+                  isDark
+                    ? (villageFilter !== 'All'
+                        ? { backgroundColor: '#FFFFFF', borderColor: '#FFFFFF' }
+                        : { backgroundColor: '#18181B', borderColor: 'rgba(255, 255, 255, 0.14)' })
+                    : (villageFilter !== 'All'
+                        ? { backgroundColor: '#000000', borderColor: '#000000' }
+                        : { backgroundColor: '#F8FAFC', borderColor: '#CBD5E1' })
                 ]}
+                onPress={() => setVillageDropdownVisible(true)}
+                activeOpacity={0.8}
               >
-                {/* Cross Badge for Role (E-commerce Style Top-Right Corner Ribbon) */}
-                <View 
-                  pointerEvents="none"
+                <Text
+                  style={[
+                    styles.filterChipTxt,
+                    { marginRight: 4, maxWidth: 120 },
+                    isDark
+                      ? (villageFilter !== 'All' ? { color: '#000000', fontWeight: '800' } : { color: '#A1A1AA' })
+                      : (villageFilter !== 'All' ? { color: '#FFFFFF', fontWeight: '800' } : { color: '#64748B' })
+                  ]}
+                  numberOfLines={1}
+                >
+                  {villageFilter === 'All' ? 'Village/City' : villageFilter}
+                </Text>
+                <ChevronDown
+                  size={14}
+                  color={
+                    isDark
+                      ? (villageFilter !== 'All' ? '#000000' : '#A1A1AA')
+                      : (villageFilter !== 'All' ? '#FFFFFF' : '#64748B')
+                  }
+                />
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        );
+
+        const renderVirtualizedMember = ({ item: member }: { item: any }) => {
+          const isExpanded = expandedId === member.id;
+          const associated = member.accountId
+            ? (membersByAccountId.get(member.accountId) || []).filter(m => m.id !== member.id)
+            : [];
+          const rawDisplayName = (member.name && member.name.trim()) ||
+            (member.displayName && member.displayName.trim()) ||
+            (member.fullName && member.fullName.trim()) ||
+            (`${member.firstName || ''} ${member.lastName || ''}`.trim()) ||
+            (member.phone ? `Member (${member.phone})` : 'Unknown');
+          const displayName = stripGuestSuffix(rawDisplayName) || rawDisplayName;
+          const displayRole = member.userType || 'member';
+          const normalizedRole = displayRole.trim().toLowerCase().replace('_', ' ');
+          const isSuperAdmin = normalizedRole === 'super admin' || normalizedRole === 'superadmin';
+          const isAdmin = normalizedRole === 'admin';
+          const isGuest = !isSuperAdmin && !isAdmin && isGuestMemberDoc(member);
+
+          return (
+            <View 
+              style={[
+                styles.memberCard,
+                { marginBottom: 14 },
+                !isDark && {
+                  backgroundColor: '#FFFFFF',
+                  borderWidth: 1.5,
+                  borderColor: isGuest ? '#DDD6FE' : '#CBD5E1',
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.05,
+                  shadowRadius: 6,
+                  elevation: 2,
+                },
+                isDark && {
+                  backgroundColor: '#18181B',
+                  borderWidth: 1,
+                  borderColor: isGuest ? 'rgba(167, 139, 250, 0.35)' : 'rgba(255, 255, 255, 0.12)',
+                },
+                isExpanded && styles.memberCardExpanded,
+                { position: 'relative', overflow: 'hidden' }
+              ]}
+            >
+              {/* Cross Badge for Role (E-commerce Style Top-Right Corner Ribbon) */}
+              <View 
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  top: 18,
+                  right: -34,
+                  width: 125,
+                  transform: [{ rotate: '45deg' }],
+                  backgroundColor: isSuperAdmin 
+                    ? '#228B22'
+                    : (isAdmin ? (isDark ? '#D97706' : '#B45309') : isGuest ? '#6D28D9' : (isDark ? '#3F3F46' : '#64748B')),
+                  paddingVertical: 3.5,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  zIndex: 10,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 1 },
+                  shadowOpacity: 0.25,
+                  shadowRadius: 2,
+                  elevation: 3,
+                }}
+              >
+                <Text 
+                  numberOfLines={1}
                   style={{
-                    position: 'absolute',
-                    top: 18,
-                    right: -34,
-                    width: 125,
-                    transform: [{ rotate: '45deg' }],
-                    backgroundColor: isSuperAdmin 
-                      ? '#228B22' // Forest Green
-                      : (isAdmin ? (isDark ? '#D97706' : '#B45309') : isGuest ? '#6D28D9' : (isDark ? '#3F3F46' : '#64748B')),
-                    paddingVertical: 3.5,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    zIndex: 10,
-                    shadowColor: '#000',
-                    shadowOffset: { width: 0, height: 1 },
-                    shadowOpacity: 0.25,
-                    shadowRadius: 2,
-                    elevation: 3,
+                    color: '#FFFFFF',
+                    fontSize: isSuperAdmin ? 7.8 : 9.5,
+                    fontWeight: '900',
+                    letterSpacing: isSuperAdmin ? 0.3 : 0.8,
+                    textTransform: 'uppercase',
                   }}
                 >
-                  <Text 
-                    numberOfLines={1}
-                    style={{
-                      color: '#FFFFFF',
-                      fontSize: isSuperAdmin ? 7.8 : 9.5,
-                      fontWeight: '900',
-                      letterSpacing: isSuperAdmin ? 0.3 : 0.8,
-                      textTransform: 'uppercase',
-                    }}
-                  >
-                    {isSuperAdmin ? 'SUPER ADMIN' : (isAdmin ? 'ADMIN' : (isGuest ? 'GUEST' : 'MEMBER'))}
-                  </Text>
-                </View>
-
-                <TouchableOpacity 
-                  style={styles.cardHeader} 
-                  activeOpacity={0.7}
-                  onPress={() => handleSelectMember(member)}
-                >
-                  <View style={{ flex: 1, paddingRight: 28 }}>
-                    {/* Top Row: Avatar + Name / Location + Clickable Phone */}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                      <MemberAvatar member={member} initials={getInitials(displayName)} styles={styles} size={56} />
-                      <View style={{ flex: 1, justifyContent: 'center' }}>
-                        <Text style={styles.name} numberOfLines={1}>{displayName}</Text>
-                        {isGuest && (
-                          <Text style={{ fontSize: 11.5, color: isDark ? '#C4B5FD' : '#6D28D9', fontWeight: '700', marginTop: 2 }} numberOfLines={1}>
-                            {member.relation ? `${member.relation}` : 'Guest'}
-                            {member.invitedByMemberName ? ` · Invited by ${member.invitedByMemberName}` : ''}
-                            {member.inviteStatus === 'joined' ? ' · Joined' : ' · Invited'}
-                          </Text>
-                        )}
-                        {(member.city || member.village) && (
-                          <Text style={{ fontSize: 12, color: isDark ? '#A1A1AA' : '#64748B', marginTop: 2 }}>
-                            📍 {(member.city || member.village).trim()}
-                          </Text>
-                        )}
-                        {member.phone ? (
-                          <TouchableOpacity 
-                            onPress={() => Linking.openURL(`tel:${member.phone.replace(/[^0-9+]/g, '')}`)}
-                            activeOpacity={0.7}
-                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 }}
-                          >
-                            <Phone size={12} color={isDark ? '#60A5FA' : '#1D4ED8'} strokeWidth={2.4} />
-                            <Text style={{
-                              fontSize: 13,
-                              fontWeight: '600',
-                              color: isDark ? '#93C5FD' : '#1D4ED8',
-                            }}>
-                              {member.phone}
-                            </Text>
-                          </TouchableOpacity>
-                        ) : null}
-                      </View>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-
-                {isExpanded && (
-                  <View style={styles.expandedContent}>
-
-
-                    {/* App Activity Stats */}
-                    <View style={styles.statsSubGrid}>
-                      <View style={styles.subStatBox}>
-                        <View style={styles.subStatLabelRow}>
-                          <Clock size={12} color="#c0392b" />
-                          <Text style={styles.subStatLabel}>Last App Opened</Text>
-                        </View>
-                        <Text style={styles.subStatValue}>{formatLastAppOpened(member.lastLogin || member.lastAppOpened)}</Text>
-                      </View>
-                      <View style={styles.subStatBox}>
-                        <View style={styles.subStatLabelRow}>
-                          <UserCheck size={12} color="#15803D" />
-                          <Text style={styles.subStatLabel}>Household Contacts</Text>
-                        </View>
-                        <Text style={styles.subStatValue}>
-                          {associated.length} Associated
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Admin Actions */}
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                      <View style={{ flex: 1 }}>
-                        {member.userType?.trim().toLowerCase() === 'super_admin' || member.userType?.trim().toLowerCase() === 'super admin' ? (
-                          <View style={[styles.promoteBtn, { backgroundColor: '#7c3aed', opacity: 0.8 }]}>
-                            <Shield size={14} color="#fff" />
-                            <Text style={styles.promoteBtnTxt}>App Admin</Text>
-                          </View>
-                        ) : displayRole.toLowerCase() === 'admin' ? (
-                          <TouchableOpacity 
-                            style={[styles.promoteBtn, { backgroundColor: '#dc2626' }]}
-                            onPress={() => handleRemoveAdmin(member.id, displayName)}
-                          >
-                            <UserX size={14} color="#fff" />
-                            <Text style={styles.promoteBtnTxt}>Remove Admin</Text>
-                          </TouchableOpacity>
-                        ) : (
-                          <TouchableOpacity 
-                            style={styles.promoteBtn}
-                            onPress={() => handlePromoteAdmin(member.id)}
-                          >
-                            <UserCheck size={14} color="#fff" />
-                            <Text style={styles.promoteBtnTxt}>Promote Admin</Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-
-                      {member.userType?.trim().toLowerCase() !== 'super_admin' && member.userType?.trim().toLowerCase() !== 'super admin' && (
-                        <View style={{ flex: 1 }}>
-                          <TouchableOpacity 
-                            style={[styles.promoteBtn, { backgroundColor: '#4b5563' }]}
-                            onPress={() => handleDeleteMember(member.id, displayName)}
-                          >
-                            <Trash2 size={14} color="#fff" />
-                            <Text style={styles.promoteBtnTxt}>Remove</Text>
-                          </TouchableOpacity>
-                        </View>
-                      )}
-                    </View>
-
-                    {/* Skills & Talents Breakdown (Shown ONLY when expanded) */}
-                    <View style={styles.skillsSectionBox}>
-                      <View style={styles.skillsSectionHeader}>
-                        <Briefcase size={13} color="#1a2d5a" style={{ marginRight: 6 }} />
-                        <Text style={styles.skillsSectionTitle}>SKILLS & TALENTS</Text>
-                      </View>
-                      <View style={styles.skillsGrid}>
-                        <View style={styles.skillBox}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                            <Award size={12} color="#B45309" style={{ marginRight: 4 }} />
-                            <Text style={styles.skillBoxTag}>PRIMARY SKILLS</Text>
-                          </View>
-                          {parseSkillsList(member.primarySkill).length > 0 ? (
-                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                              {parseSkillsList(member.primarySkill).map((sk, idx) => (
-                                <View key={idx} style={{ backgroundColor: '#FEF3C7', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#FDE68A' }}>
-                                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#B45309' }}>{sk}</Text>
-                                </View>
-                              ))}
-                            </View>
-                          ) : (
-                            <Text style={[styles.skillBoxValue, { color: '#9CA3AF', fontStyle: 'italic', fontWeight: '500' }]}>
-                              Not specified
-                            </Text>
-                          )}
-                        </View>
-                        <View style={styles.skillBox}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                            <Sparkles size={12} color="#4338CA" style={{ marginRight: 4 }} />
-                            <Text style={styles.skillBoxTag}>SECONDARY SKILLS</Text>
-                          </View>
-                          {parseSkillsList(member.secondarySkill).length > 0 ? (
-                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                              {parseSkillsList(member.secondarySkill).map((sk, idx) => (
-                                <View key={idx} style={{ backgroundColor: '#EEF2FF', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#C7D2FE' }}>
-                                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#4338CA' }}>{sk}</Text>
-                                </View>
-                              ))}
-                            </View>
-                          ) : (
-                            <Text style={[styles.skillBoxValue, { color: '#9CA3AF', fontStyle: 'italic', fontWeight: '500' }]}>
-                              Not specified
-                            </Text>
-                          )}
-                        </View>
-                      </View>
-                    </View>
-
-                    {/* Household Members breakdown */}
-                    <Text style={styles.householdHeader}>
-                      HOUSEHOLD: {displayName.toUpperCase()}
-                    </Text>
-
-                    <View style={styles.householdList}>
-                      {associated.length > 0 ? (
-                        associated.map((assoc, idx) => (
-                          <View key={`${assoc.id || 'assoc'}-${idx}`}>
-                            <TouchableOpacity 
-                              style={styles.householdItem}
-                              onPress={() => {
-                                const key = assoc.id || String(idx);
-                                setExpandedHouseholdIds(prev => ({ ...prev, [key]: !prev[key] }));
-                              }}
-                            >
-                              <View style={styles.hiLeft}>
-                                <Text style={styles.hiName}>{assoc.name || (`${assoc.firstName || ''} ${assoc.lastName || ''}`.trim()) || 'Family Member'}</Text>
-                                {(assoc.city || assoc.village) && (
-                                  <Text style={{ fontSize: 11, color: '#6B7280', marginTop: 1, marginBottom: 1 }}>
-                                    📍 {(assoc.city || assoc.village).trim()}
-                                  </Text>
-                                )}
-                                <Text style={styles.hiEmail}>{assoc.email || assoc.phone || 'No contact details'}</Text>
-                              </View>
-                              <View style={styles.hiRight}>
-                                <Text style={styles.hiRelation}>{assoc.userType || 'Member'}</Text>
-                                {expandedHouseholdIds[assoc.id || String(idx)] ? <ChevronUp size={16} color="#6B7280" style={{marginTop: 4}}/> : <ChevronDown size={16} color="#6B7280" style={{marginTop: 4}}/>}
-                              </View>
-                            </TouchableOpacity>
-                            {expandedHouseholdIds[assoc.id || String(idx)] && (() => {
-                              const details = assoc.id ? (members.find(m => m.id === assoc.id) || assoc) : assoc;
-                              return (
-                                <View style={{ padding: 12, backgroundColor: '#F9FAFB', borderBottomLeftRadius: 12, borderBottomRightRadius: 12, marginBottom: 8, marginTop: -8, marginHorizontal: 2 }}>
-                                  {details.phone ? (
-                                    <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }} onPress={() => Linking.openURL(`tel:${details.phone.replace(/[^0-9+]/g, '')}`)}>
-                                      <Phone size={14} color="#6B7280" style={{ marginRight: 8 }} />
-                                      <Text style={{ color: '#007AFF', fontSize: 13 }}>{details.phone}</Text>
-                                    </TouchableOpacity>
-                                  ) : null}
-                                  {details.email ? (
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                                      <Mail size={14} color="#6B7280" style={{ marginRight: 8 }} />
-                                      <Text style={{ color: '#4B5563', fontSize: 13 }}>{details.email}</Text>
-                                    </View>
-                                  ) : null}
-                                  {details.dob ? (
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                                      <Text style={{ fontSize: 14, marginRight: 8 }}>🎂</Text>
-                                      <Text style={{ color: '#4B5563', fontSize: 13 }}>DOB: {formatDateDisplay(details.dob)}</Text>
-                                    </View>
-                                  ) : null}
-                                  {details.gender ? (
-                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                      <Text style={{ fontSize: 14, marginRight: 8 }}>👤</Text>
-                                      <Text style={{ color: '#4B5563', fontSize: 13 }}>Gender: {details.gender}</Text>
-                                    </View>
-                                  ) : null}
-                                </View>
-                              );
-                            })()}
-                          </View>
-                        ))
-                      ) : (
-                        <Text style={styles.emptyHouseholdTxt}>
-                          No other household contacts registered.
-                        </Text>
-                      )}
-                    </View>
-                  </View>
-                )}
+                  {isSuperAdmin ? 'SUPER ADMIN' : (isAdmin ? 'ADMIN' : (isGuest ? 'GUEST' : 'MEMBER'))}
+                </Text>
               </View>
-            );
-          })}
-        </View>
 
-        <Text style={styles.footerBranding}>Church Admin · Member Activity Logs</Text>
-        <View style={{ height: 100 }} />
-      </ScrollView>
+              <TouchableOpacity 
+                style={styles.cardHeader} 
+                activeOpacity={0.7}
+                onPress={() => handleSelectMember(member)}
+              >
+                <View style={{ flex: 1, paddingRight: 28 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    <MemberAvatar member={member} initials={getInitials(displayName)} styles={styles} size={56} />
+                    <View style={{ flex: 1, justifyContent: 'center' }}>
+                      <Text style={styles.name} numberOfLines={1}>{displayName}</Text>
+                      {isGuest && (
+                        <Text style={{ fontSize: 11.5, color: isDark ? '#C4B5FD' : '#6D28D9', fontWeight: '700', marginTop: 2 }} numberOfLines={1}>
+                          {member.relation ? `${member.relation}` : 'Guest'}
+                          {member.invitedByMemberName ? ` · Invited by ${member.invitedByMemberName}` : ''}
+                          {member.inviteStatus === 'joined' ? ' · Joined' : ' · Invited'}
+                        </Text>
+                      )}
+                      {(member.city || member.village) && (
+                        <Text style={{ fontSize: 12, color: isDark ? '#A1A1AA' : '#64748B', marginTop: 2 }}>
+                          📍 {(member.city || member.village).trim()}
+                        </Text>
+                      )}
+                      {member.phone ? (
+                        <TouchableOpacity 
+                          onPress={() => Linking.openURL(`tel:${member.phone.replace(/[^0-9+]/g, '')}`)}
+                          activeOpacity={0.7}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 }}
+                        >
+                          <Phone size={12} color={isDark ? '#60A5FA' : '#1D4ED8'} strokeWidth={2.4} />
+                          <Text style={{
+                            fontSize: 13,
+                            fontWeight: '600',
+                            color: isDark ? '#93C5FD' : '#1D4ED8',
+                          }}>
+                            {member.phone}
+                          </Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+                  </View>
+                </View>
+              </TouchableOpacity>
+
+              {isExpanded && (
+                <View style={styles.expandedContent}>
+                  <View style={styles.statsSubGrid}>
+                    <View style={styles.subStatBox}>
+                      <View style={styles.subStatLabelRow}>
+                        <Clock size={12} color="#c0392b" />
+                        <Text style={styles.subStatLabel}>Last App Opened</Text>
+                      </View>
+                      <Text style={styles.subStatValue}>{formatLastAppOpened(member.lastLogin || member.lastAppOpened)}</Text>
+                    </View>
+                    <View style={styles.subStatBox}>
+                      <View style={styles.subStatLabelRow}>
+                        <UserCheck size={12} color="#15803D" />
+                        <Text style={styles.subStatLabel}>Household Contacts</Text>
+                      </View>
+                      <Text style={styles.subStatValue}>
+                        {associated.length} Associated
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    <View style={{ flex: 1 }}>
+                      {member.userType?.trim().toLowerCase() === 'super_admin' || member.userType?.trim().toLowerCase() === 'super admin' ? (
+                        <View style={[styles.promoteBtn, { backgroundColor: '#7c3aed', opacity: 0.8 }]}>
+                          <Shield size={14} color="#fff" />
+                          <Text style={styles.promoteBtnTxt}>App Admin</Text>
+                        </View>
+                      ) : displayRole.toLowerCase() === 'admin' ? (
+                        <TouchableOpacity 
+                          style={[styles.promoteBtn, { backgroundColor: '#dc2626' }]}
+                          onPress={() => handleRemoveAdmin(member.id, displayName)}
+                        >
+                          <UserX size={14} color="#fff" />
+                          <Text style={styles.promoteBtnTxt}>Remove Admin</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <TouchableOpacity 
+                          style={styles.promoteBtn}
+                          onPress={() => handlePromoteAdmin(member.id)}
+                        >
+                          <UserCheck size={14} color="#fff" />
+                          <Text style={styles.promoteBtnTxt}>Promote Admin</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    {member.userType?.trim().toLowerCase() !== 'super_admin' && member.userType?.trim().toLowerCase() !== 'super admin' && (
+                      <View style={{ flex: 1 }}>
+                        <TouchableOpacity 
+                          style={[styles.promoteBtn, { backgroundColor: '#4b5563' }]}
+                          onPress={() => handleDeleteMember(member.id, displayName)}
+                        >
+                          <Trash2 size={14} color="#fff" />
+                          <Text style={styles.promoteBtnTxt}>Remove</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={styles.skillsSectionBox}>
+                    <View style={styles.skillsSectionHeader}>
+                      <Briefcase size={13} color="#1a2d5a" style={{ marginRight: 6 }} />
+                      <Text style={styles.skillsSectionTitle}>SKILLS & TALENTS</Text>
+                    </View>
+                    <View style={styles.skillsGrid}>
+                      <View style={styles.skillBox}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                          <Award size={12} color="#B45309" style={{ marginRight: 4 }} />
+                          <Text style={styles.skillBoxTag}>PRIMARY SKILLS</Text>
+                        </View>
+                        {parseSkillsList(member.primarySkill).length > 0 ? (
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                            {parseSkillsList(member.primarySkill).map((sk, idx) => (
+                              <View key={idx} style={{ backgroundColor: '#FEF3C7', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#FDE68A' }}>
+                                <Text style={{ fontSize: 12, fontWeight: '700', color: '#B45309' }}>{sk}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        ) : (
+                          <Text style={[styles.skillBoxValue, { color: '#9CA3AF', fontStyle: 'italic', fontWeight: '500' }]}>
+                            Not specified
+                          </Text>
+                        )}
+                      </View>
+                      <View style={styles.skillBox}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                          <Sparkles size={12} color="#4338CA" style={{ marginRight: 4 }} />
+                          <Text style={styles.skillBoxTag}>SECONDARY SKILLS</Text>
+                        </View>
+                        {parseSkillsList(member.secondarySkill).length > 0 ? (
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                            {parseSkillsList(member.secondarySkill).map((sk, idx) => (
+                              <View key={idx} style={{ backgroundColor: '#EEF2FF', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#C7D2FE' }}>
+                                <Text style={{ fontSize: 12, fontWeight: '700', color: '#4338CA' }}>{sk}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        ) : (
+                          <Text style={[styles.skillBoxValue, { color: '#9CA3AF', fontStyle: 'italic', fontWeight: '500' }]}>
+                            Not specified
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  </View>
+
+                  <Text style={styles.householdHeader}>
+                    HOUSEHOLD: {displayName.toUpperCase()}
+                  </Text>
+
+                  <View style={styles.householdList}>
+                    {associated.length > 0 ? (
+                      associated.map((assoc, idx) => (
+                        <View key={`${assoc.id || 'assoc'}-${idx}`}>
+                          <TouchableOpacity 
+                            style={styles.householdItem}
+                            onPress={() => {
+                              const key = assoc.id || String(idx);
+                              setExpandedHouseholdIds(prev => ({ ...prev, [key]: !prev[key] }));
+                            }}
+                          >
+                            <View style={styles.hiLeft}>
+                              <Text style={styles.hiName}>{assoc.name || (`${assoc.firstName || ''} ${assoc.lastName || ''}`.trim()) || 'Family Member'}</Text>
+                              {(assoc.city || assoc.village) && (
+                                <Text style={{ fontSize: 11, color: '#6B7280', marginTop: 1, marginBottom: 1 }}>
+                                  📍 {(assoc.city || assoc.village).trim()}
+                                </Text>
+                              )}
+                              <Text style={styles.hiEmail}>{assoc.email || assoc.phone || 'No contact details'}</Text>
+                            </View>
+                            <View style={styles.hiRight}>
+                              <Text style={styles.hiRelation}>{assoc.userType || 'Member'}</Text>
+                              {expandedHouseholdIds[assoc.id || String(idx)] ? <ChevronUp size={16} color="#6B7280" style={{marginTop: 4}}/> : <ChevronDown size={16} color="#6B7280" style={{marginTop: 4}}/>}
+                            </View>
+                          </TouchableOpacity>
+                          {expandedHouseholdIds[assoc.id || String(idx)] && (() => {
+                            const details = assoc.id ? (membersByIdMap.get(assoc.id) || assoc) : assoc;
+                            return (
+                              <View style={{ padding: 12, backgroundColor: '#F9FAFB', borderBottomLeftRadius: 12, borderBottomRightRadius: 12, marginBottom: 8, marginTop: -8, marginHorizontal: 2 }}>
+                                {details.phone ? (
+                                  <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }} onPress={() => Linking.openURL(`tel:${details.phone.replace(/[^0-9+]/g, '')}`)}>
+                                    <Phone size={14} color="#6B7280" style={{ marginRight: 8 }} />
+                                    <Text style={{ color: '#007AFF', fontSize: 13 }}>{details.phone}</Text>
+                                  </TouchableOpacity>
+                                ) : null}
+                                {details.email ? (
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                                    <Mail size={14} color="#6B7280" style={{ marginRight: 8 }} />
+                                    <Text style={{ color: '#4B5563', fontSize: 13 }}>{details.email}</Text>
+                                  </View>
+                                ) : null}
+                                {details.dob ? (
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                                    <Text style={{ fontSize: 14, marginRight: 8 }}>🎂</Text>
+                                    <Text style={{ color: '#4B5563', fontSize: 13 }}>DOB: {formatDateDisplay(details.dob)}</Text>
+                                  </View>
+                                ) : null}
+                                {details.gender ? (
+                                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                    <Text style={{ fontSize: 14, marginRight: 8 }}>👤</Text>
+                                    <Text style={{ color: '#4B5563', fontSize: 13 }}>Gender: {details.gender}</Text>
+                                  </View>
+                                ) : null}
+                              </View>
+                            );
+                          })()}
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={styles.emptyHouseholdTxt}>
+                        No other household contacts registered.
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              )}
+            </View>
+          );
+        };
+
+        return (
+          <FlatList
+            data={filteredMembers}
+            extraData={{ expandedId, expandedHouseholdIds, isDark }}
+            keyExtractor={(item, idx) => String(item.id || `admin-member-${idx}`)}
+            renderItem={renderVirtualizedMember}
+            ListHeaderComponent={membersListHeader}
+            ListFooterComponent={(
+              <View>
+                <Text style={styles.footerBranding}>Church Admin · Member Activity Logs</Text>
+                <View style={{ height: 100 }} />
+              </View>
+            )}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.scroll}
+            keyboardShouldPersistTaps="handled"
+            initialNumToRender={10}
+            maxToRenderPerBatch={10}
+            windowSize={5}
+            removeClippedSubviews={Platform.OS === 'android'}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => fetchMembers(true)}
+                colors={['#1a2d5a']}
+              />
+            }
+          />
+        );
+      })()}
       </>
     )}
 
