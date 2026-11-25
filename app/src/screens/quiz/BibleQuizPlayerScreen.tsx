@@ -230,16 +230,19 @@ export default function BibleQuizPlayerScreen() {
   const startTimer = (totalSec: number) => {
     setSecondsRemaining(totalSec);
     startTimeRef.current = Date.now();
+    let remaining = totalSec;
 
+    if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
-      setSecondsRemaining((prev) => {
-        if (prev === null || prev <= 1) {
-          clearInterval(timerRef.current);
-          handleTimeExpired();
-          return 0;
-        }
-        return prev - 1;
-      });
+      remaining -= 1;
+      if (remaining <= 0) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+        setSecondsRemaining(0);
+        handleTimeExpired();
+      } else {
+        setSecondsRemaining(remaining);
+      }
     }, 1000);
   };
 
@@ -458,7 +461,7 @@ export default function BibleQuizPlayerScreen() {
           totalPossible > 0 ? Math.round((earnedScore / totalPossible) * 100) : 0;
         const passThreshold = quizMeta?.passPercentage || 70;
 
-        // Record level progression in BibleQuizBank
+        // Record level progression in BibleQuizBank (scoped per churchId)
         const progResult = await BibleQuizBank.recordLevelResult(
           user?.uid || 'guest',
           category,
@@ -466,7 +469,8 @@ export default function BibleQuizPlayerScreen() {
           level,
           earnedScore,
           totalPossible,
-          passThreshold
+          passThreshold,
+          activeChurch?.id
         );
 
         const attemptObj: QuizAttempt = {
@@ -920,6 +924,10 @@ export default function BibleQuizPlayerScreen() {
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
+        initialNumToRender={1}
+        maxToRenderPerBatch={2}
+        windowSize={3}
+        removeClippedSubviews={true}
         keyExtractor={(item) => item.id}
         renderItem={renderQuestionItem}
         onMomentumScrollEnd={(e) => {

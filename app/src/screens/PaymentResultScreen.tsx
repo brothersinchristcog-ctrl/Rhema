@@ -9,7 +9,7 @@ export default function PaymentResultScreen({ route, navigation }: any) {
   const { txnId } = route.params || {};
   const { colors } = useTheme();
   const primary = colors.primary;
-  
+
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<'SUCCESS' | 'FAILED' | 'PENDING'>('PENDING');
   const [errorMessage, setErrorMessage] = useState('');
@@ -22,23 +22,32 @@ export default function PaymentResultScreen({ route, navigation }: any) {
       return;
     }
 
-    let unsubscribe: () => void = () => {};
+    let unsubscribe: () => void = () => { };
+    let isMounted = true;
+    let isResolved = false;
 
     const setupListener = async () => {
       try {
         const col = await FirestoreService.getCollection('transactions');
-        unsubscribe = col
+        const unsub = col
           .doc(txnId)
           .onSnapshot((doc) => {
+            if (!isMounted) return;
             if (doc.data()) {
               const data = doc.data();
               if (data?.status === 'SUCCESS' || data?.status === 'FAILED') {
+                isResolved = true;
                 setStatus(data.status);
                 if (data.error) setErrorMessage(data.error);
                 setLoading(false);
               }
             }
           });
+        if (!isMounted) {
+          unsub();
+        } else {
+          unsubscribe = unsub;
+        }
       } catch (e) {
         console.warn('PaymentResult listener error:', e);
       }
@@ -48,14 +57,14 @@ export default function PaymentResultScreen({ route, navigation }: any) {
 
     // Timeout after 30 seconds if still pending
     const timeout = setTimeout(() => {
+      if (!isMounted || isResolved) return;
       setLoading(false);
-      if (status === 'PENDING') {
-        setStatus('PENDING');
-        setErrorMessage('We are still waiting for confirmation from PhonePe. Please check your transaction history later.');
-      }
+      setStatus('PENDING');
+      setErrorMessage('We are still waiting for confirmation from PhonePe. Please check your transaction history later.');
     }, 30000);
 
     return () => {
+      isMounted = false;
       unsubscribe();
       clearTimeout(timeout);
     };
@@ -77,7 +86,7 @@ export default function PaymentResultScreen({ route, navigation }: any) {
             <Text style={styles.subtitle}>Thank you for your generous contribution.</Text>
           </>
         ) : status === 'PENDING' ? (
-           <>
+          <>
             <ActivityIndicator size="large" color="#fbbf24" />
             <Text style={styles.title}>Payment Pending</Text>
             <Text style={styles.subtitle}>{errorMessage}</Text>
@@ -91,8 +100,8 @@ export default function PaymentResultScreen({ route, navigation }: any) {
         )}
 
         {!loading && (
-          <TouchableOpacity 
-            style={[styles.btn, { backgroundColor: primary }]} 
+          <TouchableOpacity
+            style={[styles.btn, { backgroundColor: primary }]}
             onPress={() => navigation.navigate('Tabs', { screen: 'Home' })}
           >
             <Text style={styles.btnText}>Return to Home</Text>

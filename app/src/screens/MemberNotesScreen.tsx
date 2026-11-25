@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -15,24 +15,27 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { 
+import {
   ArrowLeft,
   MoreVertical,
-  Plus, 
-  Trash2, 
-  Edit3, 
-  Search, 
-  FileText, 
-  Save, 
-  X, 
+  Plus,
+  Trash2,
+  Edit3,
+  Search,
+  FileText,
+  Save,
+  X,
   Calendar,
   CheckSquare,
   Square,
   Combine
 } from 'lucide-react-native';
+import { useAuth } from '../context/AuthContext';
+import { useChurch } from '../context/ChurchContext';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import { CustomAlert } from '../components/CustomAlert';
+import { getInstantMemory, makeScopedCacheKey, writeInstantCache } from '../utils/instantCache';
 
 const { width, height } = Dimensions.get('window');
 
@@ -62,12 +65,20 @@ interface SermonNote {
 export default function MemberNotesScreen({ navigation, route }: any) {
   const { isDark, colors } = useTheme();
   const { t, language } = useLanguage();
+  const { user } = useAuth();
+  const { churchId } = useChurch();
   const insets = useSafeAreaInsets();
+  const scopedNotesKey = useMemo(
+    () => makeScopedCacheKey('sermon_personal_notes_v2', churchId, user?.uid),
+    [churchId, user?.uid]
+  );
+  const initialNotes = getInstantMemory<SermonNote[]>(scopedNotesKey);
+
   const { prefillTitle, prefillContent } = route?.params || {};
-  const [notes, setNotes] = useState<SermonNote[]>([]);
+  const [notes, setNotes] = useState<SermonNote[]>(() => initialNotes || []);
   const [searchQuery, setSearchQuery] = useState('');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  
+
   // Modal & form states
   const [modalVisible, setModalVisible] = useState(false);
   const [isViewMode, setIsViewMode] = useState(true); // open in read-only by default
@@ -78,7 +89,7 @@ export default function MemberNotesScreen({ navigation, route }: any) {
   // Merge & Selection states
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
-  
+
   const [alertConfig, setAlertConfig] = useState<{
     visible: boolean;
     title: string;
@@ -134,9 +145,35 @@ export default function MemberNotesScreen({ navigation, route }: any) {
     return category;
   };
 
+  const loadNotes = useCallback(async () => {
+    try {
+      const memHit = getInstantMemory<SermonNote[]>(scopedNotesKey);
+      if (memHit) {
+        setNotes(memHit);
+      }
+      const stored = await AsyncStorage.getItem(scopedNotesKey);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setNotes(parsed);
+        writeInstantCache(scopedNotesKey, parsed).catch(() => { });
+        return;
+      }
+      // Migrate legacy unscoped notes once if user had local notes before upgrade
+      const legacy = await AsyncStorage.getItem('@SermonPersonalNotes');
+      if (legacy) {
+        const parsedLegacy = JSON.parse(legacy);
+        setNotes(parsedLegacy);
+        AsyncStorage.setItem(scopedNotesKey, legacy).catch(() => { });
+        writeInstantCache(scopedNotesKey, parsedLegacy).catch(() => { });
+      }
+    } catch (e) {
+      console.error('Error loading sermon notes:', e);
+    }
+  }, [scopedNotesKey]);
+
   useEffect(() => {
     loadNotes();
-  }, [route?.params?.refreshId]);
+  }, [loadNotes, route?.params?.refreshId]);
 
   // Auto-open create modal when pre-fill params are passed (e.g. from Bible Search)
   useEffect(() => {
@@ -148,20 +185,10 @@ export default function MemberNotesScreen({ navigation, route }: any) {
     }
   }, [prefillTitle, prefillContent]);
 
-  const loadNotes = async () => {
-    try {
-      const stored = await AsyncStorage.getItem('@SermonPersonalNotes');
-      if (stored) {
-        setNotes(JSON.parse(stored));
-      }
-    } catch (e) {
-      console.error('Error loading sermon notes:', e);
-    }
-  };
-
   const saveNotesToStorage = async (newNotesList: SermonNote[]) => {
     try {
-      await AsyncStorage.setItem('@SermonPersonalNotes', JSON.stringify(newNotesList));
+      writeInstantCache(scopedNotesKey, newNotesList).catch(() => { });
+      await AsyncStorage.setItem(scopedNotesKey, JSON.stringify(newNotesList));
     } catch (e) {
       console.error('Error saving sermon notes:', e);
       Alert.alert(t('common.error'), t('memberNotes.saveError'));
@@ -186,8 +213,8 @@ export default function MemberNotesScreen({ navigation, route }: any) {
 
     if (editingNoteId) {
       // Editing Mode - preserves existing extra fields like category/translations
-      updatedNotes = notes.map(n => 
-        n.id === editingNoteId 
+      updatedNotes = notes.map(n =>
+        n.id === editingNoteId
           ? { ...n, title: noteTitle.trim(), content: noteContent.trim(), timestamp: dateStr }
           : n
       );
@@ -204,7 +231,7 @@ export default function MemberNotesScreen({ navigation, route }: any) {
 
     setNotes(updatedNotes);
     saveNotesToStorage(updatedNotes);
-    
+
     // Close modal & reset fields
     setModalVisible(false);
     setEditingNoteId(null);
@@ -218,18 +245,18 @@ export default function MemberNotesScreen({ navigation, route }: any) {
       t('memberNotes.deleteNoteConfirm'),
       [
         { text: t('memberNotes.cancel'), style: 'cancel' },
-        { 
-          text: t('memberNotes.delete'), 
+        {
+          text: t('memberNotes.delete'),
           style: 'destructive',
           onPress: () => {
             const filtered = notes.filter(n => n.id !== id);
             setNotes(filtered);
             saveNotesToStorage(filtered);
-            setAlertConfig({ 
-              visible: true, 
-              title: t('memberNotes.noteDeletedTitle'), 
-              message: t('memberNotes.noteDeletedMsg'), 
-              type: 'success' 
+            setAlertConfig({
+              visible: true,
+              title: t('memberNotes.noteDeletedTitle'),
+              message: t('memberNotes.noteDeletedMsg'),
+              type: 'success'
             });
           }
         }
@@ -254,7 +281,7 @@ export default function MemberNotesScreen({ navigation, route }: any) {
   };
 
   const toggleSelection = (id: string) => {
-    setSelectedNoteIds(prev => 
+    setSelectedNoteIds(prev =>
       prev.includes(id) ? prev.filter(noteId => noteId !== id) : [...prev, id]
     );
   };
@@ -266,7 +293,7 @@ export default function MemberNotesScreen({ navigation, route }: any) {
     }
 
     const notesToMerge = notes.filter(n => selectedNoteIds.includes(n.id));
-    
+
     // Combine content
     let combinedContent = '';
     notesToMerge.forEach((note) => {
@@ -302,19 +329,22 @@ export default function MemberNotesScreen({ navigation, route }: any) {
     setSelectedNoteIds([]);
   };
 
-  const filteredNotes = notes.filter(n => {
-    const displayTitle = getNoteDisplayTitle(n).toLowerCase();
-    const displayContent = getNoteDisplayContent(n).toLowerCase();
-    const origTitle = (n.title || '').toLowerCase();
-    const origContent = (n.content || '').toLowerCase();
+  const filteredNotes = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    return (
-      displayTitle.includes(q) ||
-      displayContent.includes(q) ||
-      origTitle.includes(q) ||
-      origContent.includes(q)
-    );
-  });
+    if (!q) return notes;
+    return notes.filter(n => {
+      const displayTitle = getNoteDisplayTitle(n).toLowerCase();
+      const displayContent = getNoteDisplayContent(n).toLowerCase();
+      const origTitle = (n.title || '').toLowerCase();
+      const origContent = (n.content || '').toLowerCase();
+      return (
+        displayTitle.includes(q) ||
+        displayContent.includes(q) ||
+        origTitle.includes(q) ||
+        origContent.includes(q)
+      );
+    });
+  }, [notes, searchQuery, language]);
 
   const renderNoteCard = ({ item }: { item: SermonNote }) => {
     const isSelected = selectedNoteIds.includes(item.id);
@@ -323,18 +353,18 @@ export default function MemberNotesScreen({ navigation, route }: any) {
 
     return (
       <View style={[
-        styles.noteCard, 
-        { 
+        styles.noteCard,
+        {
           backgroundColor: isDark ? '#18181B' : '#FFFFFF',
           borderColor: isSelectionMode && isSelected ? (isDark ? '#FFFFFF' : '#0F172A') : (isDark ? '#3F3F46' : '#CBD5E1'),
           borderWidth: isSelectionMode && isSelected ? 2 : 1.2,
         }
       ]}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[
-            styles.noteCardBody, 
+            styles.noteCardBody,
             isSelectionMode && { flexDirection: 'row', alignItems: 'center' }
-          ]} 
+          ]}
           activeOpacity={0.7}
           onPress={() => isSelectionMode ? toggleSelection(item.id) : openViewMode(item)}
           onLongPress={() => {
@@ -364,7 +394,7 @@ export default function MemberNotesScreen({ navigation, route }: any) {
                 <Text style={[styles.dateText, { color: isDark ? '#E4E4E7' : '#334155' }]}>{item.timestamp}</Text>
               </View>
             </View>
-            
+
             {item.category ? (
               <View style={[styles.categoryBadge, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
                 <Text style={[styles.categoryBadgeTxt, { color: colors.text }]}>
@@ -381,8 +411,8 @@ export default function MemberNotesScreen({ navigation, route }: any) {
 
         {!isSelectionMode && (
           <View style={[
-            styles.cardActionsRow, 
-            { 
+            styles.cardActionsRow,
+            {
               backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)',
               borderTopWidth: 1.2,
               borderTopColor: isDark ? '#3F3F46' : '#CBD5E1'
@@ -404,12 +434,12 @@ export default function MemberNotesScreen({ navigation, route }: any) {
 
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#000000' : (colors.background || '#FAF7F2') }]}>
-      <StatusBar 
-        barStyle={isDark ? 'light-content' : 'dark-content'} 
-        backgroundColor={isDark ? '#000000' : (colors.background || '#FAF7F2')} 
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={isDark ? '#000000' : (colors.background || '#FAF7F2')}
       />
 
-      <CustomAlert 
+      <CustomAlert
         visible={alertConfig.visible}
         title={alertConfig.title}
         message={alertConfig.message}
@@ -448,8 +478,8 @@ export default function MemberNotesScreen({ navigation, route }: any) {
         </TouchableOpacity>
 
         <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
-          {isSelectionMode 
-            ? `${selectedNoteIds.length} ${t('memberNotes.select')}` 
+          {isSelectionMode
+            ? `${selectedNoteIds.length} ${t('memberNotes.select')}`
             : t('memberNotes.title')}
         </Text>
 
@@ -540,8 +570,8 @@ export default function MemberNotesScreen({ navigation, route }: any) {
           onChangeText={setSearchQuery}
         />
         {searchQuery.length > 0 && (
-          <TouchableOpacity 
-            onPress={() => setSearchQuery('')} 
+          <TouchableOpacity
+            onPress={() => setSearchQuery('')}
             style={[styles.searchClearBtn, { backgroundColor: isDark ? '#27272A' : '#E2E8F0' }]}
           >
             <Text style={[styles.searchClearTxt, { color: colors.textSecondary }]}>×</Text>
@@ -556,6 +586,10 @@ export default function MemberNotesScreen({ navigation, route }: any) {
         renderItem={renderNoteCard}
         contentContainerStyle={[styles.listContent, { paddingBottom: 100 }]}
         showsVerticalScrollIndicator={false}
+        initialNumToRender={10}
+        maxToRenderPerBatch={8}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
         ListEmptyComponent={
           <View style={styles.emptyStateContainer}>
             <FileText size={48} color={isDark ? '#3F3F46' : '#CBD5E1'} />
@@ -565,11 +599,11 @@ export default function MemberNotesScreen({ navigation, route }: any) {
             <Text style={[styles.emptyStateSubtitle, { color: colors.textSecondary }]}>
               {t('memberNotes.emptySubtitle')}
             </Text>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[
-                styles.createFirstBtn, 
+                styles.createFirstBtn,
                 { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }
-              ]} 
+              ]}
               onPress={openCreateForm}
               activeOpacity={0.8}
             >
@@ -584,7 +618,7 @@ export default function MemberNotesScreen({ navigation, route }: any) {
 
       {/* Floating Merge Button */}
       {isSelectionMode && selectedNoteIds.length > 1 && (
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[
             styles.floatingMergeBtn,
             { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }
@@ -621,17 +655,17 @@ export default function MemberNotesScreen({ navigation, route }: any) {
             <Text style={[{ fontSize: 13, color: colors.textSecondary, marginBottom: 18, lineHeight: 19 }]}>
               {t('memberNotes.mergeSubtitle', { count: selectedNoteIds.length })}
             </Text>
-            
+
             <TextInput
               placeholder={t('memberNotes.mergePlaceholder')}
               placeholderTextColor={colors.textSecondary}
               style={[
-                styles.titleInput, 
-                { 
-                  color: colors.text, 
-                  borderColor: colors.border, 
+                styles.titleInput,
+                {
+                  color: colors.text,
+                  borderColor: colors.border,
                   backgroundColor: isDark ? '#27272A' : '#FAF7F2',
-                  marginBottom: 20 
+                  marginBottom: 20
                 }
               ]}
               value={mergeTitle}
@@ -640,13 +674,13 @@ export default function MemberNotesScreen({ navigation, route }: any) {
             />
 
             <View style={{ flexDirection: 'row', gap: 12 }}>
-              <TouchableOpacity 
-                style={{ 
-                  flex: 1, 
-                  paddingVertical: 14, 
-                  borderRadius: 14, 
-                  backgroundColor: isDark ? '#27272A' : '#F1F5F9', 
-                  alignItems: 'center' 
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  paddingVertical: 14,
+                  borderRadius: 14,
+                  backgroundColor: isDark ? '#27272A' : '#F1F5F9',
+                  alignItems: 'center'
                 }}
                 onPress={() => setMergeModalVisible(false)}
                 activeOpacity={0.7}
@@ -655,13 +689,13 @@ export default function MemberNotesScreen({ navigation, route }: any) {
                   {t('memberNotes.cancel')}
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={{ 
-                  flex: 1, 
-                  paddingVertical: 14, 
-                  borderRadius: 14, 
-                  backgroundColor: isDark ? '#FFFFFF' : '#0F172A', 
-                  alignItems: 'center' 
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  paddingVertical: 14,
+                  borderRadius: 14,
+                  backgroundColor: isDark ? '#FFFFFF' : '#0F172A',
+                  alignItems: 'center'
                 }}
                 onPress={handleMergeNotes}
                 activeOpacity={0.8}
@@ -694,10 +728,10 @@ export default function MemberNotesScreen({ navigation, route }: any) {
             {/* Modal Header */}
             <View style={[styles.modalHeader, { borderBottomColor: isDark ? '#27272A' : '#E2E8F0', borderBottomWidth: 1 }]}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>
-                {!editingNoteId 
-                  ? t('memberNotes.createNote') 
-                  : isViewMode 
-                    ? t('memberNotes.viewNote') 
+                {!editingNoteId
+                  ? t('memberNotes.createNote')
+                  : isViewMode
+                    ? t('memberNotes.viewNote')
                     : t('memberNotes.editNote')}
               </Text>
               <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
@@ -717,7 +751,7 @@ export default function MemberNotesScreen({ navigation, route }: any) {
                     </Text>
                   </TouchableOpacity>
                 )}
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.modalCloseBtn, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
                   onPress={() => setModalVisible(false)}
                   activeOpacity={0.8}
@@ -739,10 +773,10 @@ export default function MemberNotesScreen({ navigation, route }: any) {
                   <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
                     <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('memberNotes.sermonTitle')}</Text>
                     <View style={[
-                      styles.titleInput, 
-                      { 
-                        backgroundColor: isDark ? '#27272A' : '#FAF7F2', 
-                        borderColor: colors.border, 
+                      styles.titleInput,
+                      {
+                        backgroundColor: isDark ? '#27272A' : '#FAF7F2',
+                        borderColor: colors.border,
                         justifyContent: 'center',
                         marginBottom: 16
                       }
@@ -754,10 +788,10 @@ export default function MemberNotesScreen({ navigation, route }: any) {
                       <>
                         <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('memberNotes.categoryLabel')}</Text>
                         <View style={[
-                          styles.categoryPill, 
-                          { 
-                            backgroundColor: isDark ? '#27272A' : '#F1F5F9', 
-                            borderColor: colors.border, 
+                          styles.categoryPill,
+                          {
+                            backgroundColor: isDark ? '#27272A' : '#F1F5F9',
+                            borderColor: colors.border,
                             alignSelf: 'flex-start',
                             marginBottom: 16
                           }
@@ -771,12 +805,12 @@ export default function MemberNotesScreen({ navigation, route }: any) {
 
                     <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('memberNotes.sermonDetails')}</Text>
                     <View style={[
-                      styles.contentInput, 
-                      { 
-                        backgroundColor: isDark ? '#27272A' : '#FAF7F2', 
-                        borderColor: colors.border, 
-                        minHeight: 180, 
-                        height: undefined 
+                      styles.contentInput,
+                      {
+                        backgroundColor: isDark ? '#27272A' : '#FAF7F2',
+                        borderColor: colors.border,
+                        minHeight: 180,
+                        height: undefined
                       }
                     ]}>
                       <Text style={{ color: colors.text, fontSize: 14, lineHeight: 22 }}>
@@ -796,9 +830,9 @@ export default function MemberNotesScreen({ navigation, route }: any) {
                   placeholder={t('memberNotes.titlePlaceholder')}
                   placeholderTextColor={colors.textSecondary}
                   style={[
-                    styles.titleInput, 
-                    { 
-                      color: colors.text, 
+                    styles.titleInput,
+                    {
+                      color: colors.text,
                       borderColor: colors.border,
                       backgroundColor: isDark ? '#27272A' : '#FAF7F2',
                       marginBottom: 16
@@ -814,9 +848,9 @@ export default function MemberNotesScreen({ navigation, route }: any) {
                   placeholder={t('memberNotes.contentPlaceholder')}
                   placeholderTextColor={colors.textSecondary}
                   style={[
-                    styles.contentInput, 
-                    { 
-                      color: colors.text, 
+                    styles.contentInput,
+                    {
+                      color: colors.text,
                       borderColor: colors.border,
                       backgroundColor: isDark ? '#27272A' : '#FAF7F2',
                       marginBottom: 24
@@ -830,11 +864,11 @@ export default function MemberNotesScreen({ navigation, route }: any) {
                 />
 
                 {/* Save Button */}
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[
                     styles.saveBtn,
                     { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }
-                  ]} 
+                  ]}
                   onPress={handleCreateOrEditNote}
                   activeOpacity={0.85}
                 >
@@ -854,8 +888,8 @@ export default function MemberNotesScreen({ navigation, route }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1 
+  container: {
+    flex: 1
   },
   headerRow: {
     flexDirection: 'row',
@@ -885,11 +919,11 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
     textAlign: 'center',
   },
-  
+
   // Menu styles
-  menuOverlay: { 
-    flex: 1, 
-    backgroundColor: 'transparent' 
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'transparent'
   },
   menuContainer: {
     position: 'absolute',
@@ -953,8 +987,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  listContent: { 
-    padding: 16, 
+  listContent: {
+    padding: 16,
   },
 
   // Card styles
@@ -977,20 +1011,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8
   },
-  noteCardTitle: { 
-    fontSize: 15, 
-    fontWeight: '800', 
-    flex: 1, 
-    marginRight: 10 
+  noteCardTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    flex: 1,
+    marginRight: 10
   },
   dateBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5
   },
-  dateText: { 
-    fontSize: 11, 
-    fontWeight: '700' 
+  dateText: {
+    fontSize: 11,
+    fontWeight: '700'
   },
   categoryBadge: {
     alignSelf: 'flex-start',
@@ -1009,10 +1043,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1
   },
-  noteCardSnippet: { 
-    fontSize: 13.5, 
-    lineHeight: 20, 
-    fontWeight: '600' 
+  noteCardSnippet: {
+    fontSize: 13.5,
+    lineHeight: 20,
+    fontWeight: '600'
   },
   cardActionsRow: {
     flexDirection: 'row',
@@ -1027,9 +1061,9 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 8
   },
-  actionBtnTxt: { 
-    fontSize: 12, 
-    fontWeight: '700' 
+  actionBtnTxt: {
+    fontSize: 12,
+    fontWeight: '700'
   },
 
   // Empty State
@@ -1039,17 +1073,17 @@ const styles = StyleSheet.create({
     paddingVertical: 70,
     paddingHorizontal: 30
   },
-  emptyStateTitle: { 
-    fontSize: 16, 
-    fontWeight: '800', 
-    marginTop: 15, 
-    marginBottom: 8 
+  emptyStateTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginTop: 15,
+    marginBottom: 8
   },
-  emptyStateSubtitle: { 
-    fontSize: 13, 
-    textAlign: 'center', 
-    lineHeight: 20, 
-    marginBottom: 20 
+  emptyStateSubtitle: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20
   },
   createFirstBtn: {
     flexDirection: 'row',
@@ -1063,9 +1097,9 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
   },
-  createFirstBtnTxt: { 
-    fontSize: 13, 
-    fontWeight: '800' 
+  createFirstBtnTxt: {
+    fontSize: 13,
+    fontWeight: '800'
   },
 
   // Floating Merge
@@ -1087,10 +1121,10 @@ const styles = StyleSheet.create({
   },
 
   // Modal styles
-  modalBg: { 
-    flex: 1, 
-    backgroundColor: 'rgba(0,0,0,0.55)', 
-    justifyContent: 'flex-end' 
+  modalBg: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'flex-end'
   },
   modalCardPrompt: {
     marginHorizontal: 16,
@@ -1103,10 +1137,10 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
   },
-  modalCard: { 
-    borderTopLeftRadius: 28, 
-    borderTopRightRadius: 28, 
-    height: height * 0.85, 
+  modalCard: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    height: height * 0.85,
     padding: 20,
     elevation: 12,
     shadowColor: '#000',
@@ -1114,16 +1148,16 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     shadowOffset: { width: 0, height: -3 },
   },
-  modalHeader: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    paddingBottom: 16, 
-    marginBottom: 16 
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 16,
+    marginBottom: 16
   },
-  modalTitle: { 
-    fontSize: 18, 
-    fontWeight: '800' 
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '800'
   },
   modalEditToggleBtn: {
     borderRadius: 10,
@@ -1133,21 +1167,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6
   },
-  modalCloseBtn: { 
-    width: 36, 
-    height: 36, 
-    borderRadius: 18, 
-    alignItems: 'center', 
-    justifyContent: 'center' 
+  modalCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center'
   },
-  modalScroll: { 
-    flex: 1 
+  modalScroll: {
+    flex: 1
   },
-  inputLabel: { 
-    fontSize: 11, 
-    fontWeight: '700', 
-    letterSpacing: 0.3, 
-    marginBottom: 6 
+  inputLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+    marginBottom: 6
   },
   titleInput: {
     borderWidth: 1,
@@ -1178,8 +1212,8 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 }
   },
-  saveBtnTxt: { 
-    fontSize: 15, 
-    fontWeight: '800' 
+  saveBtnTxt: {
+    fontSize: 15,
+    fontWeight: '800'
   }
 });

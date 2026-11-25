@@ -298,7 +298,7 @@ class AttendanceService {
         .doc(eventId)
         .collection('attendees');
 
-      const snap = await attendeesRef.orderBy('timestamp', 'desc').get();
+      const snap = await attendeesRef.orderBy('timestamp', 'desc').limit(300).get();
       const records: AttendanceRecord[] = [];
 
       const seenPhones = new Map<string, number>();
@@ -399,6 +399,12 @@ class AttendanceService {
     }
   }
 
+  private churchMembersCache = new Map<string, { ts: number; list: any[] }>();
+
+  public clearCache(): void {
+    this.churchMembersCache.clear();
+  }
+
   /**
    * Fetches church roster members for attendance comparison (Present vs Absent).
    * Excludes guest records by default so guests are never marked "Absent" on other events.
@@ -409,6 +415,11 @@ class AttendanceService {
   ): Promise<any[]> {
     if (!churchId) return [];
     const includeGuests = Boolean(options?.includeGuests);
+    const cacheKey = `${churchId}_${includeGuests}`;
+    const cached = this.churchMembersCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < 3 * 60_000) {
+      return cached.list;
+    }
 
     const normalizeMemberList = (rawDocs: any[]) => {
       const seenPhones = new Set<string>();
@@ -446,15 +457,20 @@ class AttendanceService {
         .collection('Rhema Church')
         .doc(churchId)
         .collection('members')
+        .limit(500)
         .get();
 
       if (!snap.empty) {
-        return normalizeMemberList(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        const list = normalizeMemberList(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        this.churchMembersCache.set(cacheKey, { ts: Date.now(), list });
+        return list;
       }
 
       // 2. Fallback via FirestoreService
       const all = await FirestoreService.getAllMembers();
-      return normalizeMemberList(all || []);
+      const list = normalizeMemberList(all || []);
+      this.churchMembersCache.set(cacheKey, { ts: Date.now(), list });
+      return list;
     } catch (e) {
       console.error('[AttendanceService] Error fetching church members:', e);
       return [];
@@ -696,7 +712,7 @@ class AttendanceService {
       const list: AttendanceRecord[] = [];
       const seenEventIds = new Set<string>();
 
-      // 1. Fetch from church attendance records without composite index requirement
+      // 1. Fetch from church attendance records and verify attendee docs in parallel
       try {
         const snap = await firestore()
           .collection('Rhema Church')
@@ -706,12 +722,11 @@ class AttendanceService {
           .limit(60)
           .get();
 
-        for (const doc of snap.docs) {
-          const d = doc.data();
-          if (d.status === 'Absent') continue;
-
-          if (d.eventId) {
-            // Verify if the event's attendee doc still exists or if it was deleted in Firebase
+        const validDocs = snap.docs.filter((doc) => doc.data()?.status !== 'Absent');
+        const verifiedFlags = await Promise.all(
+          validDocs.map(async (doc) => {
+            const d = doc.data();
+            if (!d.eventId) return { doc, valid: true };
             const attDoc = await firestore()
               .collection('Rhema Church')
               .doc(churchId)
@@ -721,16 +736,19 @@ class AttendanceService {
               .doc(memberId)
               .get()
               .catch(() => null);
-
             const isAttExists = attDoc && (typeof (attDoc as any).exists === 'function' ? (attDoc as any).exists() : Boolean((attDoc as any).exists));
             if (attDoc && !isAttExists) {
-              // The attendee doc was deleted in Firebase! Clean up orphaned attendanceRecord
               doc.ref.delete().catch(() => {});
-              continue;
+              return { doc, valid: false };
             }
-            seenEventIds.add(d.eventId);
-          }
+            return { doc, valid: true };
+          })
+        );
 
+        for (const { doc, valid } of verifiedFlags) {
+          if (!valid) continue;
+          const d = doc.data();
+          if (d.eventId) seenEventIds.add(d.eventId);
           list.push({
             id: doc.id,
             ...d,
@@ -740,95 +758,90 @@ class AttendanceService {
         console.warn('[AttendanceService] Note querying attendanceRecords:', recErr);
       }
 
-      // 2. ALSO check event attendees subcollections directly
-      // This ensures attendees stored under churches/{churchId}/events/{eventId}/attendees/{memberId}
-      // are always retrieved even if attendanceRecords collection write had delay or restriction.
+      // 2. ALSO check recent event attendees subcollections directly in parallel
       try {
-        const eventsSnap = await firestore()
+        const eventsRef = firestore()
           .collection('Rhema Church')
           .doc(churchId)
-          .collection('events')
-          .limit(25)
-          .get();
+          .collection('events');
+        let eventsSnap;
+        try {
+          eventsSnap = await eventsRef.orderBy('date', 'desc').limit(15).get();
+        } catch {
+          eventsSnap = await eventsRef.limit(15).get();
+        }
 
         const cleanPhone = memberPhone ? String(memberPhone).replace(/\D/g, '').slice(-10) : '';
+        const candidateEvents = eventsSnap.docs.filter((evDoc) => !seenEventIds.has(evDoc.id));
 
-        for (const evDoc of eventsSnap.docs) {
-          if (seenEventIds.has(evDoc.id)) continue;
-          const evData = evDoc.data();
+        const subcollectionRecords = await Promise.all(
+          candidateEvents.map(async (evDoc) => {
+            const evData = evDoc.data();
+            const attRef = firestore()
+              .collection('Rhema Church')
+              .doc(churchId)
+              .collection('events')
+              .doc(evDoc.id)
+              .collection('attendees');
 
-          // Check direct doc by memberId
-          const attendeeDoc = await firestore()
-            .collection('Rhema Church')
-            .doc(churchId)
-            .collection('events')
-            .doc(evDoc.id)
-            .collection('attendees')
-            .doc(memberId)
-            .get()
-            .catch(() => null);
+            const attendeeDoc = await attRef.doc(memberId).get().catch(() => null);
+            const isDocExisting = attendeeDoc && (
+              typeof (attendeeDoc as any).exists === 'function' ? (attendeeDoc as any).exists() : Boolean((attendeeDoc as any).exists)
+            );
 
-          const isDocExisting = attendeeDoc && (
-            typeof (attendeeDoc as any).exists === 'function' ? (attendeeDoc as any).exists() : Boolean((attendeeDoc as any).exists)
-          );
-
-          if (isDocExisting && attendeeDoc) {
-            const aData = attendeeDoc.data();
-            if (aData && aData.status === 'Present') {
-              seenEventIds.add(evDoc.id);
-              list.push({
-                id: attendeeDoc.id,
-                memberId: aData.memberId || memberId,
-                memberName: aData.memberName || 'Member',
-                memberPhone: aData.memberPhone || '',
-                photoUrl: aData.photoUrl || '',
-                status: 'Present',
-                timestamp: aData.timestamp || aData.scannedAt || new Date(),
-                method: aData.method || 'QR_SCAN',
-                churchId,
-                eventId: evDoc.id,
-                eventName: aData.eventName || evData?.title || evData?.name || 'Church Event',
-                isGuest: Boolean(aData.isGuest),
-              } as AttendanceRecord);
-              continue;
-            }
-          }
-
-          // Fallback: If cleanPhone is available, check attendees by phone
-          if (cleanPhone) {
-            try {
-              const phoneSnap = await firestore()
-                .collection('Rhema Church')
-                .doc(churchId)
-                .collection('events')
-                .doc(evDoc.id)
-                .collection('attendees')
-                .where('memberPhone', '==', cleanPhone)
-                .limit(1)
-                .get();
-
-              if (!phoneSnap.empty) {
-                const doc = phoneSnap.docs[0];
-                const aData = doc.data();
-                if (aData && aData.status === 'Present') {
-                  seenEventIds.add(evDoc.id);
-                  list.push({
-                    id: doc.id,
-                    memberId: aData.memberId || memberId,
-                    memberName: aData.memberName || 'Member',
-                    memberPhone: aData.memberPhone || '',
-                    photoUrl: aData.photoUrl || '',
-                    status: 'Present',
-                    timestamp: aData.timestamp || aData.scannedAt || new Date(),
-                    method: aData.method || 'QR_SCAN',
-                    churchId,
-                    eventId: evDoc.id,
-                    eventName: aData.eventName || evData?.title || evData?.name || 'Church Event',
-                    isGuest: Boolean(aData.isGuest),
-                  } as AttendanceRecord);
-                }
+            if (isDocExisting && attendeeDoc) {
+              const aData = attendeeDoc.data();
+              if (aData && aData.status === 'Present') {
+                return {
+                  id: attendeeDoc.id,
+                  memberId: aData.memberId || memberId,
+                  memberName: aData.memberName || 'Member',
+                  memberPhone: aData.memberPhone || '',
+                  photoUrl: aData.photoUrl || '',
+                  status: 'Present',
+                  timestamp: aData.timestamp || aData.scannedAt || new Date(),
+                  method: aData.method || 'QR_SCAN',
+                  churchId,
+                  eventId: evDoc.id,
+                  eventName: aData.eventName || evData?.title || evData?.name || 'Church Event',
+                  isGuest: Boolean(aData.isGuest),
+                } as AttendanceRecord;
               }
-            } catch {}
+            }
+
+            if (cleanPhone) {
+              try {
+                const phoneSnap = await attRef.where('memberPhone', '==', cleanPhone).limit(1).get();
+                if (!phoneSnap.empty) {
+                  const pDoc = phoneSnap.docs[0];
+                  const aData = pDoc.data();
+                  if (aData && aData.status === 'Present') {
+                    return {
+                      id: pDoc.id,
+                      memberId: aData.memberId || memberId,
+                      memberName: aData.memberName || 'Member',
+                      memberPhone: aData.memberPhone || '',
+                      photoUrl: aData.photoUrl || '',
+                      status: 'Present',
+                      timestamp: aData.timestamp || aData.scannedAt || new Date(),
+                      method: aData.method || 'QR_SCAN',
+                      churchId,
+                      eventId: evDoc.id,
+                      eventName: aData.eventName || evData?.title || evData?.name || 'Church Event',
+                      isGuest: Boolean(aData.isGuest),
+                    } as AttendanceRecord;
+                  }
+                }
+              } catch {}
+            }
+            return null;
+          })
+        );
+
+        for (const rec of subcollectionRecords) {
+          if (rec && rec.eventId) {
+            seenEventIds.add(rec.eventId);
+            list.push(rec);
           }
         }
       } catch (evErr) {

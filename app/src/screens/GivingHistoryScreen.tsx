@@ -43,7 +43,8 @@ import { useLanguage } from '../context/LanguageContext';
 import { RHEMA_CHURCH_ID, RHEMA_ROOT_COLLECTION } from '../constants/ChurchConfig';
 import FirestoreService from '../services/FirestoreService';
 import { formatDateDisplay } from '../utils/DateUtils';
-import { getInstantMemory, readInstantCache, writeInstantCache } from '../utils/instantCache';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../utils/instantCache';
+import { CachedImage } from '../components/CachedImage';
 import ViewShot from 'react-native-view-shot';
 import * as MediaLibrary from 'expo-media-library';
 
@@ -67,7 +68,11 @@ export default function GivingHistoryScreen({ navigation, route }: any) {
   const { t, language } = useLanguage();
   const effectiveChurchId = churchId || activeChurch?.id || RHEMA_CHURCH_ID;
 
-  const historyCacheKey = `giving_history_${effectiveChurchId}_${user?.uid || member?.phone || 'anon'}_v1`;
+  const historyCacheKey = makeScopedCacheKey(
+    'giving_history_v2',
+    effectiveChurchId,
+    user?.uid || member?.phone
+  );
   const initialCachedHistory = getInstantMemory<{
     donations: any[];
     pledges: any[];
@@ -115,91 +120,104 @@ export default function GivingHistoryScreen({ navigation, route }: any) {
       return;
     }
 
-    let hasCached = Boolean(getInstantMemory(historyCacheKey));
-    if (!isRefresh && !hasCached) {
-      const diskHistory = await readInstantCache<{
-        donations: any[];
-        pledges: any[];
-        mandates: any[];
-      }>(historyCacheKey);
-      if (diskHistory?.data) {
-        setDonations(diskHistory.data.donations || []);
-        setPledges(diskHistory.data.pledges || []);
-        setMandates(diskHistory.data.mandates || []);
-        setLoading(false);
-        hasCached = true;
-      }
-    }
+    const memHit = getInstantMemory<{
+      donations: any[];
+      pledges: any[];
+      mandates: any[];
+    }>(historyCacheKey);
 
     if (isRefresh && !silent) {
       setRefreshing(true);
-    } else if (!hasCached && !silent) {
+    } else if (!memHit && !silent) {
       setLoading(true);
     }
 
     try {
-      const [historyResult, pledgesResult, mandatesResult] = await Promise.allSettled([
-        FirestoreService.getMemberDonations(memberPhone, memberUid),
-        memberUid
-          ? firestore()
-              .collection(RHEMA_ROOT_COLLECTION)
-              .doc(effectiveChurchId)
-              .collection('pledges')
-              .where('memberUid', '==', memberUid)
-              .get()
-          : Promise.resolve(null),
-        memberUid
-          ? firestore()
-              .collection(RHEMA_ROOT_COLLECTION)
-              .doc(effectiveChurchId)
-              .collection('recurring_mandates')
-              .where('memberUid', '==', memberUid)
-              .get()
-          : Promise.resolve(null),
-      ]);
+      await loadWithInstantCache<{
+        donations: any[];
+        pledges: any[];
+        mandates: any[];
+      }>({
+        key: historyCacheKey,
+        screenName: 'GivingHistory',
+        freshSkipMs: 90 * 1000,
+        forceRefresh: isRefresh,
+        fetcher: async () => {
+          const [historyResult, pledgesResult, mandatesResult] = await Promise.allSettled([
+            FirestoreService.getMemberDonations(memberPhone, memberUid),
+            memberUid
+              ? firestore()
+                  .collection(RHEMA_ROOT_COLLECTION)
+                  .doc(effectiveChurchId)
+                  .collection('pledges')
+                  .where('memberUid', '==', memberUid)
+                  .limit(50)
+                  .get()
+              : Promise.resolve(null),
+            memberUid
+              ? firestore()
+                  .collection(RHEMA_ROOT_COLLECTION)
+                  .doc(effectiveChurchId)
+                  .collection('recurring_mandates')
+                  .where('memberUid', '==', memberUid)
+                  .limit(50)
+                  .get()
+              : Promise.resolve(null),
+          ]);
 
-      let nextDonations: any[] | null = null;
-      let nextPledges: any[] | null = null;
-      let nextMandates: any[] | null = null;
+          const prevMem = getInstantMemory<{ donations: any[]; pledges: any[]; mandates: any[] }>(historyCacheKey);
 
-      if (historyResult.status === 'fulfilled') {
-        nextDonations = historyResult.value.filter(d => {
-          const st = (d.status || '').toLowerCase();
-          return (
-            st === 'completed' ||
-            st === 'success' ||
-            st === 'approved' ||
-            st === 'paid' ||
-            st === 'confirmed' ||
-            !d.status
-          );
-        });
-        setDonations(nextDonations);
-      }
+          let nextDonations = prevMem?.donations ?? [];
+          if (historyResult.status === 'fulfilled') {
+            nextDonations = historyResult.value.filter(d => {
+              const st = (d.status || '').toLowerCase();
+              return (
+                st === 'completed' ||
+                st === 'success' ||
+                st === 'approved' ||
+                st === 'paid' ||
+                st === 'confirmed' ||
+                !d.status
+              );
+            });
+          }
 
-      if (pledgesResult.status === 'fulfilled' && pledgesResult.value) {
-        nextPledges = pledgesResult.value.docs
-          .map((d: any) => ({ id: d.id, ...d.data() }))
-          .sort((a: any, b: any) => String(b.startDate || '').localeCompare(String(a.startDate || '')));
-        setPledges(nextPledges);
-      }
+          let nextPledges = prevMem?.pledges ?? [];
+          if (pledgesResult.status === 'fulfilled' && pledgesResult.value) {
+            nextPledges = pledgesResult.value.docs
+              .map((d: any) => ({ id: d.id, ...d.data() }))
+              .sort((a: any, b: any) => String(b.startDate || '').localeCompare(String(a.startDate || '')));
+          }
 
-      if (mandatesResult.status === 'fulfilled' && mandatesResult.value) {
-        nextMandates = mandatesResult.value.docs
-          .map((d: any) => ({ id: d.id, ...d.data() }))
-          .sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-        setMandates(nextMandates);
-      }
+          let nextMandates = prevMem?.mandates ?? [];
+          if (mandatesResult.status === 'fulfilled' && mandatesResult.value) {
+            nextMandates = mandatesResult.value.docs
+              .map((d: any) => ({ id: d.id, ...d.data() }))
+              .sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+          }
 
-      const prevMem = getInstantMemory<{ donations: any[]; pledges: any[]; mandates: any[] }>(historyCacheKey);
-      writeInstantCache(historyCacheKey, {
-        donations: nextDonations ?? prevMem?.donations ?? [],
-        pledges: nextPledges ?? prevMem?.pledges ?? [],
-        mandates: nextMandates ?? prevMem?.mandates ?? [],
-      }).catch(() => {});
+          return {
+            donations: nextDonations,
+            pledges: nextPledges,
+            mandates: nextMandates,
+          };
+        },
+        onCached: (cached) => {
+          setDonations(cached.donations || []);
+          setPledges(cached.pledges || []);
+          setMandates(cached.mandates || []);
+          setLoading(false);
+        },
+        onFresh: (fresh) => {
+          setDonations(fresh.donations || []);
+          setPledges(fresh.pledges || []);
+          setMandates(fresh.mandates || []);
+          setLoading(false);
+        },
+      });
     } catch (error) {
       console.error('Error fetching giving history:', error);
-      if (!hasCached && !silent) {
+      if (!memHit && !silent) {
         Alert.alert(t('common.error') || 'Error', t('giving.loadError'));
       }
     } finally {
@@ -277,7 +295,7 @@ export default function GivingHistoryScreen({ navigation, route }: any) {
   useEffect(() => {
     fetchHistory(false, false);
     const unsubFocus = navigation?.addListener?.('focus', () => {
-      fetchHistory(true, true);
+      fetchHistory(false, true);
     });
     return () => {
       if (typeof unsubFocus === 'function') unsubFocus();
@@ -973,7 +991,7 @@ export default function GivingHistoryScreen({ navigation, route }: any) {
                   <View style={[styles.receiptContainer, { backgroundColor: isDark ? '#141416' : '#fff', borderColor: colors.border }]}>
                     <View style={styles.receiptHeader}>
                       {activeChurch?.theme?.logoUrl || (activeChurch as any)?.logoUrl || (activeChurch as any)?.profilePhoto ? (
-                        <Image source={{ uri: activeChurch?.theme?.logoUrl || (activeChurch as any)?.logoUrl || (activeChurch as any)?.profilePhoto }} style={styles.receiptLogo} />
+                        <CachedImage source={{ uri: activeChurch?.theme?.logoUrl || (activeChurch as any)?.logoUrl || (activeChurch as any)?.profilePhoto }} style={styles.receiptLogo} />
                       ) : (
                         <View style={[styles.receiptLogoPlaceholder, { backgroundColor: colors.accent || (isDark ? '#38BDF8' : '#0F766E') }]}>
                           <Text style={styles.receiptLogoText}>{(activeChurch?.name || 'W').charAt(0).toUpperCase()}</Text>

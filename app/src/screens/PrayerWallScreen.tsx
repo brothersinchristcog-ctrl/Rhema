@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  StyleSheet, 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  ScrollView, 
-  TextInput, 
+import {
+  StyleSheet,
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  TextInput,
   FlatList,
   ActivityIndicator,
   Alert,
@@ -16,10 +16,10 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { 
+import {
   ArrowLeft,
-  CheckCircle, 
-  MessageCircle, 
+  CheckCircle,
+  MessageCircle,
   CheckCircle2,
   Trash2,
   ChevronDown,
@@ -28,11 +28,12 @@ import {
   BookOpen
 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
+import { useChurch } from '../context/ChurchContext';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import FirestoreService, { AppMember } from '../services/FirestoreService';
 import { PrayerRequest } from '../types/schema';
-import { getInstantMemory, readInstantCache, writeInstantCache } from '../utils/instantCache';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../utils/instantCache';
 
 interface PrayerFormProps {
   prayerInput: string;
@@ -67,13 +68,13 @@ const getPrayerCategoryLabel = (label: string, t: any) => {
   return label;
 };
 
-const PrayerForm = ({ 
-  prayerInput, 
-  setPrayerInput, 
-  category, 
-  setCategory, 
-  categories, 
-  isSubmitting, 
+const PrayerForm = ({
+  prayerInput,
+  setPrayerInput,
+  category,
+  setCategory,
+  categories,
+  isSubmitting,
   handleSubmit,
   isPublic,
   setIsPublic
@@ -89,21 +90,21 @@ const PrayerForm = ({
       </View>
       <View style={styles.composeBody}>
         <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('prayer.selectCategory')}</Text>
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false} 
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.catList}
         >
           {categories.map((cat) => {
             const isCatSelected = category === cat.label;
             return (
-              <TouchableOpacity 
+              <TouchableOpacity
                 key={cat.label}
                 style={[
-                  styles.catBtn, 
-                  { 
-                    backgroundColor: isCatSelected ? (isDark ? '#FFFFFF' : '#0F172A') : colors.background, 
-                    borderColor: isCatSelected ? (isDark ? '#FFFFFF' : '#0F172A') : colors.border 
+                  styles.catBtn,
+                  {
+                    backgroundColor: isCatSelected ? (isDark ? '#FFFFFF' : '#0F172A') : colors.background,
+                    borderColor: isCatSelected ? (isDark ? '#FFFFFF' : '#0F172A') : colors.border
                   }
                 ]}
                 onPress={() => setCategory(cat.label)}
@@ -135,7 +136,7 @@ const PrayerForm = ({
 
         {/* Public Toggle & Submit Request on Same Line */}
         <View style={styles.composeFooter}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.toggleContainer}
             onPress={() => setIsPublic(!isPublic)}
             activeOpacity={0.7}
@@ -146,7 +147,7 @@ const PrayerForm = ({
             </View>
           </TouchableOpacity>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.submitBtn, { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }, isSubmitting && { opacity: 0.7 }]}
             onPress={handleSubmit}
             disabled={isSubmitting}
@@ -155,7 +156,7 @@ const PrayerForm = ({
             {isSubmitting ? (
               <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
             ) : (
-              <Text 
+              <Text
                 style={[styles.submitBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}
                 numberOfLines={1}
                 adjustsFontSizeToFit
@@ -174,19 +175,23 @@ const PrayerForm = ({
 export default function PrayerWallScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
   const { user, member: authMember } = useAuth();
+  const { churchId } = useChurch();
   const { isDark, toggleTheme, colors } = useTheme();
   const { t } = useLanguage();
-  const prayerCacheKey = `prayers_list_${user?.uid || 'guest'}_v1`;
-  const [member, setMember] = useState<AppMember | null>(null);
-  const [prayers, setPrayers] = useState<PrayerRequest[]>(
-    () => getInstantMemory<PrayerRequest[]>(prayerCacheKey) || []
+  const prayerCacheKey = makeScopedCacheKey(
+    'prayers_list_v2',
+    churchId,
+    user?.uid || authMember?.id || 'guest'
   );
+  const initialPrayers = getInstantMemory<PrayerRequest[]>(prayerCacheKey);
+  const [member, setMember] = useState<AppMember | null>(authMember as AppMember | null);
+  const [prayers, setPrayers] = useState<PrayerRequest[]>(() => initialPrayers || []);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [prayedSet, setPrayedSet] = useState(new Set<string>());
-  const [replyInputs, setReplyInputs] = useState<{[key: string]: string}>({});
+  const [replyInputs, setReplyInputs] = useState<{ [key: string]: string }>({});
   const [submittingReplyId, setSubmittingReplyId] = useState<string | null>(null);
-  
+
   // Form State
   const [prayerInput, setPrayerInput] = useState('');
   const [category, setCategory] = useState('Pray for me');
@@ -228,18 +233,23 @@ export default function PrayerWallScreen({ navigation, route }: any) {
 
   const fetchPrayers = async (contactId?: string, isRefreshing = false) => {
     try {
-      if (!isRefreshing && !getInstantMemory<PrayerRequest[]>(prayerCacheKey)) {
-        const diskCached = await readInstantCache<PrayerRequest[]>(prayerCacheKey);
-        if (diskCached?.data?.length) {
-          setPrayers(diskCached.data);
-          syncPrayedSetFromList(diskCached.data);
+      await loadWithInstantCache<PrayerRequest[]>({
+        key: prayerCacheKey,
+        screenName: 'PrayerWall',
+        freshSkipMs: 60 * 1000,
+        forceRefresh: isRefreshing,
+        fetcher: () => FirestoreService.getPrayerRequests({ contactId }),
+        onCached: (cached) => {
+          setPrayers(cached);
+          syncPrayedSetFromList(cached);
           setLoading(false);
-        }
-      }
-      const data = await FirestoreService.getPrayerRequests({ contactId });
-      setPrayers(data);
-      syncPrayedSetFromList(data);
-      writeInstantCache(prayerCacheKey, data).catch(() => {});
+        },
+        onFresh: (data) => {
+          setPrayers(data);
+          syncPrayedSetFromList(data);
+          setLoading(false);
+        },
+      });
     } catch (error) {
       console.error('Error fetching prayers:', error);
     } finally {
@@ -254,18 +264,22 @@ export default function PrayerWallScreen({ navigation, route }: any) {
       if (authMember && !member) {
         setMember(authMember as AppMember);
       }
-      // Render cached prayers from disk/RAM immediately and query with known member id
-      fetchPrayers(knownMemberId || undefined, false);
-      if (!knownMemberId && user?.phoneNumber) {
+      if (knownMemberId) {
+        fetchPrayers(knownMemberId, false);
+        return;
+      }
+      if (user?.phoneNumber) {
         const result = await FirestoreService.checkContactExists(user.phoneNumber);
         if (result?.exists && result.member) {
           setMember(result.member);
           fetchPrayers(result.member.id, false);
+          return;
         }
       }
+      fetchPrayers(undefined, false);
     };
     init();
-  }, [user, authMember?.id]);
+  }, [user?.uid, user?.phoneNumber, authMember?.id, churchId]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -297,7 +311,7 @@ export default function PrayerWallScreen({ navigation, route }: any) {
         type: isPublic ? 'public' : 'private',
         isPublic: isPublic
       });
-      
+
       setShowSuccess(true);
       setPrayerInput('');
       fetchPrayers(member?.id || undefined, true);
@@ -311,9 +325,9 @@ export default function PrayerWallScreen({ navigation, route }: any) {
   const getTimeAgo = (rawDate: any) => {
     try {
       // Firestore Timestamp has a .toDate() method
-      const date: Date = rawDate?.toDate ? rawDate.toDate() 
-        : rawDate instanceof Date ? rawDate 
-        : new Date(rawDate);
+      const date: Date = rawDate?.toDate ? rawDate.toDate()
+        : rawDate instanceof Date ? rawDate
+          : new Date(rawDate);
 
       if (!date || isNaN(date.getTime())) return 'Recently';
 
@@ -337,7 +351,7 @@ export default function PrayerWallScreen({ navigation, route }: any) {
   const handleReplySubmit = async (caseId: string) => {
     const comment = replyInputs[caseId]?.trim();
     if (!comment) return;
-    
+
     setSubmittingReplyId(caseId);
     try {
       const authorName = member?.name || user?.displayName || 'Member';
@@ -357,8 +371,8 @@ export default function PrayerWallScreen({ navigation, route }: any) {
       t('prayer.deleteRequestConfirm'),
       [
         { text: t('common.cancel'), style: 'cancel' },
-        { 
-          text: t('common.delete'), 
+        {
+          text: t('common.delete'),
           style: 'destructive',
           onPress: async () => {
             try {
@@ -542,7 +556,7 @@ export default function PrayerWallScreen({ navigation, route }: any) {
               </View>
             )}
             {isOwner && (
-              <TouchableOpacity onPress={() => handleDelete(item.id)} hitSlop={{top:8,bottom:8,left:8,right:8}}>
+              <TouchableOpacity onPress={() => handleDelete(item.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                 <Trash2 size={18} color="#ef4444" />
               </TouchableOpacity>
             )}
@@ -652,7 +666,7 @@ export default function PrayerWallScreen({ navigation, route }: any) {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar barStyle={colors.barStyle} backgroundColor={colors.background} />
-      
+
       {/* ── Screen Header (Clean back button & title) ── */}
       <View
         style={[
@@ -682,10 +696,10 @@ export default function PrayerWallScreen({ navigation, route }: any) {
 
       <FlatList
         style={{ flex: 1, backgroundColor: colors.background }}
-        data={activeTab === 'my_requests' 
-          ? prayers.filter(p => 
-              p.contactId === member?.id || p.authorId === member?.id
-            ) 
+        data={activeTab === 'my_requests'
+          ? prayers.filter(p =>
+            p.contactId === member?.id || p.authorId === member?.id
+          )
           : prayers.filter(p => p.isPublic && p.isAnswered && !p.isClosed)}
         renderItem={renderPrayerItem}
         keyExtractor={item => item.id}
@@ -695,21 +709,21 @@ export default function PrayerWallScreen({ navigation, route }: any) {
         ListHeaderComponent={
           <View>
             <View style={[
-              styles.tabsContainer, 
-              { 
-                backgroundColor: isDark ? '#18181B' : '#F1F5F9', 
-                borderColor: isDark ? '#27272A' : '#E2E8F0', 
-                borderWidth: 1, 
-                marginTop: 18 
+              styles.tabsContainer,
+              {
+                backgroundColor: isDark ? '#18181B' : '#F1F5F9',
+                borderColor: isDark ? '#27272A' : '#E2E8F0',
+                borderWidth: 1,
+                marginTop: 18
               }
             ]}>
               {/* My Prayers Button */}
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[
-                  styles.tabBtn, 
+                  styles.tabBtn,
                   activeTab === 'my_requests' && [
                     styles.tabBtnActive,
-                    { 
+                    {
                       backgroundColor: isDark ? '#FFFFFF' : '#0F172A',
                       shadowColor: '#000',
                       shadowOpacity: isDark ? 0.3 : 0.12,
@@ -722,10 +736,10 @@ export default function PrayerWallScreen({ navigation, route }: any) {
                 activeOpacity={0.8}
               >
                 <Text style={[
-                  styles.tabBtnText, 
-                  { 
-                    color: activeTab === 'my_requests' 
-                      ? (isDark ? '#000000' : '#FFFFFF') 
+                  styles.tabBtnText,
+                  {
+                    color: activeTab === 'my_requests'
+                      ? (isDark ? '#000000' : '#FFFFFF')
                       : (isDark ? '#A1A1AA' : '#64748B'),
                     fontWeight: activeTab === 'my_requests' ? '800' : '600',
                   }
@@ -735,12 +749,12 @@ export default function PrayerWallScreen({ navigation, route }: any) {
               </TouchableOpacity>
 
               {/* All Prayers Button */}
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[
-                  styles.tabBtn, 
+                  styles.tabBtn,
                   activeTab === 'public_requests' && [
                     styles.tabBtnActive,
-                    { 
+                    {
                       backgroundColor: isDark ? '#FFFFFF' : '#0F172A',
                       shadowColor: '#000',
                       shadowOpacity: isDark ? 0.3 : 0.12,
@@ -753,10 +767,10 @@ export default function PrayerWallScreen({ navigation, route }: any) {
                 activeOpacity={0.8}
               >
                 <Text style={[
-                  styles.tabBtnText, 
-                  { 
-                    color: activeTab === 'public_requests' 
-                      ? (isDark ? '#000000' : '#FFFFFF') 
+                  styles.tabBtnText,
+                  {
+                    color: activeTab === 'public_requests'
+                      ? (isDark ? '#000000' : '#FFFFFF')
                       : (isDark ? '#A1A1AA' : '#64748B'),
                     fontWeight: activeTab === 'public_requests' ? '800' : '600',
                   }
@@ -766,7 +780,7 @@ export default function PrayerWallScreen({ navigation, route }: any) {
               </TouchableOpacity>
             </View>
             {activeTab === 'my_requests' && (
-              <PrayerForm 
+              <PrayerForm
                 prayerInput={prayerInput}
                 setPrayerInput={setPrayerInput}
                 category={category}
@@ -811,7 +825,7 @@ const styles = StyleSheet.create({
   loadingText: { color: '#1a2d5a', marginTop: 15, fontWeight: '600' },
 
   // Header
-    headerRow: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -908,10 +922,10 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   headerSub: { color: '#aac4e8', fontSize: 12, marginTop: 2 },
-  themeToggle: { 
-    backgroundColor: 'rgba(255,255,255,0.1)', 
-    paddingHorizontal: 12, 
-    paddingVertical: 6, 
+  themeToggle: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)'
@@ -920,11 +934,11 @@ const styles = StyleSheet.create({
   listContainer: { paddingBottom: 150 },
 
   // Compose Card
-  composeCard: { 
-    marginHorizontal: 16, 
+  composeCard: {
+    marginHorizontal: 16,
     marginVertical: 14,
-    backgroundColor: '#fff', 
-    borderRadius: 24, 
+    backgroundColor: '#fff',
+    borderRadius: 24,
     overflow: 'hidden',
     elevation: 8,
     shadowColor: '#1a2d5a',
@@ -933,25 +947,25 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e2e8f0'
   },
-  composeHeader: { 
-    backgroundColor: 'transparent', 
-    paddingVertical: 14, 
-    paddingHorizontal: 20, 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    gap: 10 
+  composeHeader: {
+    backgroundColor: 'transparent',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
   },
   composeHeaderText: { fontSize: 13, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
   composeBody: { padding: 16 },
   inputLabel: { fontSize: 12, fontWeight: '800', color: '#1e293b', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 },
-  
+
   catList: { gap: 10, paddingBottom: 12 },
-  catBtn: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    backgroundColor: '#FAF7F2', 
-    paddingHorizontal: 14, 
-    paddingVertical: 8, 
+  catBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FAF7F2',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 25,
     borderWidth: 1.5,
     borderColor: '#f1f5f9',
@@ -962,24 +976,24 @@ const styles = StyleSheet.create({
   catLabel: { fontSize: 12.5, color: '#475569', fontWeight: '700' },
   catLabelActive: { color: '#fff' },
 
-  composeInput: { 
-    width: '100%', 
-    backgroundColor: '#FAF7F2', 
-    borderRadius: 16, 
-    padding: 14, 
-    fontSize: 14.5, 
+  composeInput: {
+    width: '100%',
+    backgroundColor: '#FAF7F2',
+    borderRadius: 16,
+    padding: 14,
+    fontSize: 14.5,
     lineHeight: 22,
-    color: '#1e293b', 
-    borderWidth: 1.5, 
+    color: '#1e293b',
+    borderWidth: 1.5,
     borderColor: '#e2e8f0',
-    minHeight: 120, 
+    minHeight: 120,
     textAlignVertical: 'top',
     marginBottom: 4,
     shadowColor: '#000',
     shadowOpacity: 0.02,
     shadowRadius: 3,
   },
-  
+
   composeFooter: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1033,7 +1047,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 10,
   },
-  tabBtnActive: { 
+  tabBtnActive: {
     elevation: 3,
   },
   tabBtnText: { fontSize: 13.5, fontWeight: '700' },
@@ -1051,11 +1065,11 @@ const styles = StyleSheet.create({
   },
   quickReplyText: { fontSize: 13, fontWeight: '600', color: '#475569' },
 
-  submitBtn: { 
-    backgroundColor: '#1a2d5a', 
-    paddingHorizontal: 12, 
-    paddingVertical: 10, 
-    borderRadius: 14, 
+  submitBtn: {
+    backgroundColor: '#1a2d5a',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
     elevation: 4,
     shadowColor: '#1a2d5a',
     shadowOpacity: 0.3,
@@ -1068,11 +1082,11 @@ const styles = StyleSheet.create({
   submitBtnText: { color: '#fff', fontSize: 13, fontWeight: '800', textAlign: 'center' },
 
   // Prayer Card
-  prayerCard: { 
-    backgroundColor: '#fff', 
-    borderRadius: 22, 
-    padding: 18, 
-    marginHorizontal: 20, 
+  prayerCard: {
+    backgroundColor: '#fff',
+    borderRadius: 22,
+    padding: 18,
+    marginHorizontal: 20,
     marginBottom: 16,
     elevation: 4,
     shadowColor: '#1a2d5a',
@@ -1094,7 +1108,7 @@ const styles = StyleSheet.create({
   countText: { fontSize: 11, color: '#16a34a', fontWeight: '700' },
   countTextAnswered: { color: '#059669', backgroundColor: '#f0fdf4' },
   metaText: { fontSize: 12, color: '#94a3b8', marginTop: 2 },
-  
+
   textContainer: { backgroundColor: '#FAF7F2', padding: 18, borderRadius: 18, marginBottom: 15, borderWidth: 1, borderColor: '#f1f5f9' },
   textContainerAnswered: { backgroundColor: '#f8fafc', borderLeftWidth: 3, borderLeftColor: '#10b981' },
   prayerText: { fontSize: 15, color: '#1e293b', lineHeight: 24, marginTop: 10, marginBottom: 16 },
@@ -1190,13 +1204,13 @@ const styles = StyleSheet.create({
   },
 
   cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  iprayedBtn: { 
-    backgroundColor: '#f1f5f9', 
-    paddingHorizontal: 18, 
-    paddingVertical: 10, 
-    borderRadius: 12, 
-    flexDirection: 'row', 
-    alignItems: 'center', 
+  iprayedBtn: {
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
     borderWidth: 1,
     borderColor: '#e2e8f0'
@@ -1221,22 +1235,22 @@ const styles = StyleSheet.create({
   doneBtnTxt: { color: '#fff', fontSize: 17, fontWeight: '800', letterSpacing: 1 },
 
   // Wall Section Header
-  wallSectionHeader: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    marginVertical: 15, 
-    paddingHorizontal: 20 
+  wallSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 15,
+    paddingHorizontal: 20
   },
-  wallHeaderLine: { 
-    flex: 1, 
-    height: 1, 
-    backgroundColor: '#e2e8f0' 
+  wallHeaderLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#e2e8f0'
   },
-  wallHeaderText: { 
-    marginHorizontal: 15, 
-    fontSize: 11, 
-    fontWeight: '800', 
-    color: '#1a2d5a', 
+  wallHeaderText: {
+    marginHorizontal: 15,
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#1a2d5a',
     letterSpacing: 1.5,
     textTransform: 'uppercase'
   }

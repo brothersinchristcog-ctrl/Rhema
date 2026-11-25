@@ -1337,145 +1337,6 @@ class FirestoreService {
     }
   }
 
-  /**
-   * Redeem a Voucher Code for a Church
-   * Tries Cloud Function first; if not reachable, runs atomic client Firestore transaction.
-   */
-  async redeemVoucher({
-    code,
-    churchId,
-    churchName,
-    userId,
-    userName,
-  }: {
-    code: string;
-    churchId: string;
-    churchName?: string;
-    userId?: string;
-    userName?: string;
-  }) {
-    const normalizedCode = code.trim().toUpperCase().replace(/\s+/g, '');
-
-    // 1. Try Cloud Function
-    try {
-      const { functions } = require('./firebaseConfig');
-      const redeemFn = functions().httpsCallable('redeemVoucherV1');
-      const response = await redeemFn({
-        code: normalizedCode,
-        churchId,
-        churchName,
-        userId,
-        userName,
-      });
-      if (response?.data) return response.data;
-    } catch (cfError: any) {
-      console.log('Cloud Function unavailable, running atomic client transaction fallback...', cfError?.message);
-    }
-
-    // 2. Client Firestore Atomic Transaction Fallback
-    return await firestore().runTransaction(async (transaction) => {
-      const voucherRef = firestore().collection('vouchers').doc(normalizedCode);
-      const churchRef = firestore().collection('Rhema Church').doc(churchId);
-
-      const voucherDoc = await transaction.get(voucherRef);
-      if (!voucherDoc.exists) {
-        throw new Error('Invalid voucher code. Please check and try again.');
-      }
-
-      const voucherData = voucherDoc.data();
-      if (!voucherData) throw new Error('Voucher data is empty.');
-
-      if (voucherData.status === 'redeemed') {
-        throw new Error('This voucher code has already been redeemed.');
-      }
-      if (voucherData.status === 'disabled') {
-        throw new Error('This voucher code has been disabled. Please contact support.');
-      }
-
-      const now = new Date();
-      if (voucherData.voucherExpiryDate) {
-        const expDate = new Date(voucherData.voucherExpiryDate);
-        if (expDate < now) {
-          throw new Error(`This voucher expired on ${expDate.toLocaleDateString()} and cannot be used.`);
-        }
-      }
-
-      const churchDoc = await transaction.get(churchRef);
-      if (!churchDoc.exists) {
-        throw new Error('Church record not found.');
-      }
-
-      const churchData = churchDoc.data();
-      let baseDate = now;
-      const currentValidUntil = churchData?.subscription?.validUntil;
-      const trialEndsAt = churchData?.subscription?.trialEndsAt;
-
-      if (currentValidUntil && new Date(currentValidUntil) > now) {
-        baseDate = new Date(currentValidUntil);
-      } else if (trialEndsAt && new Date(trialEndsAt) > now) {
-        baseDate = new Date(trialEndsAt);
-      } else if (churchData?.createdAt) {
-        const createdDate = churchData.createdAt.toDate ? churchData.createdAt.toDate() : new Date(churchData.createdAt);
-        const trialEnd = new Date(createdDate.getTime() + 60 * 24 * 60 * 60 * 1000);
-        if (trialEnd > now) baseDate = trialEnd;
-      }
-
-      const durationDays = voucherData.durationDays || 365;
-      const newExpiry = new Date(baseDate.getTime() + durationDays * 24 * 60 * 60 * 1000);
-      const redemptionDateIso = now.toISOString();
-      const newExpiryIso = newExpiry.toISOString();
-      const transactionId = `VOUCHER_${normalizedCode}_${Date.now()}`;
-
-      // Update Voucher
-      transaction.update(voucherRef, {
-        status: 'redeemed',
-        redeemedAt: redemptionDateIso,
-        redeemedChurchId: churchId,
-        redeemedChurchName: churchName || churchData?.name || 'Church',
-        redeemedByUserId: userId || null,
-        redeemedByUserName: userName || 'Admin',
-      });
-
-      // Update Church
-      transaction.update(churchRef, {
-        'subscription.status': 'active',
-        'subscription.tier': 'premium',
-        'subscriptionTier': 'premium',
-        'subscription.validUntil': newExpiryIso,
-        'subscription.lastVoucherCode': normalizedCode,
-        'subscription.voucherRedeemedAt': redemptionDateIso,
-        'subscription.lastPaymentId': transactionId,
-        'isActive': true,
-      });
-
-      // Add subscription audit record
-      const receiptRef = churchRef.collection('subscriptions').doc(transactionId);
-      transaction.set(receiptRef, {
-        type: 'voucher',
-        voucherCode: normalizedCode,
-        plan: 'annual',
-        amount: 0,
-        status: 'active',
-        durationDays,
-        validUntil: newExpiryIso,
-        paidAt: redemptionDateIso,
-        paymentId: transactionId,
-        redeemedBy: userId || null,
-        redeemedByName: userName || 'Church Admin',
-        notes: `Redeemed Voucher: ${normalizedCode} (${durationDays} Days Subscription)`,
-        platform: 'mobile',
-      });
-
-      return {
-        success: true,
-        message: `Voucher ${normalizedCode} applied successfully! Subscription active until ${newExpiry.toLocaleDateString()}.`,
-        validUntil: newExpiryIso,
-        voucherCode: normalizedCode,
-        durationDays,
-      };
-    });
-  }
-
   // --- 👤 Global User & Member Logic ---
 
   async getGlobalUser(uid: string): Promise<GlobalUser | null> {
@@ -1550,22 +1411,6 @@ class FirestoreService {
               }
             }
           }
-        }
-      } catch (err) {
-        // Continue
-      }
-
-      // 4. Direct check in members
-      try {
-        const memDoc = await firestore()
-          .collection(RHEMA_ROOT_COLLECTION)
-          .doc(targetChurchId)
-          .collection('members')
-          .doc(uid)
-          .get();
-        if (memDoc.exists()) {
-          const data = memDoc.data();
-          return { uid: memDoc.id, primaryChurchId: targetChurchId, ...data } as GlobalUser;
         }
       } catch (err) {
         // Continue
@@ -1682,7 +1527,8 @@ class FirestoreService {
           .doc(last10)
           .get()
           .catch(() => null);
-        const indexedId = indexDoc?.exists() ? indexDoc.data()?.memberId : null;
+        const indexData = indexDoc?.exists() ? indexDoc.data() : null;
+        const indexedId = indexData?.memberDocId || indexData?.memberId || null;
         if (indexedId) {
           const mDoc = await membersRef.doc(indexedId).get().catch(() => null);
           if (mDoc?.exists()) {
@@ -2280,10 +2126,23 @@ class FirestoreService {
       const currentExists = typeof currentDoc.exists === 'function' ? currentDoc.exists() : currentDoc.exists;
       const currentData = currentExists ? (currentDoc.data() || {}) : {};
 
-      const snap = await membersRef.get();
-      let adminContactDoc: any = null;
+      const possibleFormats = Array.from(
+        new Set([last10, `+91${last10}`, `91${last10}`, `0${last10}`, phone.trim(), `+91 ${last10}`].filter(Boolean))
+      ).slice(0, 10);
+      const phoneFields = ['phone', 'phoneNumber', 'mobile', 'MobilePhone', 'contactNumber'];
+      const settledDocs = await Promise.allSettled(
+        phoneFields.map((field) => membersRef.where(field, 'in', possibleFormats).get())
+      );
 
-      for (const d of snap.docs) {
+      let adminContactDoc: any = null;
+      const candidateDocs: any[] = [];
+      settledDocs.forEach((res) => {
+        if (res.status === 'fulfilled') {
+          res.value.docs.forEach((d) => candidateDocs.push(d));
+        }
+      });
+
+      for (const d of candidateDocs) {
         if (d.id === uid) continue;
         const data = d.data();
         const candidates = [data.phone, data.phoneNumber, data.mobile, data.MobilePhone, data.contactNumber];
@@ -2373,9 +2232,15 @@ class FirestoreService {
     }
   }
 
-  async getRelatedContacts(churchId: string, accountId: string): Promise<any[]> {
+  async getRelatedContacts(churchId: string, accountId: string, limitCount = 50): Promise<any[]> {
     try {
-      const snapshot = await firestore().collection('Rhema Church').doc(churchId).collection('members').where('accountId', '==', accountId).get();
+      const snapshot = await firestore()
+        .collection('Rhema Church')
+        .doc(churchId)
+        .collection('members')
+        .where('accountId', '==', accountId)
+        .limit(limitCount)
+        .get();
       return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     } catch (e) {
       return [];
@@ -2791,13 +2656,20 @@ class FirestoreService {
    * 
    * Returns the count of sermons published.
    */
-  async autoPublishDueScheduledSermons(): Promise<number> {
+  private autoPublishLastRunByChurch = new Map<string, number>();
+
+  async autoPublishDueScheduledSermons(force = false): Promise<number> {
     try {
+      const churchId = (await this.getChurchId()) || RHEMA_CHURCH_ID;
+      const lastRun = this.autoPublishLastRunByChurch.get(churchId) || 0;
+      if (!force && Date.now() - lastRun < 10 * 60_000) {
+        return 0;
+      }
+      this.autoPublishLastRunByChurch.set(churchId, Date.now());
+
       const col = await this.getCollection('sermons');
       const snap = await col.where('status', '==', 'Scheduled').get();
       if (!snap || snap.empty) return 0;
-
-      const churchId = await this.getChurchId();
       let publishedCount = 0;
       const now = new Date();
       const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -3030,10 +2902,20 @@ class FirestoreService {
   // In-memory cache to avoid re-fetching on tab switches
   private _worshipSongsCache: WorshipSong[] | null = null;
   private _worshipSongsCacheChurchId: string | null = null;
+  private _celebrationsCache = new Map<string, { ts: number; list: any[] }>();
+  private _celebrationsInFlight = new Map<string, Promise<any[]>>();
 
   clearWorshipSongsCache() {
     this._worshipSongsCache = null;
     this._worshipSongsCacheChurchId = null;
+  }
+
+  clearMemberCaches() {
+    this.clearWorshipSongsCache();
+    this.contactExistsCache.clear();
+    this._celebrationsCache.clear();
+    this._celebrationsInFlight.clear();
+    this.autoPublishLastRunByChurch.clear();
   }
 
   async getWorshipSongs(options?: { forceRefresh?: boolean; limit?: number; offset?: number }): Promise<WorshipSong[]> {
@@ -3083,9 +2965,14 @@ class FirestoreService {
         try {
           finalSongs = await fetchFromSource('cache');
           if (finalSongs.length === 0) throw new Error('Empty cache');
-          
-          // Background fetch to ensure cache stays warm
-          fetchFromSource('server').catch(() => {});
+
+          // Background fetch to refresh both disk cache and RAM cache
+          fetchFromSource('server')
+            .then((freshSongs) => {
+              this._worshipSongsCache = freshSongs;
+              this._worshipSongsCacheChurchId = churchId;
+            })
+            .catch(() => {});
         } catch (e) {
           finalSongs = await fetchFromSource('server');
         }
@@ -3143,7 +3030,7 @@ class FirestoreService {
   }
 
   // --- 🎙️ Sermon Categories ---
-  async getSermonCategories(): Promise<string[]> {
+  async getSermonCategories(existingSermons?: Sermon[]): Promise<string[]> {
     const defaults = [
       'Bible Study',
       "Women's Fasting Prayer",
@@ -3171,8 +3058,10 @@ class FirestoreService {
         }
       }
 
-      // Also harvest any categories from existing sermons so none are ever missed
-      const sermons = await this.getSermons(100);
+      // Reuse already-fetched sermons when provided to prevent duplicate full-collection reads
+      const sermons = existingSermons && existingSermons.length > 0
+        ? existingSermons
+        : await this.getSermons(100);
       sermons.forEach((s: any) => {
         if (typeof s.categories === 'string') {
           s.categories.split(';').forEach((c: string) => {
@@ -3226,9 +3115,11 @@ class FirestoreService {
       const cleanData = Object.fromEntries(Object.entries(data).filter(([_, v]) => v !== undefined));
       if (cleanData.id) {
         await col.doc(cleanData.id as string).set({ ...cleanData, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        this.clearWorshipSongsCache();
         return cleanData.id;
       } else {
         const docRef = await col.add({ ...cleanData, createdAt: FieldValue.serverTimestamp() });
+        this.clearWorshipSongsCache();
         return docRef.id;
       }
     } catch (e) {
@@ -3249,11 +3140,13 @@ class FirestoreService {
           isHidden: true,
           createdAt: FieldValue.serverTimestamp()
         });
+        this.clearWorshipSongsCache();
         return true;
       }
 
       const col = await this.getCollection('worshipSongs');
       await col.doc(id).delete();
+      this.clearWorshipSongsCache();
       return true;
     } catch (e) {
       throw e;
@@ -3279,12 +3172,14 @@ class FirestoreService {
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp()
         });
+        this.clearWorshipSongsCache();
         return true;
       }
 
       const col = await this.getCollection('worshipSongs');
       const cleanData = Object.fromEntries(Object.entries(data).filter(([_, v]) => v !== undefined));
       await col.doc(id).update({ ...cleanData, updatedAt: FieldValue.serverTimestamp() });
+      this.clearWorshipSongsCache();
       return true;
     } catch (e) {
       throw e;
@@ -3928,10 +3823,15 @@ class FirestoreService {
     }
   }
 
-  async getDailyPromisesArchive(): Promise<DailyPromise[]> {
+  async getDailyPromisesArchive(limitCount = 60): Promise<DailyPromise[]> {
     try {
       const col = await this.getCollection('promises');
-      const snapshot = await col.get();
+      let snapshot;
+      try {
+        snapshot = await col.orderBy('date', 'desc').limit(limitCount).get();
+      } catch {
+        snapshot = await col.limit(limitCount).get();
+      }
       return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DailyPromise));
     } catch (e) {
       return [];
@@ -4042,14 +3942,40 @@ class FirestoreService {
 
   // --- 📅 Events ---
 
-  async getEvents(): Promise<ScheduleEvent[]> {
+  async getEvents(limitCount = 150): Promise<ScheduleEvent[]> {
     try {
       const col = await this.getCollection('events');
-      const snapshot = await col.get();
+      let snapshot;
+      try {
+        snapshot = await col.orderBy('date', 'desc').limit(limitCount).get();
+      } catch {
+        snapshot = await col.limit(limitCount).get();
+      }
       return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ScheduleEvent));
     } catch (e) {
       console.error('Error fetching events:', e);
       return [];
+    }
+  }
+
+  async getEventById(eventId: string, churchId?: string): Promise<ScheduleEvent | null> {
+    if (!eventId) return null;
+    try {
+      const targetChurch = churchId || (await this.getChurchId()) || RHEMA_CHURCH_ID;
+      const snap = await firestore()
+        .collection(RHEMA_ROOT_COLLECTION)
+        .doc(targetChurch)
+        .collection('events')
+        .doc(eventId)
+        .get();
+      const exists = typeof snap.exists === 'function' ? snap.exists() : snap.exists;
+      if (exists) {
+        return { id: snap.id, ...snap.data() } as ScheduleEvent;
+      }
+      return null;
+    } catch (e) {
+      console.error('Error fetching event by id:', e);
+      return null;
     }
   }
 
@@ -4633,37 +4559,57 @@ class FirestoreService {
       return dateStr;
     };
 
-    try {
-      const col = await this.getCollection('members');
-      const snapshot = await col.get();
-      return snapshot.docs.map(doc => {
-        const data = doc.data();
-        const directPhone = data.phone || data.mobile || '';
-        const refPhone = data.referencePhone || data.referenceNumber || '';
-        // For kids without a personal phone, use the parent reference phone as the effective contact
-        const effectivePhone = directPhone || refPhone;
-        return {
-          ...data,
-          Id: doc.id,
-          Name: data.name || (data.firstName ? data.firstName + ' ' + (data.lastName || '') : 'Unknown'),
-          Phone: effectivePhone,
-          // Preserve the raw phone fields for display/logic purposes
-          directPhone: directPhone,
-          referencePhone: refPhone,
-          isReferencePhone: !directPhone && !!refPhone, // true if phone is a parent reference
-          Birthdate: normalizeDate(data.dob || data.birthdate || data.dateOfBirth || data.birthday), // always YYYY-MM-DD
-          allBirthdates: [normalizeDate(data.dob), normalizeDate(data.birthdate), normalizeDate(data.dateOfBirth), normalizeDate(data.birthday)].filter(Boolean),
-          Anniversary_Date__c: normalizeDate(data.marriageDate || data.anniversaryDate || data.anniversary), // always YYYY-MM-DD
-          Baptism_Date__c: normalizeDate(data.baptismDate || data.baptism), // always YYYY-MM-DD
-          Gender__c: data.gender || data.Gender__c,
-          AccountId: data.accountId || data.familyId || doc.id,
-          ProfilePhoto: data.profilePhoto || data.photoURL || data.photoUrl || data.profileImageUrl || null
-        };
-      });
-    } catch (e) {
-      console.error('Error fetching celebrations:', e);
-      return [];
+    const churchKey = (await this.getChurchId()) || RHEMA_CHURCH_ID;
+    const cached = this._celebrationsCache.get(churchKey);
+    if (cached && Date.now() - cached.ts < 5 * 60_000) {
+      return cached.list;
     }
+
+    const existingPromise = this._celebrationsInFlight.get(churchKey);
+    if (existingPromise) {
+      return existingPromise;
+    }
+
+    const fetchPromise = (async () => {
+      try {
+        const col = firestore().collection(RHEMA_ROOT_COLLECTION).doc(churchKey).collection('members');
+        const snapshot = await col.get();
+        const mapped = snapshot.docs.map(doc => {
+          const data = doc.data();
+          const directPhone = data.phone || data.mobile || '';
+          const refPhone = data.referencePhone || data.referenceNumber || '';
+          // For kids without a personal phone, use the parent reference phone as the effective contact
+          const effectivePhone = directPhone || refPhone;
+          return {
+            ...data,
+            Id: doc.id,
+            Name: data.name || (data.firstName ? data.firstName + ' ' + (data.lastName || '') : 'Unknown'),
+            Phone: effectivePhone,
+            // Preserve the raw phone fields for display/logic purposes
+            directPhone: directPhone,
+            referencePhone: refPhone,
+            isReferencePhone: !directPhone && !!refPhone, // true if phone is a parent reference
+            Birthdate: normalizeDate(data.dob || data.birthdate || data.dateOfBirth || data.birthday), // always YYYY-MM-DD
+            allBirthdates: [normalizeDate(data.dob), normalizeDate(data.birthdate), normalizeDate(data.dateOfBirth), normalizeDate(data.birthday)].filter(Boolean),
+            Anniversary_Date__c: normalizeDate(data.marriageDate || data.anniversaryDate || data.anniversary), // always YYYY-MM-DD
+            Baptism_Date__c: normalizeDate(data.baptismDate || data.baptism), // always YYYY-MM-DD
+            Gender__c: data.gender || data.Gender__c,
+            AccountId: data.accountId || data.familyId || doc.id,
+            ProfilePhoto: data.profilePhoto || data.photoURL || data.photoUrl || data.profileImageUrl || null
+          };
+        });
+        this._celebrationsCache.set(churchKey, { ts: Date.now(), list: mapped });
+        return mapped;
+      } catch (e) {
+        console.error('Error fetching celebrations:', e);
+        return [];
+      } finally {
+        this._celebrationsInFlight.delete(churchKey);
+      }
+    })();
+
+    this._celebrationsInFlight.set(churchKey, fetchPromise);
+    return fetchPromise;
   }
 
   async getTodayBirthdays() {
@@ -5332,22 +5278,30 @@ class FirestoreService {
     try {
       if (!churchId) return [];
       const db = firestore();
-      const snap = await db.collection(RHEMA_ROOT_COLLECTION).doc(churchId).collection('baptism_requests').get();
-      const list: BaptismRequest[] = [];
+      const col = db.collection(RHEMA_ROOT_COLLECTION).doc(churchId).collection('baptism_requests');
       const cleanPhone = (phone || '').replace(/\D/g, '').slice(-10);
 
-      snap.docs.forEach(doc => {
-        const d = doc.data();
-        const docPhone = (d.memberPhone || '').replace(/\D/g, '').slice(-10);
-        if (d.memberId === memberId || (cleanPhone && docPhone === cleanPhone)) {
-          list.push({
-            ...d,
-            id: doc.id
-          } as BaptismRequest);
+      const queries: Promise<any>[] = [];
+      if (memberId) {
+        queries.push(col.where('memberId', '==', memberId).limit(25).get().catch(() => null));
+      }
+      if (cleanPhone && cleanPhone.length === 10) {
+        const formats = Array.from(new Set([cleanPhone, `+91${cleanPhone}`, `91${cleanPhone}`, `0${cleanPhone}`, phone?.trim()].filter(Boolean))).slice(0, 10);
+        if (formats.length > 0) {
+          queries.push(col.where('memberPhone', 'in', formats).limit(25).get().catch(() => null));
         }
+      }
+
+      const byId = new Map<string, BaptismRequest>();
+      const results = await Promise.all(queries);
+      results.forEach((snap) => {
+        if (!snap?.docs) return;
+        snap.docs.forEach((doc: any) => {
+          byId.set(doc.id, { ...doc.data(), id: doc.id } as BaptismRequest);
+        });
       });
 
-      return list.sort((a, b) => {
+      return Array.from(byId.values()).sort((a, b) => {
         const tA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : (new Date(a.createdAt || 0).getTime());
         const tB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (new Date(b.createdAt || 0).getTime());
         return tB - tA;

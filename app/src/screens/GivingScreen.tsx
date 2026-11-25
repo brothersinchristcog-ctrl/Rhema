@@ -43,6 +43,7 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import { useAuth } from '../context/AuthContext';
 import { useChurch } from '../context/ChurchContext';
+import { getInstantMemory, writeInstantCache, makeScopedCacheKey } from '../utils/instantCache';
 import { useTheme, FONT_STYLE_OPTIONS } from '../context/ThemeContext';
 import { RHEMA_CHURCH_ID, RHEMA_CHURCH_NAME, RHEMA_ROOT_COLLECTION } from '../constants/ChurchConfig';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -341,7 +342,10 @@ export default function GivingScreen({ navigation, route }: any) {
   const [memberEmail, setMemberEmail] = useState(member?.email || user?.email || '');
 
   useEffect(() => {
-    if (user?.uid) {
+    // Skip redundant member profile read when AuthContext already has populated profile data
+    const hasMemberName = Boolean(member?.name || member?.firstName);
+    const hasMemberContact = Boolean(member?.phone || member?.email);
+    if (user?.uid && (!hasMemberName || !hasMemberContact)) {
       firestore()
         .collection(RHEMA_ROOT_COLLECTION)
         .doc(effectiveChurchId)
@@ -358,7 +362,7 @@ export default function GivingScreen({ navigation, route }: any) {
         })
         .catch(e => console.log('User fetch error:', e));
     }
-  }, [user, effectiveChurchId]);
+  }, [user?.uid, effectiveChurchId, member?.name, member?.firstName, member?.phone, member?.email]);
 
   // Derived Rhema Church payment details (never hardcoded/dummy)
   const churchDisplayName =
@@ -442,6 +446,13 @@ export default function GivingScreen({ navigation, route }: any) {
 
   useEffect(() => {
     if (user?.uid) {
+      const donationsCacheKey = makeScopedCacheKey('giving_recent_donations_v1', effectiveChurchId, user.uid);
+      const memHit = getInstantMemory<DonationRecord[]>(donationsCacheKey);
+      if (memHit?.length) {
+        setRecentDonations(memHit);
+        setLoadingHistory(false);
+      }
+
       const unsubscribe = firestore()
         .collection('church_donations')
         .where('userId', '==', user.uid)
@@ -467,8 +478,10 @@ export default function GivingScreen({ navigation, route }: any) {
               // Sort locally by date descending
               donations.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
               
-              // Keep top 10 recent
-              setRecentDonations(donations.slice(0, 10));
+              // Keep top 10 recent and cache for 0ms instant revisit
+              const top10 = donations.slice(0, 10);
+              setRecentDonations(top10);
+              writeInstantCache(donationsCacheKey, top10).catch(() => {});
             }
             setLoadingHistory(false);
           },
@@ -482,7 +495,7 @@ export default function GivingScreen({ navigation, route }: any) {
     } else {
       setLoadingHistory(false);
     }
-  }, [user]);
+  }, [user?.uid, user?.displayName, effectiveChurchId]);
 
   const handleDeleteDonation = (donation: DonationRecord) => {
     const formattedAmt = Number(donation.amount || 0).toLocaleString('en-IN');

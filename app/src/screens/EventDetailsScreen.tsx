@@ -17,6 +17,7 @@ import {
   KeyboardAvoidingView,
   TextInput
 } from 'react-native';
+import { CachedImage } from '../components/CachedImage';
 import {
   Calendar,
   Clock,
@@ -285,7 +286,7 @@ export default function EventDetailsScreen({ route, navigation }: any) {
     if (idToFind && user?.uid && activeChurch?.id) {
       VolunteerService.getMemberEventApplication(activeChurch.id, idToFind, user.uid)
         .then((app) => setVolunteerApp(app))
-        .catch(() => {});
+        .catch(() => { });
     }
   }, [initialEvent.id, eventId, user?.uid, activeChurch?.id]);
 
@@ -341,18 +342,17 @@ export default function EventDetailsScreen({ route, navigation }: any) {
     }
   };
 
-  // Sync with fresh server event record if available
+  // Sync with fresh server event record using single-doc lookup (avoids 150-doc collection scan)
   useEffect(() => {
     const idToFind = initialEvent.id || eventId;
     if (idToFind) {
-      FirestoreService.getEvents().then((events) => {
-        const found = events.find(e => e.id === idToFind || (e as any).eventId === idToFind);
+      FirestoreService.getEventById(String(idToFind), activeChurch?.id).then((found) => {
         if (found) {
           setEventData((prev: any) => ({ ...prev, ...found }));
         }
       }).catch(() => { });
     }
-  }, [initialEvent.id, eventId]);
+  }, [initialEvent.id, eventId, activeChurch?.id]);
 
   const event = eventData;
   const status = getEventStatus(event);
@@ -403,7 +403,7 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                 .collection('events')
                 .doc(event.id)
                 .update({ youtubeId: foundId })
-                .catch(() => {});
+                .catch(() => { });
             }
           }
         })
@@ -413,15 +413,11 @@ export default function EventDetailsScreen({ route, navigation }: any) {
 
   const churchYoutubeUrl = resolveRhemaYoutubeUrl(
     activeChurch?.socialLinks?.youtube ||
-      (churchYoutubeHandle ? `https://www.youtube.com/${churchYoutubeHandle}` : '')
+    (churchYoutubeHandle ? `https://www.youtube.com/${churchYoutubeHandle}` : '')
   );
 
-  // Resolve live stream video ID / recording status
+  // Real-time listener for church youtubeLiveState (kept independent of event/status so it never resubscribes on state changes)
   useEffect(() => {
-    let isMounted = true;
-    const churchId = activeChurch?.id || 'rhema';
-
-    // 1. Direct video ID check in event fields
     const directId = extractYoutubeVideoId(
       event.youtubeId ||
       event.liveUrl ||
@@ -431,26 +427,12 @@ export default function EventDetailsScreen({ route, navigation }: any) {
       event.link ||
       event.streamUrl
     );
+    if (directId) return;
 
-    if (directId) {
-      setLiveStreamVideoId(directId);
-      checkVideoLiveStatus(directId).then((vCheck) => {
-        if (!isMounted) return;
-        if (vCheck.status === 'live' || vCheck.isLiveNow) {
-          setIsStreamLiveNow(true);
-          setIsStreamEnded(false);
-        } else if (vCheck.status === 'completed' || vCheck.hasEnded) {
-          setIsStreamLiveNow(false);
-          setIsStreamEnded(true);
-          setAutoYoutubeId(directId);
-        }
-      });
-      return;
-    }
-
+    let isMounted = true;
+    const churchId = activeChurch?.id || 'rhema';
     const expectedChannelId = churchId === 'rhema' ? RHEMA_YOUTUBE_CHANNEL_ID : undefined;
 
-    // 2. Real-time listener for church youtubeLiveState (broadcast from pastor/admin)
     const unsubChurch = firestore()
       .collection('Rhema Church')
       .doc(churchId)
@@ -484,13 +466,54 @@ export default function EventDetailsScreen({ route, navigation }: any) {
         () => { }
       );
 
-    // 3. Resolve channel or live URL via YouTubeService
+    return () => {
+      isMounted = false;
+      unsubChurch();
+    };
+  }, [activeChurch?.id, event.youtubeId, event.liveUrl, event.livestreamUrl, event.youtubeUrl, event.videoUrl, event.link, event.streamUrl]);
+
+  // Resolve live stream video ID / recording status
+  useEffect(() => {
+    let isMounted = true;
+    const churchId = activeChurch?.id || 'rhema';
+    const expectedChannelId = churchId === 'rhema' ? RHEMA_YOUTUBE_CHANNEL_ID : undefined;
+
+    // 1. Direct video ID check in event fields
+    const directId = extractYoutubeVideoId(
+      event.youtubeId ||
+      event.liveUrl ||
+      event.livestreamUrl ||
+      event.youtubeUrl ||
+      event.videoUrl ||
+      event.link ||
+      event.streamUrl
+    );
+
+    if (directId) {
+      setLiveStreamVideoId(directId);
+      checkVideoLiveStatus(directId).then((vCheck) => {
+        if (!isMounted) return;
+        if (vCheck.status === 'live' || vCheck.isLiveNow) {
+          setIsStreamLiveNow(true);
+          setIsStreamEnded(false);
+        } else if (vCheck.status === 'completed' || vCheck.hasEnded) {
+          setIsStreamLiveNow(false);
+          setIsStreamEnded(true);
+          setAutoYoutubeId(directId);
+        }
+      });
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    // 2. Resolve channel or live URL via YouTubeService (deduped + cached in YouTubeService)
     const targetUrl = resolveRhemaYoutubeUrl(
       event.liveUrl ||
-        event.livestreamUrl ||
-        event.youtubeUrl ||
-        churchYoutubeUrl ||
-        'https://www.youtube.com/@RhemaGlobalMinistries'
+      event.livestreamUrl ||
+      event.youtubeUrl ||
+      churchYoutubeUrl ||
+      'https://www.youtube.com/@RhemaGlobalMinistries'
     );
 
     if (targetUrl) {
@@ -515,7 +538,7 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                   .collection('events')
                   .doc(event.id)
                   .update({ youtubeId: res.videoId })
-                  .catch(() => {});
+                  .catch(() => { });
               }
             }
           }
@@ -527,9 +550,8 @@ export default function EventDetailsScreen({ route, navigation }: any) {
 
     return () => {
       isMounted = false;
-      unsubChurch();
     };
-  }, [event.id, event.liveUrl, event.livestreamUrl, event.youtubeId, status, activeChurch?.id, churchYoutubeUrl]);
+  }, [event.id, event.liveUrl, event.livestreamUrl, event.youtubeId, activeChurch?.id, churchYoutubeUrl]);
 
   const handleCheckLiveStreamAgain = useCallback(() => {
     const targetUrl = event.liveUrl || event.livestreamUrl || event.youtubeUrl || churchYoutubeUrl || 'https://www.youtube.com/@RhemaGlobalMinistries';
@@ -851,7 +873,7 @@ export default function EventDetailsScreen({ route, navigation }: any) {
               overflow: 'hidden',
             }
           ]}>
-            <Image
+            <CachedImage
               source={{ uri: heroImageUri }}
               style={styles.heroImage}
               resizeMode="contain"
@@ -1115,14 +1137,14 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                       volunteerApp.status === 'approved'
                         ? (isDark ? '#064E3B20' : '#ECFDF5')
                         : volunteerApp.status === 'rejected'
-                        ? (isDark ? '#450A0A20' : '#FEF2F2')
-                        : (isDark ? '#78350F20' : '#FFFBEB'),
+                          ? (isDark ? '#450A0A20' : '#FEF2F2')
+                          : (isDark ? '#78350F20' : '#FFFBEB'),
                     borderColor:
                       volunteerApp.status === 'approved'
                         ? '#10B981'
                         : volunteerApp.status === 'rejected'
-                        ? '#F87171'
-                        : '#F59E0B',
+                          ? '#F87171'
+                          : '#F59E0B',
                   }}
                 >
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
@@ -1133,8 +1155,8 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                           volunteerApp.status === 'approved'
                             ? (isDark ? '#34D399' : '#059669')
                             : volunteerApp.status === 'rejected'
-                            ? (isDark ? '#F87171' : '#DC2626')
-                            : (isDark ? '#FBBF24' : '#D97706')
+                              ? (isDark ? '#F87171' : '#DC2626')
+                              : (isDark ? '#FBBF24' : '#D97706')
                         }
                       />
                       <Text
@@ -1148,16 +1170,16 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                             volunteerApp.status === 'approved'
                               ? (isDark ? '#34D399' : '#047857')
                               : volunteerApp.status === 'rejected'
-                              ? (isDark ? '#FCA5A5' : '#B91C1C')
-                              : (isDark ? '#FDE68A' : '#B45309'),
+                                ? (isDark ? '#FCA5A5' : '#B91C1C')
+                                : (isDark ? '#FDE68A' : '#B45309'),
                         }}
                         numberOfLines={2}
                       >
                         {volunteerApp.status === 'approved'
                           ? 'YOU ARE SERVING AT THIS EVENT'
                           : volunteerApp.status === 'rejected'
-                          ? 'VOLUNTEER APPLICATION UPDATE'
-                          : 'APPLICATION UNDER REVIEW'}
+                            ? 'VOLUNTEER APPLICATION UPDATE'
+                            : 'APPLICATION UNDER REVIEW'}
                       </Text>
                     </View>
                     <View
@@ -1171,14 +1193,14 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                           volunteerApp.status === 'approved'
                             ? (isDark ? 'rgba(16, 185, 129, 0.2)' : '#DCFCE7')
                             : volunteerApp.status === 'rejected'
-                            ? (isDark ? 'rgba(239, 68, 68, 0.2)' : '#FEE2E2')
-                            : (isDark ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7'),
+                              ? (isDark ? 'rgba(239, 68, 68, 0.2)' : '#FEE2E2')
+                              : (isDark ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7'),
                         borderColor:
                           volunteerApp.status === 'approved'
                             ? (isDark ? 'rgba(52, 211, 153, 0.5)' : '#86EFAC')
                             : volunteerApp.status === 'rejected'
-                            ? (isDark ? 'rgba(248, 113, 113, 0.5)' : '#FCA5A5')
-                            : (isDark ? 'rgba(251, 191, 36, 0.5)' : '#FCD34D'),
+                              ? (isDark ? 'rgba(248, 113, 113, 0.5)' : '#FCA5A5')
+                              : (isDark ? 'rgba(251, 191, 36, 0.5)' : '#FCD34D'),
                       }}
                     >
                       <Text
@@ -1190,8 +1212,8 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                             volunteerApp.status === 'approved'
                               ? (isDark ? '#6EE7B7' : '#15803D')
                               : volunteerApp.status === 'rejected'
-                              ? (isDark ? '#FCA5A5' : '#991B1B')
-                              : (isDark ? '#FDE68A' : '#B45309'),
+                                ? (isDark ? '#FCA5A5' : '#991B1B')
+                                : (isDark ? '#FDE68A' : '#B45309'),
                         }}
                       >
                         {volunteerApp.status === 'rejected' ? 'NOT APPROVED' : volunteerApp.status.toUpperCase()}
@@ -1534,8 +1556,8 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                 {status === 'upcoming'
                   ? 'Event Video · వీడియో'
                   : isStreamLiveNow
-                  ? 'Live Now · లైవ్ ఇప్పుడు'
-                  : 'Event Recording · కార్యక్రమం వీడియో'}
+                    ? 'Live Now · లైవ్ ఇప్పుడు'
+                    : 'Event Recording · కార్యక్రమం వీడియో'}
               </Text>
             </View>
 

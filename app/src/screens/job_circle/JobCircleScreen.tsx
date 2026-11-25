@@ -59,6 +59,14 @@ import JobCircleService from '../../services/JobCircleService';
 import FirestoreService from '../../services/FirestoreService';
 import NotificationService from '../../services/NotificationService';
 import { JobOpportunity, AttachmentInfo } from '../../types/jobCircle';
+import { CachedImage } from '../../components/CachedImage';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  readInstantCache,
+  writeInstantCache,
+  readScopedDeletedNotifIds,
+} from '../../utils/instantCache';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH - 32;
@@ -89,6 +97,19 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
   const secondaryText = isDark ? '#94A3B8' : (colors.textSecondary || '#64748B');
 
   const churchId = activeChurch?.id || 'rhema';
+  const jobCacheKey = React.useMemo(
+    () => makeScopedCacheKey('job_circle_v1', churchId, user?.uid || member?.id),
+    [churchId, user?.uid, member?.id]
+  );
+  const initialJobCache = React.useMemo(
+    () =>
+      getInstantMemory<{
+        opportunities: JobOpportunity[];
+        creatorProfiles: { [uid: string]: { name: string; photo?: string } };
+        appliedOppIds: string[];
+      }>(jobCacheKey),
+    [jobCacheKey]
+  );
 
   // Screen View State: Splash Screen vs Main Opportunities Screen
   // If navigated directly with skipSplash or deep link, skip splash
@@ -99,12 +120,14 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
   const bgFade = useRef(new Animated.Value(0)).current;
   const contentFade = useRef(new Animated.Value(0)).current;
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialJobCache);
   const [refreshing, setRefreshing] = useState(false);
-  const [opportunities, setOpportunities] = useState<JobOpportunity[]>([]);
-  const [creatorProfiles, setCreatorProfiles] = useState<{ [uid: string]: { name: string; photo?: string } }>({});
+  const [opportunities, setOpportunities] = useState<JobOpportunity[]>(initialJobCache?.opportunities || []);
+  const [creatorProfiles, setCreatorProfiles] = useState<{ [uid: string]: { name: string; photo?: string } }>(
+    initialJobCache?.creatorProfiles || {}
+  );
   const [expandedDescIds, setExpandedDescIds] = useState<{ [key: string]: boolean }>({});
-  const [appliedOppIds, setAppliedOppIds] = useState<string[]>([]);
+  const [appliedOppIds, setAppliedOppIds] = useState<string[]>(initialJobCache?.appliedOppIds || []);
   const [unreadNotifCount, setUnreadNotifCount] = useState<number>(0);
   const [readJobNotifIds, setReadJobNotifIds] = useState<string[]>([]);
 
@@ -157,9 +180,32 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
   }, [navigation, selectedOppForApply]);
 
   useEffect(() => {
+    const mem = getInstantMemory<{
+      opportunities: JobOpportunity[];
+      creatorProfiles: { [uid: string]: { name: string; photo?: string } };
+      appliedOppIds: string[];
+    }>(jobCacheKey);
+    if (mem) {
+      setOpportunities(mem.opportunities || []);
+      setCreatorProfiles(mem.creatorProfiles || {});
+      setAppliedOppIds(mem.appliedOppIds || []);
+      setLoading(false);
+    } else {
+      readInstantCache<{
+        opportunities: JobOpportunity[];
+        creatorProfiles: { [uid: string]: { name: string; photo?: string } };
+        appliedOppIds: string[];
+      }>(jobCacheKey).then((cached) => {
+        if (!cached?.data) return;
+        setOpportunities(cached.data.opportunities || []);
+        setCreatorProfiles(cached.data.creatorProfiles || {});
+        setAppliedOppIds(cached.data.appliedOppIds || []);
+        setLoading(false);
+      });
+    }
     loadAllOpportunities();
     loadAppliedStatus();
-  }, [churchId]);
+  }, [churchId, jobCacheKey]);
 
   useEffect(() => {
     const oppId = route?.params?.opportunityId;
@@ -177,10 +223,9 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
       const readKey = `@read_job_notif_ids_${user?.uid || member?.id || 'guest'}`;
       Promise.all([
         AsyncStorage.getItem(readKey).catch(() => null),
-        AsyncStorage.getItem('@deleted_notification_ids').catch(() => null),
-      ]).then(([rawRead, rawDeleted]) => {
+        readScopedDeletedNotifIds(churchId, user?.uid || member?.id).catch(() => []),
+      ]).then(([rawRead, delArr]) => {
         const readArr = rawRead ? JSON.parse(rawRead) : [];
-        const delArr = rawDeleted ? JSON.parse(rawDeleted) : [];
         const merged = Array.from(
           new Set([
             ...(Array.isArray(readArr) ? readArr : []),
@@ -190,7 +235,7 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
         setReadJobNotifIds(merged);
       }).catch(() => {});
       loadAppliedStatus();
-    }, [user?.uid, member?.id])
+    }, [user?.uid, member?.id, churchId])
   );
 
   // Listen to Job Circle notifications to display real-time unread badge
@@ -367,15 +412,14 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
 
   const loadAllOpportunities = async () => {
     try {
-      setLoading(true);
       // Fetch approved opportunities dynamically from Firebase
       const opps = await JobCircleService.getOpportunities(churchId, { onlyApproved: true });
       setOpportunities(opps);
 
       // Fetch creator member profiles to display actual poster name and profile picture
       const creatorUids = Array.from(new Set(opps.map(o => o.createdById).filter(Boolean)));
+      const profileEntries: { [uid: string]: { name: string; photo?: string } } = {};
       if (creatorUids.length > 0) {
-        const profileEntries: { [uid: string]: { name: string; photo?: string } } = {};
         await Promise.all(
           creatorUids.map(async uid => {
             try {
@@ -399,6 +443,11 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
         );
         setCreatorProfiles(profileEntries);
       }
+      writeInstantCache(jobCacheKey, {
+        opportunities: opps,
+        creatorProfiles: creatorUids.length > 0 ? profileEntries : creatorProfiles,
+        appliedOppIds,
+      }).catch(() => {});
     } catch (err) {
       console.error('Error loading Job Circle opportunities:', err);
     } finally {
@@ -499,7 +548,7 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
         {/* ── TOP SECTION: Posted-by member profile picture, name, posted date/time ── */}
         <View style={styles.cardHeaderRow}>
           {posterPhoto ? (
-            <Image source={{ uri: posterPhoto }} style={styles.posterAvatar} resizeMode="cover" />
+            <CachedImage source={{ uri: posterPhoto }} style={styles.posterAvatar} resizeMode="cover" />
           ) : (
             <View style={[styles.posterAvatarPlaceholder, { backgroundColor: isDark ? '#1E3A8A' : '#DBEAFE' }]}>
               <User size={20} color={isDark ? '#93C5FD' : '#1E40AF'} />
@@ -522,7 +571,7 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
         {/* ── IMAGE SECTION: Admin thumbnail/banner image maintaining aspect ratio ── */}
         <View style={styles.cardBannerWrap}>
           {opp.thumbnailUrl ? (
-            <Image
+            <CachedImage
               source={{ uri: opp.thumbnailUrl }}
               style={styles.cardBannerImg}
               resizeMode="cover"
@@ -768,7 +817,7 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
           style={styles.profileAvatarTouchable}
         >
           {memberPhotoUrl ? (
-            <Image source={{ uri: memberPhotoUrl }} style={styles.memberAvatarImg} resizeMode="cover" />
+            <CachedImage source={{ uri: memberPhotoUrl }} style={styles.memberAvatarImg} resizeMode="cover" />
           ) : (
             <View style={[styles.memberAvatarFallback, { backgroundColor: isDark ? '#1E293B' : '#E0E7FF' }]}>
               <User size={18} color={isDark ? '#93C5FD' : '#1a2d5a'} />

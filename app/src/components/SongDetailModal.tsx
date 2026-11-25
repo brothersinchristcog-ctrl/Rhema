@@ -8,7 +8,7 @@ const extractYoutubeId = (url: string) => {
   return cleanUrl;
 };
 import YoutubePlayer from 'react-native-youtube-iframe';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Platform, StatusBar, Linking, Alert, Dimensions, PanResponder, GestureResponderEvent } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, ChevronLeft, Bookmark, Globe, Sliders, ExternalLink } from 'lucide-react-native';
@@ -16,7 +16,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
 import { SupportedLanguage } from '../locales';
 import { WorshipSong } from '../services/FirestoreService';
-import { SongLanguageHelper } from '../services/SongLanguageHelper';
+import { SongLanguageHelper, SongLyricsResult } from '../services/SongLanguageHelper';
 import { TransliterationService } from '../services/TransliterationService';
 
 interface SongDetailModalProps {
@@ -175,29 +175,53 @@ export default function SongDetailModal({
     })
   ).current;
 
-  if (!visible || !song) return null;
+  // Prioritize Telugu as the default viewing language (memoized before early return to respect Rules of Hooks)
+  const availableLanguages = useMemo(() => {
+    if (!visible || !song) return [];
+    return SongLanguageHelper.getAvailableSongLanguages(song, 'te').sort((a, b) => {
+      if (a.code === 'te') return -1;
+      if (b.code === 'te') return 1;
+      if (a.code === 'en') return -1;
+      if (b.code === 'en') return 1;
+      return 0;
+    });
+  }, [visible, song]);
 
-  // Prioritize Telugu as the default viewing language
-  const availableLanguages = SongLanguageHelper.getAvailableSongLanguages(song, 'te').sort((a, b) => {
-    if (a.code === 'te') return -1;
-    if (b.code === 'te') return 1;
-    if (a.code === 'en') return -1;
-    if (b.code === 'en') return 1;
-    return 0;
-  });
-
-  const hasTelugu = availableLanguages.some(l => l.code === 'te') ||
-    !!song.lyricsTe ||
-    !!song.titleTe ||
-    TransliterationService.isTeluguText(song.lyrics || '') ||
-    TransliterationService.isTeluguText(song.title || '');
+  const hasTelugu = useMemo(() => {
+    if (!visible || !song) return false;
+    return (
+      availableLanguages.some(l => l.code === 'te') ||
+      !!song.lyricsTe ||
+      !!song.titleTe ||
+      TransliterationService.isTeluguText(song.lyrics || '') ||
+      TransliterationService.isTeluguText(song.title || '')
+    );
+  }, [visible, song, availableLanguages]);
 
   const defaultLang: SupportedLanguage = hasTelugu ? 'te' : (language && language !== 'en' ? language : 'te');
   const activeLyricsLang = selectedLangOverride || defaultLang;
 
-  const { primary, secondary } = SongLanguageHelper.getSongTitle(song, activeLyricsLang);
-  const subtitle = secondary || (song.category ? SongLanguageHelper.getLocalizedCategory(song.category, activeLyricsLang) : '');
-  const lyricsInfo = SongLanguageHelper.getSongLyrics(song, activeLyricsLang);
+  const { primary, subtitle, lyricsInfo } = useMemo(() => {
+    if (!visible || !song) {
+      return {
+        primary: '',
+        subtitle: '',
+        lyricsInfo: {
+          lyrics: '',
+          langCode: activeLyricsLang,
+          langName: '',
+          isFallback: false,
+          isTransliterated: false,
+        } as SongLyricsResult,
+      };
+    }
+    const { primary: p, secondary: sec } = SongLanguageHelper.getSongTitle(song, activeLyricsLang);
+    const sub = sec || (song.category ? SongLanguageHelper.getLocalizedCategory(song.category, activeLyricsLang) : '');
+    const lInfo = SongLanguageHelper.getSongLyrics(song, activeLyricsLang);
+    return { primary: p, subtitle: sub, lyricsInfo: lInfo };
+  }, [visible, song, activeLyricsLang]);
+
+  if (!visible || !song) return null;
 
   const songLead = song.ledBy || (song as any).songLead || (song as any).leadBy || (song as any).leader;
 

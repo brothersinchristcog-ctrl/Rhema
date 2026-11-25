@@ -43,6 +43,12 @@ import FirestoreService, { BaptismRequest, BaptismHistoryItem } from '../service
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import { formatDateDisplay, formatDateTimeDisplay, formatDatesInText } from '../utils/DateUtils';
 import { CustomAlert } from '../components/CustomAlert';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  readInstantCache,
+  writeInstantCache,
+} from '../utils/instantCache';
 
 const { width } = Dimensions.get('window');
 
@@ -61,13 +67,23 @@ export default function BaptismRequestScreen({ navigation }: any) {
   const { user, member: authMember } = useAuth();
   const { activeChurch } = useChurch();
   const { isDark } = useTheme();
+  const cacheKey = React.useMemo(
+    () => makeScopedCacheKey('baptism_requests_v1', activeChurch?.id, user?.uid || authMember?.id),
+    [activeChurch?.id, user?.uid, authMember?.id]
+  );
+  const initialCache = React.useMemo(
+    () => getInstantMemory<{ requests: BaptismRequest[]; familyMembers: FamilyCandidate[] }>(cacheKey),
+    [cacheKey]
+  );
 
-  const [requests, setRequests] = useState<BaptismRequest[]>([]);
-  const [familyMembers, setFamilyMembers] = useState<FamilyCandidate[]>([]);
-  const [selectedCandidate, setSelectedCandidate] = useState<FamilyCandidate | null>(null);
+  const [requests, setRequests] = useState<BaptismRequest[]>(initialCache?.requests || []);
+  const [familyMembers, setFamilyMembers] = useState<FamilyCandidate[]>(initialCache?.familyMembers || []);
+  const [selectedCandidate, setSelectedCandidate] = useState<FamilyCandidate | null>(
+    initialCache?.familyMembers?.[0] || null
+  );
   const [isOtherSelected, setIsOtherSelected] = useState(false);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialCache);
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [expandedRequestId, setExpandedRequestId] = useState<string | null>(null);
@@ -163,8 +179,8 @@ export default function BaptismRequestScreen({ navigation }: any) {
   };
 
   // Fetch Family / Household Members
-  const fetchFamilyMembers = async (currentRequests: BaptismRequest[] = requests) => {
-    if (!activeChurch?.id) return;
+  const fetchFamilyMembers = async (currentRequests: BaptismRequest[] = requests): Promise<FamilyCandidate[]> => {
+    if (!activeChurch?.id) return [];
 
     const selfCandidate: FamilyCandidate = {
       id: authMember?.id || user?.uid || 'self',
@@ -183,26 +199,32 @@ export default function BaptismRequestScreen({ navigation }: any) {
       const churchId = activeChurch.id;
       const targetAccountId = authMember?.accountId || authMember?.id;
       const relatedDocs: any[] = [];
+      const memberQueries: Promise<any>[] = [];
 
       // 1. Query by accountId in church members
       if (targetAccountId) {
-        const snap1 = await firestore().collection('Rhema Church').doc(churchId).collection('members').where('accountId', '==', targetAccountId).get().catch(() => null);
-        if (snap1 && !snap1.empty) {
-          snap1.forEach(d => relatedDocs.push({ id: d.id, ...d.data() }));
-        }
+        memberQueries.push(
+          firestore().collection('Rhema Church').doc(churchId).collection('members').where('accountId', '==', targetAccountId).get().catch(() => null)
+        );
       }
 
       // 2. Query where accountId is authMember.id (if different)
       if (authMember?.id && authMember.id !== targetAccountId) {
-        const snap2 = await firestore().collection('Rhema Church').doc(churchId).collection('members').where('accountId', '==', authMember.id).get().catch(() => null);
-        if (snap2 && !snap2.empty) {
-          snap2.forEach(d => {
+        memberQueries.push(
+          firestore().collection('Rhema Church').doc(churchId).collection('members').where('accountId', '==', authMember.id).get().catch(() => null)
+        );
+      }
+
+      const snaps = memberQueries.length > 0 ? await Promise.all(memberQueries) : [];
+      snaps.forEach((snap) => {
+        if (snap && !snap.empty) {
+          snap.forEach((d: any) => {
             if (!relatedDocs.some(r => r.id === d.id)) {
               relatedDocs.push({ id: d.id, ...d.data() });
             }
           });
         }
-      }
+      });
 
       // Add related family members (spouse, kids, etc.)
       relatedDocs.forEach(d => {
@@ -266,17 +288,44 @@ export default function BaptismRequestScreen({ navigation }: any) {
       setGender(initial.gender || 'Male');
       setAddress(initial.address || '');
     }
+    return candidates;
   };
 
   useEffect(() => {
+    let active = true;
     const init = async () => {
-      setLoading(true);
+      const mem = getInstantMemory<{ requests: BaptismRequest[]; familyMembers: FamilyCandidate[] }>(cacheKey);
+      if (mem) {
+        setRequests(mem.requests || []);
+        setFamilyMembers(mem.familyMembers || []);
+        setLoading(false);
+      } else {
+        readInstantCache<{ requests: BaptismRequest[]; familyMembers: FamilyCandidate[] }>(cacheKey).then((cached) => {
+          if (!active || !cached?.data) return;
+          setRequests(cached.data.requests || []);
+          setFamilyMembers(cached.data.familyMembers || []);
+          if (!selectedCandidate && cached.data.familyMembers?.[0]) {
+            setSelectedCandidate(cached.data.familyMembers[0]);
+          }
+          if (cached.data.requests?.length && !expandedRequestId) {
+            setExpandedRequestId(cached.data.requests[0].id);
+          }
+          setLoading(false);
+        });
+      }
+
       const reqList = await fetchMyRequests();
-      await fetchFamilyMembers(reqList);
-      setLoading(false);
+      const nextFamily = await fetchFamilyMembers(reqList);
+      if (active) {
+        writeInstantCache(cacheKey, { requests: reqList, familyMembers: nextFamily });
+        setLoading(false);
+      }
     };
     init();
-  }, [activeChurch?.id, user?.uid]);
+    return () => {
+      active = false;
+    };
+  }, [activeChurch?.id, user?.uid, cacheKey]);
 
   const handleRefresh = async () => {
     setRefreshing(true);

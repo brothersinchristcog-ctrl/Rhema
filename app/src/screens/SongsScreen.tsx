@@ -44,12 +44,14 @@ import {
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import FirestoreService, { WorshipSong, EventServiceItem } from '../services/FirestoreService';
+import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useChurch } from '../context/ChurchContext';
 import { SongLanguageHelper, CANONICAL_SONG_CATEGORIES } from '../services/SongLanguageHelper';
 import { CustomAlert } from '../components/CustomAlert';
 import SongDetailModal from '../components/SongDetailModal';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../utils/instantCache';
 
 
 const { width, height } = Dimensions.get('window');
@@ -65,206 +67,206 @@ export interface SongCardColorDef {
 }
 
 export const SONG_CARD_COLORS: SongCardColorDef[] = [
-  { name: 'Cove',            color: '#385A6C' }, // 1
-  { name: 'Velours Noir',    color: '#1C1C1E' }, // 2
-  { name: 'Cognac',          color: '#9E472A' }, // 3
-  { name: 'Charcoal',        color: '#243342' }, // 4
-  { name: 'Cashmere',        color: '#D8C3A5' }, // 5
-  { name: 'Truffle',         color: '#5E4B3E' }, // 6
-  { name: 'Forest',          color: '#22543D' }, // 7
-  { name: 'Gunmetal',        color: '#2C465E' }, // 8
-  { name: 'Moss',            color: '#607D3B' }, // 9
-  { name: 'Deep Burgundy',   color: '#58111A' }, // 10
-  { name: 'Ocean Blue',      color: '#0284C7' }, // 11
-  { name: 'Pumpkin',         color: '#D35400' }, // 12
-  { name: 'Ultra Violet',    color: '#5F4B8B' }, // 13
-  { name: 'Deep Olive',      color: '#4A5320' }, // 14
-  { name: 'Soft Sage',       color: '#A3B899' }, // 15
-  { name: 'Lavender Pink',   color: '#E8AEB7' }, // 16
-  { name: 'Mint Green',      color: '#86EFAC' }, // 17
-  { name: 'Golden Yellow',   color: '#F5B041' }, // 18
-  { name: 'Sage Green',      color: '#5A7A64' }, // 19
-  { name: 'Peach Pink',      color: '#FFB7A5' }, // 20
-  { name: 'Dark Emerald',    color: '#065F46' }, // 21
-  { name: 'Alabaster',       color: '#E7E4DC' }, // 22
-  { name: 'Slate Green',     color: '#2E5F52' }, // 23
-  { name: 'Ivory',           color: '#FAF5E4' }, // 24
-  { name: 'Natural',         color: '#C8B69B' }, // 25
-  { name: 'Apricot',         color: '#FDBA74' }, // 26
-  { name: 'Organic',         color: '#C4AB8E' }, // 27
-  { name: 'Candle',          color: '#FAD02C' }, // 28
-  { name: 'Coral',           color: '#FF6F61' }, // 29
-  { name: 'Leaf',            color: '#4CAF50' }, // 30
-  { name: 'Juniper',         color: '#2E4E4C' }, // 31
-  { name: 'Orange',          color: '#F97316' }, // 32
-  { name: 'Olive Grove',     color: '#6A7B44' }, // 33
-  { name: 'Warm Sand',       color: '#D4B28C' }, // 34
-  { name: 'Merlot Bliss',    color: '#6B1D2F' }, // 35
-  { name: 'Creamy Taupe',    color: '#DFD3C3' }, // 36
-  { name: 'Midnight Luxe',   color: '#121B28' }, // 37
-  { name: 'Soft Ivory',      color: '#F0EAE1' }, // 38
-  { name: 'Royal Sapphire',  color: '#174A7E' }, // 39
-  { name: 'Champagne Gold',  color: '#E5C158' }, // 40
-  { name: 'Antique Bronze',  color: '#705335' }, // 41
+  { name: 'Cove', color: '#385A6C' }, // 1
+  { name: 'Velours Noir', color: '#1C1C1E' }, // 2
+  { name: 'Cognac', color: '#9E472A' }, // 3
+  { name: 'Charcoal', color: '#243342' }, // 4
+  { name: 'Cashmere', color: '#D8C3A5' }, // 5
+  { name: 'Truffle', color: '#5E4B3E' }, // 6
+  { name: 'Forest', color: '#22543D' }, // 7
+  { name: 'Gunmetal', color: '#2C465E' }, // 8
+  { name: 'Moss', color: '#607D3B' }, // 9
+  { name: 'Deep Burgundy', color: '#58111A' }, // 10
+  { name: 'Ocean Blue', color: '#0284C7' }, // 11
+  { name: 'Pumpkin', color: '#D35400' }, // 12
+  { name: 'Ultra Violet', color: '#5F4B8B' }, // 13
+  { name: 'Deep Olive', color: '#4A5320' }, // 14
+  { name: 'Soft Sage', color: '#A3B899' }, // 15
+  { name: 'Lavender Pink', color: '#E8AEB7' }, // 16
+  { name: 'Mint Green', color: '#86EFAC' }, // 17
+  { name: 'Golden Yellow', color: '#F5B041' }, // 18
+  { name: 'Sage Green', color: '#5A7A64' }, // 19
+  { name: 'Peach Pink', color: '#FFB7A5' }, // 20
+  { name: 'Dark Emerald', color: '#065F46' }, // 21
+  { name: 'Alabaster', color: '#E7E4DC' }, // 22
+  { name: 'Slate Green', color: '#2E5F52' }, // 23
+  { name: 'Ivory', color: '#FAF5E4' }, // 24
+  { name: 'Natural', color: '#C8B69B' }, // 25
+  { name: 'Apricot', color: '#FDBA74' }, // 26
+  { name: 'Organic', color: '#C4AB8E' }, // 27
+  { name: 'Candle', color: '#FAD02C' }, // 28
+  { name: 'Coral', color: '#FF6F61' }, // 29
+  { name: 'Leaf', color: '#4CAF50' }, // 30
+  { name: 'Juniper', color: '#2E4E4C' }, // 31
+  { name: 'Orange', color: '#F97316' }, // 32
+  { name: 'Olive Grove', color: '#6A7B44' }, // 33
+  { name: 'Warm Sand', color: '#D4B28C' }, // 34
+  { name: 'Merlot Bliss', color: '#6B1D2F' }, // 35
+  { name: 'Creamy Taupe', color: '#DFD3C3' }, // 36
+  { name: 'Midnight Luxe', color: '#121B28' }, // 37
+  { name: 'Soft Ivory', color: '#F0EAE1' }, // 38
+  { name: 'Royal Sapphire', color: '#174A7E' }, // 39
+  { name: 'Champagne Gold', color: '#E5C158' }, // 40
+  { name: 'Antique Bronze', color: '#705335' }, // 41
   { name: 'Platinum Silver', color: '#C5C6C7' }, // 42
-  { name: 'Rosewood',        color: '#7B242C' }, // 43
-  { name: 'Midnight Blue',   color: '#1A2B4C' }, // 44
+  { name: 'Rosewood', color: '#7B242C' }, // 43
+  { name: 'Midnight Blue', color: '#1A2B4C' }, // 44
   { name: 'Imperial Purple', color: '#542A68' }, // 45
-  { name: 'Emerald Luxe',    color: '#0F5257' }, // 46
-  { name: 'Dusty Mauve',     color: '#A77B91' }, // 47
-  { name: 'Royal Plum',      color: '#5B2C6F' }, // 48
-  { name: 'Arctic Blue',     color: '#6BA4B8' }, // 49
-  { name: 'Peacock Teal',    color: '#0A6C74' }, // 50
-  { name: 'Copper Rose',     color: '#B86B64' }, // 51
-  { name: 'Burnished Gold',  color: '#AA8239' }, // 52
-  { name: 'Obsidian',        color: '#232528' }, // 53
-  { name: 'Moonstone',       color: '#A2B2C8' }, // 54
-  { name: 'Blue Lagoon',     color: '#007A87' }, // 55
-  { name: 'Velvet Wine',     color: '#5E192B' }, // 56
-  { name: 'Silver Mist',     color: '#B8C2B9' }, // 57
-  { name: 'Desert Rose',     color: '#C67171' }, // 58
-  { name: 'Honey Amber',     color: '#D97706' }, // 59
-  { name: 'Glacier Blue',    color: '#8EAEC4' }, // 60
-  { name: 'Jade Green',      color: '#2E8B57' }, // 61
-  { name: 'Mulberry',        color: '#701C45' }, // 62
-  { name: 'Smoky Quartz',    color: '#5C4838' }, // 63
-  { name: 'Royal Amethyst',  color: '#6B3FA0' }, // 64
-  { name: 'Ocean Teal',      color: '#006666' }, // 65
-  { name: 'Burnt Sienna',    color: '#C05621' }, // 66
-  { name: 'Tuscan Gold',     color: '#C68B59' }, // 67
-  { name: 'Pearl White',     color: '#ECE8E1' }, // 68
+  { name: 'Emerald Luxe', color: '#0F5257' }, // 46
+  { name: 'Dusty Mauve', color: '#A77B91' }, // 47
+  { name: 'Royal Plum', color: '#5B2C6F' }, // 48
+  { name: 'Arctic Blue', color: '#6BA4B8' }, // 49
+  { name: 'Peacock Teal', color: '#0A6C74' }, // 50
+  { name: 'Copper Rose', color: '#B86B64' }, // 51
+  { name: 'Burnished Gold', color: '#AA8239' }, // 52
+  { name: 'Obsidian', color: '#232528' }, // 53
+  { name: 'Moonstone', color: '#A2B2C8' }, // 54
+  { name: 'Blue Lagoon', color: '#007A87' }, // 55
+  { name: 'Velvet Wine', color: '#5E192B' }, // 56
+  { name: 'Silver Mist', color: '#B8C2B9' }, // 57
+  { name: 'Desert Rose', color: '#C67171' }, // 58
+  { name: 'Honey Amber', color: '#D97706' }, // 59
+  { name: 'Glacier Blue', color: '#8EAEC4' }, // 60
+  { name: 'Jade Green', color: '#2E8B57' }, // 61
+  { name: 'Mulberry', color: '#701C45' }, // 62
+  { name: 'Smoky Quartz', color: '#5C4838' }, // 63
+  { name: 'Royal Amethyst', color: '#6B3FA0' }, // 64
+  { name: 'Ocean Teal', color: '#006666' }, // 65
+  { name: 'Burnt Sienna', color: '#C05621' }, // 66
+  { name: 'Tuscan Gold', color: '#C68B59' }, // 67
+  { name: 'Pearl White', color: '#ECE8E1' }, // 68
   { name: 'Midnight Indigo', color: '#1E2050' }, // 69
-  { name: 'Blue Steel',      color: '#46627F' }, // 70
-  { name: 'Eucalyptus',      color: '#4E7764' }, // 71
-  { name: 'Crimson Velvet',  color: '#7E121D' }, // 72
-  { name: 'Antique Rose',    color: '#B0727B' }, // 73
-  { name: 'Copper Clay',     color: '#9C4124' }, // 74
-  { name: 'Imperial Jade',   color: '#0D6848' }, // 75
-  { name: 'Storm Grey',      color: '#5F6B72' }, // 76
-  { name: 'Golden Ochre',    color: '#C68642' }, // 77
-  { name: 'Sapphire Mist',   color: '#5C82A6' }, // 78
-  { name: 'Plum Velvet',     color: '#4A1E34' }, // 79
-  { name: 'Desert Bronze',   color: '#8C6239' }, // 80
-  { name: 'Arctic Mint',     color: '#7EC8B8' }, // 81
-  { name: 'Royal Teal',      color: '#115E59' }, // 82
-  { name: 'Shadow Purple',   color: '#43304A' }, // 83
-  { name: 'Maple Brown',     color: '#7A392B' }, // 84
-  { name: 'Celestial Blue',  color: '#3B82F6' }, // 85
-  { name: 'Garnet Red',      color: '#781D26' }, // 86
-  { name: 'Opal Green',      color: '#88B2A1' }, // 87
-  { name: 'Smoky Lavender',  color: '#736882' }, // 88
-  { name: 'Rich Mahogany',   color: '#4C1D24' }, // 89
-  { name: 'Silver Sage',     color: '#98A89A' }, // 90
-  { name: 'Marigold',        color: '#F59E0B' }, // 91
-  { name: 'Ink Blue',        color: '#152238' }, // 92
-  { name: 'Terracotta',      color: '#D96B43' }, // 93
-  { name: 'Pine Green',      color: '#1E4D2B' }, // 94
-  { name: 'Rose Quartz',     color: '#B87A88' }, // 95
-  { name: 'Espresso Brown',  color: '#2E1E14' }, // 96
-  { name: 'Frosted Silver',  color: '#C8CBD0' }, // 97
-  { name: 'Azure Blue',      color: '#0284C7' }, // 98
-  { name: 'Golden Olive',    color: '#7D7930' }, // 99
-  { name: 'Black Pearl',     color: '#191C20' }, // 100
-  { name: 'Royal Onyx',        color: '#1B1917' }, // 101
-  { name: 'Mystic Teal',       color: '#0E4B56' }, // 102
-  { name: 'Velvet Sapphire',   color: '#1D3557' }, // 103
-  { name: 'Golden Dusk',       color: '#B45309' }, // 104
-  { name: 'Blue Opulence',     color: '#1E40AF' }, // 105
-  { name: 'Scarlet Ember',     color: '#991B1B' }, // 106
-  { name: 'Nordic Frost',      color: '#798E9C' }, // 107
-  { name: 'Imperial Bronze',   color: '#6B4226' }, // 108
-  { name: 'Midnight Orchid',   color: '#4A2040' }, // 109
-  { name: 'Silver Lagoon',     color: '#52796F' }, // 110
-  { name: 'Emerald Shadow',    color: '#144230' }, // 111
-  { name: 'Golden Horizon',    color: '#C59B27' }, // 112
-  { name: 'Mystic Lilac',      color: '#8B6F8A' }, // 113
-  { name: 'Royal Copper',      color: '#A0522D' }, // 114
-  { name: 'Deep Atlantic',     color: '#1B3B6F' }, // 115
-  { name: 'Velvet Moss',       color: '#3D5A38' }, // 116
-  { name: 'Crystal Blue',      color: '#2563EB' }, // 117
-  { name: 'Amber Glow',        color: '#D97706' }, // 118
-  { name: 'Noble Plum',        color: '#581C87' }, // 119
-  { name: 'Arctic Pearl',      color: '#D8DEE9' }, // 120
-  { name: 'Bronze Majesty',    color: '#7B5233' }, // 121
-  { name: 'Twilight Rose',     color: '#A3586D' }, // 122
-  { name: 'Sapphire Night',    color: '#162544' }, // 123
-  { name: 'Golden Fern',       color: '#8C8635' }, // 124
-  { name: 'Mystic Forest',     color: '#1E3A2F' }, // 125
-  { name: 'Royal Garnet',      color: '#6E1A24' }, // 126
-  { name: 'Silver Orchid',     color: '#A69CAC' }, // 127
-  { name: 'Blue Majesty',      color: '#1D4ED8' }, // 128
-  { name: 'Copper Ember',      color: '#A84B2C' }, // 129
-  { name: 'Velvet Indigo',     color: '#2E1A47' }, // 130
-  { name: 'Emerald Dawn',      color: '#1B6A4C' }, // 131
-  { name: 'Lunar Silver',      color: '#BAC2C7' }, // 132
-  { name: 'Crimson Orchid',    color: '#881337' }, // 133
-  { name: 'Golden Nectar',     color: '#D48B28' }, // 134
-  { name: 'Mystic Ocean',      color: '#164E63' }, // 135
-  { name: 'Royal Mahogany',    color: '#4D2323' }, // 136
-  { name: 'Frosted Jade',      color: '#729B89' }, // 137
-  { name: 'Twilight Indigo',   color: '#242F5B' }, // 138
-  { name: 'Amber Velvet',      color: '#A15D1C' }, // 139
-  { name: 'Sapphire Royale',   color: '#1E3A8A' }, // 140
-  { name: 'Opulent Bronze',    color: '#805634' }, // 141
-  { name: 'Celadon Mist',      color: '#8E9B90' }, // 142
-  { name: 'Scarlet Royale',    color: '#85141A' }, // 143
-  { name: 'Lunar Violet',      color: '#4C2A58' }, // 144
-  { name: 'Golden Willow',     color: '#94783E' }, // 145
-  { name: 'Deep Cobalt',       color: '#1A365D' }, // 146
-  { name: 'Velvet Cedar',      color: '#4A3528' }, // 147
-  { name: 'Mystic Amber',      color: '#B87333' }, // 148
-  { name: 'Royal Azure',       color: '#0369A1' }, // 149
-  { name: 'Silver Dusk',       color: '#78828A' }, // 150
-  { name: 'Emerald Crown',     color: '#046A38' }, // 151
-  { name: 'Rosewood Noir',     color: '#3E1C24' }, // 152
-  { name: 'Golden Laurel',     color: '#A08432' }, // 153
-  { name: 'Arctic Sapphire',   color: '#3A6073' }, // 154
-  { name: 'Crimson Dusk',      color: '#6B1D2F' }, // 155
-  { name: 'Imperial Cobalt',   color: '#172554' }, // 156
-  { name: 'Twilight Teal',     color: '#134E4A' }, // 157
-  { name: 'Bronze Horizon',    color: '#8D5B3A' }, // 158
-  { name: 'Velvet Orchid',     color: '#5B2149' }, // 159
-  { name: 'Sapphire Bloom',    color: '#25527E' }, // 160
-  { name: 'Mystic Charcoal',   color: '#292C33' }, // 161
-  { name: 'Golden Cascade',    color: '#C69214' }, // 162
-  { name: 'Royal Cypress',     color: '#224835' }, // 163
-  { name: 'Lunar Sage',        color: '#93A29B' }, // 164
-  { name: 'Deep Cerulean',     color: '#005F73' }, // 165
-  { name: 'Copper Twilight',   color: '#944634' }, // 166
-  { name: 'Emerald Mirage',    color: '#0F5132' }, // 167
-  { name: 'Silver Crown',      color: '#ADB5BD' }, // 168
-  { name: 'Velvet Maroon',     color: '#541212' }, // 169
-  { name: 'Arctic Lagoon',     color: '#4682B4' }, // 170
-  { name: 'Golden Mirage',     color: '#D4A373' }, // 171
-  { name: 'Royal Juniper',     color: '#2B4A3F' }, // 172
-  { name: 'Mystic Burgundy',   color: '#521822' }, // 173
-  { name: 'Blue Royale',       color: '#1B4965' }, // 174
-  { name: 'Bronze Willow',     color: '#7A5C3E' }, // 175
-  { name: 'Crimson Majesty',   color: '#7C1020' }, // 176
-  { name: 'Lunar Ocean',       color: '#23395D' }, // 177
-  { name: 'Emerald Velvet',    color: '#1B4332' }, // 178
-  { name: 'Golden Eclipse',    color: '#A67C1E' }, // 179
-  { name: 'Sapphire Forest',   color: '#1F3A4B' }, // 180
-  { name: 'Twilight Bronze',   color: '#6F4E37' }, // 181
-  { name: 'Royal Celadon',     color: '#6B8E80' }, // 182
-  { name: 'Mystic Sapphire',   color: '#203A60' }, // 183
-  { name: 'Silver Horizon',    color: '#9AA0A6' }, // 184
-  { name: 'Velvet Cypress',    color: '#1D3C2F' }, // 185
-  { name: 'Amber Majesty',     color: '#B45B14' }, // 186
-  { name: 'Imperial Ocean',    color: '#0C4A60' }, // 187
-  { name: 'Golden Monarch',    color: '#C88D26' }, // 188
-  { name: 'Arctic Orchid',     color: '#9D8189' }, // 189
-  { name: 'Crimson Sapphire',  color: '#631726' }, // 190
-  { name: 'Royal Moonstone',   color: '#5C6B73' }, // 191
-  { name: 'Deep Lagoon',       color: '#0A5C5A' }, // 192
-  { name: 'Copper Majesty',    color: '#8B4513' }, // 193
-  { name: 'Velvet Cascade',    color: '#2C4258' }, // 194
-  { name: 'Emerald Twilight',  color: '#194336' }, // 195
-  { name: 'Silver Monarch',    color: '#8E9CA8' }, // 196
-  { name: 'Mystic Pearl',      color: '#C4CCD3' }, // 197
-  { name: 'Golden Dynasty',    color: '#A17A24' }, // 198
-  { name: 'Blue Eclipse',      color: '#0F2137' }, // 199
-  { name: 'Imperial Noir',     color: '#141518' }, // 200
+  { name: 'Blue Steel', color: '#46627F' }, // 70
+  { name: 'Eucalyptus', color: '#4E7764' }, // 71
+  { name: 'Crimson Velvet', color: '#7E121D' }, // 72
+  { name: 'Antique Rose', color: '#B0727B' }, // 73
+  { name: 'Copper Clay', color: '#9C4124' }, // 74
+  { name: 'Imperial Jade', color: '#0D6848' }, // 75
+  { name: 'Storm Grey', color: '#5F6B72' }, // 76
+  { name: 'Golden Ochre', color: '#C68642' }, // 77
+  { name: 'Sapphire Mist', color: '#5C82A6' }, // 78
+  { name: 'Plum Velvet', color: '#4A1E34' }, // 79
+  { name: 'Desert Bronze', color: '#8C6239' }, // 80
+  { name: 'Arctic Mint', color: '#7EC8B8' }, // 81
+  { name: 'Royal Teal', color: '#115E59' }, // 82
+  { name: 'Shadow Purple', color: '#43304A' }, // 83
+  { name: 'Maple Brown', color: '#7A392B' }, // 84
+  { name: 'Celestial Blue', color: '#3B82F6' }, // 85
+  { name: 'Garnet Red', color: '#781D26' }, // 86
+  { name: 'Opal Green', color: '#88B2A1' }, // 87
+  { name: 'Smoky Lavender', color: '#736882' }, // 88
+  { name: 'Rich Mahogany', color: '#4C1D24' }, // 89
+  { name: 'Silver Sage', color: '#98A89A' }, // 90
+  { name: 'Marigold', color: '#F59E0B' }, // 91
+  { name: 'Ink Blue', color: '#152238' }, // 92
+  { name: 'Terracotta', color: '#D96B43' }, // 93
+  { name: 'Pine Green', color: '#1E4D2B' }, // 94
+  { name: 'Rose Quartz', color: '#B87A88' }, // 95
+  { name: 'Espresso Brown', color: '#2E1E14' }, // 96
+  { name: 'Frosted Silver', color: '#C8CBD0' }, // 97
+  { name: 'Azure Blue', color: '#0284C7' }, // 98
+  { name: 'Golden Olive', color: '#7D7930' }, // 99
+  { name: 'Black Pearl', color: '#191C20' }, // 100
+  { name: 'Royal Onyx', color: '#1B1917' }, // 101
+  { name: 'Mystic Teal', color: '#0E4B56' }, // 102
+  { name: 'Velvet Sapphire', color: '#1D3557' }, // 103
+  { name: 'Golden Dusk', color: '#B45309' }, // 104
+  { name: 'Blue Opulence', color: '#1E40AF' }, // 105
+  { name: 'Scarlet Ember', color: '#991B1B' }, // 106
+  { name: 'Nordic Frost', color: '#798E9C' }, // 107
+  { name: 'Imperial Bronze', color: '#6B4226' }, // 108
+  { name: 'Midnight Orchid', color: '#4A2040' }, // 109
+  { name: 'Silver Lagoon', color: '#52796F' }, // 110
+  { name: 'Emerald Shadow', color: '#144230' }, // 111
+  { name: 'Golden Horizon', color: '#C59B27' }, // 112
+  { name: 'Mystic Lilac', color: '#8B6F8A' }, // 113
+  { name: 'Royal Copper', color: '#A0522D' }, // 114
+  { name: 'Deep Atlantic', color: '#1B3B6F' }, // 115
+  { name: 'Velvet Moss', color: '#3D5A38' }, // 116
+  { name: 'Crystal Blue', color: '#2563EB' }, // 117
+  { name: 'Amber Glow', color: '#D97706' }, // 118
+  { name: 'Noble Plum', color: '#581C87' }, // 119
+  { name: 'Arctic Pearl', color: '#D8DEE9' }, // 120
+  { name: 'Bronze Majesty', color: '#7B5233' }, // 121
+  { name: 'Twilight Rose', color: '#A3586D' }, // 122
+  { name: 'Sapphire Night', color: '#162544' }, // 123
+  { name: 'Golden Fern', color: '#8C8635' }, // 124
+  { name: 'Mystic Forest', color: '#1E3A2F' }, // 125
+  { name: 'Royal Garnet', color: '#6E1A24' }, // 126
+  { name: 'Silver Orchid', color: '#A69CAC' }, // 127
+  { name: 'Blue Majesty', color: '#1D4ED8' }, // 128
+  { name: 'Copper Ember', color: '#A84B2C' }, // 129
+  { name: 'Velvet Indigo', color: '#2E1A47' }, // 130
+  { name: 'Emerald Dawn', color: '#1B6A4C' }, // 131
+  { name: 'Lunar Silver', color: '#BAC2C7' }, // 132
+  { name: 'Crimson Orchid', color: '#881337' }, // 133
+  { name: 'Golden Nectar', color: '#D48B28' }, // 134
+  { name: 'Mystic Ocean', color: '#164E63' }, // 135
+  { name: 'Royal Mahogany', color: '#4D2323' }, // 136
+  { name: 'Frosted Jade', color: '#729B89' }, // 137
+  { name: 'Twilight Indigo', color: '#242F5B' }, // 138
+  { name: 'Amber Velvet', color: '#A15D1C' }, // 139
+  { name: 'Sapphire Royale', color: '#1E3A8A' }, // 140
+  { name: 'Opulent Bronze', color: '#805634' }, // 141
+  { name: 'Celadon Mist', color: '#8E9B90' }, // 142
+  { name: 'Scarlet Royale', color: '#85141A' }, // 143
+  { name: 'Lunar Violet', color: '#4C2A58' }, // 144
+  { name: 'Golden Willow', color: '#94783E' }, // 145
+  { name: 'Deep Cobalt', color: '#1A365D' }, // 146
+  { name: 'Velvet Cedar', color: '#4A3528' }, // 147
+  { name: 'Mystic Amber', color: '#B87333' }, // 148
+  { name: 'Royal Azure', color: '#0369A1' }, // 149
+  { name: 'Silver Dusk', color: '#78828A' }, // 150
+  { name: 'Emerald Crown', color: '#046A38' }, // 151
+  { name: 'Rosewood Noir', color: '#3E1C24' }, // 152
+  { name: 'Golden Laurel', color: '#A08432' }, // 153
+  { name: 'Arctic Sapphire', color: '#3A6073' }, // 154
+  { name: 'Crimson Dusk', color: '#6B1D2F' }, // 155
+  { name: 'Imperial Cobalt', color: '#172554' }, // 156
+  { name: 'Twilight Teal', color: '#134E4A' }, // 157
+  { name: 'Bronze Horizon', color: '#8D5B3A' }, // 158
+  { name: 'Velvet Orchid', color: '#5B2149' }, // 159
+  { name: 'Sapphire Bloom', color: '#25527E' }, // 160
+  { name: 'Mystic Charcoal', color: '#292C33' }, // 161
+  { name: 'Golden Cascade', color: '#C69214' }, // 162
+  { name: 'Royal Cypress', color: '#224835' }, // 163
+  { name: 'Lunar Sage', color: '#93A29B' }, // 164
+  { name: 'Deep Cerulean', color: '#005F73' }, // 165
+  { name: 'Copper Twilight', color: '#944634' }, // 166
+  { name: 'Emerald Mirage', color: '#0F5132' }, // 167
+  { name: 'Silver Crown', color: '#ADB5BD' }, // 168
+  { name: 'Velvet Maroon', color: '#541212' }, // 169
+  { name: 'Arctic Lagoon', color: '#4682B4' }, // 170
+  { name: 'Golden Mirage', color: '#D4A373' }, // 171
+  { name: 'Royal Juniper', color: '#2B4A3F' }, // 172
+  { name: 'Mystic Burgundy', color: '#521822' }, // 173
+  { name: 'Blue Royale', color: '#1B4965' }, // 174
+  { name: 'Bronze Willow', color: '#7A5C3E' }, // 175
+  { name: 'Crimson Majesty', color: '#7C1020' }, // 176
+  { name: 'Lunar Ocean', color: '#23395D' }, // 177
+  { name: 'Emerald Velvet', color: '#1B4332' }, // 178
+  { name: 'Golden Eclipse', color: '#A67C1E' }, // 179
+  { name: 'Sapphire Forest', color: '#1F3A4B' }, // 180
+  { name: 'Twilight Bronze', color: '#6F4E37' }, // 181
+  { name: 'Royal Celadon', color: '#6B8E80' }, // 182
+  { name: 'Mystic Sapphire', color: '#203A60' }, // 183
+  { name: 'Silver Horizon', color: '#9AA0A6' }, // 184
+  { name: 'Velvet Cypress', color: '#1D3C2F' }, // 185
+  { name: 'Amber Majesty', color: '#B45B14' }, // 186
+  { name: 'Imperial Ocean', color: '#0C4A60' }, // 187
+  { name: 'Golden Monarch', color: '#C88D26' }, // 188
+  { name: 'Arctic Orchid', color: '#9D8189' }, // 189
+  { name: 'Crimson Sapphire', color: '#631726' }, // 190
+  { name: 'Royal Moonstone', color: '#5C6B73' }, // 191
+  { name: 'Deep Lagoon', color: '#0A5C5A' }, // 192
+  { name: 'Copper Majesty', color: '#8B4513' }, // 193
+  { name: 'Velvet Cascade', color: '#2C4258' }, // 194
+  { name: 'Emerald Twilight', color: '#194336' }, // 195
+  { name: 'Silver Monarch', color: '#8E9CA8' }, // 196
+  { name: 'Mystic Pearl', color: '#C4CCD3' }, // 197
+  { name: 'Golden Dynasty', color: '#A17A24' }, // 198
+  { name: 'Blue Eclipse', color: '#0F2137' }, // 199
+  { name: 'Imperial Noir', color: '#141518' }, // 200
 ];
 
 export const getSongCardColor = (index: number): SongCardColorDef => {
@@ -308,7 +310,23 @@ export default function SongsScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
   const { isDark, toggleTheme, colors } = useTheme();
   const { language, t } = useLanguage();
-  const { activeChurch } = useChurch();
+  const { activeChurch, churchId } = useChurch();
+  const { user } = useAuth();
+  const effectiveChurchId = churchId || activeChurch?.id || 'rhema';
+
+  const songsCacheKey = useMemo(
+    () => makeScopedCacheKey('songs_list_v2', effectiveChurchId, user?.uid),
+    [effectiveChurchId, user?.uid]
+  );
+  const setlistsCacheKey = useMemo(
+    () => makeScopedCacheKey('songs_setlists_v2', effectiveChurchId, user?.uid),
+    [effectiveChurchId, user?.uid]
+  );
+  const scopedSongbookKey = useMemo(
+    () => `${SONGBOOK_KEY}_${effectiveChurchId}_${user?.uid || 'anon'}`,
+    [effectiveChurchId, user?.uid]
+  );
+  const initialSongsCache = getInstantMemory<WorshipSong[]>(songsCacheKey);
 
   // ── Tabs ──────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<'browse' | 'eventSongs' | 'theme' | 'songbook'>('browse');
@@ -320,8 +338,8 @@ export default function SongsScreen({ navigation, route }: any) {
   const [hasActiveEventSongs, setHasActiveEventSongs] = useState<boolean>(false);
 
   // ── All Songs ─────────────────────────────────────
-  const [songs, setSongs] = useState<WorshipSong[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [songs, setSongs] = useState<WorshipSong[]>(() => initialSongsCache || []);
+  const [loading, setLoading] = useState(() => !initialSongsCache?.length);
   const [refreshing, setRefreshing] = useState(false);
 
   // ── Category filter ───────────────────────────────
@@ -349,51 +367,60 @@ export default function SongsScreen({ navigation, route }: any) {
     type: 'success'
   });
 
-  // ── Load songs ────────────────────────────────────
-  const fetchSongs = async (forceRefresh = false) => {
+  // ── Load songs (Cache-First SWR scoped per church + user) ───
+  const fetchSongs = useCallback(async (forceRefresh = false) => {
+    const memHit = getInstantMemory<WorshipSong[]>(songsCacheKey);
+    if (memHit?.length) {
+      setSongs(memHit);
+      setLoading(false);
+    } else if (!forceRefresh) {
+      setLoading(true);
+    }
+
     try {
-      // Try cache first for instant display
-      if (!forceRefresh) {
-        try {
-          const cached = await AsyncStorage.getItem('@songs_cache');
-          if (cached) {
-            const parsed = JSON.parse(cached);
-            if (parsed.length > 0) {
-              setSongs(parsed);
-              setLoading(false);
-            }
+      await loadWithInstantCache<WorshipSong[]>({
+        key: songsCacheKey,
+        screenName: 'Songs',
+        freshSkipMs: 2 * 60 * 1000,
+        forceRefresh,
+        fetcher: () => FirestoreService.getWorshipSongs({ forceRefresh }),
+        onCached: (cached) => {
+          if (cached?.length) {
+            setSongs(cached);
+            setLoading(false);
           }
-        } catch (cacheError) {
-          console.warn('Failed to read from cache:', cacheError);
-        }
-      }
-      
-      // Always fetch fresh data
-      const data = await FirestoreService.getWorshipSongs({ forceRefresh });
-      setSongs(data);
-      
-      // Update cache
-      try {
-        await AsyncStorage.setItem('@songs_cache', JSON.stringify(data));
-      } catch (cacheWriteError) {
-        console.warn('Failed to write to cache:', cacheWriteError);
-      }
+        },
+        onFresh: (fresh) => {
+          setSongs(fresh);
+          setLoading(false);
+        },
+      });
     } catch (error) {
       console.error('Error fetching songs from Firestore:', error);
-      Alert.alert('Error', 'Failed to load songs. Please try again.');
+      if (!memHit?.length) {
+        Alert.alert('Error', 'Failed to load songs. Please try again.');
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [songsCacheKey]);
 
-  // ── Load saved songbook from storage ─────────────
-  const loadSavedIds = async () => {
+  // ── Load saved songbook from storage (scoped, migrating legacy unscoped key if present) ─────────────
+  const loadSavedIds = useCallback(async () => {
     try {
-      const raw = await AsyncStorage.getItem(SONGBOOK_KEY);
-      if (raw) setSavedIds(JSON.parse(raw));
+      const raw = await AsyncStorage.getItem(scopedSongbookKey);
+      if (raw) {
+        setSavedIds(JSON.parse(raw));
+        return;
+      }
+      const legacy = await AsyncStorage.getItem(SONGBOOK_KEY);
+      if (legacy) {
+        setSavedIds(JSON.parse(legacy));
+        AsyncStorage.setItem(scopedSongbookKey, legacy).catch(() => { });
+      }
     } catch { /* ignore */ }
-  };
+  }, [scopedSongbookKey]);
 
   // ── Helper: Check if event is active or upcoming (filters out completed events) ──
   const isEventActiveOrUpcoming = (event: any): boolean => {
@@ -469,48 +496,52 @@ export default function SongsScreen({ navigation, route }: any) {
     return true;
   };
 
-  // ── Load Setlists / Worship Services ─────────────
-  const loadSetlists = async () => {
+  // ── Load Setlists / Worship Services (uses single indexed getUpcomingEvents query + SWR cache) ───
+  const loadSetlists = useCallback(async (forceRefresh = false) => {
     try {
-      const [upcomingRes, allRes] = await Promise.all([
-        FirestoreService.getUpcomingEvents(50).catch(() => []),
-        FirestoreService.getEvents().catch(() => [])
-      ]);
-
-      const combinedEvents = [...(upcomingRes || []), ...(allRes || [])];
-      // Deduplicate events by id
-      const uniqueEvents = Array.from(new Map(combinedEvents.map(e => [e.id, e])).values());
-
-      // Filter STRICTLY for upcoming or active events (completed/past events are excluded)
-      const activeUpcomingEvents = uniqueEvents.filter(isEventActiveOrUpcoming);
-
-      // Sort upcoming events chronologically (earliest event first)
-      activeUpcomingEvents.sort((a, b) => {
-        const dateA = a.date || '';
-        const dateB = b.date || '';
-        return dateA.localeCompare(dateB);
+      await loadWithInstantCache<any[]>({
+        key: setlistsCacheKey,
+        screenName: 'SongsSetlists',
+        freshSkipMs: 2 * 60 * 1000,
+        forceRefresh,
+        fetcher: () => FirestoreService.getUpcomingEvents(40).catch(() => []),
+        onCached: (cachedEvents) => {
+          const activeUpcomingEvents = (cachedEvents || []).filter(isEventActiveOrUpcoming);
+          activeUpcomingEvents.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+          const eventsWithSongs = activeUpcomingEvents.filter(
+            (ev: any) => ev && Array.isArray(ev.services) && ev.services.length > 0 && ev.services.some((s: any) => s && Array.isArray(s.songs) && s.songs.length > 0)
+          );
+          if (eventsWithSongs.length > 0) {
+            const primaryEvent = eventsWithSongs[0];
+            setActiveEvent(primaryEvent);
+            const srvs = primaryEvent.services || [];
+            setWorshipServices(srvs);
+            setHasActiveEventSongs(true);
+            setActiveServiceId((prev) => prev || srvs[0]?.id || '');
+          }
+        },
+        onFresh: (upcomingRes) => {
+          const uniqueEvents = Array.from(new Map((upcomingRes || []).map((e: any) => [e.id, e])).values());
+          const activeUpcomingEvents = uniqueEvents.filter(isEventActiveOrUpcoming);
+          activeUpcomingEvents.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+          const eventsWithSongs = activeUpcomingEvents.filter(
+            (ev: any) => ev && Array.isArray(ev.services) && ev.services.length > 0 && ev.services.some((s: any) => s && Array.isArray(s.songs) && s.songs.length > 0)
+          );
+          if (eventsWithSongs.length > 0) {
+            const primaryEvent = eventsWithSongs[0];
+            setActiveEvent(primaryEvent);
+            const srvs = primaryEvent.services || [];
+            setWorshipServices(srvs);
+            setHasActiveEventSongs(true);
+            setActiveServiceId((prev) => (prev && srvs.some((s: any) => s.id === prev) ? prev : srvs[0]?.id || ''));
+          } else {
+            setActiveEvent(null);
+            setWorshipServices([]);
+            setHasActiveEventSongs(false);
+            setActiveServiceId('');
+          }
+        },
       });
-
-      // Find active/upcoming events that have services with songs
-      const eventsWithSongs = activeUpcomingEvents.filter(
-        (ev: any) => ev && Array.isArray(ev.services) && ev.services.length > 0 && ev.services.some((s: any) => s && Array.isArray(s.songs) && s.songs.length > 0)
-      );
-
-      if (eventsWithSongs.length > 0) {
-        const primaryEvent = eventsWithSongs[0];
-        setActiveEvent(primaryEvent);
-        const srvs = primaryEvent.services || [];
-        setWorshipServices(srvs);
-        setHasActiveEventSongs(true);
-        // Automatically select the first service so its songs are displayed immediately
-        setActiveServiceId(srvs[0]?.id || '');
-      } else {
-        // No active or upcoming events with songs!
-        setActiveEvent(null);
-        setWorshipServices([]);
-        setHasActiveEventSongs(false);
-        setActiveServiceId('');
-      }
     } catch (e) {
       console.warn('Failed to load event songs:', e);
       setActiveEvent(null);
@@ -518,7 +549,7 @@ export default function SongsScreen({ navigation, route }: any) {
       setHasActiveEventSongs(false);
       setActiveServiceId('');
     }
-  };
+  }, [setlistsCacheKey]);
 
   const handleShareSetlist = async () => {
     const activeService: any = worshipServices.find(s => s.id === activeServiceId) || null;
@@ -601,7 +632,7 @@ export default function SongsScreen({ navigation, route }: any) {
     fetchSongs();
     loadSavedIds();
     loadSetlists();
-  }, []);
+  }, [fetchSongs, loadSavedIds, loadSetlists]);
 
   // ── Open specific song from notification ──────────
   const { songId } = route?.params || {};
@@ -616,7 +647,11 @@ export default function SongsScreen({ navigation, route }: any) {
     }
   }, [songId, songs, navigation, enrichSongWithSetlist]);
 
-  const onRefresh = () => { setRefreshing(true); fetchSongs(true); loadSetlists(); };
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchSongs(true);
+    loadSetlists(true);
+  }, [fetchSongs, loadSetlists]);
 
   // ── Toggle save/unsave song ───────────────────────
   const toggleSave = async (song: WorshipSong) => {
@@ -631,7 +666,7 @@ export default function SongsScreen({ navigation, route }: any) {
       setAlertConfig({ visible: true, title: t('songs.songSaved'), message: t('songs.songSavedMsg', { title: songTitle }), type: 'success' });
     }
     setSavedIds(newIds);
-    await AsyncStorage.setItem(SONGBOOK_KEY, JSON.stringify(newIds));
+    await AsyncStorage.setItem(scopedSongbookKey, JSON.stringify(newIds));
   };
 
   // Helper: split multi-category string into array
@@ -689,8 +724,8 @@ export default function SongsScreen({ navigation, route }: any) {
         const cLower = c.toLowerCase().trim();
         const exists = CATEGORIES.some(cat => {
           const catLower = cat.toLowerCase().trim();
-          return catLower === cLower || 
-            (catLower.includes('stuthi') && cLower.includes('sthuthi')) || 
+          return catLower === cLower ||
+            (catLower.includes('stuthi') && cLower.includes('sthuthi')) ||
             (catLower.includes('sthuthi') && cLower.includes('stuthi'));
         });
         if (!exists) {
@@ -815,7 +850,7 @@ export default function SongsScreen({ navigation, route }: any) {
 
   const validServices = Array.isArray(worshipServices) ? worshipServices.filter(Boolean) : [];
   const activeService: any = validServices.find((s: any) => s && s.id === activeServiceId) || (validServices.length > 0 ? validServices[0] : null);
-  
+
   // Return ONLY songs of the selected service. Automatically defaults to the primary service so songs load immediately.
   const activeSetlist: any[] = useMemo(() => {
     const targetId = activeServiceId || validServices[0]?.id;
@@ -1062,7 +1097,7 @@ export default function SongsScreen({ navigation, route }: any) {
             const monthStr = months[m] || '';
             return `${dayStr} ${monthStr} ${y}`;
           }
-        } catch {}
+        } catch { }
         return dateStr;
       };
 
@@ -1321,15 +1356,15 @@ export default function SongsScreen({ navigation, route }: any) {
                 styles.tabPill,
                 activeTab === 'browse'
                   ? {
-                      backgroundColor: '#FA6203',
-                      borderColor: '#FA6203',
-                      borderWidth: 1.5,
-                    }
+                    backgroundColor: '#FA6203',
+                    borderColor: '#FA6203',
+                    borderWidth: 1.5,
+                  }
                   : {
-                      backgroundColor: 'rgba(255, 255, 255, 0.75)',
-                      borderColor: 'rgba(250, 98, 3, 0.18)',
-                      borderWidth: 1.5,
-                    },
+                    backgroundColor: 'rgba(255, 255, 255, 0.75)',
+                    borderColor: 'rgba(250, 98, 3, 0.18)',
+                    borderWidth: 1.5,
+                  },
               ]}
               onPress={() => { setActiveTab('browse'); setSearch(''); }}
               activeOpacity={0.75}
@@ -1364,15 +1399,15 @@ export default function SongsScreen({ navigation, route }: any) {
                 styles.tabPill,
                 activeTab === 'eventSongs'
                   ? {
-                      backgroundColor: '#FA6203',
-                      borderColor: '#FA6203',
-                      borderWidth: 1.5,
-                    }
+                    backgroundColor: '#FA6203',
+                    borderColor: '#FA6203',
+                    borderWidth: 1.5,
+                  }
                   : {
-                      backgroundColor: 'rgba(255, 255, 255, 0.75)',
-                      borderColor: 'rgba(250, 98, 3, 0.18)',
-                      borderWidth: 1.5,
-                    },
+                    backgroundColor: 'rgba(255, 255, 255, 0.75)',
+                    borderColor: 'rgba(250, 98, 3, 0.18)',
+                    borderWidth: 1.5,
+                  },
               ]}
               onPress={() => { setActiveTab('eventSongs'); setSearch(''); }}
               activeOpacity={0.75}
@@ -1407,15 +1442,15 @@ export default function SongsScreen({ navigation, route }: any) {
                 styles.tabPill,
                 activeTab === 'theme'
                   ? {
-                      backgroundColor: '#FA6203',
-                      borderColor: '#FA6203',
-                      borderWidth: 1.5,
-                    }
+                    backgroundColor: '#FA6203',
+                    borderColor: '#FA6203',
+                    borderWidth: 1.5,
+                  }
                   : {
-                      backgroundColor: 'rgba(255, 255, 255, 0.75)',
-                      borderColor: 'rgba(250, 98, 3, 0.18)',
-                      borderWidth: 1.5,
-                    },
+                    backgroundColor: 'rgba(255, 255, 255, 0.75)',
+                    borderColor: 'rgba(250, 98, 3, 0.18)',
+                    borderWidth: 1.5,
+                  },
               ]}
               onPress={() => { setActiveTab('theme'); setSearch(''); }}
               activeOpacity={0.75}
@@ -1450,15 +1485,15 @@ export default function SongsScreen({ navigation, route }: any) {
                 styles.tabPill,
                 activeTab === 'songbook'
                   ? {
-                      backgroundColor: '#FA6203',
-                      borderColor: '#FA6203',
-                      borderWidth: 1.5,
-                    }
+                    backgroundColor: '#FA6203',
+                    borderColor: '#FA6203',
+                    borderWidth: 1.5,
+                  }
                   : {
-                      backgroundColor: 'rgba(255, 255, 255, 0.75)',
-                      borderColor: 'rgba(250, 98, 3, 0.18)',
-                      borderWidth: 1.5,
-                    },
+                    backgroundColor: 'rgba(255, 255, 255, 0.75)',
+                    borderColor: 'rgba(250, 98, 3, 0.18)',
+                    borderWidth: 1.5,
+                  },
               ]}
               onPress={() => { setActiveTab('songbook'); setSearch(''); }}
               activeOpacity={0.75}
@@ -1511,15 +1546,15 @@ export default function SongsScreen({ navigation, route }: any) {
                     styles.chip,
                     isSelected
                       ? {
-                          backgroundColor: '#0F172A',
-                          borderColor: '#0F172A',
-                          borderWidth: 1.5,
-                        }
+                        backgroundColor: '#0F172A',
+                        borderColor: '#0F172A',
+                        borderWidth: 1.5,
+                      }
                       : {
-                          backgroundColor: 'rgba(255, 255, 255, 0.75)',
-                          borderColor: 'rgba(250, 98, 3, 0.18)',
-                          borderWidth: 1.5,
-                        },
+                        backgroundColor: 'rgba(255, 255, 255, 0.75)',
+                        borderColor: 'rgba(250, 98, 3, 0.18)',
+                        borderWidth: 1.5,
+                      },
                   ]}
                   activeOpacity={0.7}
                 >
@@ -1546,171 +1581,140 @@ export default function SongsScreen({ navigation, route }: any) {
       {/* ── Lower Area (Surfaces beneath the top square card) ── */}
       <View style={{ flex: 1, backgroundColor: isDark ? '#000000' : colors.background }}>
 
-      {/* ── Search Bar (Hidden at top on Event Songs tab since it renders below the Event Card) ── */}
-      {activeTab !== 'eventSongs' && (
-        <>
-        <View
-          style={[
-            styles.searchBar,
-            {
-              backgroundColor: isDark ? '#18181B' : '#FFFFFF',
-              borderColor: isDark ? '#6B7280' : '#334155',
-              borderWidth: 1.5,
-              shadowColor: '#000',
-              shadowOpacity: isDark ? 0.25 : 0.06,
-              shadowRadius: 6,
-              elevation: 3,
-            }
-          ]}
-        >
-          <Search size={19} color={isDark ? '#9CA3AF' : '#334155'} strokeWidth={2.2} />
-          <TextInput
-            placeholder={
-              activeTab === 'browse' ? t('songs.searchSongs') :
-              activeTab === 'theme' ? t('songs.searchThemeSongs') :
-              t('songs.searchSongbook')
-            }
-              placeholderTextColor={isDark ? '#9CA3AF' : '#64748B'}
-              style={[styles.searchInput, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
-              value={search}
-              onChangeText={setSearch}
-              autoCorrect={false}
-              autoCapitalize="none"
-            />
-            {search.length > 0 && (
-              <TouchableOpacity
-                onPress={() => setSearch('')}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: 12,
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                }}
-              >
-                <X size={13} color={isDark ? '#E5E7EB' : '#334155'} strokeWidth={2.4} />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* Long Press hint */}
-          {activeTab === 'browse' && (
-            <Text style={styles.hint}>{t('songs.longPressSaveHint')}</Text>
-          )}
-          {activeTab === 'songbook' && (
-            <Text style={styles.hint}>{t('songs.longPressRemoveHint')}</Text>
-          )}
-        </>
-      )}
-      {activeTab !== 'eventSongs' ? null : null}
-
-      {/* ── Setlist Flow Tab ── */}
-      {/* ── Event Songs Flow Tab ── */}
-      {activeTab === 'eventSongs' && (
-        <FlatList
-          style={{ flex: 1 }}
-          data={filteredEventSongs}
-          keyExtractor={(item, idx) => `event-song-${item.id || "song"}-${idx}`}
-          renderItem={renderSongCard}
-          contentContainerStyle={[styles.listContent, { paddingTop: 10 }]}
-          showsVerticalScrollIndicator={false}
-          initialNumToRender={15}
-          maxToRenderPerBatch={10}
-          windowSize={5}
-          removeClippedSubviews={Platform.OS === 'android'}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? '#FFFFFF' : '#0F172A'} />}
-          ListHeaderComponent={renderEventCardHeader()}
-          ListEmptyComponent={
-            (!activeEvent || validServices.length === 0) ? null : (
-              <View style={styles.emptyState}>
-                <Music size={44} color="#cbd5e1" />
-                <Text style={[styles.emptyTitle, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>
-                  {eventSongItems.length === 0 ? 'No Songs in this Service' : t('songs.noSongsFound')}
-                </Text>
-                <Text style={styles.emptySub}>
-                  {eventSongItems.length === 0 
-                    ? `The song arrangement for ${activeService?.name || 'this service'} will appear here once published.` 
-                    : t('songs.tryDifferentCategory')}
-                </Text>
-              </View>
-            )
-          }
-        />
-      )}
-
-      {/* ── Browse List ── */}
-      {activeTab === 'browse' && (
-        loading && !refreshing ? (
-          <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color="#fbbf24" />
-          </View>
-        ) : (
-          <FlatList
-            style={{ flex: 1 }}
-            data={filteredBrowse}
-            keyExtractor={item => item.id}
-            renderItem={renderSongCard}
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-            initialNumToRender={15}
-            maxToRenderPerBatch={10}
-            windowSize={5}
-            removeClippedSubviews={true}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1a2d5a" />}
-            ListHeaderComponent={
-              <Text style={styles.secLbl}>
-                {selectedCategory === 'All' ? t('songs.allSongs').toUpperCase() : SongLanguageHelper.getLocalizedCategory(selectedCategory, language).toUpperCase()} • {t('songs.songsCount', { count: filteredBrowse.length })}
-              </Text>
-            }
-            ListEmptyComponent={
-              <View style={styles.emptyState}>
-                <AlertCircle size={44} color="#cbd5e1" />
-                <Text style={[styles.emptyTitle, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>{t('songs.noSongsFound')}</Text>
-                <Text style={styles.emptySub}>{t('songs.tryDifferentCategory')}</Text>
-              </View>
-            }
-          />
-        )
-      )}
-
-      {/* ── My Songbook ── */}
-      {activeTab === 'songbook' && (
-        <FlatList
-          style={{ flex: 1 }}
-          data={filteredSongbook}
-          keyExtractor={item => item.id}
-          renderItem={renderSongCard}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          initialNumToRender={15}
-          maxToRenderPerBatch={10}
-          windowSize={5}
-          removeClippedSubviews={true}
-          ListHeaderComponent={
-            <Text style={styles.secLbl}>{t('songs.mySavedSongs')} • {t('songs.songsCount', { count: filteredSongbook.length })}</Text>
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <BookMarked size={44} color="#cbd5e1" />
-              <Text style={[styles.emptyTitle, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>{t('songs.songbookEmpty')}</Text>
-              <Text style={styles.emptySub}>{t('songs.songbookEmptySub')}</Text>
+        {/* ── Search Bar (Hidden at top on Event Songs tab since it renders below the Event Card) ── */}
+        {activeTab !== 'eventSongs' && (
+          <>
+            <View
+              style={[
+                styles.searchBar,
+                {
+                  backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                  borderColor: isDark ? '#6B7280' : '#334155',
+                  borderWidth: 1.5,
+                  shadowColor: '#000',
+                  shadowOpacity: isDark ? 0.25 : 0.06,
+                  shadowRadius: 6,
+                  elevation: 3,
+                }
+              ]}
+            >
+              <Search size={19} color={isDark ? '#9CA3AF' : '#334155'} strokeWidth={2.2} />
+              <TextInput
+                placeholder={
+                  activeTab === 'browse' ? t('songs.searchSongs') :
+                    activeTab === 'theme' ? t('songs.searchThemeSongs') :
+                      t('songs.searchSongbook')
+                }
+                placeholderTextColor={isDark ? '#9CA3AF' : '#64748B'}
+                style={[styles.searchInput, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
+                value={search}
+                onChangeText={setSearch}
+                autoCorrect={false}
+                autoCapitalize="none"
+              />
+              {search.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => setSearch('')}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={{
+                    width: 24,
+                    height: 24,
+                    borderRadius: 12,
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                  }}
+                >
+                  <X size={13} color={isDark ? '#E5E7EB' : '#334155'} strokeWidth={2.4} />
+                </TouchableOpacity>
+              )}
             </View>
-          }
-        />
-      )}
 
-      {/* ── Theme Songs List ── */}
-      {activeTab === 'theme' && (
-        loading && !refreshing ? (
-          <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color="#fbbf24" />
-          </View>
-        ) : (
+            {/* Long Press hint */}
+            {activeTab === 'browse' && (
+              <Text style={styles.hint}>{t('songs.longPressSaveHint')}</Text>
+            )}
+            {activeTab === 'songbook' && (
+              <Text style={styles.hint}>{t('songs.longPressRemoveHint')}</Text>
+            )}
+          </>
+        )}
+        {activeTab !== 'eventSongs' ? null : null}
+
+        {/* ── Setlist Flow Tab ── */}
+        {/* ── Event Songs Flow Tab ── */}
+        {activeTab === 'eventSongs' && (
           <FlatList
             style={{ flex: 1 }}
-            data={filteredTheme}
+            data={filteredEventSongs}
+            keyExtractor={(item, idx) => `event-song-${item.id || "song"}-${idx}`}
+            renderItem={renderSongCard}
+            contentContainerStyle={[styles.listContent, { paddingTop: 10 }]}
+            showsVerticalScrollIndicator={false}
+            initialNumToRender={15}
+            maxToRenderPerBatch={10}
+            windowSize={5}
+            removeClippedSubviews={Platform.OS === 'android'}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? '#FFFFFF' : '#0F172A'} />}
+            ListHeaderComponent={renderEventCardHeader()}
+            ListEmptyComponent={
+              (!activeEvent || validServices.length === 0) ? null : (
+                <View style={styles.emptyState}>
+                  <Music size={44} color="#cbd5e1" />
+                  <Text style={[styles.emptyTitle, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>
+                    {eventSongItems.length === 0 ? 'No Songs in this Service' : t('songs.noSongsFound')}
+                  </Text>
+                  <Text style={styles.emptySub}>
+                    {eventSongItems.length === 0
+                      ? `The song arrangement for ${activeService?.name || 'this service'} will appear here once published.`
+                      : t('songs.tryDifferentCategory')}
+                  </Text>
+                </View>
+              )
+            }
+          />
+        )}
+
+        {/* ── Browse List ── */}
+        {activeTab === 'browse' && (
+          loading && !refreshing ? (
+            <View style={styles.loadingBox}>
+              <ActivityIndicator size="large" color="#fbbf24" />
+            </View>
+          ) : (
+            <FlatList
+              style={{ flex: 1 }}
+              data={filteredBrowse}
+              keyExtractor={item => item.id}
+              renderItem={renderSongCard}
+              contentContainerStyle={styles.listContent}
+              showsVerticalScrollIndicator={false}
+              initialNumToRender={15}
+              maxToRenderPerBatch={10}
+              windowSize={5}
+              removeClippedSubviews={true}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1a2d5a" />}
+              ListHeaderComponent={
+                <Text style={styles.secLbl}>
+                  {selectedCategory === 'All' ? t('songs.allSongs').toUpperCase() : SongLanguageHelper.getLocalizedCategory(selectedCategory, language).toUpperCase()} • {t('songs.songsCount', { count: filteredBrowse.length })}
+                </Text>
+              }
+              ListEmptyComponent={
+                <View style={styles.emptyState}>
+                  <AlertCircle size={44} color="#cbd5e1" />
+                  <Text style={[styles.emptyTitle, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>{t('songs.noSongsFound')}</Text>
+                  <Text style={styles.emptySub}>{t('songs.tryDifferentCategory')}</Text>
+                </View>
+              }
+            />
+          )
+        )}
+
+        {/* ── My Songbook ── */}
+        {activeTab === 'songbook' && (
+          <FlatList
+            style={{ flex: 1 }}
+            data={filteredSongbook}
             keyExtractor={item => item.id}
             renderItem={renderSongCard}
             contentContainerStyle={styles.listContent}
@@ -1719,21 +1723,52 @@ export default function SongsScreen({ navigation, route }: any) {
             maxToRenderPerBatch={10}
             windowSize={5}
             removeClippedSubviews={true}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1a2d5a" />}
             ListHeaderComponent={
-              <Text style={styles.secLbl}>
-                {t('songs.themeSongs')} • {t('songs.songsCount', { count: filteredTheme.length })}
-              </Text>
+              <Text style={styles.secLbl}>{t('songs.mySavedSongs')} • {t('songs.songsCount', { count: filteredSongbook.length })}</Text>
             }
             ListEmptyComponent={
               <View style={styles.emptyState}>
-                <Text style={[styles.emptyTitle, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>{t('songs.noThemeSongs')}</Text>
-                <Text style={styles.emptySub}>{t('songs.noThemeSongsSub')}</Text>
+                <BookMarked size={44} color="#cbd5e1" />
+                <Text style={[styles.emptyTitle, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>{t('songs.songbookEmpty')}</Text>
+                <Text style={styles.emptySub}>{t('songs.songbookEmptySub')}</Text>
               </View>
             }
           />
-        )
-      )}
+        )}
+
+        {/* ── Theme Songs List ── */}
+        {activeTab === 'theme' && (
+          loading && !refreshing ? (
+            <View style={styles.loadingBox}>
+              <ActivityIndicator size="large" color="#fbbf24" />
+            </View>
+          ) : (
+            <FlatList
+              style={{ flex: 1 }}
+              data={filteredTheme}
+              keyExtractor={item => item.id}
+              renderItem={renderSongCard}
+              contentContainerStyle={styles.listContent}
+              showsVerticalScrollIndicator={false}
+              initialNumToRender={15}
+              maxToRenderPerBatch={10}
+              windowSize={5}
+              removeClippedSubviews={true}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1a2d5a" />}
+              ListHeaderComponent={
+                <Text style={styles.secLbl}>
+                  {t('songs.themeSongs')} • {t('songs.songsCount', { count: filteredTheme.length })}
+                </Text>
+              }
+              ListEmptyComponent={
+                <View style={styles.emptyState}>
+                  <Text style={[styles.emptyTitle, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>{t('songs.noThemeSongs')}</Text>
+                  <Text style={styles.emptySub}>{t('songs.noThemeSongsSub')}</Text>
+                </View>
+              }
+            />
+          )
+        )}
 
       </View>
 
@@ -1750,7 +1785,7 @@ export default function SongsScreen({ navigation, route }: any) {
         onNext={() => currentSongIndex < totalSongs - 1 && setSelectedSong(enrichSongWithSetlist(activeList[currentSongIndex + 1]))}
         onPrev={() => currentSongIndex > 0 && setSelectedSong(enrichSongWithSetlist(activeList[currentSongIndex - 1]))}
       />
-      <CustomAlert 
+      <CustomAlert
         visible={alertConfig.visible}
         title={alertConfig.title}
         message={alertConfig.message}
@@ -1765,7 +1800,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   loadingBox: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
-    headerRow: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

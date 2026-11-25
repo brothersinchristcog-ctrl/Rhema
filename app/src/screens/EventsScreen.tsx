@@ -27,27 +27,33 @@ import {
   ChevronDown
 } from 'lucide-react-native';
 import FirestoreService, { ScheduleEvent } from '../services/FirestoreService';
+import { CachedImage } from '../components/CachedImage';
+import { useAuth } from '../context/AuthContext';
+import { useChurch } from '../context/ChurchContext';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
-import { getInstantMemory, readInstantCache, writeInstantCache } from '../utils/instantCache';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../utils/instantCache';
 
 const { width } = Dimensions.get('window');
 const PAST_EVENTS_PAGE_SIZE = 5;
-const UPCOMING_EVENTS_CACHE_KEY = 'events_upcoming_v1';
-const PAST_EVENTS_P1_CACHE_KEY = 'events_past_p1_v1';
 
 export default function EventsScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const { isDark, colors } = useTheme();
   const { t } = useLanguage();
+  const { churchId } = useChurch();
+  const { user } = useAuth();
+  const upcomingCacheKey = makeScopedCacheKey('events_upcoming_v2', churchId, user?.uid);
+  const pastCacheKey = makeScopedCacheKey('events_past_p1_v2', churchId, user?.uid);
+
   const [upcomingEvents, setUpcomingEvents] = useState<ScheduleEvent[]>(
-    () => getInstantMemory<ScheduleEvent[]>(UPCOMING_EVENTS_CACHE_KEY) || []
+    () => getInstantMemory<ScheduleEvent[]>(upcomingCacheKey) || []
   );
   const [pastEvents, setPastEvents] = useState<ScheduleEvent[]>(
-    () => getInstantMemory<ScheduleEvent[]>(PAST_EVENTS_P1_CACHE_KEY) || []
+    () => getInstantMemory<ScheduleEvent[]>(pastCacheKey) || []
   );
   const [loading, setLoading] = useState(
-    () => getInstantMemory<ScheduleEvent[]>(UPCOMING_EVENTS_CACHE_KEY) === null
+    () => getInstantMemory<ScheduleEvent[]>(upcomingCacheKey) === null
   );
   const [pastLoading, setPastLoading] = useState(false);
   const [loadingMorePast, setLoadingMorePast] = useState(false);
@@ -168,93 +174,110 @@ export default function EventsScreen({ navigation }: any) {
   };
 
   const fetchUpcomingEvents = useCallback(async (isRefresh: boolean = false) => {
-    let hasCached = Boolean(getInstantMemory<ScheduleEvent[]>(UPCOMING_EVENTS_CACHE_KEY));
-    if (!isRefresh && !hasCached) {
-      const diskCached = await readInstantCache<ScheduleEvent[]>(UPCOMING_EVENTS_CACHE_KEY);
-      if (diskCached?.data) {
-        setUpcomingEvents(diskCached.data);
-        setLoading(false);
-        hasCached = true;
-      }
-    }
-
     try {
-      const upcomingRes = await FirestoreService.getUpcomingEvents(50).catch(() => []);
-      const seenIds = new Set<string>();
-      const upcoming: ScheduleEvent[] = [];
+      await loadWithInstantCache<ScheduleEvent[]>({
+        key: upcomingCacheKey,
+        screenName: 'Events',
+        freshSkipMs: 2 * 60 * 1000,
+        forceRefresh: isRefresh,
+        fetcher: async () => {
+          const upcomingRes = await FirestoreService.getUpcomingEvents(50).catch(() => []);
+          const seenIds = new Set<string>();
+          const upcoming: ScheduleEvent[] = [];
 
-      (upcomingRes || []).forEach(ev => {
-        const id = ev.id || (ev as any).eventId || Math.random().toString();
-        if (seenIds.has(id)) return;
-        seenIds.add(id);
-        if (!isEventPast(ev)) {
-          upcoming.push(ev);
-        }
+          (upcomingRes || []).forEach(ev => {
+            const id = ev.id || (ev as any).eventId || Math.random().toString();
+            if (seenIds.has(id)) return;
+            seenIds.add(id);
+            if (!isEventPast(ev)) {
+              upcoming.push(ev);
+            }
+          });
+
+          upcoming.sort((a, b) => {
+            const da = parseEventDateObj(a.date || (a as any).startDate)?.getTime() || 0;
+            const db = parseEventDateObj(b.date || (b as any).startDate)?.getTime() || 0;
+            return da - db;
+          });
+
+          return upcoming;
+        },
+        onCached: (cached) => {
+          setUpcomingEvents(cached);
+          setLoading(false);
+        },
+        onFresh: (fresh) => {
+          setUpcomingEvents(fresh);
+          setLoading(false);
+        },
       });
-
-      upcoming.sort((a, b) => {
-        const da = parseEventDateObj(a.date || (a as any).startDate)?.getTime() || 0;
-        const db = parseEventDateObj(b.date || (b as any).startDate)?.getTime() || 0;
-        return da - db;
-      });
-
-      setUpcomingEvents(upcoming);
-      writeInstantCache(UPCOMING_EVENTS_CACHE_KEY, upcoming).catch(() => {});
     } catch (error) {
       console.error('Error fetching upcoming events:', error);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [upcomingCacheKey]);
 
   const fetchPastEventsPage = useCallback(async (reset: boolean = false) => {
     if (!reset) {
       if (loadingMorePastRef.current || !pastCursorRef.current) return;
       loadingMorePastRef.current = true;
       setLoadingMorePast(true);
-    } else {
-      pastCursorRef.current = null;
-      const hasPastRam = Boolean(getInstantMemory<ScheduleEvent[]>(PAST_EVENTS_P1_CACHE_KEY));
-      if (!hasPastRam) {
-        const diskPast = await readInstantCache<ScheduleEvent[]>(PAST_EVENTS_P1_CACHE_KEY);
-        if (diskPast?.data?.length) {
-          setPastEvents(diskPast.data);
-          setPastLoading(false);
-        } else {
-          setPastLoading(true);
-        }
-      }
-    }
-
-    try {
-      const cursor = reset ? null : pastCursorRef.current;
-      const result = await FirestoreService.getPastEventsPaginated(PAST_EVENTS_PAGE_SIZE, cursor);
-
-      pastCursorRef.current = result.lastDoc;
-      pastLoadedRef.current = true;
-      setHasMorePast(result.hasMore);
-
-      if (reset) {
-        setPastEvents(result.events);
-        writeInstantCache(PAST_EVENTS_P1_CACHE_KEY, result.events).catch(() => {});
-      } else {
+      try {
+        const result = await FirestoreService.getPastEventsPaginated(PAST_EVENTS_PAGE_SIZE, pastCursorRef.current);
+        pastCursorRef.current = result.lastDoc;
+        pastLoadedRef.current = true;
+        setHasMorePast(result.hasMore);
         setPastEvents(prev => {
           const existingIds = new Set(prev.map(e => e.id));
           const uniqueNext = result.events.filter(e => !existingIds.has(e.id));
           return [...prev, ...uniqueNext];
         });
-      }
-    } catch (error) {
-      console.error('Error fetching paginated past events:', error);
-    } finally {
-      if (reset) {
-        setPastLoading(false);
-      } else {
+      } catch (error) {
+        console.error('Error fetching paginated past events:', error);
+      } finally {
         loadingMorePastRef.current = false;
         setLoadingMorePast(false);
       }
+      return;
     }
-  }, []);
+
+    pastCursorRef.current = null;
+    if (!getInstantMemory<ScheduleEvent[]>(pastCacheKey)?.length) {
+      setPastLoading(true);
+    }
+
+    try {
+      await loadWithInstantCache<{ events: ScheduleEvent[]; hasMore: boolean }>({
+        key: pastCacheKey,
+        screenName: 'EventsPast',
+        freshSkipMs: 3 * 60 * 1000,
+        forceRefresh: true,
+        fetcher: async () => {
+          const result = await FirestoreService.getPastEventsPaginated(PAST_EVENTS_PAGE_SIZE, null);
+          pastCursorRef.current = result.lastDoc;
+          pastLoadedRef.current = true;
+          return { events: result.events, hasMore: result.hasMore };
+        },
+        onCached: (cached) => {
+          if (cached?.events) {
+            setPastEvents(cached.events);
+            setHasMorePast(Boolean(cached.hasMore));
+            setPastLoading(false);
+          }
+        },
+        onFresh: (fresh) => {
+          setPastEvents(fresh.events);
+          setHasMorePast(Boolean(fresh.hasMore));
+          setPastLoading(false);
+        },
+      });
+    } catch (error) {
+      console.error('Error fetching paginated past events:', error);
+    } finally {
+      setPastLoading(false);
+    }
+  }, [pastCacheKey]);
 
   const handleShowMorePast = useCallback(() => {
     if (loadingMorePastRef.current || !hasMorePast) return;
@@ -434,7 +457,7 @@ export default function EventsScreen({ navigation }: any) {
         onPress={() => handleNavigateToDetails(item)}
       >
         {/* Left: Clean image only */}
-        <Image 
+        <CachedImage 
           source={{ uri: eventImageUri }}
           style={styles.cardThumbImage}
           resizeMode="cover"
@@ -613,6 +636,10 @@ export default function EventsScreen({ navigation }: any) {
         renderItem={({ item }) => renderEvent(item, activeTab === 'past')}
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
+        initialNumToRender={8}
+        maxToRenderPerBatch={6}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
         refreshControl={
           <RefreshControl 
             refreshing={refreshing} 

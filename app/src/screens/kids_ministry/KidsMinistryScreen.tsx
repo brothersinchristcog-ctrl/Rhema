@@ -39,8 +39,11 @@ import {
   ChevronRight,
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
+import { useChurch } from '../../context/ChurchContext';
 import { useTheme } from '../../context/ThemeContext';
 import KidsMinistryService from '../../services/KidsMinistryService';
+import { CachedImage } from '../../components/CachedImage';
+import { getInstantMemory, readInstantCache, writeInstantCache, makeScopedCacheKey } from '../../utils/instantCache';
 import {
   ChildRecord,
   KidsClassRecord,
@@ -122,7 +125,21 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
   const { member } = useAuth();
   const { isDark, colors: themeColors } = useTheme();
-  const churchId = member?.churchId || 'rhema';
+  const { churchId: ctxChurchId } = useChurch();
+  const churchId = ctxChurchId || member?.churchId || 'rhema';
+  const kidsCacheKey = makeScopedCacheKey('kids_ministry_v1', churchId, member?.accountId || member?.id);
+  const initialKidsCache = getInstantMemory<{
+    children: ChildRecord[];
+    classes: KidsClassRecord[];
+    teachers: KidsTeacherRecord[];
+    stories: KidsBibleStory[];
+    quizzes: KidsQuiz[];
+    songs: KidsWorshipSong[];
+    curriculum: KidsCurriculumLesson[];
+    curriculumConfig: KidsCurriculumConfig | null;
+    vbsEvent: KidsVBSEventRecord | null;
+    programSessions: KidsAttendanceSession[];
+  }>(kidsCacheKey);
 
   // Dynamic Theme Palette Support (Modern Pastel White & Dark)
   const isLight = !isDark;
@@ -176,17 +193,17 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
   // Splash Screen State
   const [showSplash, setShowSplash] = useState(true);
 
-  // Data State
-  const [children, setChildren] = useState<ChildRecord[]>([]);
-  const [classes, setClasses] = useState<KidsClassRecord[]>([]);
-  const [teachers, setTeachers] = useState<KidsTeacherRecord[]>([]);
-  const [stories, setStories] = useState<KidsBibleStory[]>([]);
-  const [quizzes, setQuizzes] = useState<KidsQuiz[]>([]);
-  const [songs, setSongs] = useState<KidsWorshipSong[]>([]);
-  const [curriculum, setCurriculum] = useState<KidsCurriculumLesson[]>([]);
-  const [loadingCurriculum, setLoadingCurriculum] = useState(true);
-  const [curriculumConfig, setCurriculumConfig] = useState<KidsCurriculumConfig | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Data State (Cache-first initialization so revisiting Rhema Kids renders at 0ms)
+  const [children, setChildren] = useState<ChildRecord[]>(() => initialKidsCache?.children || []);
+  const [classes, setClasses] = useState<KidsClassRecord[]>(() => initialKidsCache?.classes || []);
+  const [teachers, setTeachers] = useState<KidsTeacherRecord[]>(() => initialKidsCache?.teachers || []);
+  const [stories, setStories] = useState<KidsBibleStory[]>(() => initialKidsCache?.stories || []);
+  const [quizzes, setQuizzes] = useState<KidsQuiz[]>(() => initialKidsCache?.quizzes || []);
+  const [songs, setSongs] = useState<KidsWorshipSong[]>(() => initialKidsCache?.songs || []);
+  const [curriculum, setCurriculum] = useState<KidsCurriculumLesson[]>(() => initialKidsCache?.curriculum || []);
+  const [loadingCurriculum, setLoadingCurriculum] = useState(() => !initialKidsCache?.curriculum?.length);
+  const [curriculumConfig, setCurriculumConfig] = useState<KidsCurriculumConfig | null>(() => initialKidsCache?.curriculumConfig || null);
+  const [loading, setLoading] = useState(() => !initialKidsCache);
   const [selectedChildIndex, setSelectedChildIndex] = useState(0);
   const [existingHousehold, setExistingHousehold] = useState<any[]>([]);
   const [goalChecks, setGoalChecks] = useState<[boolean, boolean, boolean]>([false, false, false]);
@@ -199,7 +216,7 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
   const [selectedLessonDate, setSelectedLessonDate] = useState<string | null>(null);
   const [exploreCategory, setExploreCategory] = useState<KidsExploreCategory | null>(null);
   const [selectedCertData, setSelectedCertData] = useState<KidsCertificateData | null>(null);
-  const [vbsEvent, setVbsEvent] = useState<KidsVBSEventRecord | null>(null);
+  const [vbsEvent, setVbsEvent] = useState<KidsVBSEventRecord | null>(() => initialKidsCache?.vbsEvent || null);
   const [kingdomBadges] = useState<KidsBadge[]>(() => KidsMinistryService.getKingdomBadges());
 
   // Navigation Tabs: 'home' | 'classroom'
@@ -209,7 +226,7 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
   const [confirmingConsent, setConfirmingConsent] = useState(false);
 
   // Program-Wise Attendance & Parent Safety State (strictly tagged by active childDocId)
-  const [programSessions, setProgramSessions] = useState<KidsAttendanceSession[]>([]);
+  const [programSessions, setProgramSessions] = useState<KidsAttendanceSession[]>(() => initialKidsCache?.programSessions || []);
   const [childCustodyState, setChildCustodyState] = useState<{
     childDocId: string | null;
     records: KidsSessionRecord[];
@@ -223,11 +240,54 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
   const [safetyModalSection, setSafetyModalSection] = useState<KidsSafetyModalSection | null>(null);
   const [safetyInitialProgramId, setSafetyInitialProgramId] = useState<string | null>(null);
 
-  // Load registered children for the family in realtime
+  // Persist snapshot for instant cold/warm re-open
+  useEffect(() => {
+    if (!children.length && !stories.length && !curriculum.length) return;
+    const t = setTimeout(() => {
+      writeInstantCache(kidsCacheKey, {
+        children,
+        classes,
+        teachers,
+        stories,
+        quizzes,
+        songs,
+        curriculum,
+        curriculumConfig,
+        vbsEvent,
+        programSessions,
+      }).catch(() => {});
+    }, 350);
+    return () => clearTimeout(t);
+  }, [children, classes, teachers, stories, quizzes, songs, curriculum, curriculumConfig, vbsEvent, programSessions, kidsCacheKey]);
+
+  // Load disk cache & subscribe to updates
   useEffect(() => {
     if (!member) {
       setLoading(false);
       return;
+    }
+
+    let isActive = true;
+    const memHit = getInstantMemory<any>(kidsCacheKey);
+    if (!memHit) {
+      readInstantCache<any>(kidsCacheKey).then((disk) => {
+        if (!isActive || !disk?.data) return;
+        const d = disk.data;
+        if (d.children?.length) setChildren(d.children);
+        if (d.classes?.length) setClasses(d.classes);
+        if (d.teachers?.length) setTeachers(d.teachers);
+        if (d.stories?.length) setStories(d.stories);
+        if (d.quizzes?.length) setQuizzes(d.quizzes);
+        if (d.songs?.length) setSongs(d.songs);
+        if (d.curriculum?.length) {
+          setCurriculum(d.curriculum);
+          setLoadingCurriculum(false);
+        }
+        if (d.curriculumConfig) setCurriculumConfig(d.curriculumConfig);
+        if (d.vbsEvent) setVbsEvent(d.vbsEvent);
+        if (d.programSessions?.length) setProgramSessions(d.programSessions);
+        setLoading(false);
+      }).catch(() => {});
     }
 
     const familyId = member.accountId || member.id;
@@ -239,7 +299,7 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
 
     // Load existing household members for seamless pre-fill (without touching existing screens)
     KidsMinistryService.getExistingFamilyMembers(churchId, familyId).then(contacts => {
-      setExistingHousehold(contacts);
+      if (isActive) setExistingHousehold(contacts);
     });
 
     // Realtime subscription to Sunday School classes
@@ -300,6 +360,7 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
     );
 
     return () => {
+      isActive = false;
       unsubClasses();
       unsubTeachers();
       unsubStories();
@@ -311,7 +372,7 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
       unsubProgramSessions();
       unsubscribe();
     };
-  }, [member?.id, member?.accountId, churchId]);
+  }, [member?.id, member?.accountId, churchId, kidsCacheKey]);
 
   const safeSelectedChildIndex =
     children.length > 0 ? Math.min(selectedChildIndex, children.length - 1) : 0;
@@ -639,6 +700,7 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
       churchId={churchId}
       member={member}
       existingFamilyMembers={existingHousehold}
+      initialClasses={classes}
       onChildEnrolled={() => {
         // Updated automatically via realtime subscribeToFamilyChildren + Members sync
       }}
@@ -708,7 +770,7 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
             >
               <View style={[styles.greetingAvatarCircle, { borderColor: theme.coralPrimary }]}>
                 {activeChild.photoUrl ? (
-                  <Image
+                  <CachedImage
                     source={{ uri: activeChild.photoUrl }}
                     style={{ width: '100%', height: '100%' }}
                     resizeMode="cover"
@@ -824,7 +886,7 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
                 >
                   <View style={styles.childModalAvatar}>
                     {k.photoUrl ? (
-                      <Image
+                      <CachedImage
                         source={{ uri: k.photoUrl }}
                         style={{ width: '100%', height: '100%' }}
                         resizeMode="cover"
@@ -1514,7 +1576,7 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
                     >
                       <View style={[styles.popularStoryThumb16x9, { backgroundColor: '#FFFFFF', borderColor: theme.border }]}>
                         {stories[0].coverImageUrl ? (
-                          <Image source={{ uri: stories[0].coverImageUrl }} style={styles.storyCoverImg} resizeMode="cover" />
+                          <CachedImage source={{ uri: stories[0].coverImageUrl }} style={styles.storyCoverImg} resizeMode="cover" />
                         ) : (
                           <Text style={{ fontSize: 26 }}>{stories[0].coverEmoji || '📖'}</Text>
                         )}
@@ -1544,7 +1606,7 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
                     >
                       <View style={[styles.popularStoryThumb16x9, { backgroundColor: '#FFFFFF', borderColor: theme.border }]}>
                         {quizzes[0].thumbnailUrl ? (
-                          <Image
+                          <CachedImage
                             source={{ uri: quizzes[0].thumbnailUrl }}
                             style={styles.storyCoverImg}
                             resizeMode="cover"
@@ -1578,7 +1640,7 @@ export default function KidsMinistryScreen({ navigation, route }: any) {
                     >
                       <View style={[styles.popularThumbBox, { backgroundColor: '#FFFFFF' }]}>
                         {songs[0].thumbnailUrl ? (
-                          <Image source={{ uri: songs[0].thumbnailUrl }} style={styles.storyCoverImg} />
+                          <CachedImage source={{ uri: songs[0].thumbnailUrl }} style={styles.storyCoverImg} />
                         ) : (
                           <Text style={{ fontSize: 26 }}>{songs[0].coverEmoji || '🎵'}</Text>
                         )}

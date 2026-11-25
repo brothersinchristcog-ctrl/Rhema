@@ -3,9 +3,9 @@ import {
   StyleSheet,
   View,
   Text,
-  PanResponder, 
-  ScrollView, 
-  TouchableOpacity, 
+  PanResponder,
+  ScrollView,
+  TouchableOpacity,
   Dimensions,
   ActivityIndicator,
   Image,
@@ -30,19 +30,21 @@ import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { formatDateDisplay, formatDateMonthYear, formatSermonDuration, formatTimeTo12Hour } from '../utils/DateUtils';
 import { readInstantCache, writeInstantCache } from '../utils/instantCache';
+import { CachedImage, CachedImageBackground } from '../components/CachedImage';
+import { registerHomeCacheReset } from '../utils/cacheReset';
 import { FloatingChatFab } from '../modules/church_chat';
-import { 
-  Bell, 
+import {
+  Bell,
   Hexagon,
-  Book, 
-  Play, 
-  ChevronRight, 
+  Book,
+  Play,
+  ChevronRight,
   ChevronDown,
   ChevronUp,
-  Share2, 
-  Mic, 
-  Heart, 
-  Calendar, 
+  Share2,
+  Mic,
+  Heart,
+  Calendar,
   MapPin,
   CircleDollarSign as DollarSign,
   BookOpen,
@@ -167,7 +169,7 @@ const AnimatedCameraIcon = ({ size = 20, color = "#fff", scrollY, triggerY }: { 
           Animated.spring(bodyTranslateY, { toValue: 0, friction: 5, tension: 40, useNativeDriver: true }),
           Animated.spring(bodyRotate, { toValue: 0, friction: 4, tension: 40, useNativeDriver: true }),
           Animated.timing(bodyOpacity, { toValue: 1, duration: 500, easing: Easing.out(Easing.ease), useNativeDriver: true }),
-          
+
           Animated.spring(lensTranslateX, { toValue: 0, friction: 5, tension: 40, useNativeDriver: true }),
           Animated.spring(lensTranslateY, { toValue: 0, friction: 5, tension: 40, useNativeDriver: true }),
           Animated.spring(lensRotate, { toValue: 0, friction: 4, tension: 40, useNativeDriver: true }),
@@ -203,7 +205,7 @@ const AnimatedCameraIcon = ({ size = 20, color = "#fff", scrollY, triggerY }: { 
           lensOpacity.setValue(0);
         }
       });
-      
+
     } else if (!scrollY) {
       playAnim();
     }
@@ -219,7 +221,7 @@ const AnimatedCameraIcon = ({ size = 20, color = "#fff", scrollY, triggerY }: { 
     inputRange: [-90, 0],
     outputRange: ['-90deg', '0deg']
   });
-  
+
   const lensSpin = lensRotate.interpolate({
     inputRange: [0, 90],
     outputRange: ['0deg', '90deg']
@@ -228,10 +230,10 @@ const AnimatedCameraIcon = ({ size = 20, color = "#fff", scrollY, triggerY }: { 
   return (
     <View style={{ width: size, height: size, justifyContent: 'center', alignItems: 'center' }}>
       {/* Body Part */}
-      <Animated.View style={{ 
-        position: 'absolute', 
+      <Animated.View style={{
+        position: 'absolute',
         transform: [{ translateX: bodyTranslateX }, { translateY: bodyTranslateY }, { rotate: bodySpin }],
-        opacity: bodyOpacity 
+        opacity: bodyOpacity
       }}>
         <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <Rect x="2" y="6" width="14" height="12" rx="2" />
@@ -239,10 +241,10 @@ const AnimatedCameraIcon = ({ size = 20, color = "#fff", scrollY, triggerY }: { 
       </Animated.View>
 
       {/* Lens Part */}
-      <Animated.View style={{ 
-        position: 'absolute', 
+      <Animated.View style={{
+        position: 'absolute',
         transform: [{ translateX: lensTranslateX }, { translateY: lensTranslateY }, { rotate: lensSpin }],
-        opacity: lensOpacity 
+        opacity: lensOpacity
       }}>
         <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <Path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5" />
@@ -1254,7 +1256,7 @@ const PremiumHero = ({
           >
             <View style={[hStyles.avatarInner, { borderRadius: (avatarSize - 4) / 2 }]}>
               {userPhotoUrl && !avatarError ? (
-                <Image
+                <CachedImage
                   source={{ uri: userPhotoUrl }}
                   style={hStyles.avatarImg}
                   resizeMode="cover"
@@ -1913,7 +1915,7 @@ export const EventsTicker = ({
 
                 {/* Calendar / Event 3D Icon */}
                 <View style={mqCardStyles.imageWrap}>
-                  <Image
+                  <CachedImage
                     source={
                       item.raw?.imageUrl
                         ? { uri: item.raw.imageUrl }
@@ -2142,6 +2144,20 @@ export const clearHomeScreenVersesCache = () => {
   cachedTodayFourVersesDateStr = '';
 };
 
+export const clearAllHomeScreenCaches = () => {
+  cachedPromise = null;
+  cachedPromiseThumbnail = null;
+  cachedTodayEvents = [];
+  cachedEvents = [];
+  cachedLatestSermons = [];
+  cachedLatestPrayer = null;
+  cachedPrayerCount = 0;
+  cachedTodayFourVerses = [];
+  cachedTodayFourVersesDateStr = '';
+};
+
+registerHomeCacheReset(clearAllHomeScreenCaches);
+
 const AnimatedParticle = ({ left, size, duration, delay, color, opacity }: any) => {
   const translateY = React.useRef(new Animated.Value(0)).current;
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
@@ -2296,7 +2312,7 @@ export const getSynchronousVersesForToday = (date: Date = new Date()): DailyVers
     if (list && list[0]?.verses && list[0].verses.length >= 4) {
       return list[0].verses;
     }
-  } catch (_) {}
+  } catch (_) { }
   try {
     const bulk = require('../../assets/bulk_verses.json');
     const total = bulk.length || 5863;
@@ -2406,7 +2422,7 @@ export const getLocalizedVerse = (verse: any, lang: string): LocalizedVerseDispl
           isAvailableInLanguage: true,
         };
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 
   return result;
@@ -2536,7 +2552,7 @@ const DailyVerseCard = ({ verse, period, onPress }: { verse: DailyVerse | null; 
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={{ marginHorizontal: 0, marginBottom: 20 }}>
-      <ImageBackground
+      <CachedImageBackground
         source={{ uri: bgUrl }}
         style={{
           borderRadius: 20, padding: 20, overflow: 'hidden',
@@ -2550,7 +2566,7 @@ const DailyVerseCard = ({ verse, period, onPress }: { verse: DailyVerse | null; 
           style={StyleSheet.absoluteFillObject}
         />
         {cardContent}
-      </ImageBackground>
+      </CachedImageBackground>
     </TouchableOpacity>
   );
 };
@@ -2615,9 +2631,9 @@ export default function HomeScreen() {
 
       const targetUrl = resolveRhemaYoutubeUrl(
         churchData?.socialLinks?.youtube ||
-          churchData?.youtubeChannelUrl ||
-          churchData?.youtubeLiveUrl ||
-          activeChurch?.socialLinks?.youtube
+        churchData?.youtubeChannelUrl ||
+        churchData?.youtubeLiveUrl ||
+        activeChurch?.socialLinks?.youtube
       );
       const liveResult = await findActiveLiveStream(targetUrl, expectedChannelId);
       if (liveResult.status === 'live' && liveResult.isLiveNow && liveResult.videoId) {
@@ -2660,7 +2676,7 @@ export default function HomeScreen() {
             setHomeLiveVideoId(null);
           }
         },
-        () => {}
+        () => { }
       );
 
     refreshHomeLiveStream();
@@ -2740,7 +2756,7 @@ export default function HomeScreen() {
             if (active) setTodayVerse(v);
           }
         }
-      }).catch(() => {});
+      }).catch(() => { });
     };
 
     loadCurrentVerse();
@@ -2765,26 +2781,26 @@ export default function HomeScreen() {
     try {
       const FirestoreService = require('../services/FirestoreService').default;
       const allCelebs = await FirestoreService.getAllCelebrations(activeChurch.id);
-      
+
       const today = new Date();
       const m = today.getMonth() + 1;
       const d = today.getDate();
-      
+
       const todays = allCelebs.filter((c: any) => {
         let isCeleb = false;
         ['dob', 'anniversaryDate', 'baptismDate'].forEach(field => {
           if (c[field]) {
             const parts = c[field].split('-');
             let mm, dd;
-            if (parts[0].length === 4) { mm = parseInt(parts[1], 10); dd = parseInt(parts[2], 10); } 
+            if (parts[0].length === 4) { mm = parseInt(parts[1], 10); dd = parseInt(parts[2], 10); }
             else { dd = parseInt(parts[0], 10); mm = parseInt(parts[1], 10); }
             if (mm === m && dd === d) isCeleb = true;
           }
         });
         return isCeleb;
       });
-      
-      
+
+
       // Bulletproof check for the current user's own birthday
       const todayMonthDay = `${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
       const isToday = (dateString?: string) => {
@@ -2850,20 +2866,20 @@ export default function HomeScreen() {
           if (fresh) {
             cachedPromise = fresh;
             setPromise(fresh);
-            AsyncStorage.setItem('@cached_daily_promise', JSON.stringify(fresh)).catch(() => {});
+            AsyncStorage.setItem('@cached_daily_promise', JSON.stringify(fresh)).catch(() => { });
             cachedPromiseThumbnail = fresh.imageUrl || null;
             setPromiseThumbnail(fresh.imageUrl || null);
           }
-        }).catch(() => {});
+        }).catch(() => { });
 
         // Re-fetch latest published sermons and update instant cache
         FirestoreService.getLatestSermons(2).then((fresh) => {
           if (fresh && fresh.length > 0) {
             cachedLatestSermons = fresh;
             setLatestSermons(fresh);
-            writeInstantCache(`home_latest_sermons_${churchKey}_v1`, fresh).catch(() => {});
+            writeInstantCache(`home_latest_sermons_${churchKey}_v1`, fresh).catch(() => { });
           }
-        }).catch(() => {});
+        }).catch(() => { });
 
         // Re-fetch today's 4 daily verses and update instant cache
         VerseNotificationService.getTodayVerses(true).then((freshVerses) => {
@@ -2875,7 +2891,7 @@ export default function HomeScreen() {
             writeInstantCache(`home_today_verses_${language}_v1`, {
               date: todayStr,
               verses: freshVerses,
-            }).catch(() => {});
+            }).catch(() => { });
             if (language !== 'en') {
               VerseNotificationService.localizeVerses(freshVerses, language as any).then(lv => {
                 if (lv) {
@@ -2884,12 +2900,12 @@ export default function HomeScreen() {
                   writeInstantCache(`home_today_verses_${language}_v1`, {
                     date: todayStr,
                     verses: lv,
-                  }).catch(() => {});
+                  }).catch(() => { });
                 }
-              }).catch(() => {});
+              }).catch(() => { });
             }
           }
-        }).catch(() => {});
+        }).catch(() => { });
 
         refreshHomeLiveStream();
 
@@ -2902,7 +2918,7 @@ export default function HomeScreen() {
               setTodayVerse(v);
             }
           }
-        }).catch(() => {});
+        }).catch(() => { });
       }
 
       if (liveCelebrations.length === 0 || !activeChurch?.id) return;
@@ -2914,11 +2930,13 @@ export default function HomeScreen() {
         .collection('live_celebrations')
         .doc(todayStr)
         .collection('messages')
+        .orderBy('createdAt', 'desc')
+        .limit(30)
         .onSnapshot(async (snapshot) => {
           if (!snapshot) return;
           const lastRead = await AsyncStorage.getItem(`@lastReadCeleb_${todayStr}`);
           const lastReadTime = lastRead ? parseInt(lastRead, 10) : 0;
-          
+
           let unread = 0;
           snapshot.docs.forEach(doc => {
             const data = doc.data();
@@ -2929,26 +2947,26 @@ export default function HomeScreen() {
           });
           setUnreadLiveMsgs(unread);
         });
-        
+
       return () => unsubscribe();
     }, [liveCelebrations.length, activeChurch?.id])
   );
-  
+
   // Load saved position (Commented out to reset position)
-    /*
-    AsyncStorage.getItem('@live_celebrations_pos').then(val => {
-      if (val) {
-        try {
-          const { x, y } = JSON.parse(val);
-          if (typeof x === 'number' && typeof y === 'number' && !isNaN(x) && !isNaN(y) && Math.abs(x) < 2000 && Math.abs(y) < 2000) {
-            pan.setValue({ x, y });
-          } else {
-             AsyncStorage.removeItem('@live_celebrations_pos');
-          }
-        } catch (e) {}
-      }
-    });
-    */
+  /*
+  AsyncStorage.getItem('@live_celebrations_pos').then(val => {
+    if (val) {
+      try {
+        const { x, y } = JSON.parse(val);
+        if (typeof x === 'number' && typeof y === 'number' && !isNaN(x) && !isNaN(y) && Math.abs(x) < 2000 && Math.abs(y) < 2000) {
+          pan.setValue({ x, y });
+        } else {
+           AsyncStorage.removeItem('@live_celebrations_pos');
+        }
+      } catch (e) {}
+    }
+  });
+  */
   useEffect(() => {
     if (liveCelebrations.length === 0) return;
     const interval = setInterval(() => {
@@ -3017,7 +3035,7 @@ export default function HomeScreen() {
   const [promiseThumbnail, setPromiseThumbnail] = useState<string | null>(cachedPromiseThumbnail);
   const [carouselSlide, setCarouselSlide] = useState(0); // 0 = text, 1 = image
   const carouselScrollRef = useRef<ScrollView>(null);
-  
+
   // Daily Verses & Custom Promise Carousel State
   // Unified slide count for both Custom Promise and 4 Daily Verses
   const getUnifiedSlideCount = () => {
@@ -3036,7 +3054,7 @@ export default function HomeScreen() {
         cachedTodayFourVerses = initial;
         return initial;
       }
-    } catch (_) {}
+    } catch (_) { }
     return getSynchronousVersesForToday();
   });
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -3051,8 +3069,8 @@ export default function HomeScreen() {
 
   // Time-based progressive unlocked verses (Morning -> +Afternoon -> +Evening -> +Night)
   const unlockedCount = getUnlockedVersesCount(currentTime);
-  const allVerses = todayFourVerses && todayFourVerses.length >= 4 
-    ? todayFourVerses 
+  const allVerses = todayFourVerses && todayFourVerses.length >= 4
+    ? todayFourVerses
     : getSynchronousVersesForToday(currentTime);
   const visibleVerses = allVerses.slice(0, Math.min(allVerses.length, unlockedCount));
   const verseAutoScrollTimer = useRef<any>(null);
@@ -3241,13 +3259,13 @@ export default function HomeScreen() {
           setTodayFourVerses(localized);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
 
     return () => {
       isMounted = false;
     };
   }, [language, todayFourVerses.length]);
-  
+
   // -- Sticky Header Animation --
   const [onlineMeetingsY, setOnlineMeetingsY] = useState(0);
   const [quickAccessY, setQuickAccessY] = useState(0);
@@ -3305,9 +3323,9 @@ export default function HomeScreen() {
               } else {
                 AsyncStorage.removeItem('@cached_daily_promise');
               }
-            } catch (e) {}
+            } catch (e) { }
           }
-        }).catch(() => {});
+        }).catch(() => { });
       }
 
       if (cachedTodayEvents.length === 0) {
@@ -3316,7 +3334,7 @@ export default function HomeScreen() {
             cachedTodayEvents = cached.data;
             setTodayEvents(cached.data);
           }
-        }).catch(() => {});
+        }).catch(() => { });
       }
 
       if (cachedEvents.length === 0) {
@@ -3325,7 +3343,7 @@ export default function HomeScreen() {
             cachedEvents = cached.data;
             setEvents(cached.data);
           }
-        }).catch(() => {});
+        }).catch(() => { });
       }
 
       if (cachedLatestSermons.length === 0) {
@@ -3334,7 +3352,7 @@ export default function HomeScreen() {
             cachedLatestSermons = cached.data;
             setLatestSermons(cached.data);
           }
-        }).catch(() => {});
+        }).catch(() => { });
       }
 
       if (cachedTodayFourVerses.length === 0) {
@@ -3343,7 +3361,7 @@ export default function HomeScreen() {
             cachedTodayFourVerses = cached.data.verses;
             setTodayFourVerses(cached.data.verses);
           }
-        }).catch(() => {});
+        }).catch(() => { });
       }
 
       // 2. Fetch Member Details non-blocking (reuse AuthContext member immediately to skip duplicate phone scans)
@@ -3362,7 +3380,7 @@ export default function HomeScreen() {
             setLatestPrayer(cachedLatestPrayer);
             setPrayerCount(cachedPrayerCount);
           }
-        }).catch(() => {});
+        }).catch(() => { });
       } else if (user?.phoneNumber) {
         FirestoreService.checkContactExists(user.phoneNumber).then((res: any) => {
           if (res?.exists && res?.member) {
@@ -3381,9 +3399,9 @@ export default function HomeScreen() {
                 setLatestPrayer(cachedLatestPrayer);
                 setPrayerCount(cachedPrayerCount);
               }
-            }).catch(() => {});
+            }).catch(() => { });
           }
-        }).catch(() => {});
+        }).catch(() => { });
       }
 
       // 3. Fetch Daily Promise non-blocking
@@ -3391,7 +3409,7 @@ export default function HomeScreen() {
         if (prom) {
           cachedPromise = prom;
           setPromise(prom);
-          AsyncStorage.setItem('@cached_daily_promise', JSON.stringify(prom)).catch(() => {});
+          AsyncStorage.setItem('@cached_daily_promise', JSON.stringify(prom)).catch(() => { });
           if (prom.imageUrl) {
             cachedPromiseThumbnail = prom.imageUrl;
             setPromiseThumbnail(prom.imageUrl);
@@ -3402,11 +3420,11 @@ export default function HomeScreen() {
         } else {
           cachedPromise = null;
           setPromise(null);
-          AsyncStorage.removeItem('@cached_daily_promise').catch(() => {});
+          AsyncStorage.removeItem('@cached_daily_promise').catch(() => { });
           cachedPromiseThumbnail = null;
           setPromiseThumbnail(null);
         }
-      }).catch(() => {});
+      }).catch(() => { });
 
       // 3b. Fetch Today's 4 Verses for Carousel
       VerseNotificationService.getTodayVerses(true).then((verses: DailyVerse[]) => {
@@ -3416,7 +3434,7 @@ export default function HomeScreen() {
           writeInstantCache(`home_today_verses_${language}_v1`, {
             date: todayStr,
             verses,
-          }).catch(() => {});
+          }).catch(() => { });
           if (language !== 'en') {
             VerseNotificationService.localizeVerses(verses, language as any).then(lv => {
               if (lv) {
@@ -3425,35 +3443,35 @@ export default function HomeScreen() {
                 writeInstantCache(`home_today_verses_${language}_v1`, {
                   date: todayStr,
                   verses: lv,
-                }).catch(() => {});
+                }).catch(() => { });
               }
-            }).catch(() => {});
+            }).catch(() => { });
           }
         }
-      }).catch(() => {});
+      }).catch(() => { });
 
       // 4. Fetch Today's Events non-blocking
       FirestoreService.getTodayEvents().then((ev: any) => {
         cachedTodayEvents = ev || [];
         setTodayEvents(cachedTodayEvents);
-        writeInstantCache(`home_today_events_${churchKey}_v1`, cachedTodayEvents).catch(() => {});
-      }).catch(() => {});
+        writeInstantCache(`home_today_events_${churchKey}_v1`, cachedTodayEvents).catch(() => { });
+      }).catch(() => { });
 
       // 5. Fetch Upcoming Events non-blocking
       FirestoreService.getUpcomingEvents(3).then((ev: any) => {
         cachedEvents = ev || [];
         setEvents(cachedEvents);
-        writeInstantCache(`home_upcoming_events_${churchKey}_v1`, cachedEvents).catch(() => {});
-      }).catch(() => {});
+        writeInstantCache(`home_upcoming_events_${churchKey}_v1`, cachedEvents).catch(() => { });
+      }).catch(() => { });
 
       // 6. Fetch Latest Sermons non-blocking
       FirestoreService.getLatestSermons(2).then((s: any) => {
         if (s && s.length > 0) {
           cachedLatestSermons = s;
           setLatestSermons(cachedLatestSermons);
-          writeInstantCache(`home_latest_sermons_${churchKey}_v1`, cachedLatestSermons).catch(() => {});
+          writeInstantCache(`home_latest_sermons_${churchKey}_v1`, cachedLatestSermons).catch(() => { });
         }
-      }).catch(() => {});
+      }).catch(() => { });
 
       // 7. Refresh YouTube Live stream state for inline Home playback
       refreshHomeLiveStream();
@@ -3556,7 +3574,7 @@ export default function HomeScreen() {
       try {
         const today = new Date();
         const todayMonthDay = `${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-        
+
         // Helper to check if a date string (YYYY-MM-DD) matches today's month and day
         const isToday = (dateString?: string) => {
           if (!dateString) return false;
@@ -3576,9 +3594,9 @@ export default function HomeScreen() {
           if (!(global as any).hasShownCelebration) {
             (global as any).hasShownCelebration = true;
             setTimeout(() => {
-              navigation.navigate('Celebration', { 
-                celebrations: activeCelebrations, 
-                name: (member as any).name || (member as any).firstName || 'Member' 
+              navigation.navigate('Celebration', {
+                celebrations: activeCelebrations,
+                name: (member as any).name || (member as any).firstName || 'Member'
               });
             }, 2000);
           }
@@ -3621,10 +3639,10 @@ export default function HomeScreen() {
               cachedTodayFourVerses = lv;
               setTodayFourVerses(lv);
             }
-          }).catch(() => {});
+          }).catch(() => { });
         }
       }
-    }).catch(() => {});
+    }).catch(() => { });
 
     // 2. Real-time Firestore listener for today's daily verses
     const todayIndices = VerseNotificationService.getIndicesForDate(new Date(), 5863, 'rhema');
@@ -3679,7 +3697,7 @@ export default function HomeScreen() {
                     setTodayFourVerses([...enriched]);
                   }
                 })
-                .catch(() => {});
+                .catch(() => { });
 
               // Synchronize todayVerse for current period
               const currentPeriod = getCurrentPeriod();
@@ -3703,7 +3721,7 @@ export default function HomeScreen() {
                     cachedTodayFourVerses = lv;
                     setTodayFourVerses(lv);
                   }
-                }).catch(() => {});
+                }).catch(() => { });
               }
 
               // Persist in local storage cache
@@ -3743,9 +3761,9 @@ export default function HomeScreen() {
                 }
               }
             }
-          } catch (_) {}
+          } catch (_) { }
         },
-        () => {}
+        () => { }
       );
 
     return () => {
@@ -3820,7 +3838,7 @@ export default function HomeScreen() {
       const loc = getLocalizedVerse(verse, language);
       const greeting = getPeriodGreeting(period, t);
       const churchName = activeChurch?.name || '';
-      
+
       let message = `🕊️ ${greeting} · ${t('home.quickDailyVerse')}\n\n"${stripHtml(loc.primaryVerse)}"\n— ${loc.primaryReference || 'Scripture'}`;
       if (loc.secondaryVerse && loc.secondaryVerse !== loc.primaryVerse) {
         message += `\n\n"${stripHtml(loc.secondaryVerse)}"\n— ${loc.secondaryReference || 'Scripture'}`;
@@ -3931,7 +3949,7 @@ export default function HomeScreen() {
       // Always copy full message text to clipboard as guaranteed backup
       try {
         await Clipboard.setStringAsync(message);
-      } catch (_) {}
+      } catch (_) { }
 
       // Candidate image: uploaded promise thumbnail / imageUrl / YouTube thumbnail
       const targetImageUrl = promise.imageUrl || promiseThumbnail || (cleanYId ? `https://img.youtube.com/vi/${cleanYId}/hqdefault.jpg` : null);
@@ -4035,10 +4053,10 @@ export default function HomeScreen() {
                 cachedTodayFourVerses = lv;
                 setTodayFourVerses(lv);
               }
-            }).catch(() => {});
+            }).catch(() => { });
           }
         }
-      }).catch(() => {});
+      }).catch(() => { });
 
       const curPeriod = getCurrentPeriod();
       VerseNotificationService.getVerseForDate(new Date(), curPeriod, true).then(v => {
@@ -4049,8 +4067,8 @@ export default function HomeScreen() {
             setTodayVerse(v);
           }
         }
-      }).catch(() => {});
-    } catch (_) {}
+      }).catch(() => { });
+    } catch (_) { }
     fetchData();
   };
 
@@ -4126,7 +4144,7 @@ export default function HomeScreen() {
       <View key="service-timings-slide" style={[styles.phSlide, { width: screenWidth }]}>
         <View
           style={[
-            styles.phInner, 
+            styles.phInner,
             styles.serviceSlideCleanInner,
             {
               backgroundColor: screenTheme.promiseCardBg,
@@ -4160,14 +4178,14 @@ export default function HomeScreen() {
                 : '';
 
               return (
-                <View 
-                  key={service.id || idx} 
+                <View
+                  key={service.id || idx}
                   style={[
-                    styles.serviceSlideCleanRow, 
-                    { 
-                      borderBottomColor: screenTheme.isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9', 
-                      borderBottomWidth: idx < timings.length - 1 ? 1 : 0, 
-                      paddingBottom: 10 
+                    styles.serviceSlideCleanRow,
+                    {
+                      borderBottomColor: screenTheme.isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9',
+                      borderBottomWidth: idx < timings.length - 1 ? 1 : 0,
+                      paddingBottom: 10
                     }
                   ]}
                 >
@@ -4432,14 +4450,14 @@ export default function HomeScreen() {
   return (
     <View style={[styles.mainContainer, { backgroundColor: screenTheme.bg }]}>
       <StatusBar barStyle={screenTheme.barStyle} backgroundColor="transparent" translucent />
-      <CustomAlert 
+      <CustomAlert
         visible={alertConfig.visible}
         title={alertConfig.title}
         message={alertConfig.message}
         type={alertConfig.type}
         onClose={() => setAlertConfig(prev => ({ ...prev, visible: false }))}
       />
-      
+
       {/* ── Compact church bar: fades in once the hero scrolls away (church name + bell always reachable) ── */}
       <Animated.View
         pointerEvents="box-none"
@@ -4492,9 +4510,9 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </Animated.View>
 
-      <Animated.ScrollView 
-        style={styles.scroll} 
-        contentContainerStyle={{ 
+      <Animated.ScrollView
+        style={styles.scroll}
+        contentContainerStyle={{
           paddingTop: 0,
           paddingBottom: 0
         }}
@@ -4557,141 +4575,141 @@ export default function HomeScreen() {
 
           {/* Upcoming Events Carousel Card: Full width edge-to-edge, flush with hero section */}
           <View style={{ width: '100%', paddingHorizontal: 0, marginTop: 0, marginBottom: 12 }}>
-            <EventsTicker 
-              events={tickerEvents} 
+            <EventsTicker
+              events={tickerEvents}
               theme={screenTheme}
-              onSeeAll={() => navigation.navigate('Events')} 
+              onSeeAll={() => navigation.navigate('Events')}
               onEventPress={(evItem) => {
                 if (evItem?.raw && !evItem?.isServiceTiming) {
                   navigation.navigate('EventDetails', { event: evItem.raw });
                 } else {
                   navigation.navigate('Events');
                 }
-              }} 
+              }}
             />
           </View>
 
           <View style={[styles.contentPad, { paddingTop: 4 }]}>
-          {/* ── Daily Promise / Daily Verse Carousel ── */}
-          <View style={styles.promiseHero}>
-            {/* Slides */}
-            <ScrollView
-              ref={carouselScrollRef}
-              horizontal
-              pagingEnabled
-              bounces={false}
-              overScrollMode="never"
-              showsHorizontalScrollIndicator={false}
-              scrollEventThrottle={16}
-              onMomentumScrollEnd={(e) => {
-                const maxSlides = getUnifiedSlideCount();
-                const slide = Math.min(Math.max(0, Math.round(e.nativeEvent.contentOffset.x / screenWidth)), maxSlides - 1);
-                setCarouselSlide(slide);
-                if (useWeChristianDailyPromise) {
-                  restartVerseTimer(slide);
-                }
-              }}
-            >
-              <>
-              {/* ── Slide: Church Custom Promise Card (if published) ── */}
-              {promise && (
-                <TouchableOpacity 
-                  activeOpacity={0.9}
-                  style={[styles.phSlide, { width: screenWidth }]} 
-                  onPress={() => handleGuestProtectedNavigation('Promise')}
-                >
-                  <View style={[
-                    styles.vdCleanWhiteCard, 
-                    { 
-                      backgroundColor: screenTheme.promiseCardBg,
-                      borderColor: screenTheme.promiseCardBorder,
-                      borderWidth: 1,
-                      shadowColor: screenTheme.isDark ? '#000' : '#0F172A',
-                      shadowOpacity: screenTheme.isDark ? 0.35 : 0.06,
-                      shadowRadius: 10,
-                      elevation: screenTheme.isDark ? 4 : 2,
-                    }
-                  ]}>
-                    <Text style={[styles.phLabel, { color: screenTheme.promiseLabel }]} maxFontSizeMultiplier={1.15}>
-                      {t('home.todaysPromise') || "Today's Promise"}
-                    </Text>
-
-                    <View style={styles.vdVerseBlock}>
-                      
-                      <View style={styles.vdVerseTextContainer}>
-                        <Text style={[styles.vdTopRightQuote, { color: screenTheme.promiseQuote }]} pointerEvents="none">”</Text>
-                        {promise?.verseTelugu ? (
-                          <Text style={[styles.vdVerseTe, { color: screenTheme.promiseVerseTe }]} maxFontSizeMultiplier={1.15}>
-                            {stripHtml(promise.verseTelugu)}
-                          </Text>
-                        ) : null}
-                        <Text style={[styles.vdVerseEn, { color: screenTheme.promiseVerseEn }]} maxFontSizeMultiplier={1.15}>
-                          {promise ? stripHtml(promise.verse) : ''}
+            {/* ── Daily Promise / Daily Verse Carousel ── */}
+            <View style={styles.promiseHero}>
+              {/* Slides */}
+              <ScrollView
+                ref={carouselScrollRef}
+                horizontal
+                pagingEnabled
+                bounces={false}
+                overScrollMode="never"
+                showsHorizontalScrollIndicator={false}
+                scrollEventThrottle={16}
+                onMomentumScrollEnd={(e) => {
+                  const maxSlides = getUnifiedSlideCount();
+                  const slide = Math.min(Math.max(0, Math.round(e.nativeEvent.contentOffset.x / screenWidth)), maxSlides - 1);
+                  setCarouselSlide(slide);
+                  if (useWeChristianDailyPromise) {
+                    restartVerseTimer(slide);
+                  }
+                }}
+              >
+                <>
+                  {/* ── Slide: Church Custom Promise Card (if published) ── */}
+                  {promise && (
+                    <TouchableOpacity
+                      activeOpacity={0.9}
+                      style={[styles.phSlide, { width: screenWidth }]}
+                      onPress={() => handleGuestProtectedNavigation('Promise')}
+                    >
+                      <View style={[
+                        styles.vdCleanWhiteCard,
+                        {
+                          backgroundColor: screenTheme.promiseCardBg,
+                          borderColor: screenTheme.promiseCardBorder,
+                          borderWidth: 1,
+                          shadowColor: screenTheme.isDark ? '#000' : '#0F172A',
+                          shadowOpacity: screenTheme.isDark ? 0.35 : 0.06,
+                          shadowRadius: 10,
+                          elevation: screenTheme.isDark ? 4 : 2,
+                        }
+                      ]}>
+                        <Text style={[styles.phLabel, { color: screenTheme.promiseLabel }]} maxFontSizeMultiplier={1.15}>
+                          {t('home.todaysPromise') || "Today's Promise"}
                         </Text>
-                        <View style={styles.vdReferenceRow}>
-                          {promise?.verseReferenceTe ? (
-                            <>
-                              <Text style={[styles.vdRefPrimary, { color: screenTheme.promiseRefPrimary }]} maxFontSizeMultiplier={1.15}>{promise.verseReferenceTe}</Text>
-                              <Text style={[styles.vdRefDivider, { color: screenTheme.promiseRefDivider }]} maxFontSizeMultiplier={1.15}>|</Text>
-                            </>
-                          ) : null}
-                          <Text style={[styles.vdRefSecondary, { color: screenTheme.promiseRefSecondary }]} maxFontSizeMultiplier={1.15}>
-                            {promise ? (promise.verseReferenceEn || promise.verseReference) : ''}
-                          </Text>
+
+                        <View style={styles.vdVerseBlock}>
+
+                          <View style={styles.vdVerseTextContainer}>
+                            <Text style={[styles.vdTopRightQuote, { color: screenTheme.promiseQuote }]} pointerEvents="none">”</Text>
+                            {promise?.verseTelugu ? (
+                              <Text style={[styles.vdVerseTe, { color: screenTheme.promiseVerseTe }]} maxFontSizeMultiplier={1.15}>
+                                {stripHtml(promise.verseTelugu)}
+                              </Text>
+                            ) : null}
+                            <Text style={[styles.vdVerseEn, { color: screenTheme.promiseVerseEn }]} maxFontSizeMultiplier={1.15}>
+                              {promise ? stripHtml(promise.verse) : ''}
+                            </Text>
+                            <View style={styles.vdReferenceRow}>
+                              {promise?.verseReferenceTe ? (
+                                <>
+                                  <Text style={[styles.vdRefPrimary, { color: screenTheme.promiseRefPrimary }]} maxFontSizeMultiplier={1.15}>{promise.verseReferenceTe}</Text>
+                                  <Text style={[styles.vdRefDivider, { color: screenTheme.promiseRefDivider }]} maxFontSizeMultiplier={1.15}>|</Text>
+                                </>
+                              ) : null}
+                              <Text style={[styles.vdRefSecondary, { color: screenTheme.promiseRefSecondary }]} maxFontSizeMultiplier={1.15}>
+                                {promise ? (promise.verseReferenceEn || promise.verseReference) : ''}
+                              </Text>
+                            </View>
+                          </View>
+                        </View>
+
+                        <View style={styles.vdActions}>
+                          <TouchableOpacity
+                            style={[styles.vdShareBtn, { backgroundColor: screenTheme.promiseBtnBg, borderColor: screenTheme.promiseBtnBorder, borderWidth: 1 }]}
+                            onPress={handleSharePromise}
+                          >
+                            <Share2 size={17} color={screenTheme.promiseBtnIcon} />
+                            <Text style={[styles.vdShareBtnTxt, { color: screenTheme.promiseBtnText }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.share')}</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.vdSaveBtn, { backgroundColor: screenTheme.promiseBtnBg, borderColor: screenTheme.promiseBtnBorder, borderWidth: 1 }]}
+                            onPress={() => {
+                              handleGuestProtectedNavigation('DailyVideo', {
+                                youtubeId: promise?.youtubeId,
+                                videoTitle: promise?.videoTitle || (promise?.verseReferenceEn ? `${promise.verseReferenceEn} Devotional` : undefined),
+                                pastor: promise?.pastor
+                              });
+                            }}
+                          >
+                            <Play size={17} color={screenTheme.promiseBtnIcon} fill={screenTheme.promiseBtnIcon} />
+                            <Text style={[styles.vdSaveBtnTxt, { color: screenTheme.promiseBtnText }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.watchVideo')}</Text>
+                          </TouchableOpacity>
                         </View>
                       </View>
-                    </View>
+                    </TouchableOpacity>
+                  )}
 
-                    <View style={styles.vdActions}>
-                      <TouchableOpacity 
-                        style={[styles.vdShareBtn, { backgroundColor: screenTheme.promiseBtnBg, borderColor: screenTheme.promiseBtnBorder, borderWidth: 1 }]} 
-                        onPress={handleSharePromise}
+                  {/* ── Slide: Church Custom Promise Thumbnail (if available) ── */}
+                  {promise && promiseThumbnail && (
+                    <View style={[styles.phSlide, styles.phThumbnailSlide, { width: screenWidth }]}>
+                      <LinearGradient
+                        colors={['transparent', 'transparent']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={{ flex: 1, paddingTop: 16, borderRadius: 24, overflow: 'hidden' }}
                       >
-                        <Share2 size={17} color={screenTheme.promiseBtnIcon} />
-                        <Text style={[styles.vdShareBtnTxt, { color: screenTheme.promiseBtnText }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.share')}</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity 
-                        style={[styles.vdSaveBtn, { backgroundColor: screenTheme.promiseBtnBg, borderColor: screenTheme.promiseBtnBorder, borderWidth: 1 }]} 
-                        onPress={() => {
-                          handleGuestProtectedNavigation('DailyVideo', { 
-                            youtubeId: promise?.youtubeId,
-                            videoTitle: promise?.videoTitle || (promise?.verseReferenceEn ? `${promise.verseReferenceEn} Devotional` : undefined),
-                            pastor: promise?.pastor
-                          });
-                        }}
-                      >
-                        <Play size={17} color={screenTheme.promiseBtnIcon} fill={screenTheme.promiseBtnIcon} />
-                        <Text style={[styles.vdSaveBtnTxt, { color: screenTheme.promiseBtnText }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.watchVideo')}</Text>
-                      </TouchableOpacity>
+                        <Text style={[styles.phLabel, { color: screenTheme.promiseLabel }]} maxFontSizeMultiplier={1.15}>{t('home.todaysPromise') || "Today's Promise"}</Text>
+                        <Image
+                          source={{ uri: promiseThumbnail }}
+                          style={[styles.phThumbnailImg, { flex: 1 }]}
+                          resizeMode="contain"
+                        />
+                        <View style={[styles.phActions, { paddingHorizontal: 16, paddingBottom: 14 }]}>
+                          <TouchableOpacity style={[styles.phShareBtn, { backgroundColor: screenTheme.promiseBtnBg, borderColor: screenTheme.promiseBtnBorder, borderWidth: 1 }]} onPress={handleSharePromise}>
+                            <Share2 size={18} color={screenTheme.promiseBtnIcon} />
+                            <Text style={[styles.phBtnTxt, { color: screenTheme.promiseBtnText }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.share')}</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </LinearGradient>
                     </View>
-                  </View>
-                </TouchableOpacity>
-              )}
-
-              {/* ── Slide: Church Custom Promise Thumbnail (if available) ── */}
-              {promise && promiseThumbnail && (
-                <View style={[styles.phSlide, styles.phThumbnailSlide, { width: screenWidth }]}>
-                  <LinearGradient
-                    colors={['transparent', 'transparent']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={{ flex: 1, paddingTop: 16, borderRadius: 24, overflow: 'hidden' }}
-                  >
-                    <Text style={[styles.phLabel, { color: screenTheme.promiseLabel }]} maxFontSizeMultiplier={1.15}>{t('home.todaysPromise') || "Today's Promise"}</Text>
-                    <Image
-                      source={{ uri: promiseThumbnail }}
-                      style={[styles.phThumbnailImg, { flex: 1 }]}
-                      resizeMode="contain"
-                    />
-                    <View style={[styles.phActions, { paddingHorizontal: 16, paddingBottom: 14 }]}>
-                      <TouchableOpacity style={[styles.phShareBtn, { backgroundColor: screenTheme.promiseBtnBg, borderColor: screenTheme.promiseBtnBorder, borderWidth: 1 }]} onPress={handleSharePromise}>
-                        <Share2 size={18} color={screenTheme.promiseBtnIcon} />
-                        <Text style={[styles.phBtnTxt, { color: screenTheme.promiseBtnText }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.share')}</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </LinearGradient>
-                </View>
-              )}
+                  )}
 
                   {visibleVerses.length > 0 ? (
                     visibleVerses.map((verse, idx) => {
@@ -4709,7 +4727,7 @@ export default function HomeScreen() {
                           <ImageBackground
                             source={{ uri: getVerseBackgroundUrl(verse, period, typeof verse.index === 'number' ? verse.index : idx, currentTime) }}
                             style={[
-                              styles.vdCleanWhiteCard, 
+                              styles.vdCleanWhiteCard,
                               {
                                 borderColor: screenTheme.promiseCardBorder,
                                 borderWidth: 1,
@@ -4745,14 +4763,14 @@ export default function HomeScreen() {
 
                             {/* Main Verse Block */}
                             <View style={styles.vdVerseBlock}>
-                              
+
                               <View style={styles.vdVerseTextContainer}>
                                 <Text style={[styles.vdTopRightQuote, { color: 'rgba(255, 255, 255, 0.18)' }]} pointerEvents="none">”</Text>
 
                                 {/* Primary localized verse (Telugu / Primary) */}
-                                <Text 
+                                <Text
                                   style={[
-                                    styles.vdVerseTe, 
+                                    styles.vdVerseTe,
                                     {
                                       color: '#FFFFFF',
                                       textShadowColor: 'rgba(0, 0, 0, 0.65)',
@@ -4760,7 +4778,7 @@ export default function HomeScreen() {
                                       textShadowRadius: 3,
                                     },
                                     !loc.secondaryVerse && { fontSize: 17, lineHeight: 26 }
-                                  ]} 
+                                  ]}
                                   maxFontSizeMultiplier={1.15}
                                 >
                                   {stripHtml(loc.primaryVerse)}
@@ -4803,16 +4821,16 @@ export default function HomeScreen() {
 
                             {/* Action Buttons */}
                             <View style={styles.vdActions}>
-                              <TouchableOpacity 
-                                style={[styles.vdShareBtn, { backgroundColor: screenTheme.promiseBtnBg, borderColor: screenTheme.promiseBtnBorder, borderWidth: 1 }]} 
+                              <TouchableOpacity
+                                style={[styles.vdShareBtn, { backgroundColor: screenTheme.promiseBtnBg, borderColor: screenTheme.promiseBtnBorder, borderWidth: 1 }]}
                                 onPress={() => handleShareDailyVerse(verse, period)}
                                 activeOpacity={0.75}
                               >
                                 <Share2 size={17} color={screenTheme.promiseBtnIcon} />
                                 <Text style={[styles.vdShareBtnTxt, { color: screenTheme.promiseBtnText }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.share')}</Text>
                               </TouchableOpacity>
-                              <TouchableOpacity 
-                                style={[styles.vdSaveBtn, { backgroundColor: screenTheme.promiseBtnBg, borderColor: screenTheme.promiseBtnBorder, borderWidth: 1 }]} 
+                              <TouchableOpacity
+                                style={[styles.vdSaveBtn, { backgroundColor: screenTheme.promiseBtnBg, borderColor: screenTheme.promiseBtnBorder, borderWidth: 1 }]}
                                 onPress={() => handleSaveDailyVerseCard(verse, period)}
                                 activeOpacity={0.75}
                               >
@@ -4827,13 +4845,13 @@ export default function HomeScreen() {
                   ) : (
                     // Loading placeholder while 4 verses load
                     <View style={[styles.vdSlide, { width: screenWidth }]}>
-                      <View style={[styles.vdCleanWhiteCard, { 
-                        backgroundColor: screenTheme.promiseCardBg, 
-                        borderColor: screenTheme.promiseCardBorder, 
-                        borderWidth: 1, 
-                        justifyContent: 'center', 
-                        alignItems: 'center', 
-                        minHeight: 270 
+                      <View style={[styles.vdCleanWhiteCard, {
+                        backgroundColor: screenTheme.promiseCardBg,
+                        borderColor: screenTheme.promiseCardBorder,
+                        borderWidth: 1,
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        minHeight: 270
                       }]}>
                         <ActivityIndicator size="small" color={screenTheme.accent} />
                         <Text style={{ color: screenTheme.textMuted, fontSize: 12, marginTop: 8 }}>{t('common.loading')}</Text>
@@ -4844,1183 +4862,1207 @@ export default function HomeScreen() {
                   {/* Slide: Church Service Timings */}
                   {hasServiceTimings && renderServiceTimingsSlide()}
                 </>
-            </ScrollView>
+              </ScrollView>
 
-            {/* Dot Indicators (Dynamically adapts to visible verse count, thumbnail, and service timings) */}
-            {(() => {
-              const totalDots = getUnifiedSlideCount();
+              {/* Dot Indicators (Dynamically adapts to visible verse count, thumbnail, and service timings) */}
+              {(() => {
+                const totalDots = getUnifiedSlideCount();
 
-              if (totalDots <= 1) return null;
+                if (totalDots <= 1) return null;
 
-              return (
-                <View style={styles.dotRow}>
-                  {Array.from({ length: totalDots }).map((_, i) => (
-                    <TouchableOpacity key={i} onPress={() => goToSlide(i)} style={styles.dotHit}>
-                      <View style={[styles.dot, { backgroundColor: screenTheme.dotColor }, carouselSlide === i && [styles.dotActive, { backgroundColor: screenTheme.dotActiveColor }]]} />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              );
-            })()}
-          </View>
-
-          {/* Phase 8: Member Service Duty Alert Banner (Pending Action Required Only) */}
-          {upcomingDuty && upcomingDuty.status === 'pending' && (
-            <TouchableOpacity
-              style={[
-                styles.memberDutyBanner,
-                styles.memberDutyBannerPending,
-              ]}
-              onPress={() => navigation.navigate('MyService', {
-                serviceId: upcomingDuty.serviceId,
-                initialTab: 'responsibilities',
-              })}
-              activeOpacity={0.88}
-            >
-              <View style={styles.memberDutyIconWrap}>
-                <AlertCircle size={22} color="#FFFFFF" />
-              </View>
-
-              <View style={{ flex: 1, paddingHorizontal: 10 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={styles.memberDutyTag}>ACTION REQUIRED</Text>
-                  <Text style={styles.memberDutyDate}>
-                    {formatDateMonthYear(upcomingDuty.date)}
-                  </Text>
-                </View>
-                <Text style={styles.memberDutyTitle} numberOfLines={1}>
-                  {upcomingDuty.roleTitle}
-                </Text>
-                <Text style={styles.memberDutySub} numberOfLines={1}>
-                  {upcomingDuty.serviceTitle} · Tap to accept or decline
-                </Text>
-              </View>
-
-              <ChevronRight size={18} color="#FFFFFF" />
-            </TouchableOpacity>
-          )}
-
-          {/* ── Editorial Bento-Grid Quick Access Section ── */}
-          <View
-            style={styles.bentoSectionWrapper}
-            onLayout={(e) => {
-              const y = Math.round(e.nativeEvent.layout.y);
-              setQuickAccessY(prev => Math.abs(prev - y) > 10 ? y : prev);
-            }}
-          >
-            {/* Header Row: "Quick Access" styled with church title typography */}
-            <View style={styles.bentoHeaderRow}>
-              <View style={{ flex: 1, marginRight: 8 }}>
-                <Text 
-                  style={[styles.bentoHeaderTitle, { color: screenTheme.text }]}
-                  numberOfLines={1}
-                >
-                  {t('home.quickAccess')}
-                </Text>
-              </View>
-              <Text style={[styles.bentoHeaderSubtitle, { color: screenTheme.textMuted }]}>Tap to explore</Text>
+                return (
+                  <View style={styles.dotRow}>
+                    {Array.from({ length: totalDots }).map((_, i) => (
+                      <TouchableOpacity key={i} onPress={() => goToSlide(i)} style={styles.dotHit}>
+                        <View style={[styles.dot, { backgroundColor: screenTheme.dotColor }, carouselSlide === i && [styles.dotActive, { backgroundColor: screenTheme.dotActiveColor }]]} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                );
+              })()}
             </View>
 
-            {quickActionsStyle === 'grid' ? (
-              /* ── 4-in-a-Row 3D Icon Grid (User Selected Style) ── */
-              <View style={styles.grid4Container}>
-                {Array.from({ length: Math.ceil(quickActionsGridItems.length / 4) }).map((_, rowIndex) => {
-                  const rowItems = quickActionsGridItems.slice(rowIndex * 4, rowIndex * 4 + 4);
-                  if (rowItems.length === 0) return null;
-                  return (
-                    <View 
-                      key={rowIndex} 
-                      style={[
-                        styles.grid4Row, 
-                        rowItems.length < 4 && { justifyContent: 'flex-start', gap: '2.93%' }
-                      ]}
-                    >
-                      {rowItems.map((item) => (
-                        <TouchableOpacity
-                          key={item.id}
-                          style={styles.grid4Item}
-                          activeOpacity={0.88}
-                          onPress={item.onPress}
-                        >
-                          <View
-                            style={[
-                              styles.grid4Card,
-                              {
-                                backgroundColor:
-                                  appearance === 'pure_white'
-                                    ? '#F5F5F5' // PhonePe soft neutral card background
-                                    : appearance === 'warm_white'
-                                    ? '#FFFFFF'
-                                    : screenTheme.isDark
-                                    ? '#121212'
-                                    : '#F5F5F5',
-                                borderColor:
-                                  appearance === 'pure_white'
-                                    ? '#E9E9E9' // PhonePe hairline card border
-                                    : appearance === 'warm_white'
-                                    ? '#E2E8F0'
-                                    : screenTheme.isDark
-                                    ? '#27272A'
-                                    : '#E9E9E9',
-                              },
-                            ]}
+            {/* Phase 8: Member Service Duty Alert Banner (Pending Action Required Only) */}
+            {upcomingDuty && upcomingDuty.status === 'pending' && (
+              <TouchableOpacity
+                style={[
+                  styles.memberDutyBanner,
+                  styles.memberDutyBannerPending,
+                ]}
+                onPress={() => navigation.navigate('MyService', {
+                  serviceId: upcomingDuty.serviceId,
+                  initialTab: 'responsibilities',
+                })}
+                activeOpacity={0.88}
+              >
+                <View style={styles.memberDutyIconWrap}>
+                  <AlertCircle size={22} color="#FFFFFF" />
+                </View>
+
+                <View style={{ flex: 1, paddingHorizontal: 10 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={styles.memberDutyTag}>ACTION REQUIRED</Text>
+                    <Text style={styles.memberDutyDate}>
+                      {formatDateMonthYear(upcomingDuty.date)}
+                    </Text>
+                  </View>
+                  <Text style={styles.memberDutyTitle} numberOfLines={1}>
+                    {upcomingDuty.roleTitle}
+                  </Text>
+                  <Text style={styles.memberDutySub} numberOfLines={1}>
+                    {upcomingDuty.serviceTitle} · Tap to accept or decline
+                  </Text>
+                </View>
+
+                <ChevronRight size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+            )}
+
+            {/* ── Editorial Bento-Grid Quick Access Section ── */}
+            <View
+              style={styles.bentoSectionWrapper}
+              onLayout={(e) => {
+                const y = Math.round(e.nativeEvent.layout.y);
+                setQuickAccessY(prev => Math.abs(prev - y) > 10 ? y : prev);
+              }}
+            >
+              {/* Header Row: "Quick Access" styled with church title typography */}
+              <View style={styles.bentoHeaderRow}>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <Text
+                    style={[styles.bentoHeaderTitle, { color: screenTheme.text }]}
+                    numberOfLines={1}
+                  >
+                    {t('home.quickAccess')}
+                  </Text>
+                </View>
+                <Text style={[styles.bentoHeaderSubtitle, { color: screenTheme.textMuted }]}>Tap to explore</Text>
+              </View>
+
+              {quickActionsStyle === 'grid' ? (
+                /* ── 4-in-a-Row 3D Icon Grid (User Selected Style) ── */
+                <View style={styles.grid4Container}>
+                  {Array.from({ length: Math.ceil(quickActionsGridItems.length / 4) }).map((_, rowIndex) => {
+                    const rowItems = quickActionsGridItems.slice(rowIndex * 4, rowIndex * 4 + 4);
+                    if (rowItems.length === 0) return null;
+                    return (
+                      <View
+                        key={rowIndex}
+                        style={[
+                          styles.grid4Row,
+                          rowItems.length < 4 && { justifyContent: 'flex-start', gap: '2.93%' }
+                        ]}
+                      >
+                        {rowItems.map((item) => (
+                          <TouchableOpacity
+                            key={item.id}
+                            style={styles.grid4Item}
+                            activeOpacity={0.88}
+                            onPress={item.onPress}
                           >
-                            <Image
-                              source={item.icon}
+                            <View
                               style={[
-                                styles.grid4Icon,
-                                item.id === 'gallery' && styles.grid4IconGallery,
-                                item.id === 'give' && screenTheme.isDark && {
-                                  // Subtle brightness/glow enhancement for dark theme
-                                  shadowColor: '#F59E0B',
-                                  shadowOffset: { width: 0, height: 2 },
-                                  shadowOpacity: 0.35,
-                                  shadowRadius: 4,
-                                }
+                                styles.grid4Card,
+                                {
+                                  backgroundColor:
+                                    appearance === 'pure_white'
+                                      ? '#F5F5F5' // PhonePe soft neutral card background
+                                      : appearance === 'warm_white'
+                                        ? '#FFFFFF'
+                                        : screenTheme.isDark
+                                          ? '#121212'
+                                          : '#F5F5F5',
+                                  borderColor:
+                                    appearance === 'pure_white'
+                                      ? '#E9E9E9' // PhonePe hairline card border
+                                      : appearance === 'warm_white'
+                                        ? '#E2E8F0'
+                                        : screenTheme.isDark
+                                          ? '#27272A'
+                                          : '#E9E9E9',
+                                },
                               ]}
+                            >
+                              <Image
+                                source={item.icon}
+                                style={[
+                                  styles.grid4Icon,
+                                  item.id === 'gallery' && styles.grid4IconGallery,
+                                  item.id === 'give' && screenTheme.isDark && {
+                                    // Subtle brightness/glow enhancement for dark theme
+                                    shadowColor: '#F59E0B',
+                                    shadowOffset: { width: 0, height: 2 },
+                                    shadowOpacity: 0.35,
+                                    shadowRadius: 4,
+                                  }
+                                ]}
+                                resizeMode="contain"
+                              />
+                              {item.id === 'myService' && upcomingDuty && upcomingDuty.status !== 'declined' && (
+                                <View
+                                  style={{
+                                    position: 'absolute',
+                                    top: 5,
+                                    right: 5,
+                                    width: 14,
+                                    height: 14,
+                                    borderRadius: 7,
+                                    backgroundColor:
+                                      upcomingDuty.status === 'pending' ? '#F59E0B' : '#10B981',
+                                    borderWidth: 1.5,
+                                    borderColor: screenTheme.isDark ? '#121212' : '#FFFFFF',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                  }}
+                                >
+                                  {upcomingDuty.status === 'pending' ? (
+                                    <AlertCircle size={8} color="#FFFFFF" strokeWidth={3} />
+                                  ) : (
+                                    <CheckCircle size={8} color="#FFFFFF" strokeWidth={3} />
+                                  )}
+                                </View>
+                              )}
+                              {item.id === 'youtube' && homeIsLive && homeLiveVideoId && (
+                                <View
+                                  style={{
+                                    position: 'absolute',
+                                    top: 5,
+                                    right: 5,
+                                    width: 10,
+                                    height: 10,
+                                    borderRadius: 5,
+                                    backgroundColor: '#EF4444',
+                                    borderWidth: 1.5,
+                                    borderColor: screenTheme.isDark ? '#121212' : '#FFFFFF',
+                                  }}
+                                />
+                              )}
+                            </View>
+                            <Text
+                              style={[styles.grid4Label, { color: screenTheme.text }]}
+                              numberOfLines={1}
+                              adjustsFontSizeToFit
+                              minimumFontScale={0.8}
+                            >
+                              {item.title}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    );
+                  })}
+                  {/* Render inline live youtube player card removed per user request (users use dedicated YouTube Live screen) */}
+                </View>
+              ) : (
+                /* ── Bento Grid: Asymmetric Floating Cards ── */
+                <View>
+                  {/* ── ROW 1: Sermons (Tall Card) + Stacked Daily Verse & Events (Right Column) ── */}
+                  <View style={styles.bentoRow1}>
+                    {/* Left Column: Sermons Card - PanResponder Swipeable & Auto-Scroll */}
+                    <TouchableOpacity
+                      {...sermonPanResponder.panHandlers}
+                      style={styles.claySermonsTouch}
+                      activeOpacity={0.88}
+                      onPress={() => navigation.navigate('Sermons')}
+                    >
+                      <LinearGradient
+                        colors={screenTheme.bentoSermonsGradient}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={[styles.claySermonsCard, { borderColor: screenTheme.bentoSermonsBorder, borderWidth: 1 }]}
+                      >
+                        {/* 3D Retro Vintage Microphone for Sermons */}
+                        <View
+                          style={{ width: 46, height: 52, alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <Image
+                            source={require('../../assets/retro_mic_3d.png')}
+                            style={{ width: 34, height: 52 }}
+                            resizeMode="contain"
+                          />
+                        </View>
+
+                        {/* Bottom Text + Swipeable Slides & Indicator */}
+                        <View
+                          style={styles.claySermonsBottom}
+                          onLayout={(e) => {
+                            const w = e.nativeEvent.layout.width;
+                            if (w > 0 && Math.abs(w - sermonCardWidth) > 1) {
+                              setSermonCardWidth(w);
+                            }
+                          }}
+                        >
+                          {/* Swipeable Carousel */}
+                          <ScrollView
+                            ref={sermonScrollRef}
+                            horizontal
+                            pagingEnabled
+                            scrollEnabled={false}
+                            pointerEvents="none"
+                            showsHorizontalScrollIndicator={false}
+                            style={{ width: sermonCardWidth > 0 ? sermonCardWidth : '100%' }}
+                          >
+                            {/* Slide 1 */}
+                            <View style={{ width: sermonCardWidth > 0 ? sermonCardWidth : 140, paddingRight: 4 }}>
+                              <Text
+                                style={[styles.claySermonsTitle, { color: screenTheme.bentoSermonsText }]}
+                                numberOfLines={1}
+                                adjustsFontSizeToFit
+                                minimumFontScale={0.8}
+                              >
+                                {t('home.quickSermons')}
+                              </Text>
+                              <Text style={[styles.claySermonsSub, { color: screenTheme.bentoSermonsSub }]} numberOfLines={2}>
+                                Watch & listen to transformative messages
+                              </Text>
+                            </View>
+
+                            {/* Slide 2 */}
+                            <View style={{ width: sermonCardWidth > 0 ? sermonCardWidth : 140, paddingRight: 4 }}>
+                              <Text
+                                style={[styles.claySermonsTitle, { color: screenTheme.bentoSermonsText }]}
+                                numberOfLines={1}
+                                adjustsFontSizeToFit
+                                minimumFontScale={0.8}
+                              >
+                                Sermon Videos
+                              </Text>
+                              <Text style={[styles.claySermonsSub, { color: screenTheme.bentoSermonsSub }]} numberOfLines={2}>
+                                Rhema Global Ministries sermon videos
+                              </Text>
+                            </View>
+
+                            {/* Slide 3 */}
+                            <View style={{ width: sermonCardWidth > 0 ? sermonCardWidth : 140, paddingRight: 4 }}>
+                              <Text
+                                style={[styles.claySermonsTitle, { color: screenTheme.bentoSermonsText }]}
+                                numberOfLines={1}
+                                adjustsFontSizeToFit
+                                minimumFontScale={0.8}
+                              >
+                                Watch Online
+                              </Text>
+                              <Text style={[styles.claySermonsSub, { color: screenTheme.bentoSermonsSub }]} numberOfLines={2}>
+                                Stream life-changing sermons anytime
+                              </Text>
+                            </View>
+                          </ScrollView>
+
+                          <View style={styles.claySermonsFooterRow}>
+                            {/* Pill Dashes in Bottom Left (Active indicator corresponds to slide) */}
+                            <View style={styles.claySermonsDashRow}>
+                              <TouchableOpacity
+                                activeOpacity={0.7}
+                                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                                onPress={() => { setSermonSlide(0); sermonScrollRef.current?.scrollTo({ x: 0, animated: true }); }}
+                              >
+                                <View style={sermonSlide === 0 ? styles.claySermonsDashActive : styles.claySermonsDashInactive} />
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                activeOpacity={0.7}
+                                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                                onPress={() => { setSermonSlide(1); sermonScrollRef.current?.scrollTo({ x: sermonCardWidth, animated: true }); }}
+                              >
+                                <View style={sermonSlide === 1 ? styles.claySermonsDashActive : styles.claySermonsDashInactive} />
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                activeOpacity={0.7}
+                                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                                onPress={() => { setSermonSlide(2); sermonScrollRef.current?.scrollTo({ x: sermonCardWidth * 2, animated: true }); }}
+                              >
+                                <View style={sermonSlide === 2 ? styles.claySermonsDashActive : styles.claySermonsDashInactive} />
+                              </TouchableOpacity>
+                            </View>
+
+
+                          </View>
+                        </View>
+                      </LinearGradient>
+                    </TouchableOpacity>
+
+                    {/* Right Column: Events (Top) + Songs (Bottom) */}
+                    <View style={styles.bentoRow1RightCol}>
+                      {/* Events Card */}
+                      <TouchableOpacity
+                        style={styles.clayEventsTouch}
+                        activeOpacity={0.88}
+                        onPress={() => navigation.navigate('Events')}
+                      >
+                        <LinearGradient
+                          colors={screenTheme.bentoEventsGradient}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                          style={[styles.clayEventsCard, { borderColor: screenTheme.bentoEventsBorder, borderWidth: 1 }]}
+                        >
+                          {/* 3D Spiral Calendar Icon */}
+                          <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+                            <Image
+                              source={require('../../assets/3d_events.png')}
+                              style={{ width: 38, height: 38 }}
                               resizeMode="contain"
                             />
-                            {item.id === 'myService' && upcomingDuty && upcomingDuty.status !== 'declined' && (
-                              <View
-                                style={{
-                                  position: 'absolute',
-                                  top: 5,
-                                  right: 5,
-                                  width: 14,
-                                  height: 14,
-                                  borderRadius: 7,
-                                  backgroundColor:
-                                    upcomingDuty.status === 'pending' ? '#F59E0B' : '#10B981',
-                                  borderWidth: 1.5,
-                                  borderColor: screenTheme.isDark ? '#121212' : '#FFFFFF',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                }}
-                              >
-                                {upcomingDuty.status === 'pending' ? (
-                                  <AlertCircle size={8} color="#FFFFFF" strokeWidth={3} />
-                                ) : (
-                                  <CheckCircle size={8} color="#FFFFFF" strokeWidth={3} />
-                                )}
-                              </View>
-                            )}
-                            {item.id === 'youtube' && homeIsLive && homeLiveVideoId && (
-                              <View
-                                style={{
-                                  position: 'absolute',
-                                  top: 5,
-                                  right: 5,
-                                  width: 10,
-                                  height: 10,
-                                  borderRadius: 5,
-                                  backgroundColor: '#EF4444',
-                                  borderWidth: 1.5,
-                                  borderColor: screenTheme.isDark ? '#121212' : '#FFFFFF',
-                                }}
-                              />
-                            )}
                           </View>
+
+                          <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 8 }}>
+                            <Text
+                              style={[styles.clayCardTitle, { color: screenTheme.bentoEventsText, fontSize: 14 }]}
+                              numberOfLines={1}
+                              adjustsFontSizeToFit
+                              minimumFontScale={0.85}
+                            >
+                              {t('home.quickEvents')}
+                            </Text>
+                            <Text
+                              style={[styles.clayCardSub, { color: screenTheme.bentoEventsSub, fontSize: 11, marginTop: 2 }]}
+                              numberOfLines={1}
+                              adjustsFontSizeToFit
+                              minimumFontScale={0.8}
+                            >
+                              Church services
+                            </Text>
+                          </View>
+                        </LinearGradient>
+                      </TouchableOpacity>
+
+                      {/* Songs Card */}
+                      <TouchableOpacity
+                        style={styles.clayDailyVerseTouch}
+                        activeOpacity={0.88}
+                        onPress={() => handleGuestProtectedNavigation('Songs')}
+                      >
+                        <LinearGradient
+                          colors={screenTheme.bentoSongsGradient}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                          style={[styles.clayDailyVerseCard, { borderColor: screenTheme.bentoSongsBorder, borderWidth: 1 }]}
+                        >
+                          {/* 3D Microphone with Music Notes */}
+                          <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+                            <Image
+                              source={require('../../assets/3d_sermons.png')}
+                              style={{ width: 38, height: 38 }}
+                              resizeMode="contain"
+                            />
+                          </View>
+
+                          <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 8 }}>
+                            <Text
+                              style={[styles.clayCardTitle, { color: screenTheme.bentoSongsText, fontSize: 14 }]}
+                              numberOfLines={1}
+                              adjustsFontSizeToFit
+                              minimumFontScale={0.85}
+                            >
+                              {t('home.quickSongs')}
+                            </Text>
+                            <Text
+                              style={[styles.clayCardSub, { color: screenTheme.bentoSongsSub, fontSize: 11, marginTop: 2 }]}
+                              numberOfLines={1}
+                              adjustsFontSizeToFit
+                              minimumFontScale={0.8}
+                            >
+                              Worship songs
+                            </Text>
+                          </View>
+                        </LinearGradient>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* ── ROW 2: Give / Tithe Banner (Clean, Exact Medallion + Hand with Heart) ── */}
+                  <TouchableOpacity
+                    style={styles.clayGiveTouch}
+                    activeOpacity={0.88}
+                    onPress={() => {
+                      if (!activeChurch?.features?.hasGiving) {
+                        setAlertConfig({
+                          visible: true,
+                          title: 'Coming Soon',
+                          message: 'Online donations via the app are coming soon. Please contact the church administration for offline donation options.',
+                          type: 'info'
+                        });
+                      } else {
+                        handleGuestProtectedNavigation('Give');
+                      }
+                    }}
+                  >
+                    <LinearGradient
+                      colors={screenTheme.bentoGiveGradient}
+                      start={{ x: 0, y: 0.25 }}
+                      end={{ x: 1, y: 0.75 }}
+                      style={[styles.clayGiveCard, { borderColor: screenTheme.bentoGiveBorder, borderWidth: 1 }]}
+                    >
+                      {/* 3D Gold Coins behind the Give badge */}
+                      <GiveCoins scrollY={scrollY} triggerY={quickAccessY} />
+
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                        {/* Circular Embossed Gold Medallion with Exact Hand + Heart */}
+                        <LinearGradient
+                          colors={['#FFF0B8', '#DDAE3A']}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                          style={styles.clayGiveIconCircle}
+                        >
+                          <View style={styles.clayIconShine} pointerEvents="none" />
+                          <Image source={require('../../assets/give_hand_heart.png')} style={{ width: 28, height: 28 }} resizeMode="contain" />
+                        </LinearGradient>
+
+                        <View style={{ flex: 1, justifyContent: 'center', marginLeft: 10, marginRight: 96 }}>
                           <Text
-                            style={[styles.grid4Label, { color: screenTheme.text }]}
+                            style={[styles.clayCardTitle, { color: screenTheme.bentoGiveText, fontSize: 16 }]}
                             numberOfLines={1}
                             adjustsFontSizeToFit
                             minimumFontScale={0.8}
                           >
-                            {item.title}
+                            {language === 'en' ? 'Give / Tithe' : t('home.quickGiving')}
                           </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  );
-                })}
-                {/* Render inline live youtube player card removed per user request (users use dedicated YouTube Live screen) */}
-              </View>
-            ) : (
-              /* ── Bento Grid: Asymmetric Floating Cards ── */
-              <View>
-            {/* ── ROW 1: Sermons (Tall Card) + Stacked Daily Verse & Events (Right Column) ── */}
-            <View style={styles.bentoRow1}>
-              {/* Left Column: Sermons Card - PanResponder Swipeable & Auto-Scroll */}
-              <TouchableOpacity 
-                {...sermonPanResponder.panHandlers}
-                style={styles.claySermonsTouch}
-                activeOpacity={0.88}
-                onPress={() => navigation.navigate('Sermons')}
-              >
-                <LinearGradient
-                  colors={screenTheme.bentoSermonsGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={[styles.claySermonsCard, { borderColor: screenTheme.bentoSermonsBorder, borderWidth: 1 }]}
-                >
-                  {/* 3D Retro Vintage Microphone for Sermons */}
-                  <View 
-                    style={{ width: 46, height: 52, alignItems: 'center', justifyContent: 'center' }}
-                  >
-                    <Image
-                      source={require('../../assets/retro_mic_3d.png')}
-                      style={{ width: 34, height: 52 }}
-                      resizeMode="contain"
-                    />
-                  </View>
-
-                  {/* Bottom Text + Swipeable Slides & Indicator */}
-                  <View 
-                    style={styles.claySermonsBottom}
-                    onLayout={(e) => {
-                      const w = e.nativeEvent.layout.width;
-                      if (w > 0 && Math.abs(w - sermonCardWidth) > 1) {
-                        setSermonCardWidth(w);
-                      }
-                    }}
-                  >
-                    {/* Swipeable Carousel */}
-                    <ScrollView
-                      ref={sermonScrollRef}
-                      horizontal
-                      pagingEnabled
-                      scrollEnabled={false}
-                      pointerEvents="none"
-                      showsHorizontalScrollIndicator={false}
-                      style={{ width: sermonCardWidth > 0 ? sermonCardWidth : '100%' }}
-                    >
-                      {/* Slide 1 */}
-                      <View style={{ width: sermonCardWidth > 0 ? sermonCardWidth : 140, paddingRight: 4 }}>
-                        <Text
-                          style={[styles.claySermonsTitle, { color: screenTheme.bentoSermonsText }]}
-                          numberOfLines={1}
-                          adjustsFontSizeToFit
-                          minimumFontScale={0.8}
-                        >
-                          {t('home.quickSermons')}
-                        </Text>
-                        <Text style={[styles.claySermonsSub, { color: screenTheme.bentoSermonsSub }]} numberOfLines={2}>
-                          Watch & listen to transformative messages
-                        </Text>
-                      </View>
-
-                      {/* Slide 2 */}
-                      <View style={{ width: sermonCardWidth > 0 ? sermonCardWidth : 140, paddingRight: 4 }}>
-                        <Text
-                          style={[styles.claySermonsTitle, { color: screenTheme.bentoSermonsText }]}
-                          numberOfLines={1}
-                          adjustsFontSizeToFit
-                          minimumFontScale={0.8}
-                        >
-                          Sermon Videos
-                        </Text>
-                        <Text style={[styles.claySermonsSub, { color: screenTheme.bentoSermonsSub }]} numberOfLines={2}>
-                          Rhema Global Ministries sermon videos
-                        </Text>
-                      </View>
-
-                      {/* Slide 3 */}
-                      <View style={{ width: sermonCardWidth > 0 ? sermonCardWidth : 140, paddingRight: 4 }}>
-                        <Text
-                          style={[styles.claySermonsTitle, { color: screenTheme.bentoSermonsText }]}
-                          numberOfLines={1}
-                          adjustsFontSizeToFit
-                          minimumFontScale={0.8}
-                        >
-                          Watch Online
-                        </Text>
-                        <Text style={[styles.claySermonsSub, { color: screenTheme.bentoSermonsSub }]} numberOfLines={2}>
-                          Stream life-changing sermons anytime
-                        </Text>
-                      </View>
-                    </ScrollView>
-
-                    <View style={styles.claySermonsFooterRow}>
-                      {/* Pill Dashes in Bottom Left (Active indicator corresponds to slide) */}
-                      <View style={styles.claySermonsDashRow}>
-                        <TouchableOpacity 
-                          activeOpacity={0.7} 
-                          hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-                          onPress={() => { setSermonSlide(0); sermonScrollRef.current?.scrollTo({ x: 0, animated: true }); }}
-                        >
-                          <View style={sermonSlide === 0 ? styles.claySermonsDashActive : styles.claySermonsDashInactive} />
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                          activeOpacity={0.7} 
-                          hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-                          onPress={() => { setSermonSlide(1); sermonScrollRef.current?.scrollTo({ x: sermonCardWidth, animated: true }); }}
-                        >
-                          <View style={sermonSlide === 1 ? styles.claySermonsDashActive : styles.claySermonsDashInactive} />
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                          activeOpacity={0.7} 
-                          hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-                          onPress={() => { setSermonSlide(2); sermonScrollRef.current?.scrollTo({ x: sermonCardWidth * 2, animated: true }); }}
-                        >
-                          <View style={sermonSlide === 2 ? styles.claySermonsDashActive : styles.claySermonsDashInactive} />
-                        </TouchableOpacity>
-                      </View>
-
-
-                    </View>
-                  </View>
-                </LinearGradient>
-              </TouchableOpacity>
-
-              {/* Right Column: Events (Top) + Songs (Bottom) */}
-              <View style={styles.bentoRow1RightCol}>
-                {/* Events Card */}
-                <TouchableOpacity
-                  style={styles.clayEventsTouch}
-                  activeOpacity={0.88}
-                  onPress={() => navigation.navigate('Events')}
-                >
-                  <LinearGradient
-                    colors={screenTheme.bentoEventsGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={[styles.clayEventsCard, { borderColor: screenTheme.bentoEventsBorder, borderWidth: 1 }]}
-                  >
-                    {/* 3D Spiral Calendar Icon */}
-                    <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
-                      <Image
-                        source={require('../../assets/3d_events.png')}
-                        style={{ width: 38, height: 38 }}
-                        resizeMode="contain"
-                      />
-                    </View>
-
-                    <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 8 }}>
-                      <Text
-                        style={[styles.clayCardTitle, { color: screenTheme.bentoEventsText, fontSize: 14 }]}
-                        numberOfLines={1}
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.85}
-                      >
-                        {t('home.quickEvents')}
-                      </Text>
-                      <Text
-                        style={[styles.clayCardSub, { color: screenTheme.bentoEventsSub, fontSize: 11, marginTop: 2 }]}
-                        numberOfLines={1}
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.8}
-                      >
-                        Church services
-                      </Text>
-                    </View>
-                  </LinearGradient>
-                </TouchableOpacity>
-
-                {/* Songs Card */}
-                <TouchableOpacity
-                  style={styles.clayDailyVerseTouch}
-                  activeOpacity={0.88}
-                  onPress={() => handleGuestProtectedNavigation('Songs')}
-                >
-                  <LinearGradient
-                    colors={screenTheme.bentoSongsGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={[styles.clayDailyVerseCard, { borderColor: screenTheme.bentoSongsBorder, borderWidth: 1 }]}
-                  >
-                    {/* 3D Microphone with Music Notes */}
-                    <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
-                      <Image
-                        source={require('../../assets/3d_sermons.png')}
-                        style={{ width: 38, height: 38 }}
-                        resizeMode="contain"
-                      />
-                    </View>
-
-                    <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 8 }}>
-                      <Text
-                        style={[styles.clayCardTitle, { color: screenTheme.bentoSongsText, fontSize: 14 }]}
-                        numberOfLines={1}
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.85}
-                      >
-                        {t('home.quickSongs')}
-                      </Text>
-                      <Text
-                        style={[styles.clayCardSub, { color: screenTheme.bentoSongsSub, fontSize: 11, marginTop: 2 }]}
-                        numberOfLines={1}
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.8}
-                      >
-                        Worship songs
-                      </Text>
-                    </View>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* ── ROW 2: Give / Tithe Banner (Clean, Exact Medallion + Hand with Heart) ── */}
-            <TouchableOpacity
-              style={styles.clayGiveTouch}
-              activeOpacity={0.88}
-              onPress={() => {
-                if (!activeChurch?.features?.hasGiving) {
-                  setAlertConfig({
-                    visible: true,
-                    title: 'Coming Soon',
-                    message: 'Online donations via the app are coming soon. Please contact the church administration for offline donation options.',
-                    type: 'info'
-                  });
-                } else {
-                  handleGuestProtectedNavigation('Give');
-                }
-              }}
-            >
-              <LinearGradient
-                colors={screenTheme.bentoGiveGradient}
-                start={{ x: 0, y: 0.25 }}
-                end={{ x: 1, y: 0.75 }}
-                style={[styles.clayGiveCard, { borderColor: screenTheme.bentoGiveBorder, borderWidth: 1 }]}
-              >
-                {/* 3D Gold Coins behind the Give badge */}
-                <GiveCoins scrollY={scrollY} triggerY={quickAccessY} />
-
-                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                  {/* Circular Embossed Gold Medallion with Exact Hand + Heart */}
-                  <LinearGradient
-                    colors={['#FFF0B8', '#DDAE3A']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.clayGiveIconCircle}
-                  >
-                    <View style={styles.clayIconShine} pointerEvents="none" />
-                    <Image source={require('../../assets/give_hand_heart.png')} style={{ width: 28, height: 28 }} resizeMode="contain" />
-                  </LinearGradient>
-
-                  <View style={{ flex: 1, justifyContent: 'center', marginLeft: 10, marginRight: 96 }}>
-                    <Text
-                      style={[styles.clayCardTitle, { color: screenTheme.bentoGiveText, fontSize: 16 }]}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.8}
-                    >
-                      {language === 'en' ? 'Give / Tithe' : t('home.quickGiving')}
-                    </Text>
-                    <Text style={[styles.clayCardSub, { color: screenTheme.bentoGiveSub, fontSize: 11, marginTop: 1 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
-                      Sow a seed · Online giving
-                    </Text>
-                  </View>
-                </View>
-              </LinearGradient>
-            </TouchableOpacity>
-
-            {/* ── ROW 3: Daily Verse + Attendance ── */}
-            <View style={styles.bentoRow3}>
-              {/* Left: Daily Verse */}
-              <TouchableOpacity
-                style={styles.claySongsTouch}
-                activeOpacity={0.88}
-                onPress={() => {
-                  if (todayVerse) {
-                    navigation.navigate('VerseOfTheDay', { verseId: todayVerse.id, period: todayPeriod });
-                  } else if (visibleVerses && visibleVerses.length > 0) {
-                    navigation.navigate('VerseOfTheDay', { verseId: visibleVerses[0].id, period: VERSE_PERIODS[0] || 'Morning' });
-                  } else {
-                    handleGuestProtectedNavigation('Promise');
-                  }
-                }}
-              >
-                <LinearGradient
-                  colors={screenTheme.bentoVerseGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={[styles.claySongsCard, { borderColor: screenTheme.bentoVerseBorder, borderWidth: 1.2 }]}
-                >
-                  {/* 3D Holy Bible Icon for Daily Verse */}
-                  <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
-                    <Image
-                      source={require('../../assets/3d_daily_verse.png')}
-                      style={{ width: 38, height: 38 }}
-                      resizeMode="contain"
-                    />
-                  </View>
-
-                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 8 }}>
-                    <Text
-                      style={[styles.clayCardTitle, { color: screenTheme.bentoVerseText, fontSize: 14.5, fontWeight: '800' }]}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.85}
-                    >
-                      {t('home.quickDailyVerse')}
-                    </Text>
-                  </View>
-                </LinearGradient>
-              </TouchableOpacity>
-
-              {/* Right: Attendance */}
-              <TouchableOpacity
-                style={styles.clayAttendanceTouch}
-                activeOpacity={0.88}
-                onPress={() => navigation.navigate('Attendance')}
-              >
-                <LinearGradient
-                  colors={screenTheme.bentoAttendanceGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={[styles.clayAttendanceCard, { borderColor: screenTheme.bentoAttendanceBorder, borderWidth: 1 }]}
-                >
-                  {/* 3D Attendance Checklist Clipboard Icon */}
-                  <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center', marginLeft: 0, marginRight: 2 }}>
-                    <Image
-                      source={require('../../assets/3d_attendance.png')}
-                      style={{ width: 38, height: 38 }}
-                      resizeMode="contain"
-                    />
-                  </View>
-
-                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 8 }}>
-                    <Text
-                      style={[styles.clayCardTitle, { color: screenTheme.bentoAttendanceText, fontSize: 16, fontWeight: '900', letterSpacing: -0.3 }]}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.85}
-                    >
-                      {t('nav.attendance') || 'Attendance'}
-                    </Text>
-                  </View>
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
-
-            {/* ── ROW 4: 2-Column Cards (Sermon Notes & Bible Quiz) - Text Next to Icon ── */}
-            <View style={styles.bentoRow4}>
-              {/* Sermon Notes */}
-              <TouchableOpacity
-                style={styles.clayQuarterTouch}
-                activeOpacity={0.85}
-                onPress={() => handleGuestProtectedNavigation('MemberNotes')}
-              >
-                <LinearGradient
-                  colors={screenTheme.bentoNotesGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={[styles.clayQuarterCard, { borderColor: screenTheme.bentoNotesBorder, borderWidth: 1.2 }]}
-                >
-                  {/* 3D Notepad with Writing Pen Icon */}
-                  <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center', marginLeft: 2, marginRight: 2 }}>
-                    <Image
-                      source={require('../../assets/3d_sermon_notes.png')}
-                      style={{ width: 36, height: 36 }}
-                      resizeMode="contain"
-                    />
-                  </View>
-
-                  {/* Text Next to Icon */}
-                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 6, marginRight: 4 }}>
-                    <Text
-                      style={[styles.clayCardTitle, { color: screenTheme.bentoNotesText, fontSize: 14, fontWeight: '800' }]}
-                      numberOfLines={2}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.8}
-                    >
-                      {t('home.quickSermonNotes')}
-                    </Text>
-                  </View>
-                </LinearGradient>
-              </TouchableOpacity>
-
-              {/* Bible Quiz */}
-              <TouchableOpacity
-                style={styles.clayQuarterTouch}
-                activeOpacity={0.85}
-                onPress={() => navigation.navigate('BibleQuizHome')}
-              >
-                <LinearGradient
-                  colors={screenTheme.bentoQuizGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={[styles.clayQuarterCard, { borderColor: screenTheme.bentoQuizBorder, borderWidth: 1.2 }]}
-                >
-                  {/* 3D Golden Trophy Icon */}
-                  <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center', marginLeft: 2, marginRight: 2 }}>
-                    <Image
-                      source={require('../../assets/3d_bible_quiz.png')}
-                      style={{ width: 38, height: 38 }}
-                      resizeMode="contain"
-                    />
-                  </View>
-
-                  {/* Text Next to Icon */}
-                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 6, marginRight: 4 }}>
-                    <Text
-                      style={[styles.clayCardTitle, { color: screenTheme.bentoQuizText, fontSize: 14, fontWeight: '800' }]}
-                      numberOfLines={2}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.8}
-                    >
-                      {t('home.quickBibleQuiz') || 'Bible Quiz'}
-                    </Text>
-                  </View>
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
-
-            {/* ── ROW 5: Church Gallery Banner (Long Card, same height as Give/Tithe card) ── */}
-            <TouchableOpacity
-              style={styles.clayGalleryTouch}
-              activeOpacity={0.88}
-              onPress={() => navigation.navigate('Gallery')}
-            >
-              <LinearGradient
-                colors={screenTheme.bentoGalleryGradient}
-                start={{ x: 0, y: 0.25 }}
-                end={{ x: 1, y: 0.75 }}
-                style={[styles.clayGalleryCard, { borderColor: screenTheme.bentoGalleryBorder, borderWidth: 1.2 }]}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                  {/* 3D Gallery Icon */}
-                  <View style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
-                    <Image
-                      source={require('../../assets/3d_gallery.png')}
-                      style={{ width: 40, height: 40 }}
-                      resizeMode="contain"
-                    />
-                  </View>
-
-                  <View style={{ flex: 1, justifyContent: 'center', marginLeft: 10, marginRight: 6 }}>
-                    <Text
-                      style={[styles.clayCardTitle, { color: screenTheme.bentoGalleryText, fontSize: 15.5, fontWeight: '800' }]}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.8}
-                    >
-                      {language === 'en' ? 'Church Gallery' : (t('home.gallery') || 'Church Gallery')}
-                    </Text>
-                    <Text
-                      style={[styles.clayCardSub, { color: screenTheme.bentoGallerySub || 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 1.5 }]}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.8}
-                    >
-                      {language === 'en' ? 'Photos & memories' : (t('home.gallerySub') || 'Church memories')}
-                    </Text>
-                  </View>
-
-                  {/* Right side: 2 columns animated marquee (one goes upwards, one goes downwards) */}
-                  <GalleryMarqueeColumns gradient={screenTheme.bentoGalleryGradient} />
-                </View>
-              </LinearGradient>
-            </TouchableOpacity>
-
-            {/* ── LIVE YOUTUBE PLAYER DIRECTLY IN BENTO HOME SECTION REMOVED (DEDICATED YOUTUBE LIVE SCREEN USED) ── */}
-
-            {/* ── EXPANDABLE BENTO SECTION (Rows 6, 7 & 8) ── */}
-            {showAllBento && (
-              <>
-                {/* ── ROW 6: Left Column (Meetings & Members - Normal Cards, height same as Sermon Notes) + Right Column (Big YouTube Card) ── */}
-            <View
-              style={styles.bentoRow6}
-              onLayout={(e) => setOnlineMeetingsY(e.nativeEvent.layout.y)}
-            >
-              <View style={styles.bentoRow6LeftCol}>
-                {/* 1. Online Meetings */}
-                <TouchableOpacity
-                  style={styles.clayMeetingsTouch}
-                  activeOpacity={0.85}
-                  onPress={() => navigation.navigate('OnlineMeetings')}
-                >
-                  <LinearGradient
-                    colors={screenTheme.bentoMeetingsGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={[styles.clayMeetingsCard, { borderColor: screenTheme.bentoMeetingsBorder, borderWidth: 1 }]}
-                  >
-                    {/* 3D Online Meetings Icon */}
-                    <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
-                      <Image
-                        source={require('../../assets/3d_online_meetings.png')}
-                        style={{ width: 38, height: 38 }}
-                        resizeMode="contain"
-                      />
-                    </View>
-
-                    <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 6 }}>
-                      <Text
-                        style={[styles.clayCardTitle, { color: screenTheme.bentoMeetingsText, fontSize: 13.5, fontWeight: '800' }]}
-                        numberOfLines={1}
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.8}
-                      >
-                        {language === 'en' ? 'Online Meetings' : (t('home.onlineMeetings') || t('home.quickMeetings') || 'Online Meetings')}
-                      </Text>
-                      <Text
-                        style={[styles.clayCardSub, { color: 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 2 }]}
-                        numberOfLines={1}
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.8}
-                      >
-                        Online calls
-                      </Text>
-                    </View>
-                  </LinearGradient>
-                </TouchableOpacity>
-
-                {/* 2. Members */}
-                <TouchableOpacity
-                  style={styles.clayMembersTouch}
-                  activeOpacity={0.85}
-                  onPress={handleOpenMembers}
-                >
-                  <LinearGradient
-                    colors={screenTheme.bentoMembersGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={[styles.clayMembersCard, { borderColor: screenTheme.bentoMembersBorder, borderWidth: 1.2 }]}
-                  >
-                    {/* 3D Members Community Icon */}
-                    <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
-                      <Image
-                        source={require('../../assets/3d_members_family.png')}
-                        style={{ width: 38, height: 38 }}
-                        resizeMode="contain"
-                      />
-                    </View>
-
-                    <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 6 }}>
-                      <Text
-                        style={[styles.clayCardTitle, { color: screenTheme.bentoMembersText, fontSize: 14, fontWeight: '800' }]}
-                        numberOfLines={1}
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.85}
-                      >
-                        {t('home.quickMembers') || 'Members'}
-                      </Text>
-                      <Text
-                        style={[styles.clayCardSub, { color: 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 2 }]}
-                        numberOfLines={1}
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.8}
-                      >
-                        Directory
-                      </Text>
-                    </View>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </View>
-
-              {/* Right Column: Big YouTube Card */}
-              <TouchableOpacity
-                style={styles.clayYoutubeBigTouch}
-                activeOpacity={0.88}
-                onPress={() => {
-                  const yUrl = resolveRhemaYoutubeUrl(activeChurch?.socialLinks?.youtube);
-                  navigation.navigate('YouTubeLive', {
-                    channelUrl: yUrl,
-                    streamsUrl: RHEMA_YOUTUBE_STREAMS_URL,
-                  });
-                }}
-              >
-                <LinearGradient
-                  colors={screenTheme.bentoYoutubeGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={[styles.clayYoutubeBigCard, { borderColor: screenTheme.bentoYoutubeBorder }]}
-                >
-                  {/* Top: YouTube Icon + Live Badge */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                    <Image
-                      source={require('../../assets/3d_youtube.png')}
-                      style={{ width: 44, height: 38 }}
-                      resizeMode="contain"
-                    />
-                    <View style={styles.bentoLiveBadgeWrap}>
-                      <View style={styles.bentoLiveDot} />
-                      <Text style={styles.bentoLiveTag}>LIVE</Text>
-                    </View>
-                  </View>
-
-                  {/* Bottom: Title & Subtitle */}
-                  <View style={{ marginTop: 'auto', paddingTop: 8 }}>
-                    <Text
-                      style={[styles.claySermonsTitle, { color: screenTheme.bentoYoutubeText }]}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.85}
-                    >
-                      YouTube
-                    </Text>
-                    <Text
-                      style={[styles.claySermonsSub, { color: screenTheme.bentoYoutubeSub, marginTop: 2 }]}
-                      numberOfLines={2}
-                    >
-                      Rhema Ministry Live
-                    </Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 }}>
-                      <Play size={11} color="#FFFFFF" fill="#FFFFFF" />
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF' }}>Watch in app</Text>
-                    </View>
-                  </View>
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
-
-            {/* ── ROW 7: Service Roster Banner Card (matches 4-in-a-Row Quick Access items) ── */}
-            <TouchableOpacity
-              style={styles.clayGalleryTouch}
-              activeOpacity={0.88}
-              onPress={() =>
-                navigation.navigate(
-                  'MyService',
-                  upcomingDuty && upcomingDuty.status !== 'declined'
-                    ? {
-                        serviceId: upcomingDuty.serviceId,
-                        initialTab: upcomingDuty.status === 'pending' ? 'responsibilities' : 'roster',
-                      }
-                    : undefined
-                )
-              }
-            >
-              <LinearGradient
-                colors={screenTheme.bentoRosterGradient || ['#0F5A54', '#083733']}
-                start={{ x: 0, y: 0.25 }}
-                end={{ x: 1, y: 0.75 }}
-                style={[
-                  styles.clayGalleryCard,
-                  {
-                    borderColor: screenTheme.bentoRosterBorder || '#14847B',
-                    borderWidth: 1.2,
-                    paddingRight: 14,
-                    paddingVertical: upcomingDuty && upcomingDuty.status !== 'declined' ? 10 : 4,
-                  },
-                ]}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                  {/* 3D Service Roster Stage Icon */}
-                  <View style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
-                    <Image
-                      source={require('../../assets/gallery_3d_stage.png')}
-                      style={{ width: 40, height: 40 }}
-                      resizeMode="contain"
-                    />
-                  </View>
-
-                  <View style={{ flex: 1, justifyContent: 'center', marginLeft: 10, marginRight: 8 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-                      <Text
-                        style={[styles.clayCardTitle, { color: screenTheme.bentoRosterText || '#FFFFFF', fontSize: 15.5, fontWeight: '800' }]}
-                        numberOfLines={1}
-                      >
-                        {t('nav.serviceRoster') === 'nav.serviceRoster' ? 'Service Roster' : t('nav.serviceRoster')}
-                      </Text>
-
-                      {upcomingDuty && upcomingDuty.status !== 'declined' && (
-                        <View
-                          style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            gap: 4,
-                            paddingHorizontal: 7,
-                            paddingVertical: 2,
-                            borderRadius: 999,
-                            backgroundColor:
-                              upcomingDuty.status === 'pending'
-                                ? 'rgba(245, 158, 11, 0.25)'
-                                : 'rgba(16, 185, 129, 0.24)',
-                            borderWidth: 1,
-                            borderColor:
-                              upcomingDuty.status === 'pending'
-                                ? 'rgba(252, 211, 77, 0.6)'
-                                : 'rgba(110, 231, 183, 0.55)',
-                          }}
-                        >
-                          {upcomingDuty.status === 'pending' ? (
-                            <AlertCircle size={10} color="#FCD34D" strokeWidth={2.5} />
-                          ) : (
-                            <CheckCircle size={10} color="#6EE7B7" strokeWidth={2.5} />
-                          )}
-                          <Text
-                            style={{
-                              fontSize: 9.5,
-                              fontWeight: '800',
-                              letterSpacing: 0.4,
-                              color: upcomingDuty.status === 'pending' ? '#FEF3C7' : '#D1FAE5',
-                            }}
-                          >
-                            {upcomingDuty.status === 'pending' ? 'ACTION NEEDED' : 'CONFIRMED'}
+                          <Text style={[styles.clayCardSub, { color: screenTheme.bentoGiveSub, fontSize: 11, marginTop: 1 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+                            Sow a seed · Online giving
                           </Text>
                         </View>
-                      )}
-                    </View>
+                      </View>
+                    </LinearGradient>
+                  </TouchableOpacity>
 
-                    {upcomingDuty && upcomingDuty.status !== 'declined' ? (
-                      <>
-                        <Text
-                          style={{
-                            color: screenTheme.bentoRosterText || '#FFFFFF',
-                            fontSize: 12.5,
-                            fontWeight: '700',
-                            marginTop: 3,
-                            opacity: 0.96,
-                          }}
-                          numberOfLines={1}
-                        >
-                          {upcomingDuty.roleTitle}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.clayCardSub,
-                            {
-                              color: screenTheme.bentoRosterSub || 'rgba(255,255,255,0.85)',
-                              fontSize: 11,
-                              marginTop: 1.5,
-                            },
-                          ]}
-                          numberOfLines={1}
-                          adjustsFontSizeToFit
-                          minimumFontScale={0.85}
-                        >
-                          {upcomingDuty.status === 'pending'
-                            ? `${formatDateMonthYear(upcomingDuty.date)} · Tap to respond`
-                            : `${formatDateMonthYear(upcomingDuty.date)}${
-                                upcomingDuty.callTime
-                                  ? ` · Call ${formatTimeTo12Hour(upcomingDuty.callTime)}`
-                                  : upcomingDuty.startTime
-                                    ? ` · ${formatTimeTo12Hour(upcomingDuty.startTime)}`
-                                    : ''
-                              }`}
-                        </Text>
-                      </>
-                    ) : (
-                      <Text
-                        style={[styles.clayCardSub, { color: screenTheme.bentoRosterSub || 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 1.5 }]}
-                        numberOfLines={1}
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.8}
-                      >
-                        My duties, worship setlist & schedule
-                      </Text>
-                    )}
-                  </View>
-
-                  <View style={[styles.clayArrowCircleSm, { backgroundColor: 'rgba(255,255,255,0.16)' }]}>
-                    <ChevronRight size={15} color="#FFFFFF" strokeWidth={2.5} />
-                  </View>
-                </View>
-              </LinearGradient>
-            </TouchableOpacity>
-
-            {/* ── ROW 8: Testimonies Banner Card (matches 4-in-a-Row Quick Access items) ── */}
-            <TouchableOpacity
-              style={[styles.clayGalleryTouch, { marginTop: 10 }]}
-              activeOpacity={0.88}
-              onPress={() => navigation.navigate('Testimonies')}
-            >
-              <LinearGradient
-                colors={screenTheme.isDark ? ['#3B0764', '#1E0338'] : ['#581C87', '#3B0764']}
-                start={{ x: 0, y: 0.25 }}
-                end={{ x: 1, y: 0.75 }}
-                style={[styles.clayGalleryCard, { borderColor: screenTheme.isDark ? '#6B21A8' : '#7E22CE', borderWidth: 1.2, paddingRight: 14 }]}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                  {/* 3D Testimonies Celebration Icon */}
-                  <View style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
-                    <Image
-                      source={require('../../assets/3d_party_popper.png')}
-                      style={{ width: 40, height: 40 }}
-                      resizeMode="contain"
-                    />
-                  </View>
-
-                  <View style={{ flex: 1, justifyContent: 'center', marginLeft: 10, marginRight: 8 }}>
-                    <Text
-                      style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 15.5, fontWeight: '800' }]}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.8}
+                  {/* ── ROW 3: Daily Verse + Attendance ── */}
+                  <View style={styles.bentoRow3}>
+                    {/* Left: Daily Verse */}
+                    <TouchableOpacity
+                      style={styles.claySongsTouch}
+                      activeOpacity={0.88}
+                      onPress={() => {
+                        if (todayVerse) {
+                          navigation.navigate('VerseOfTheDay', { verseId: todayVerse.id, period: todayPeriod });
+                        } else if (visibleVerses && visibleVerses.length > 0) {
+                          navigation.navigate('VerseOfTheDay', { verseId: visibleVerses[0].id, period: VERSE_PERIODS[0] || 'Morning' });
+                        } else {
+                          handleGuestProtectedNavigation('Promise');
+                        }
+                      }}
                     >
-                      {t('nav.testimonies') === 'nav.testimonies' ? 'Testimonies' : t('nav.testimonies')}
-                    </Text>
-                    <Text
-                      style={[styles.clayCardSub, { color: 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 1.5 }]}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.8}
-                    >
-                      Watch videos & read what God has done
-                    </Text>
-                  </View>
-
-                  <View style={[styles.clayArrowCircleSm, { backgroundColor: 'rgba(255,255,255,0.16)' }]}>
-                    <ChevronRight size={15} color="#FFFFFF" strokeWidth={2.5} />
-                  </View>
-                </View>
-              </LinearGradient>
-            </TouchableOpacity>
-              </>
-            )}
-
-            {/* ── Bento Show More / Show Less Toggle Button ── */}
-            <TouchableOpacity
-              style={[
-                styles.bentoShowMoreBtn,
-                {
-                  backgroundColor: screenTheme.isDark ? '#1C1D22' : '#FFFFFF',
-                  borderColor: screenTheme.isDark ? '#2E323B' : '#E2E8F0',
-                },
-              ]}
-              onPress={() => {
-                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                setShowAllBento(prev => !prev);
-              }}
-              activeOpacity={0.75}
-            >
-              <Text
-                style={[
-                  styles.bentoShowMoreTxt,
-                  { color: screenTheme.isDark ? '#F4F4F5' : '#1E293B' },
-                ]}
-              >
-                {showAllBento
-                  ? (t('common.showLess') || 'Show Less')
-                  : (t('common.showMore') || 'Show More')}
-              </Text>
-              {showAllBento ? (
-                <ChevronUp
-                  size={15}
-                  color={screenTheme.isDark ? '#94A3B8' : '#64748B'}
-                  strokeWidth={2.4}
-                />
-              ) : (
-                <ChevronDown
-                  size={15}
-                  color={screenTheme.isDark ? '#94A3B8' : '#64748B'}
-                  strokeWidth={2.4}
-                />
-              )}
-            </TouchableOpacity>
-              </View>
-            )}
-        </View>
-
-          {/* ─── Upcoming Events ─── */}
-          <View style={styles.sectionHeader}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Calendar size={16} color={'#E8C46E'} />
-              <Text style={[styles.sectionHeaderTxt, { color: screenTheme.text }]}>{t('home.upcomingEvents')}</Text>
-            </View>
-            <TouchableOpacity onPress={() => navigation.navigate('Events')}>
-              <Text style={[styles.sectionSeeAll, { color: screenTheme.seeAllColor }]}>{t('home.seeAll')}</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={[
-            styles.eventBanner,
-            {
-              backgroundColor: screenTheme.isDark ? '#18181B' : '#FFFFFF',
-              borderColor: (appearance === 'pure_white' || screenTheme.isDark) ? '#27272A' : '#E2E8F0',
-              shadowOpacity: screenTheme.isDark ? 0.35 : 0.08,
-            }
-          ]}>
-            <View style={styles.ebList}>
-              {events.length > 0 ? (
-                events.map((item: any, index: number) => {
-                  const ebTextColor = screenTheme.isDark ? '#FFFFFF' : '#0F172A';
-                  const ebIconColor = screenTheme.isDark ? '#FFFFFF' : '#2563EB';
-
-                  const formattedDate = (() => {
-                    const dStr = new Date(item.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-                    if (item.endDate && item.endDate !== item.date) {
-                      const endStr = new Date(item.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-                      return `${dStr} – ${endStr}`;
-                    }
-                    return dStr;
-                  })();
-
-                  const timeStr = (item.startTime && item.endTime) 
-                    ? `${formatTime(item.startTime)} – ${formatTime(item.endTime)}` 
-                    : (item.startTime ? formatTime(item.startTime) : null);
-
-                  return (
-                    <View key={`${item.id || 'evt'}-${index}`}>
-                      <TouchableOpacity 
-                        style={styles.ebItem} 
-                        onPress={() => navigation.navigate('EventDetails', { event: item })}
-                        activeOpacity={0.75}
+                      <LinearGradient
+                        colors={screenTheme.bentoVerseGradient}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={[styles.claySongsCard, { borderColor: screenTheme.bentoVerseBorder, borderWidth: 1.2 }]}
                       >
-                        {/* Event Thumbnail */}
-                        <View style={styles.ebThumbnailContainer}>
-                          <Image 
-                            source={{ uri: item.image || item.bannerUrl || 'https://images.unsplash.com/photo-1438232992991-995b7058bbb3?q=80&w=400' }}
-                            style={styles.ebThumbnail}
-                            resizeMode="cover"
+                        {/* 3D Holy Bible Icon for Daily Verse */}
+                        <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+                          <Image
+                            source={require('../../assets/3d_daily_verse.png')}
+                            style={{ width: 38, height: 38 }}
+                            resizeMode="contain"
                           />
                         </View>
 
-                        {/* Event Info (All text in clean white, no badge boxes) */}
-                        <View style={styles.ebInfo}>
-                          <Text style={[styles.ebTitle, { color: ebTextColor }]} numberOfLines={2}>
-                            {item.title}
+                        <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 8 }}>
+                          <Text
+                            style={[styles.clayCardTitle, { color: screenTheme.bentoVerseText, fontSize: 14.5, fontWeight: '800' }]}
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.85}
+                          >
+                            {t('home.quickDailyVerse')}
                           </Text>
-                          
-                          {/* Date Row */}
-                          <View style={styles.ebDetailRow}>
-                            <Calendar size={12} color={ebIconColor} strokeWidth={2.2} />
-                            <Text style={[styles.ebDetailText, { color: ebTextColor }]} numberOfLines={1}>
-                              {formattedDate}
-                            </Text>
-                          </View>
-    
-                          {/* Time Row */}
-                          {timeStr ? (
-                            <View style={styles.ebDetailRow}>
-                              <Clock size={12} color={ebIconColor} strokeWidth={2.2} />
-                              <Text style={[styles.ebDetailText, { color: ebTextColor }]} numberOfLines={1}>
-                                {timeStr}
-                              </Text>
-                            </View>
-                          ) : null}
-    
-                          {/* Location Row */}
-                          <View style={styles.ebDetailRow}>
-                            <MapPin size={12} color={ebIconColor} strokeWidth={2.2} />
-                            <Text style={[styles.ebDetailText, { color: ebTextColor }]} numberOfLines={1}>
-                              {item.address || item.location || t('home.churchMainHall')}
-                            </Text>
-                          </View>
+                        </View>
+                      </LinearGradient>
+                    </TouchableOpacity>
+
+                    {/* Right: Attendance */}
+                    <TouchableOpacity
+                      style={styles.clayAttendanceTouch}
+                      activeOpacity={0.88}
+                      onPress={() => navigation.navigate('Attendance')}
+                    >
+                      <LinearGradient
+                        colors={screenTheme.bentoAttendanceGradient}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={[styles.clayAttendanceCard, { borderColor: screenTheme.bentoAttendanceBorder, borderWidth: 1 }]}
+                      >
+                        {/* 3D Attendance Checklist Clipboard Icon */}
+                        <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center', marginLeft: 0, marginRight: 2 }}>
+                          <Image
+                            source={require('../../assets/3d_attendance.png')}
+                            style={{ width: 38, height: 38 }}
+                            resizeMode="contain"
+                          />
                         </View>
 
-                        {/* Subtle Navigation Arrow */}
-                        
+                        <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 8 }}>
+                          <Text
+                            style={[styles.clayCardTitle, { color: screenTheme.bentoAttendanceText, fontSize: 16, fontWeight: '900', letterSpacing: -0.3 }]}
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.85}
+                          >
+                            {t('nav.attendance') || 'Attendance'}
+                          </Text>
+                        </View>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* ── ROW 4: 2-Column Cards (Sermon Notes & Bible Quiz) - Text Next to Icon ── */}
+                  <View style={styles.bentoRow4}>
+                    {/* Sermon Notes */}
+                    <TouchableOpacity
+                      style={styles.clayQuarterTouch}
+                      activeOpacity={0.85}
+                      onPress={() => handleGuestProtectedNavigation('MemberNotes')}
+                    >
+                      <LinearGradient
+                        colors={screenTheme.bentoNotesGradient}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={[styles.clayQuarterCard, { borderColor: screenTheme.bentoNotesBorder, borderWidth: 1.2 }]}
+                      >
+                        {/* 3D Notepad with Writing Pen Icon */}
+                        <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center', marginLeft: 2, marginRight: 2 }}>
+                          <Image
+                            source={require('../../assets/3d_sermon_notes.png')}
+                            style={{ width: 36, height: 36 }}
+                            resizeMode="contain"
+                          />
+                        </View>
+
+                        {/* Text Next to Icon */}
+                        <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 6, marginRight: 4 }}>
+                          <Text
+                            style={[styles.clayCardTitle, { color: screenTheme.bentoNotesText, fontSize: 14, fontWeight: '800' }]}
+                            numberOfLines={2}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.8}
+                          >
+                            {t('home.quickSermonNotes')}
+                          </Text>
+                        </View>
+                      </LinearGradient>
+                    </TouchableOpacity>
+
+                    {/* Bible Quiz */}
+                    <TouchableOpacity
+                      style={styles.clayQuarterTouch}
+                      activeOpacity={0.85}
+                      onPress={() => navigation.navigate('BibleQuizHome')}
+                    >
+                      <LinearGradient
+                        colors={screenTheme.bentoQuizGradient}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={[styles.clayQuarterCard, { borderColor: screenTheme.bentoQuizBorder, borderWidth: 1.2 }]}
+                      >
+                        {/* 3D Golden Trophy Icon */}
+                        <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center', marginLeft: 2, marginRight: 2 }}>
+                          <Image
+                            source={require('../../assets/3d_bible_quiz.png')}
+                            style={{ width: 38, height: 38 }}
+                            resizeMode="contain"
+                          />
+                        </View>
+
+                        {/* Text Next to Icon */}
+                        <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 6, marginRight: 4 }}>
+                          <Text
+                            style={[styles.clayCardTitle, { color: screenTheme.bentoQuizText, fontSize: 14, fontWeight: '800' }]}
+                            numberOfLines={2}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.8}
+                          >
+                            {t('home.quickBibleQuiz') || 'Bible Quiz'}
+                          </Text>
+                        </View>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* ── ROW 5: Church Gallery Banner (Long Card, same height as Give/Tithe card) ── */}
+                  <TouchableOpacity
+                    style={styles.clayGalleryTouch}
+                    activeOpacity={0.88}
+                    onPress={() => navigation.navigate('Gallery')}
+                  >
+                    <LinearGradient
+                      colors={screenTheme.bentoGalleryGradient}
+                      start={{ x: 0, y: 0.25 }}
+                      end={{ x: 1, y: 0.75 }}
+                      style={[styles.clayGalleryCard, { borderColor: screenTheme.bentoGalleryBorder, borderWidth: 1.2 }]}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                        {/* 3D Gallery Icon */}
+                        <View style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+                          <Image
+                            source={require('../../assets/3d_gallery.png')}
+                            style={{ width: 40, height: 40 }}
+                            resizeMode="contain"
+                          />
+                        </View>
+
+                        <View style={{ flex: 1, justifyContent: 'center', marginLeft: 10, marginRight: 6 }}>
+                          <Text
+                            style={[styles.clayCardTitle, { color: screenTheme.bentoGalleryText, fontSize: 15.5, fontWeight: '800' }]}
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.8}
+                          >
+                            {language === 'en' ? 'Church Gallery' : (t('home.gallery') || 'Church Gallery')}
+                          </Text>
+                          <Text
+                            style={[styles.clayCardSub, { color: screenTheme.bentoGallerySub || 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 1.5 }]}
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.8}
+                          >
+                            {language === 'en' ? 'Photos & memories' : (t('home.gallerySub') || 'Church memories')}
+                          </Text>
+                        </View>
+
+                        {/* Right side: 2 columns animated marquee (one goes upwards, one goes downwards) */}
+                        <GalleryMarqueeColumns gradient={screenTheme.bentoGalleryGradient} />
+                      </View>
+                    </LinearGradient>
+                  </TouchableOpacity>
+
+                  {/* ── LIVE YOUTUBE PLAYER DIRECTLY IN BENTO HOME SECTION REMOVED (DEDICATED YOUTUBE LIVE SCREEN USED) ── */}
+
+                  {/* ── EXPANDABLE BENTO SECTION (Rows 6, 7 & 8) ── */}
+                  {showAllBento && (
+                    <>
+                      {/* ── ROW 6: Left Column (Meetings & Members - Normal Cards, height same as Sermon Notes) + Right Column (Big YouTube Card) ── */}
+                      <View
+                        style={styles.bentoRow6}
+                        onLayout={(e) => setOnlineMeetingsY(e.nativeEvent.layout.y)}
+                      >
+                        <View style={styles.bentoRow6LeftCol}>
+                          {/* 1. Online Meetings */}
+                          <TouchableOpacity
+                            style={styles.clayMeetingsTouch}
+                            activeOpacity={0.85}
+                            onPress={() => navigation.navigate('OnlineMeetings')}
+                          >
+                            <LinearGradient
+                              colors={screenTheme.bentoMeetingsGradient}
+                              start={{ x: 0, y: 0 }}
+                              end={{ x: 1, y: 1 }}
+                              style={[styles.clayMeetingsCard, { borderColor: screenTheme.bentoMeetingsBorder, borderWidth: 1 }]}
+                            >
+                              {/* 3D Online Meetings Icon */}
+                              <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+                                <Image
+                                  source={require('../../assets/3d_online_meetings.png')}
+                                  style={{ width: 38, height: 38 }}
+                                  resizeMode="contain"
+                                />
+                              </View>
+
+                              <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 6 }}>
+                                <Text
+                                  style={[styles.clayCardTitle, { color: screenTheme.bentoMeetingsText, fontSize: 13.5, fontWeight: '800' }]}
+                                  numberOfLines={1}
+                                  adjustsFontSizeToFit
+                                  minimumFontScale={0.8}
+                                >
+                                  {language === 'en' ? 'Online Meetings' : (t('home.onlineMeetings') || t('home.quickMeetings') || 'Online Meetings')}
+                                </Text>
+                                <Text
+                                  style={[styles.clayCardSub, { color: 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 2 }]}
+                                  numberOfLines={1}
+                                  adjustsFontSizeToFit
+                                  minimumFontScale={0.8}
+                                >
+                                  Online calls
+                                </Text>
+                              </View>
+                            </LinearGradient>
+                          </TouchableOpacity>
+
+                          {/* 2. Members */}
+                          <TouchableOpacity
+                            style={styles.clayMembersTouch}
+                            activeOpacity={0.85}
+                            onPress={handleOpenMembers}
+                          >
+                            <LinearGradient
+                              colors={screenTheme.bentoMembersGradient}
+                              start={{ x: 0, y: 0 }}
+                              end={{ x: 1, y: 1 }}
+                              style={[styles.clayMembersCard, { borderColor: screenTheme.bentoMembersBorder, borderWidth: 1.2 }]}
+                            >
+                              {/* 3D Members Community Icon */}
+                              <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+                                <Image
+                                  source={require('../../assets/3d_members_family.png')}
+                                  style={{ width: 38, height: 38 }}
+                                  resizeMode="contain"
+                                />
+                              </View>
+
+                              <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 6 }}>
+                                <Text
+                                  style={[styles.clayCardTitle, { color: screenTheme.bentoMembersText, fontSize: 14, fontWeight: '800' }]}
+                                  numberOfLines={1}
+                                  adjustsFontSizeToFit
+                                  minimumFontScale={0.85}
+                                >
+                                  {t('home.quickMembers') || 'Members'}
+                                </Text>
+                                <Text
+                                  style={[styles.clayCardSub, { color: 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 2 }]}
+                                  numberOfLines={1}
+                                  adjustsFontSizeToFit
+                                  minimumFontScale={0.8}
+                                >
+                                  Directory
+                                </Text>
+                              </View>
+                            </LinearGradient>
+                          </TouchableOpacity>
+                        </View>
+
+                        {/* Right Column: Big YouTube Card */}
+                        <TouchableOpacity
+                          style={styles.clayYoutubeBigTouch}
+                          activeOpacity={0.88}
+                          onPress={() => {
+                            const yUrl = resolveRhemaYoutubeUrl(activeChurch?.socialLinks?.youtube);
+                            navigation.navigate('YouTubeLive', {
+                              channelUrl: yUrl,
+                              streamsUrl: RHEMA_YOUTUBE_STREAMS_URL,
+                            });
+                          }}
+                        >
+                          <LinearGradient
+                            colors={screenTheme.bentoYoutubeGradient}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={[styles.clayYoutubeBigCard, { borderColor: screenTheme.bentoYoutubeBorder }]}
+                          >
+                            {/* Top: YouTube Icon + Live Badge */}
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                              <Image
+                                source={require('../../assets/3d_youtube.png')}
+                                style={{ width: 44, height: 38 }}
+                                resizeMode="contain"
+                              />
+                              <View style={styles.bentoLiveBadgeWrap}>
+                                <View style={styles.bentoLiveDot} />
+                                <Text style={styles.bentoLiveTag}>LIVE</Text>
+                              </View>
+                            </View>
+
+                            {/* Bottom: Title & Subtitle */}
+                            <View style={{ marginTop: 'auto', paddingTop: 8 }}>
+                              <Text
+                                style={[styles.claySermonsTitle, { color: screenTheme.bentoYoutubeText }]}
+                                numberOfLines={1}
+                                adjustsFontSizeToFit
+                                minimumFontScale={0.85}
+                              >
+                                YouTube
+                              </Text>
+                              <Text
+                                style={[styles.claySermonsSub, { color: screenTheme.bentoYoutubeSub, marginTop: 2 }]}
+                                numberOfLines={2}
+                              >
+                                Rhema Ministry Live
+                              </Text>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 }}>
+                                <Play size={11} color="#FFFFFF" fill="#FFFFFF" />
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF' }}>Watch in app</Text>
+                              </View>
+                            </View>
+                          </LinearGradient>
+                        </TouchableOpacity>
+                      </View>
+
+                      {/* ── ROW 7: Service Roster Banner Card (matches 4-in-a-Row Quick Access items) ── */}
+                      <TouchableOpacity
+                        style={styles.clayGalleryTouch}
+                        activeOpacity={0.88}
+                        onPress={() =>
+                          navigation.navigate(
+                            'MyService',
+                            upcomingDuty && upcomingDuty.status !== 'declined'
+                              ? {
+                                serviceId: upcomingDuty.serviceId,
+                                initialTab: upcomingDuty.status === 'pending' ? 'responsibilities' : 'roster',
+                              }
+                              : undefined
+                          )
+                        }
+                      >
+                        <LinearGradient
+                          colors={screenTheme.bentoRosterGradient || ['#0F5A54', '#083733']}
+                          start={{ x: 0, y: 0.25 }}
+                          end={{ x: 1, y: 0.75 }}
+                          style={[
+                            styles.clayGalleryCard,
+                            {
+                              borderColor: screenTheme.bentoRosterBorder || '#14847B',
+                              borderWidth: 1.2,
+                              paddingRight: 14,
+                              paddingVertical: upcomingDuty && upcomingDuty.status !== 'declined' ? 10 : 4,
+                            },
+                          ]}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                            {/* 3D Service Roster Stage Icon */}
+                            <View style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+                              <Image
+                                source={require('../../assets/gallery_3d_stage.png')}
+                                style={{ width: 40, height: 40 }}
+                                resizeMode="contain"
+                              />
+                            </View>
+
+                            <View style={{ flex: 1, justifyContent: 'center', marginLeft: 10, marginRight: 8 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                                <Text
+                                  style={[styles.clayCardTitle, { color: screenTheme.bentoRosterText || '#FFFFFF', fontSize: 15.5, fontWeight: '800' }]}
+                                  numberOfLines={1}
+                                >
+                                  {t('nav.serviceRoster') === 'nav.serviceRoster' ? 'Service Roster' : t('nav.serviceRoster')}
+                                </Text>
+
+                                {upcomingDuty && upcomingDuty.status !== 'declined' && (
+                                  <View
+                                    style={{
+                                      flexDirection: 'row',
+                                      alignItems: 'center',
+                                      gap: 4,
+                                      paddingHorizontal: 7,
+                                      paddingVertical: 2,
+                                      borderRadius: 999,
+                                      backgroundColor:
+                                        upcomingDuty.status === 'pending'
+                                          ? 'rgba(245, 158, 11, 0.25)'
+                                          : 'rgba(16, 185, 129, 0.24)',
+                                      borderWidth: 1,
+                                      borderColor:
+                                        upcomingDuty.status === 'pending'
+                                          ? 'rgba(252, 211, 77, 0.6)'
+                                          : 'rgba(110, 231, 183, 0.55)',
+                                    }}
+                                  >
+                                    {upcomingDuty.status === 'pending' ? (
+                                      <AlertCircle size={10} color="#FCD34D" strokeWidth={2.5} />
+                                    ) : (
+                                      <CheckCircle size={10} color="#6EE7B7" strokeWidth={2.5} />
+                                    )}
+                                    <Text
+                                      style={{
+                                        fontSize: 9.5,
+                                        fontWeight: '800',
+                                        letterSpacing: 0.4,
+                                        color: upcomingDuty.status === 'pending' ? '#FEF3C7' : '#D1FAE5',
+                                      }}
+                                    >
+                                      {upcomingDuty.status === 'pending' ? 'ACTION NEEDED' : 'CONFIRMED'}
+                                    </Text>
+                                  </View>
+                                )}
+                              </View>
+
+                              {upcomingDuty && upcomingDuty.status !== 'declined' ? (
+                                <>
+                                  <Text
+                                    style={{
+                                      color: screenTheme.bentoRosterText || '#FFFFFF',
+                                      fontSize: 12.5,
+                                      fontWeight: '700',
+                                      marginTop: 3,
+                                      opacity: 0.96,
+                                    }}
+                                    numberOfLines={1}
+                                  >
+                                    {upcomingDuty.roleTitle}
+                                  </Text>
+                                  <Text
+                                    style={[
+                                      styles.clayCardSub,
+                                      {
+                                        color: screenTheme.bentoRosterSub || 'rgba(255,255,255,0.85)',
+                                        fontSize: 11,
+                                        marginTop: 1.5,
+                                      },
+                                    ]}
+                                    numberOfLines={1}
+                                    adjustsFontSizeToFit
+                                    minimumFontScale={0.85}
+                                  >
+                                    {upcomingDuty.status === 'pending'
+                                      ? `${formatDateMonthYear(upcomingDuty.date)} · Tap to respond`
+                                      : `${formatDateMonthYear(upcomingDuty.date)}${upcomingDuty.callTime
+                                        ? ` · Call ${formatTimeTo12Hour(upcomingDuty.callTime)}`
+                                        : upcomingDuty.startTime
+                                          ? ` · ${formatTimeTo12Hour(upcomingDuty.startTime)}`
+                                          : ''
+                                      }`}
+                                  </Text>
+                                </>
+                              ) : (
+                                <Text
+                                  style={[styles.clayCardSub, { color: screenTheme.bentoRosterSub || 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 1.5 }]}
+                                  numberOfLines={1}
+                                  adjustsFontSizeToFit
+                                  minimumFontScale={0.8}
+                                >
+                                  My duties, worship setlist & schedule
+                                </Text>
+                              )}
+                            </View>
+
+                            <View style={[styles.clayArrowCircleSm, { backgroundColor: 'rgba(255,255,255,0.16)' }]}>
+                              <ChevronRight size={15} color="#FFFFFF" strokeWidth={2.5} />
+                            </View>
+                          </View>
+                        </LinearGradient>
                       </TouchableOpacity>
-                      {index < events.length - 1 && (
-                        <View style={[styles.ebDivider, { backgroundColor: screenTheme.isDark ? '#27272A' : '#F1F5F9' }]} />
-                      )}
-                    </View>
-                  );
-                })
-              ) : (
-                <View style={styles.emptyEvents}>
-                  <Calendar size={32} color={screenTheme.isDark ? '#64748B' : '#94a3b8'} />
-                  <Text style={[styles.emptyEventsTxt, screenTheme.isDark && { color: '#FFFFFF' }]}>{t('events.noUpcomingEvents')}</Text>
-                  <Text style={[styles.emptyEventsSub, screenTheme.isDark && { color: '#A1A1AA' }]}>{t('home.emptyEventsSub')}</Text>
+
+                      {/* ── ROW 8: Testimonies Banner Card (matches 4-in-a-Row Quick Access items) ── */}
+                      <TouchableOpacity
+                        style={[styles.clayGalleryTouch, { marginTop: 10 }]}
+                        activeOpacity={0.88}
+                        onPress={() => navigation.navigate('Testimonies')}
+                      >
+                        <LinearGradient
+                          colors={screenTheme.isDark ? ['#3B0764', '#1E0338'] : ['#581C87', '#3B0764']}
+                          start={{ x: 0, y: 0.25 }}
+                          end={{ x: 1, y: 0.75 }}
+                          style={[styles.clayGalleryCard, { borderColor: screenTheme.isDark ? '#6B21A8' : '#7E22CE', borderWidth: 1.2, paddingRight: 14 }]}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                            {/* 3D Testimonies Celebration Icon */}
+                            <View style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+                              <Image
+                                source={require('../../assets/3d_party_popper.png')}
+                                style={{ width: 40, height: 40 }}
+                                resizeMode="contain"
+                              />
+                            </View>
+
+                            <View style={{ flex: 1, justifyContent: 'center', marginLeft: 10, marginRight: 8 }}>
+                              <Text
+                                style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 15.5, fontWeight: '800' }]}
+                                numberOfLines={1}
+                                adjustsFontSizeToFit
+                                minimumFontScale={0.8}
+                              >
+                                {t('nav.testimonies') === 'nav.testimonies' ? 'Testimonies' : t('nav.testimonies')}
+                              </Text>
+                              <Text
+                                style={[styles.clayCardSub, { color: 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 1.5 }]}
+                                numberOfLines={1}
+                                adjustsFontSizeToFit
+                                minimumFontScale={0.8}
+                              >
+                                Watch videos & read what God has done
+                              </Text>
+                            </View>
+
+                            <View style={[styles.clayArrowCircleSm, { backgroundColor: 'rgba(255,255,255,0.16)' }]}>
+                              <ChevronRight size={15} color="#FFFFFF" strokeWidth={2.5} />
+                            </View>
+                          </View>
+                        </LinearGradient>
+                      </TouchableOpacity>
+                    </>
+                  )}
+
+                  {/* ── Bento Show More / Show Less Toggle Button ── */}
+                  <TouchableOpacity
+                    style={[
+                      styles.bentoShowMoreBtn,
+                      {
+                        backgroundColor: screenTheme.isDark ? '#1C1D22' : '#FFFFFF',
+                        borderColor: screenTheme.isDark ? '#2E323B' : '#E2E8F0',
+                      },
+                    ]}
+                    onPress={() => {
+                      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                      setShowAllBento(prev => !prev);
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <Text
+                      style={[
+                        styles.bentoShowMoreTxt,
+                        { color: screenTheme.isDark ? '#F4F4F5' : '#1E293B' },
+                      ]}
+                    >
+                      {showAllBento
+                        ? (t('common.showLess') || 'Show Less')
+                        : (t('common.showMore') || 'Show More')}
+                    </Text>
+                    {showAllBento ? (
+                      <ChevronUp
+                        size={15}
+                        color={screenTheme.isDark ? '#94A3B8' : '#64748B'}
+                        strokeWidth={2.4}
+                      />
+                    ) : (
+                      <ChevronDown
+                        size={15}
+                        color={screenTheme.isDark ? '#94A3B8' : '#64748B'}
+                        strokeWidth={2.4}
+                      />
+                    )}
+                  </TouchableOpacity>
                 </View>
               )}
             </View>
-          </View>
 
-          {/* ─── Latest Sermon ─── */}
-          <View style={styles.sectionHeader}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Mic size={16} color={'#E8C46E'} />
-              <Text style={[styles.sectionHeaderTxt, { color: screenTheme.text }]}>{t('sermons.latestSermon') || 'Latest Sermon'}</Text>
+            {/* ─── Upcoming Events ─── */}
+            <View style={styles.sectionHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Calendar size={16} color={'#E8C46E'} />
+                <Text style={[styles.sectionHeaderTxt, { color: screenTheme.text }]}>{t('home.upcomingEvents')}</Text>
+              </View>
+              <TouchableOpacity onPress={() => navigation.navigate('Events')}>
+                <Text style={[styles.sectionSeeAll, { color: screenTheme.seeAllColor }]}>{t('home.seeAll')}</Text>
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity onPress={() => navigation.navigate('Sermons')}>
-              <Text style={[styles.sectionSeeAll, { color: screenTheme.seeAllColor }]}>{t('home.seeAll')}</Text>
-            </TouchableOpacity>
-          </View>
 
-          {(() => {
-            const sermonCardWidth = Math.max(160, Math.floor((width - 44) / 2));
-            const thumbHeight = Math.round(sermonCardWidth * 0.5625); // Exact 16:9 ratio
-            const displayList: (Sermon & { isSample?: boolean; sampleType?: 'english' | 'telugu' })[] = (() => {
-              if (latestSermons && latestSermons.length >= 2) {
-                return latestSermons.slice(0, 4);
+            <View style={[
+              styles.eventBanner,
+              {
+                backgroundColor: screenTheme.isDark ? '#18181B' : '#FFFFFF',
+                borderColor: (appearance === 'pure_white' || screenTheme.isDark) ? '#27272A' : '#E2E8F0',
+                shadowOpacity: screenTheme.isDark ? 0.35 : 0.08,
               }
-              if (latestSermons && latestSermons.length === 1) {
+            ]}>
+              <View style={styles.ebList}>
+                {events.length > 0 ? (
+                  events.map((item: any, index: number) => {
+                    const ebTextColor = screenTheme.isDark ? '#FFFFFF' : '#0F172A';
+                    const ebIconColor = screenTheme.isDark ? '#FFFFFF' : '#2563EB';
+
+                    const formattedDate = (() => {
+                      const dStr = new Date(item.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+                      if (item.endDate && item.endDate !== item.date) {
+                        const endStr = new Date(item.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+                        return `${dStr} – ${endStr}`;
+                      }
+                      return dStr;
+                    })();
+
+                    const timeStr = (item.startTime && item.endTime)
+                      ? `${formatTime(item.startTime)} – ${formatTime(item.endTime)}`
+                      : (item.startTime ? formatTime(item.startTime) : null);
+
+                    return (
+                      <View key={`${item.id || 'evt'}-${index}`}>
+                        <TouchableOpacity
+                          style={styles.ebItem}
+                          onPress={() => navigation.navigate('EventDetails', { event: item })}
+                          activeOpacity={0.75}
+                        >
+                          {/* Event Thumbnail */}
+                          <View style={styles.ebThumbnailContainer}>
+                            <Image
+                              source={{ uri: item.image || item.bannerUrl || 'https://images.unsplash.com/photo-1438232992991-995b7058bbb3?q=80&w=400' }}
+                              style={styles.ebThumbnail}
+                              resizeMode="cover"
+                            />
+                          </View>
+
+                          {/* Event Info (All text in clean white, no badge boxes) */}
+                          <View style={styles.ebInfo}>
+                            <Text style={[styles.ebTitle, { color: ebTextColor }]} numberOfLines={2}>
+                              {item.title}
+                            </Text>
+
+                            {/* Date Row */}
+                            <View style={styles.ebDetailRow}>
+                              <Calendar size={12} color={ebIconColor} strokeWidth={2.2} />
+                              <Text style={[styles.ebDetailText, { color: ebTextColor }]} numberOfLines={1}>
+                                {formattedDate}
+                              </Text>
+                            </View>
+
+                            {/* Time Row */}
+                            {timeStr ? (
+                              <View style={styles.ebDetailRow}>
+                                <Clock size={12} color={ebIconColor} strokeWidth={2.2} />
+                                <Text style={[styles.ebDetailText, { color: ebTextColor }]} numberOfLines={1}>
+                                  {timeStr}
+                                </Text>
+                              </View>
+                            ) : null}
+
+                            {/* Location Row */}
+                            <View style={styles.ebDetailRow}>
+                              <MapPin size={12} color={ebIconColor} strokeWidth={2.2} />
+                              <Text style={[styles.ebDetailText, { color: ebTextColor }]} numberOfLines={1}>
+                                {item.address || item.location || t('home.churchMainHall')}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Subtle Navigation Arrow */}
+
+                        </TouchableOpacity>
+                        {index < events.length - 1 && (
+                          <View style={[styles.ebDivider, { backgroundColor: screenTheme.isDark ? '#27272A' : '#F1F5F9' }]} />
+                        )}
+                      </View>
+                    );
+                  })
+                ) : (
+                  <View style={styles.emptyEvents}>
+                    <Calendar size={32} color={screenTheme.isDark ? '#64748B' : '#94a3b8'} />
+                    <Text style={[styles.emptyEventsTxt, screenTheme.isDark && { color: '#FFFFFF' }]}>{t('events.noUpcomingEvents')}</Text>
+                    <Text style={[styles.emptyEventsSub, screenTheme.isDark && { color: '#A1A1AA' }]}>{t('home.emptyEventsSub')}</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+
+            {/* ─── Latest Sermon ─── */}
+            <View style={styles.sectionHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Mic size={16} color={'#E8C46E'} />
+                <Text style={[styles.sectionHeaderTxt, { color: screenTheme.text }]}>{t('sermons.latestSermon') || 'Latest Sermon'}</Text>
+              </View>
+              <TouchableOpacity onPress={() => navigation.navigate('Sermons')}>
+                <Text style={[styles.sectionSeeAll, { color: screenTheme.seeAllColor }]}>{t('home.seeAll')}</Text>
+              </TouchableOpacity>
+            </View>
+
+            {(() => {
+              const sermonCardWidth = Math.max(160, Math.floor((width - 44) / 2));
+              const thumbHeight = Math.round(sermonCardWidth * 0.5625); // Exact 16:9 ratio
+              const displayList: (Sermon & { isSample?: boolean; sampleType?: 'english' | 'telugu' })[] = (() => {
+                if (latestSermons && latestSermons.length >= 2) {
+                  return latestSermons.slice(0, 4);
+                }
+                if (latestSermons && latestSermons.length === 1) {
+                  return [
+                    latestSermons[0],
+                    {
+                      id: 'sample-telugu-sermon',
+                      title: 'TELUGU SERVICE',
+                      titleTelugu: 'తెలుగు సేవ',
+                      pastor: 'Dr.Blessy',
+                      date: '2026-10-17',
+                      duration: '52 min',
+                      youtubeId: '',
+                      isSample: true,
+                      sampleType: 'telugu'
+                    } as any
+                  ];
+                }
                 return [
-                  latestSermons[0],
+                  {
+                    id: 'sample-english-sermon',
+                    title: 'ENGLISH SERVICE',
+                    titleTelugu: 'ఇంగ్లీష్ సేవ',
+                    pastor: 'Dr.Blessy',
+                    date: '2026-10-24',
+                    duration: '45 min',
+                    youtubeId: '',
+                    isSample: true,
+                    sampleType: 'english'
+                  } as any,
                   {
                     id: 'sample-telugu-sermon',
                     title: 'TELUGU SERVICE',
@@ -6033,171 +6075,146 @@ export default function HomeScreen() {
                     sampleType: 'telugu'
                   } as any
                 ];
-              }
-              return [
-                {
-                  id: 'sample-english-sermon',
-                  title: 'ENGLISH SERVICE',
-                  titleTelugu: 'ఇంగ్లీష్ సేవ',
-                  pastor: 'Dr.Blessy',
-                  date: '2026-10-24',
-                  duration: '45 min',
-                  youtubeId: '',
-                  isSample: true,
-                  sampleType: 'english'
-                } as any,
-                {
-                  id: 'sample-telugu-sermon',
-                  title: 'TELUGU SERVICE',
-                  titleTelugu: 'తెలుగు సేవ',
-                  pastor: 'Dr.Blessy',
-                  date: '2026-10-17',
-                  duration: '52 min',
-                  youtubeId: '',
-                  isSample: true,
-                  sampleType: 'telugu'
-                } as any
-              ];
-            })();
+              })();
 
-            return (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.latestSermonsScrollContent}
-              >
-                {displayList.map((sermon, idx) => {
-                  const isTelugu = sermon.sampleType === 'telugu' || 
-                    sermon.title?.toLowerCase().includes('telugu') || 
-                    sermon.titleTelugu?.includes('తెలుగు') || 
-                    (idx % 2 === 1 && !sermon.title?.toLowerCase().includes('english'));
+              return (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.latestSermonsScrollContent}
+                >
+                  {displayList.map((sermon, idx) => {
+                    const isTelugu = sermon.sampleType === 'telugu' ||
+                      sermon.title?.toLowerCase().includes('telugu') ||
+                      sermon.titleTelugu?.includes('తెలుగు') ||
+                      (idx % 2 === 1 && !sermon.title?.toLowerCase().includes('english'));
 
-                  // Golden uppercase header lines (used only when no thumbnail image exists)
-                  let headerL1 = 'ENGLISH';
-                  let headerL2 = 'SERVICE';
-                  if (isTelugu) {
-                    headerL1 = 'TELUGU';
-                    headerL2 = 'SERVICE';
-                  } else if (sermon.title && !sermon.isSample) {
-                    const words = sermon.title.trim().toUpperCase().split(/\s+/);
-                    if (words.length >= 2) {
-                      headerL1 = words[0];
-                      headerL2 = words.slice(1, 3).join(' ');
-                    } else {
-                      headerL1 = words[0] || 'SUNDAY';
+                    // Golden uppercase header lines (used only when no thumbnail image exists)
+                    let headerL1 = 'ENGLISH';
+                    let headerL2 = 'SERVICE';
+                    if (isTelugu) {
+                      headerL1 = 'TELUGU';
                       headerL2 = 'SERVICE';
+                    } else if (sermon.title && !sermon.isSample) {
+                      const words = sermon.title.trim().toUpperCase().split(/\s+/);
+                      if (words.length >= 2) {
+                        headerL1 = words[0];
+                        headerL2 = words.slice(1, 3).join(' ');
+                      } else {
+                        headerL1 = words[0] || 'SUNDAY';
+                        headerL2 = 'SERVICE';
+                      }
                     }
-                  }
 
-                  const durationBadge = (sermon.duration && formatSermonDuration(sermon.duration)) || (isTelugu ? '52 min' : '45 min');
-                  const pastorName = sermon.pastor || 'Dr.Blessy';
-                  const titleEn = sermon.titleEn || sermon.title || (isTelugu ? 'TELUGU SERVICE' : 'ENGLISH SERVICE');
-                  const titleTe = sermon.titleTelugu || (sermon.isSample ? (isTelugu ? 'తెలుగు సేవ' : 'ఇంగ్లీష్ సేవ') : null);
-                  const dateStr = sermon.date ? formatDateDisplay(sermon.date) : (isTelugu ? '17-10-2026' : '24-10-2026');
+                    const durationBadge = (sermon.duration && formatSermonDuration(sermon.duration)) || (isTelugu ? '52 min' : '45 min');
+                    const pastorName = sermon.pastor || 'Dr.Blessy';
+                    const titleEn = sermon.titleEn || sermon.title || (isTelugu ? 'TELUGU SERVICE' : 'ENGLISH SERVICE');
+                    const titleTe = sermon.titleTelugu || (sermon.isSample ? (isTelugu ? 'తెలుగు సేవ' : 'ఇంగ్లీష్ సేవ') : null);
+                    const dateStr = sermon.date ? formatDateDisplay(sermon.date) : (isTelugu ? '17-10-2026' : '24-10-2026');
 
-                  const yId = extractYoutubeId(sermon.youtubeId || '');
-                  // Using mqdefault.jpg because it is 16:9 widescreen and NEVER has black letterbox bars at top/bottom
-                  const thumbUri = sermon.thumbnailUrl || sermon.imageUrl || (yId && yId.length === 11 ? `https://img.youtube.com/vi/${yId}/mqdefault.jpg` : null);
+                    const yId = extractYoutubeId(sermon.youtubeId || '');
+                    // Using mqdefault.jpg because it is 16:9 widescreen and NEVER has black letterbox bars at top/bottom
+                    const thumbUri = sermon.thumbnailUrl || sermon.imageUrl || (yId && yId.length === 11 ? `https://img.youtube.com/vi/${yId}/mqdefault.jpg` : null);
 
-                  return (
-                    <TouchableOpacity
-                      key={sermon.id || `sermon-${idx}`}
-                      style={[
-                        styles.latestSermonCard,
-                        {
-                          width: sermonCardWidth,
-                          backgroundColor: screenTheme.isDark ? '#18181B' : '#FFFFFF',
-                          borderColor: (appearance === 'pure_white' || screenTheme.isDark) ? '#27272A' : '#E2E8F0',
-                        }
-                      ]}
-                      onPress={() => {
-                        if (sermon && !sermon.isSample && sermon.youtubeId) {
-                          navigation.navigate('SermonVideo', { sermonData: sermon });
-                        } else {
-                          navigation.navigate('Sermons');
-                        }
-                      }}
-                      activeOpacity={0.88}
-                    >
-                      {/* ── Top Half: Artwork / YouTube Thumbnail (Exact 16:9, No Gaps, Edge-to-Edge) ── */}
-                      <View style={[styles.latestSermonThumbContainer, { height: thumbHeight }]}>
-                        {thumbUri ? (
-                          <Image
-                            source={{ uri: thumbUri }}
-                            style={StyleSheet.absoluteFillObject}
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <LinearGradient
-                            colors={isTelugu ? ['#132B25', '#101B22'] : ['#291827', '#17121F']}
-                            style={StyleSheet.absoluteFillObject}
-                          >
-                            {/* Abstract silhouette shapes */}
-                            <View style={[styles.sermonSilhouetteCircleBig, { backgroundColor: isTelugu ? '#2D4C43' : '#573730' }]} />
-                            <View style={[styles.sermonSilhouettePeach1, { backgroundColor: '#E5A682' }]} />
-                            <View style={[styles.sermonSilhouettePeach2, { backgroundColor: '#F3C9AB' }]} />
-                            <View style={[styles.sermonSilhouetteShoulderLeft, { backgroundColor: isTelugu ? '#D99B26' : '#21396C' }]} />
-                            <View style={[styles.sermonSilhouetteShoulderRight, { backgroundColor: isTelugu ? '#6E4194' : '#A84A3B' }]} />
+                    return (
+                      <TouchableOpacity
+                        key={sermon.id || `sermon-${idx}`}
+                        style={[
+                          styles.latestSermonCard,
+                          {
+                            width: sermonCardWidth,
+                            backgroundColor: screenTheme.isDark ? '#18181B' : '#FFFFFF',
+                            borderColor: (appearance === 'pure_white' || screenTheme.isDark) ? '#27272A' : '#E2E8F0',
+                          }
+                        ]}
+                        onPress={() => {
+                          if (sermon && !sermon.isSample && sermon.youtubeId) {
+                            navigation.navigate('SermonVideo', { sermonData: sermon });
+                          } else {
+                            navigation.navigate('Sermons');
+                          }
+                        }}
+                        activeOpacity={0.88}
+                      >
+                        {/* ── Top Half: Artwork / YouTube Thumbnail (Exact 16:9, No Gaps, Edge-to-Edge) ── */}
+                        <View style={[styles.latestSermonThumbContainer, { height: thumbHeight }]}>
+                          {thumbUri ? (
+                            <Image
+                              source={{ uri: thumbUri }}
+                              style={StyleSheet.absoluteFillObject}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <LinearGradient
+                              colors={isTelugu ? ['#132B25', '#101B22'] : ['#291827', '#17121F']}
+                              style={StyleSheet.absoluteFillObject}
+                            >
+                              {/* Abstract silhouette shapes */}
+                              <View style={[styles.sermonSilhouetteCircleBig, { backgroundColor: isTelugu ? '#2D4C43' : '#573730' }]} />
+                              <View style={[styles.sermonSilhouettePeach1, { backgroundColor: '#E5A682' }]} />
+                              <View style={[styles.sermonSilhouettePeach2, { backgroundColor: '#F3C9AB' }]} />
+                              <View style={[styles.sermonSilhouetteShoulderLeft, { backgroundColor: isTelugu ? '#D99B26' : '#21396C' }]} />
+                              <View style={[styles.sermonSilhouetteShoulderRight, { backgroundColor: isTelugu ? '#6E4194' : '#A84A3B' }]} />
 
-                            {/* Bold Golden Header Title shown ONLY when there is no thumbnail image */}
-                            <View style={styles.latestSermonGoldenHeader}>
-                              <Text style={styles.latestSermonGoldenText} numberOfLines={1}>{headerL1}</Text>
-                              <Text style={styles.latestSermonGoldenText} numberOfLines={1}>{headerL2}</Text>
-                            </View>
-                          </LinearGradient>
-                        )}
+                              {/* Bold Golden Header Title shown ONLY when there is no thumbnail image */}
+                              <View style={styles.latestSermonGoldenHeader}>
+                                <Text style={styles.latestSermonGoldenText} numberOfLines={1}>{headerL1}</Text>
+                                <Text style={styles.latestSermonGoldenText} numberOfLines={1}>{headerL2}</Text>
+                              </View>
+                            </LinearGradient>
+                          )}
 
 
-                      </View>
-
-                      {/* ── Bottom Half: Details & Metadata ── */}
-                      <View style={styles.latestSermonInfoContainer}>
-                        <Text 
-                          style={[styles.latestSermonTitleEn, { color: screenTheme.isDark ? '#F8FAFC' : '#0F172A' }]} 
-                          numberOfLines={1}
-                        >
-                          {titleEn}
-                        </Text>
-                        {titleTe ? (
-                          <Text 
-                            style={[styles.latestSermonTitleTe, { color: screenTheme.isDark ? '#CBD5E1' : '#1E293B' }]} 
-                            numberOfLines={1}
-                          >
-                            {titleTe}
-                          </Text>
-                        ) : null}
-
-                        {/* Speaker Row */}
-                        <View style={styles.latestSermonMetaRow}>
-                          <User size={14} color="#2563EB" strokeWidth={2.4} />
-                          <Text 
-                            style={[styles.latestSermonPastorText, { color: screenTheme.isDark ? '#F1F5F9' : '#0F172A' }]} 
-                            numberOfLines={1}
-                          >
-                            {pastorName}
-                          </Text>
                         </View>
 
-                        {/* Date Row */}
-                        <View style={styles.latestSermonMetaRow}>
-                          <Calendar size={14} color="#2563EB" strokeWidth={2.4} />
-                          <Text 
-                            style={[styles.latestSermonDateText, { color: screenTheme.isDark ? '#94A3B8' : '#64748B' }]} 
+                        {/* ── Bottom Half: Details & Metadata ── */}
+                        <View style={styles.latestSermonInfoContainer}>
+                          <Text
+                            style={[styles.latestSermonTitleEn, { color: screenTheme.isDark ? '#F8FAFC' : '#0F172A' }]}
                             numberOfLines={1}
                           >
-                            {dateStr}
+                            {titleEn}
                           </Text>
+                          {titleTe ? (
+                            <Text
+                              style={[styles.latestSermonTitleTe, { color: screenTheme.isDark ? '#CBD5E1' : '#1E293B' }]}
+                              numberOfLines={1}
+                            >
+                              {titleTe}
+                            </Text>
+                          ) : null}
+
+                          {/* Speaker Row */}
+                          <View style={styles.latestSermonMetaRow}>
+                            <User size={14} color="#2563EB" strokeWidth={2.4} />
+                            <Text
+                              style={[styles.latestSermonPastorText, { color: screenTheme.isDark ? '#F1F5F9' : '#0F172A' }]}
+                              numberOfLines={1}
+                            >
+                              {pastorName}
+                            </Text>
+                          </View>
+
+                          {/* Date Row */}
+                          <View style={styles.latestSermonMetaRow}>
+                            <Calendar size={14} color="#2563EB" strokeWidth={2.4} />
+                            <Text
+                              style={[styles.latestSermonDateText, { color: screenTheme.isDark ? '#94A3B8' : '#64748B' }]}
+                              numberOfLines={1}
+                            >
+                              {dateStr}
+                            </Text>
+                          </View>
                         </View>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            );
-          })()}
-          
-          <View style={{ height: 112 }} />
-        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              );
+            })()}
+
+            <View style={{ height: 112 }} />
+          </View>
         </View>
       </Animated.ScrollView>
 
@@ -6217,8 +6234,8 @@ export default function HomeScreen() {
           ]}
         >
           <Animated.View style={{ transform: [{ scale: waveAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] }) }] }}>
-            <TouchableOpacity 
-              activeOpacity={0.9} 
+            <TouchableOpacity
+              activeOpacity={0.9}
               onPress={() => navigation.navigate('LiveCelebrationsChat', { celebrations: liveCelebrations })}
               style={styles.floatingBtn}
             >
@@ -6243,10 +6260,10 @@ export default function HomeScreen() {
           <ViewShot ref={captureVerseRef} options={{ format: 'png', quality: 1 }}>
             <View style={{ width, height: width * 1.5, backgroundColor: '#0a1945' }} collapsable={false}>
               <Image
-                  source={{ uri: getVerseBackgroundUrl(captureVerseConfig.verse, captureVerseConfig.period, captureVerseConfig.verse?.index ?? 0, currentTime) }}
-                  style={StyleSheet.absoluteFillObject}
-                  resizeMode="cover"
-                />
+                source={{ uri: getVerseBackgroundUrl(captureVerseConfig.verse, captureVerseConfig.period, captureVerseConfig.verse?.index ?? 0, currentTime) }}
+                style={StyleSheet.absoluteFillObject}
+                resizeMode="cover"
+              />
               <LinearGradient
                 colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0.88)']}
                 style={StyleSheet.absoluteFillObject}
@@ -6541,7 +6558,7 @@ const GiveCoins = ({ scrollY, triggerY }: { scrollY?: Animated.Value; triggerY?:
       if (scrollY && listenerId) {
         try {
           scrollY.removeListener(listenerId);
-        } catch (_) {}
+        } catch (_) { }
       }
       stopLoop();
     };
@@ -7161,10 +7178,10 @@ const styles = StyleSheet.create({
   mainContainer: { flex: 1, backgroundColor: '#FAF7F2' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1a2d5a' },
   screenLoadingText: { color: '#FCD34D', marginTop: 15, fontSize: 14, fontWeight: '700' },
-  
+
   scroll: { flex: 1 },
   contentPad: { paddingBottom: 160 },
-  
+
   // ── Top Two Sections (Church Header Row + Light-Blue Greeting Card) ──
   topBgCurveBlue: {
     position: 'absolute',
@@ -7423,7 +7440,7 @@ const styles = StyleSheet.create({
   titleCol: { marginLeft: 10, flex: 1, minWidth: 0 },
   hdTitle: { color: '#F3EAD9', fontSize: 18, fontWeight: '800', letterSpacing: 0.2 },
   hdSub: { color: '#aac4e8', fontSize: 10, marginTop: 1, fontWeight: '500' },
-  
+
   headerRight: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, zIndex: 2, flexShrink: 0 },
   actionIconButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.08)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   notifBadge: { position: 'absolute', top: 8, right: 10, width: 6, height: 6, backgroundColor: '#ef4444', borderRadius: 3 },
@@ -7431,14 +7448,14 @@ const styles = StyleSheet.create({
   avatarImg: { width: 40, height: 40, borderRadius: 20 },
   avatarPlaceholder: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#f59e0b', justifyContent: 'center', alignItems: 'center' },
   avatarLetter: { color: '#fff', fontWeight: '800', fontSize: 18 },
-  
+
   goldDivider: { height: 1, marginVertical: 18, width: '100%', opacity: 0.7, zIndex: 2 },
-  
+
   greetingSection: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', zIndex: 2 },
   greetingLeft: { flex: 1 },
   greetingText: { color: '#FCD34D', fontSize: 16, fontWeight: '400', fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontStyle: 'italic', marginBottom: 2, letterSpacing: 0.5, textShadowColor: 'rgba(252, 211, 77, 0.4)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 6 },
   userNameCream: { color: '#F3EAD9', fontSize: 16, fontWeight: '900', fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', letterSpacing: 0.5 },
-  
+
   greetingRight: { alignItems: 'center', justifyContent: 'center', marginLeft: 15 },
   calendarBadgeWrap: { width: 66, height: 66, justifyContent: 'center', alignItems: 'center' },
   calendarTextOverlay: { position: 'absolute', alignItems: 'center', justifyContent: 'center', paddingTop: 2 },
@@ -7856,55 +7873,55 @@ const styles = StyleSheet.create({
   ebHdLbl: { fontSize: 12, color: '#fff', fontWeight: '700' },
   ebSeeAll: { fontSize: 11, color: '#aac4e8', fontWeight: '600' },
   ebList: { padding: 0 },
-  ebItem: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    padding: 13, 
-    gap: 12 
+  ebItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 13,
+    gap: 12
   },
-  ebThumbnailContainer: { 
-    width: 114, 
-    height: 64, 
-    borderRadius: 10, 
-    overflow: 'hidden', 
+  ebThumbnailContainer: {
+    width: 114,
+    height: 64,
+    borderRadius: 10,
+    overflow: 'hidden',
     backgroundColor: '#0F172A',
   },
-  ebThumbnail: { 
-    width: '100%', 
+  ebThumbnail: {
+    width: '100%',
     height: '100%',
   },
-  ebInfo: { 
-    flex: 1, 
+  ebInfo: {
+    flex: 1,
     justifyContent: 'center',
     paddingLeft: 4,
   },
-  ebTitle: { 
-    fontSize: 14.5, 
-    fontWeight: '700', 
-    letterSpacing: 0.1, 
+  ebTitle: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    letterSpacing: 0.1,
     marginBottom: 4,
     lineHeight: 18,
   },
-  ebDetailRow: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    gap: 6, 
-    marginTop: 3 
+  ebDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 3
   },
-  ebDetailText: { 
-    fontSize: 11.5, 
-    fontWeight: '500', 
-    flex: 1 
+  ebDetailText: {
+    fontSize: 11.5,
+    fontWeight: '500',
+    flex: 1
   },
   ebArrowContainer: {
     paddingLeft: 4,
     opacity: 0.7,
   },
-  ebDivider: { 
-    height: 1, 
-    marginHorizontal: 14 
+  ebDivider: {
+    height: 1,
+    marginHorizontal: 14
   },
-  
+
   emptyEvents: { padding: 30, alignItems: 'center', justifyContent: 'center' },
   emptyEventsTxt: { color: '#1a2d5a', fontSize: 13, fontWeight: '700', marginTop: 12 },
   emptyEventsSub: { color: '#94a3b8', fontSize: 11, marginTop: 4 },
@@ -8930,9 +8947,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   ebMetaText: {
-    fontSize: 10, 
-    color: '#64748b', 
-    fontWeight: '500', 
+    fontSize: 10,
+    color: '#64748b',
+    fontWeight: '500',
     lineHeight: 14
   },
   modalScroll: {

@@ -49,41 +49,42 @@ export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
   const bgColor = screenBg;
   const textColor = primaryText;
 
+  const effectiveChurchId = activeChurch?.id || initialMeeting?.churchId || member?.churchId;
+  const targetMeetingId = meeting?.id;
+
   // Real-time listener on the meeting doc so Scheduled -> Live -> Completed transitions reflect immediately
   useEffect(() => {
-    const churchId = activeChurch?.id || meeting?.churchId || member?.churchId;
-    if (!churchId || !meeting?.id) return;
+    if (!effectiveChurchId || !targetMeetingId) return;
 
     const unsubMeeting = firestore()
       .collection('Rhema Church')
-      .doc(churchId)
+      .doc(effectiveChurchId)
       .collection('online_meetings')
-      .doc(meeting.id)
+      .doc(targetMeetingId)
       .onSnapshot(
         (doc) => {
           if (doc.exists) {
             setMeeting({ id: doc.id, ...doc.data() });
           }
         },
-        () => {}
+        () => { }
       );
 
     return () => unsubMeeting();
-  }, [activeChurch?.id, meeting?.id, meeting?.churchId, member?.churchId]);
+  }, [effectiveChurchId, targetMeetingId]);
 
   useEffect(() => {
-    const churchId = activeChurch?.id || meeting?.churchId || member?.churchId;
     const attendeeId = user?.uid || member?.id;
-    if (!churchId || !meeting?.id || !attendeeId) {
+    if (!effectiveChurchId || !targetMeetingId || !attendeeId) {
       setLoading(false);
       return;
     }
 
     const unsubscribe = firestore()
       .collection('Rhema Church')
-      .doc(churchId)
+      .doc(effectiveChurchId)
       .collection('online_meetings')
-      .doc(meeting.id)
+      .doc(targetMeetingId)
       .collection('attendees')
       .doc(attendeeId)
       .onSnapshot((doc) => {
@@ -95,7 +96,7 @@ export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
       });
 
     return () => unsubscribe();
-  }, [activeChurch?.id, meeting?.id, meeting?.churchId, member?.id, member?.churchId, user?.uid]);
+  }, [effectiveChurchId, targetMeetingId, member?.id, user?.uid]);
 
   const handleJoin = async () => {
     const rawLink = meeting?.meetingLink || meeting?.meetingUrl || meeting?.url || meeting?.link || '';
@@ -169,8 +170,8 @@ export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
   const formattedTime = startDt && endDt
     ? `${startDt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – ${endDt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
     : startDt
-    ? startDt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    : meeting.startTimeLabel || 'TBA';
+      ? startDt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : meeting.startTimeLabel || 'TBA';
 
   const canonicalStatus = resolveMeetingStatus(meeting, true);
   const isCompleted = canonicalStatus === 'completed';
@@ -243,15 +244,15 @@ export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
               </View>
             )}
             {SHOW_YOUTUBE_LIVE && meeting.youtubeLive?.enabled ? (
-              <View style={{ 
-                flexDirection: 'row', 
-                alignItems: 'center', 
-                backgroundColor: meeting.youtubeLive.status === 'live' ? 'rgba(220, 38, 38, 0.5)' : 'rgba(239, 68, 68, 0.3)', 
-                paddingHorizontal: 10, 
-                paddingVertical: 4, 
-                borderRadius: 8, 
-                borderWidth: 1, 
-                borderColor: '#EF4444' 
+              <View style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: meeting.youtubeLive.status === 'live' ? 'rgba(220, 38, 38, 0.5)' : 'rgba(239, 68, 68, 0.3)',
+                paddingHorizontal: 10,
+                paddingVertical: 4,
+                borderRadius: 8,
+                borderWidth: 1,
+                borderColor: '#EF4444'
               }}>
                 <Radio size={12} color="#ffffff" style={{ marginRight: 5 }} />
                 <Text style={{ color: '#ffffff', fontSize: 12, fontWeight: '700' }}>
@@ -309,7 +310,7 @@ export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
                   Passcode: <Text style={{ fontWeight: '800', color: '#FCD34D' }}>{meeting.password}</Text>
                 </Text>
               </View>
-              <TouchableOpacity 
+              <TouchableOpacity
                 onPress={async () => {
                   await Clipboard.setStringAsync(String(meeting.password));
                   if (Platform.OS === 'android') {
@@ -325,7 +326,7 @@ export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
               </TouchableOpacity>
             </View>
           ) : null}
-          
+
           {meeting.description && meeting.description !== meeting.topic && meeting.description !== meeting.subtitle ? (
             <View style={[styles.gradInfoRow, { alignItems: 'flex-start', marginTop: 8 }]}>
               <BookOpen size={18} color="rgba(255,255,255,0.75)" style={{ marginTop: 2 }} />
@@ -357,10 +358,10 @@ export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
             >
               <Radio size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
               <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 15, letterSpacing: 0.3 }}>
-                {meeting.youtubeLive.status === 'live' 
-                  ? '🔴 Watch Live on YouTube' 
-                  : (meeting.youtubeLive.status === 'ended' 
-                    ? '▶ Watch Replay on YouTube' 
+                {meeting.youtubeLive.status === 'live'
+                  ? '🔴 Watch Live on YouTube'
+                  : (meeting.youtubeLive.status === 'ended'
+                    ? '▶ Watch Replay on YouTube'
                     : '📺 Watch on YouTube')}
               </Text>
             </TouchableOpacity>
@@ -463,7 +464,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  
+
   scrollContent: { padding: 16, paddingBottom: 44 },
 
   // Gradient card (Matching OnlineMeetingsScreen)

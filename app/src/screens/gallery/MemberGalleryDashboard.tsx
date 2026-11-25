@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,10 +15,14 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Globe, Calendar, Image as ImageIcon, ArrowLeft } from 'lucide-react-native';
 import { MemberGalleryStackParamList } from './MemberGalleryNavigator';
 import GalleryService, { GalleryAlbum } from '../../services/GalleryService';
+import { CachedImage } from '../../components/CachedImage';
+import { useAuth } from '../../context/AuthContext';
+import { useChurch } from '../../context/ChurchContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLanguage } from '../../context/LanguageContext';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../../utils/instantCache';
 
 const { width } = Dimensions.get('window');
 
@@ -26,6 +30,8 @@ type NavigationProp = NativeStackNavigationProp<MemberGalleryStackParamList, 'Me
 
 export default function MemberGalleryDashboard() {
   const navigation = useNavigation<NavigationProp>();
+  const { user } = useAuth();
+  const { churchId } = useChurch();
   const { isDark, colors } = useTheme();
   const {
     screenBg,
@@ -37,37 +43,57 @@ export default function MemberGalleryDashboard() {
   } = useAdminTheme();
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
+  const galleryCacheKey = makeScopedCacheKey('gallery_albums_v1', churchId, user?.uid);
+  const initialAlbums = getInstantMemory<GalleryAlbum[]>(galleryCacheKey);
 
-  const [albums, setAlbums] = useState<GalleryAlbum[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [totalPhotos, setTotalPhotos] = useState(0);
+  const [albums, setAlbums] = useState<GalleryAlbum[]>(() => initialAlbums || []);
+  const [loading, setLoading] = useState(() => !initialAlbums);
+  const [totalPhotos, setTotalPhotos] = useState(() =>
+    (initialAlbums || []).reduce((acc, a) => acc + (a.photoCount || 0), 0)
+  );
 
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      loadAlbums();
-    });
-    return unsubscribe;
-  }, [navigation]);
-
-  useEffect(() => {
-    loadAlbums();
-  }, []);
-
-  const loadAlbums = async () => {
+  const loadAlbums = useCallback(async (forceRefresh = false) => {
     try {
-      setLoading(true);
-      const data = await GalleryService.getAlbums();
-      setAlbums(data);
+      const memHit = getInstantMemory<GalleryAlbum[]>(galleryCacheKey);
+      if (memHit) {
+        setAlbums(memHit);
+        setTotalPhotos(memHit.reduce((acc, a) => acc + (a.photoCount || 0), 0));
+        setLoading(false);
+      } else if (albums.length === 0) {
+        setLoading(true);
+      }
 
-      let photoCount = 0;
-      data.forEach((a) => (photoCount += a.photoCount || 0));
-      setTotalPhotos(photoCount);
+      await loadWithInstantCache<GalleryAlbum[]>({
+        key: galleryCacheKey,
+        screenName: 'MemberGalleryDashboard',
+        freshSkipMs: 2 * 60 * 1000,
+        forceRefresh,
+        fetcher: () => GalleryService.getAlbums(),
+        onCached: (cached) => {
+          setAlbums(cached);
+          setTotalPhotos(cached.reduce((acc, a) => acc + (a.photoCount || 0), 0));
+          setLoading(false);
+        },
+        onFresh: (fresh) => {
+          setAlbums(fresh);
+          setTotalPhotos(fresh.reduce((acc, a) => acc + (a.photoCount || 0), 0));
+          setLoading(false);
+        },
+      });
     } catch (error) {
       console.error(error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [galleryCacheKey, albums.length]);
+
+  useEffect(() => {
+    loadAlbums(false);
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadAlbums(false);
+    });
+    return unsubscribe;
+  }, [navigation, loadAlbums]);
 
   const getLatestTime = () => {
     if (albums.length === 0) return '--';
@@ -183,7 +209,7 @@ export default function MemberGalleryDashboard() {
     >
       <View style={styles.albumImageContainer}>
         {item.coverPhotoUrl ? (
-          <Image source={{ uri: item.coverPhotoUrl }} style={styles.albumCover} />
+          <CachedImage source={{ uri: item.coverPhotoUrl }} style={styles.albumCover} />
         ) : (
           <View
             style={[
@@ -221,8 +247,8 @@ export default function MemberGalleryDashboard() {
             <Text style={[styles.detailText, { color: secondaryText }]}>
               {item.createdAt?.toDate
                 ? item.createdAt
-                    .toDate()
-                    .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                  .toDate()
+                  .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                 : item.date || t('gallery.noDate')}
             </Text>
           </View>
@@ -255,6 +281,10 @@ export default function MemberGalleryDashboard() {
           ListHeaderComponent={renderHeader}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
           ListEmptyComponent={
             !loading ? (
               <View style={{ alignItems: 'center', marginTop: 40 }}>

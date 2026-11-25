@@ -18,8 +18,15 @@ import { ChevronLeft, ArrowLeft, ChevronRight, MapPin, Phone, Mail } from 'lucid
 import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import firestore from '@react-native-firebase/firestore';
 import firestoreService from '../services/FirestoreService';
+import { useChurch } from '../context/ChurchContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  readInstantCache,
+  writeInstantCache,
+} from '../utils/instantCache';
 
 interface ContactData {
   churchName: string;
@@ -81,21 +88,41 @@ export default function ContactUsScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const navigation = useNavigation();
+  const { activeChurch } = useChurch();
   const { t } = useLanguage();
-  const [data, setData] = useState<ContactData>(DEFAULT);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = React.useMemo(
+    () => makeScopedCacheKey('contact_us_v1', activeChurch?.id, 'shared'),
+    [activeChurch?.id]
+  );
+  const initialCached = React.useMemo(() => getInstantMemory<ContactData>(cacheKey), [cacheKey]);
+  const [data, setData] = useState<ContactData>(initialCached || DEFAULT);
+  const [loading, setLoading] = useState(!initialCached);
 
   useEffect(() => {
-    let unsub: () => void = () => {};
+    let unsub: () => void = () => { };
+    let isMounted = true;
+
+    const mem = getInstantMemory<ContactData>(cacheKey);
+    if (mem) {
+      setData(mem);
+      setLoading(false);
+    } else {
+      readInstantCache<ContactData>(cacheKey).then((cached) => {
+        if (!isMounted || !cached?.data) return;
+        setData(cached.data);
+        setLoading(false);
+      });
+    }
 
     const setupListener = async () => {
       try {
         const col = await firestoreService.getCollection('settings');
         unsub = col.doc('contact').onSnapshot(
           (doc) => {
+            if (!isMounted) return;
             if (doc.exists()) {
               const d = doc.data() as ContactData;
-              setData({
+              const nextData: ContactData = {
                 churchName: d.churchName || DEFAULT.churchName,
                 churchSubtitle: d.churchSubtitle || DEFAULT.churchSubtitle,
                 address: d.address || DEFAULT.address,
@@ -107,7 +134,9 @@ export default function ContactUsScreen() {
                   facebook: d.socialLinks?.facebook || DEFAULT.socialLinks.facebook,
                   whatsapp: d.socialLinks?.whatsapp || DEFAULT.socialLinks.whatsapp,
                 },
-              });
+              };
+              setData(nextData);
+              writeInstantCache(cacheKey, nextData);
             }
             setLoading(false);
           },
@@ -124,9 +153,10 @@ export default function ContactUsScreen() {
 
     setupListener();
     return () => {
+      isMounted = false;
       if (unsub) unsub();
     };
-  }, []);
+  }, [cacheKey, activeChurch?.id]);
 
   const openPhone = (number: string) =>
     Linking.openURL(`tel:${number}`).catch(() => Alert.alert(t('common.error'), t('contactUs.alerts.phoneError')));
@@ -151,7 +181,7 @@ export default function ContactUsScreen() {
     <View style={styles.safe}>
       <StatusBar barStyle="dark-content" backgroundColor="#FAF7F2" />
       {/* Hero Header Card */}
-            {/* ── Screen Header (Clean circular back button & title) ── */}
+      {/* ── Screen Header (Clean circular back button & title) ── */}
       <View
         style={[
           styles.headerRow,
@@ -302,7 +332,7 @@ export default function ContactUsScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#FAF7F2' },
-    headerRow: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

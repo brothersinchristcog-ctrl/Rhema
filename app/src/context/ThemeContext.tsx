@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useState, useEffect, useMemo } from 'react';
 import { useColorScheme, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useChurch } from './ChurchContext';
@@ -171,49 +171,55 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [fontSize, setFontSizeState] = useState<FontSizeOption>('medium');
   const [fontStyle, setFontStyleState] = useState<FontStyleOption>('modern');
 
-  // Load saved appearance preference on app launch
+  // Load saved appearance preferences in a single batched multiGet on app launch
   useEffect(() => {
+    let active = true;
     (async () => {
       try {
-        const savedAppearance = await AsyncStorage.getItem('user_theme_appearance');
+        const entries = await AsyncStorage.multiGet([
+          'user_theme_appearance',
+          'user_theme',
+          'user_accent_color',
+          'user_quick_actions_style',
+          'user_navbar_style',
+          'user_font_style',
+          'user_font_size',
+        ]);
+        if (!active) return;
+        const map = new Map(entries);
+        const savedAppearance = map.get('user_theme_appearance');
+        const legacy = map.get('user_theme');
         if (savedAppearance && THEME_OPTIONS.some(o => o.id === savedAppearance)) {
           setAppearanceState(savedAppearance as ThemeAppearance);
+        } else if (legacy === 'dark') {
+          setAppearanceState('pure_dark');
         } else {
-          const legacy = await AsyncStorage.getItem('user_theme');
-          if (legacy === 'dark') {
-            setAppearanceState('pure_dark');
-          } else {
-            setAppearanceState('warm_white');
-          }
+          setAppearanceState('warm_white');
         }
 
-        const savedAccent = await AsyncStorage.getItem('user_accent_color');
-        if (savedAccent) {
-          setAccentColorState(savedAccent);
-        }
+        const savedAccent = map.get('user_accent_color');
+        if (savedAccent) setAccentColorState(savedAccent);
 
-        const savedQA = await AsyncStorage.getItem('user_quick_actions_style');
+        const savedQA = map.get('user_quick_actions_style');
         if (savedQA === 'bento' || savedQA === 'grid') {
           setQuickActionsStyleState(savedQA as QuickActionsStyle);
         }
 
-        const savedNav = await AsyncStorage.getItem('user_navbar_style');
+        const savedNav = map.get('user_navbar_style');
         if (savedNav === 'pill' || savedNav === 'capsule') {
           setNavBarStyleState(savedNav as NavBarStyle);
         }
 
-        const savedFontStyle = await AsyncStorage.getItem('user_font_style');
+        const savedFontStyle = map.get('user_font_style');
         if (savedFontStyle === 'modern' || savedFontStyle === 'classic' || savedFontStyle === 'prominent') {
           setFontStyleState(savedFontStyle as FontStyleOption);
           const opt = FONT_STYLE_OPTIONS.find(o => o.id === savedFontStyle) || FONT_STYLE_OPTIONS[0];
           setGlobalFontFamily(opt.family);
         } else {
-          // Default to Modern (system sans-serif)
-          const opt = FONT_STYLE_OPTIONS[0];
-          setGlobalFontFamily(opt.family);
+          setGlobalFontFamily(FONT_STYLE_OPTIONS[0].family);
         }
 
-        const savedFontSize = await AsyncStorage.getItem('user_font_size');
+        const savedFontSize = map.get('user_font_size');
         if (savedFontSize === 'small' || savedFontSize === 'medium' || savedFontSize === 'large') {
           setFontSizeState(savedFontSize as FontSizeOption);
           setGlobalFontScale(FONT_SIZE_CONFIG[savedFontSize as FontSizeOption].scale);
@@ -225,113 +231,128 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         // Fallback to warm white default
       }
     })();
+    return () => { active = false; };
   }, []);
 
-  const setAppearance = async (newMode: ThemeAppearance) => {
+  const setAppearance = useCallback(async (newMode: ThemeAppearance) => {
     setAppearanceState(newMode);
     try {
-      await AsyncStorage.setItem('user_theme_appearance', newMode);
-      await AsyncStorage.setItem('user_theme', newMode === 'pure_dark' ? 'dark' : 'light');
+      await AsyncStorage.multiSet([
+        ['user_theme_appearance', newMode],
+        ['user_theme', newMode === 'pure_dark' ? 'dark' : 'light'],
+      ]);
     } catch (e) {}
-  };
+  }, []);
 
-  const setAccentColor = async (color: string) => {
+  const setAccentColor = useCallback(async (color: string) => {
     setAccentColorState(color);
     try {
       await AsyncStorage.setItem('user_accent_color', color);
     } catch (e) {}
-  };
+  }, []);
 
-  const setQuickActionsStyle = async (style: QuickActionsStyle) => {
+  const setQuickActionsStyle = useCallback(async (style: QuickActionsStyle) => {
     setQuickActionsStyleState(style);
     try {
       await AsyncStorage.setItem('user_quick_actions_style', style);
     } catch (e) {}
-  };
+  }, []);
 
-  const setNavBarStyle = async (style: NavBarStyle) => {
+  const setNavBarStyle = useCallback(async (style: NavBarStyle) => {
     setNavBarStyleState(style);
     try {
       await AsyncStorage.setItem('user_navbar_style', style);
     } catch (e) {}
-  };
+  }, []);
 
-  const setFontStyle = async (style: FontStyleOption) => {
+  const setFontStyle = useCallback(async (style: FontStyleOption) => {
     setFontStyleState(style);
     const opt = FONT_STYLE_OPTIONS.find(o => o.id === style) || FONT_STYLE_OPTIONS[0];
     setGlobalFontFamily(opt.family);
     try { await AsyncStorage.setItem('user_font_style', style); } catch (e) {}
-  };
-  const setFontSize = async (size: FontSizeOption) => {
+  }, []);
+
+  const setFontSize = useCallback(async (size: FontSizeOption) => {
     setFontSizeState(size);
     const cfg = FONT_SIZE_CONFIG[size] || FONT_SIZE_CONFIG.medium;
     setGlobalFontScale(cfg.scale);
     try {
       await AsyncStorage.setItem('user_font_size', size);
     } catch (e) {}
-  };
+  }, []);
 
-  const currentThemeOption = THEME_OPTIONS.find(o => o.id === appearance) || THEME_OPTIONS[0];
+  const currentThemeOption = useMemo(
+    () => THEME_OPTIONS.find(o => o.id === appearance) || THEME_OPTIONS[0],
+    [appearance]
+  );
   const isDark = currentThemeOption.isDark;
 
-  const toggleTheme = () => {
+  const toggleTheme = useCallback(() => {
     const nextMode: ThemeAppearance = isDark ? 'warm_white' : 'pure_dark';
     setAppearance(nextMode);
-  };
+  }, [isDark, setAppearance]);
 
-  // Base dynamic theme colors
-  let primary = activeChurch?.theme?.primaryColor || currentThemeOption.accent;
-  let accent = accentColor || activeChurch?.theme?.secondaryColor || currentThemeOption.accent;
-  let textColor = currentThemeOption.text;
+  const colors = useMemo(() => {
+    const primary = activeChurch?.theme?.primaryColor || currentThemeOption.accent;
+    const accent = accentColor || activeChurch?.theme?.secondaryColor || currentThemeOption.accent;
+    const textColor = currentThemeOption.text;
+    return {
+      primary,
+      accent,
+      gold: '#E8C46E',
+      background: currentThemeOption.bg,
+      bg: currentThemeOption.bg,
+      surface: currentThemeOption.surface,
+      text: textColor,
+      textSecondary: currentThemeOption.textSecondary,
+      border: currentThemeOption.border,
+      header: primary,
+      card: currentThemeOption.surface,
+      barStyle: currentThemeOption.barStyle,
+      headerGradient: currentThemeOption.headerGradient,
+      headerPillBg: currentThemeOption.headerPillBg,
+      headerPillIcon: currentThemeOption.headerPillIcon,
+      tabBarBg: currentThemeOption.tabBarBg,
+      tabBarBorder: currentThemeOption.tabBarBorder,
+      tabBarActiveBg: accentColor || currentThemeOption.tabBarActiveBg,
+      tabBarActiveFg: currentThemeOption.tabBarActiveFg,
+      tabBarInactiveFg: currentThemeOption.tabBarInactiveFg,
+    };
+  }, [activeChurch?.theme?.primaryColor, activeChurch?.theme?.secondaryColor, accentColor, currentThemeOption]);
 
-  const colors = {
-    primary,
-    accent,
-    gold: '#E8C46E',
-    background: currentThemeOption.bg,
-    bg: currentThemeOption.bg,
-    surface: currentThemeOption.surface,
-    text: textColor,
-    textSecondary: currentThemeOption.textSecondary,
-    border: currentThemeOption.border,
-    header: primary,
-    card: currentThemeOption.surface,
-    barStyle: currentThemeOption.barStyle,
-    headerGradient: currentThemeOption.headerGradient,
-    headerPillBg: currentThemeOption.headerPillBg,
-    headerPillIcon: currentThemeOption.headerPillIcon,
-    tabBarBg: currentThemeOption.tabBarBg,
-    tabBarBorder: currentThemeOption.tabBarBorder,
-    tabBarActiveBg: accentColor || currentThemeOption.tabBarActiveBg,
-    tabBarActiveFg: currentThemeOption.tabBarActiveFg,
-    tabBarInactiveFg: currentThemeOption.tabBarInactiveFg,
-  };
+  const fontCfg = FONT_SIZE_CONFIG[fontSize] || FONT_SIZE_CONFIG.medium;
+  const scaleFont = useCallback((size: number) => Math.round(size * fontCfg.scale), [fontCfg.scale]);
+
+  const contextValue = useMemo<ThemeContextType>(() => ({
+    mode: appearance,
+    appearance,
+    setAppearance,
+    currentThemeOption,
+    accentColor,
+    setAccentColor,
+    quickActionsStyle,
+    setQuickActionsStyle,
+    navBarStyle,
+    setNavBarStyle,
+    fontSize,
+    fontSizePx: fontCfg.px,
+    fontScale: fontCfg.scale,
+    fontStyle,
+    setFontStyle,
+    setFontSize,
+    scaleFont,
+    isDark,
+    toggleTheme,
+    colors,
+  }), [
+    appearance, setAppearance, currentThemeOption, accentColor, setAccentColor,
+    quickActionsStyle, setQuickActionsStyle, navBarStyle, setNavBarStyle,
+    fontSize, fontCfg.px, fontCfg.scale, fontStyle, setFontStyle, setFontSize,
+    scaleFont, isDark, toggleTheme, colors,
+  ]);
 
   return (
-    <ThemeContext.Provider
-      value={{
-        mode: appearance,
-        appearance,
-        setAppearance,
-        currentThemeOption,
-        accentColor,
-        setAccentColor,
-        quickActionsStyle,
-        setQuickActionsStyle,
-        navBarStyle,
-        setNavBarStyle,
-        fontSize,
-        fontSizePx: (FONT_SIZE_CONFIG[fontSize] || FONT_SIZE_CONFIG.medium).px,
-        fontScale: (FONT_SIZE_CONFIG[fontSize] || FONT_SIZE_CONFIG.medium).scale,
-        fontStyle,
-        setFontStyle,
-        setFontSize,
-        scaleFont: (size: number) => Math.round(size * (FONT_SIZE_CONFIG[fontSize] || FONT_SIZE_CONFIG.medium).scale),
-        isDark,
-        toggleTheme,
-        colors,
-      }}
-    >
+    <ThemeContext.Provider value={contextValue}>
       {children}
     </ThemeContext.Provider>
   );

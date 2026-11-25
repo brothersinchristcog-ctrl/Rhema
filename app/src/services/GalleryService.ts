@@ -26,13 +26,14 @@ class GalleryService {
     return churchId;
   }
 
-  async getAlbums(): Promise<GalleryAlbum[]> {
+  async getAlbums(limitCount = 60): Promise<GalleryAlbum[]> {
     const churchId = await this.getChurchId();
     const snapshot = await firestore()
       .collection('Rhema Church')
       .doc(churchId)
       .collection('gallery_albums')
       .orderBy('createdAt', 'desc')
+      .limit(limitCount)
       .get();
       
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GalleryAlbum));
@@ -62,7 +63,7 @@ class GalleryService {
       });
   }
   
-  async getAlbumPhotos(albumId: string): Promise<GalleryPhoto[]> {
+  async getAlbumPhotos(albumId: string, limitCount = 120): Promise<GalleryPhoto[]> {
     const churchId = await this.getChurchId();
     const snapshot = await firestore()
       .collection('Rhema Church')
@@ -71,6 +72,7 @@ class GalleryService {
       .doc(albumId)
       .collection('photos')
       .orderBy('createdAt', 'desc')
+      .limit(limitCount)
       .get();
       
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GalleryPhoto));

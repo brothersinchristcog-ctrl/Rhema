@@ -36,11 +36,14 @@ import {
   X,
 } from 'lucide-react-native';
 import RhemaYouTubePlayer, { cleanVideoId } from '../components/RhemaYouTubePlayer';
+import { CachedImage } from '../components/CachedImage';
 import FirestoreService from '../services/FirestoreService';
+import { useAuth } from '../context/AuthContext';
 import { useChurch } from '../context/ChurchContext';
 import { useAdminTheme } from '../utils/adminThemeHelper';
 import { formatSermonDuration, formatDateDisplay } from '../utils/DateUtils';
 import { resolveRhemaYoutubeUrl, RHEMA_YOUTUBE_CHANNEL_URL } from '../services/YouTubeService';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../utils/instantCache';
 
 const { width } = Dimensions.get('window');
 const PLAYER_WIDTH = Math.min(width - 28, 600);
@@ -110,16 +113,35 @@ function formatDevotionalDate(dateVal?: string): string {
 }
 
 export default function DailyVideoScreen({ navigation, route }: any) {
-  const [videos, setVideos] = useState<DevotionalVideo[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const { activeChurch, churchId } = useChurch();
+  const dailyVideosCacheKey = makeScopedCacheKey('daily_videos_v1', churchId || activeChurch?.id, user?.uid);
+  const initialDailyCache = getInstantMemory<DevotionalVideo[]>(dailyVideosCacheKey);
+
+  const [videos, setVideos] = useState<DevotionalVideo[]>(() => initialDailyCache || []);
+  const [loading, setLoading] = useState(() => !initialDailyCache?.length);
   const [refreshing, setRefreshing] = useState(false);
   const [playing, setPlaying] = useState(true);
-  const [activeVideo, setActiveVideo] = useState<DevotionalVideo | null>(null);
+  const [activeVideo, setActiveVideo] = useState<DevotionalVideo | null>(() => {
+    const paramId = cleanVideoId(route?.params?.youtubeId);
+    if (paramId) {
+      return initialDailyCache?.find((v) => v.youtubeId === paramId) || {
+        id: `direct_${paramId}`,
+        title: route?.params?.videoTitle || "Today's Devotional",
+        youtubeId: paramId,
+        publishedAt: 'Today',
+        date: 'Today',
+        duration: '',
+        pastor: route?.params?.pastor || 'Pastor',
+        sortMs: Date.now(),
+      };
+    }
+    return initialDailyCache?.[0] || null;
+  });
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [showUnsubModal, setShowUnsubModal] = useState(false);
 
   const scrollRef = useRef<ScrollView>(null);
-  const { activeChurch } = useChurch();
   const insets = useSafeAreaInsets();
   const {
     isDark,
@@ -138,10 +160,15 @@ export default function DailyVideoScreen({ navigation, route }: any) {
   const channelUrl = resolveRhemaYoutubeUrl(
     activeChurch?.socialLinks?.youtube || RHEMA_YOUTUBE_CHANNEL_URL
   );
+  const subKey = `@rhema_youtube_subscribed_${user?.uid || 'anon'}`;
 
-  // Bell ringing animation for Subscribe CTA matching SermonVideoScreen
+  // Bell ringing animation for Subscribe CTA matching SermonVideoScreen (paused once subscribed)
   const bellAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
+    if (isSubscribed) {
+      bellAnim.setValue(0);
+      return;
+    }
     const ringSequence = Animated.loop(
       Animated.sequence([
         Animated.delay(1800),
@@ -154,7 +181,7 @@ export default function DailyVideoScreen({ navigation, route }: any) {
     );
     ringSequence.start();
     return () => ringSequence.stop();
-  }, [bellAnim]);
+  }, [bellAnim, isSubscribed]);
 
   const bellRotation = bellAnim.interpolate({
     inputRange: [-1, 0, 1],
@@ -162,112 +189,133 @@ export default function DailyVideoScreen({ navigation, route }: any) {
   });
 
   useEffect(() => {
-    AsyncStorage.getItem('@rhema_youtube_subscribed')
+    AsyncStorage.getItem(subKey)
       .then((val) => {
         if (val === 'true') setIsSubscribed(true);
       })
-      .catch(() => {});
-  }, []);
+      .catch(() => { });
+  }, [subKey]);
+
+  const applyDailyVideos = useCallback(
+    (sortedList: DevotionalVideo[]) => {
+      setVideos(sortedList);
+      const paramId = cleanVideoId(route?.params?.youtubeId);
+      const paramTitle = route?.params?.videoTitle;
+      const paramPastor = route?.params?.pastor;
+
+      if (paramId) {
+        const found = sortedList.find((v) => v.youtubeId === paramId);
+        if (found) {
+          setActiveVideo(found);
+        } else {
+          setActiveVideo({
+            id: `direct_${paramId}`,
+            title: paramTitle || "Today's Devotional",
+            youtubeId: paramId,
+            publishedAt: 'Today',
+            date: 'Today',
+            duration: '',
+            pastor: paramPastor || 'Pastor',
+            sortMs: Date.now(),
+          });
+        }
+      } else if (sortedList.length > 0) {
+        setActiveVideo((prev) => prev || sortedList[0]);
+      } else {
+        setActiveVideo(null);
+      }
+      setLoading(false);
+    },
+    [route?.params?.youtubeId, route?.params?.videoTitle, route?.params?.pastor]
+  );
 
   const loadDevotionals = useCallback(
     async (isRefresh = false) => {
+      const memHit = getInstantMemory<DevotionalVideo[]>(dailyVideosCacheKey);
       if (isRefresh) setRefreshing(true);
-      else setLoading(true);
+      else if (!memHit?.length && !route?.params?.youtubeId) setLoading(true);
 
       try {
-        const [promiseData, dailyVideoData] = await Promise.all([
-          FirestoreService.getDailyPromisesArchive().catch(() => []),
-          FirestoreService.getDailyVideos(20).catch(() => []),
-        ]);
+        await loadWithInstantCache<DevotionalVideo[]>({
+          key: dailyVideosCacheKey,
+          screenName: 'DailyVideo',
+          freshSkipMs: 2 * 60 * 1000,
+          forceRefresh: isRefresh,
+          fetcher: async () => {
+            const [promiseData, dailyVideoData] = await Promise.all([
+              FirestoreService.getDailyPromisesArchive(45).catch(() => []),
+              FirestoreService.getDailyVideos(20).catch(() => []),
+            ]);
 
-        const byYoutubeId = new Map<string, DevotionalVideo>();
+            const byYoutubeId = new Map<string, DevotionalVideo>();
 
-        // 1. Collect videos from Daily Promises (richest metadata: scripture ref, note, pastor)
-        promiseData.forEach((p) => {
-          const vidId = cleanVideoId(p.youtubeId);
-          if (!vidId) return;
-          const dateVal = p.date || '';
-          byYoutubeId.set(vidId, {
-            id: p.id || `promise_${vidId}`,
-            title: p.videoTitle || p.verseReferenceEn || p.verseReference || "Today's Devotional",
-            youtubeId: vidId,
-            publishedAt: dateVal,
-            date: dateVal,
-            duration: p.duration || '',
-            pastor: p.pastor || 'Pastor',
-            scriptureRef: p.verseReferenceEn || p.verseReference || '',
-            devotionalNote: p.devotionalNote || '',
-            sortMs: parseSortableDateMs(dateVal || p.id),
-          });
-        });
-
-        // 2. Merge / enrich from dailyVideos collection
-        dailyVideoData.forEach((dv) => {
-          const vidId = cleanVideoId(dv.youtubeId);
-          if (!vidId) return;
-          const existing = byYoutubeId.get(vidId);
-          if (existing) {
-            if (!existing.duration && dv.duration) existing.duration = dv.duration;
-            if ((!existing.title || existing.title === "Today's Devotional") && dv.title) {
-              existing.title = dv.title;
-            }
-            if (!existing.sortMs && dv.publishedAt) {
-              existing.sortMs = parseSortableDateMs(dv.publishedAt);
-            }
-          } else {
-            const dateStr =
-              typeof dv.publishedAt === 'string'
-                ? dv.publishedAt
-                : dv.id || '';
-            byYoutubeId.set(vidId, {
-              id: dv.id || `dv_${vidId}`,
-              title: dv.title || "Daily Video Devotional",
-              youtubeId: vidId,
-              publishedAt: dateStr,
-              date: dateStr,
-              duration: dv.duration || '',
-              pastor: (dv as any).pastor || 'Pastor',
-              sortMs: parseSortableDateMs(dv.publishedAt || dv.id),
+            // 1. Collect videos from Daily Promises (richest metadata: scripture ref, note, pastor)
+            promiseData.forEach((p) => {
+              const vidId = cleanVideoId(p.youtubeId);
+              if (!vidId) return;
+              const dateVal = p.date || '';
+              byYoutubeId.set(vidId, {
+                id: p.id || `promise_${vidId}`,
+                title: p.videoTitle || p.verseReferenceEn || p.verseReference || "Today's Devotional",
+                youtubeId: vidId,
+                publishedAt: dateVal,
+                date: dateVal,
+                duration: p.duration || '',
+                pastor: p.pastor || 'Pastor',
+                scriptureRef: p.verseReferenceEn || p.verseReference || '',
+                devotionalNote: p.devotionalNote || '',
+                sortMs: parseSortableDateMs(dateVal || p.id),
+              });
             });
-          }
-        });
 
-        const sortedList = Array.from(byYoutubeId.values()).sort(
-          (a, b) => b.sortMs - a.sortMs
-        );
-        setVideos(sortedList);
-
-        const paramId = cleanVideoId(route?.params?.youtubeId);
-        const paramTitle = route?.params?.videoTitle;
-        const paramPastor = route?.params?.pastor;
-
-        if (paramId) {
-          const found = sortedList.find((v) => v.youtubeId === paramId);
-          if (found) {
-            setActiveVideo(found);
-          } else {
-            setActiveVideo({
-              id: `direct_${paramId}`,
-              title: paramTitle || "Today's Devotional",
-              youtubeId: paramId,
-              publishedAt: 'Today',
-              date: 'Today',
-              duration: '',
-              pastor: paramPastor || 'Pastor',
-              sortMs: Date.now(),
+            // 2. Merge / enrich from dailyVideos collection
+            dailyVideoData.forEach((dv) => {
+              const vidId = cleanVideoId(dv.youtubeId);
+              if (!vidId) return;
+              const existing = byYoutubeId.get(vidId);
+              if (existing) {
+                if (!existing.duration && dv.duration) existing.duration = dv.duration;
+                if ((!existing.title || existing.title === "Today's Devotional") && dv.title) {
+                  existing.title = dv.title;
+                }
+                if (!existing.sortMs && dv.publishedAt) {
+                  existing.sortMs = parseSortableDateMs(dv.publishedAt);
+                }
+              } else {
+                const dateStr =
+                  typeof dv.publishedAt === 'string'
+                    ? dv.publishedAt
+                    : dv.id || '';
+                byYoutubeId.set(vidId, {
+                  id: dv.id || `dv_${vidId}`,
+                  title: dv.title || "Daily Video Devotional",
+                  youtubeId: vidId,
+                  publishedAt: dateStr,
+                  date: dateStr,
+                  duration: dv.duration || '',
+                  pastor: (dv as any).pastor || 'Pastor',
+                  sortMs: parseSortableDateMs(dv.publishedAt || dv.id),
+                });
+              }
             });
-          }
-        } else if (sortedList.length > 0) {
-          setActiveVideo(sortedList[0]);
-        } else {
-          setActiveVideo(null);
-        }
+
+            return Array.from(byYoutubeId.values()).sort(
+              (a, b) => b.sortMs - a.sortMs
+            );
+          },
+          onCached: (cached) => {
+            if (cached?.length) applyDailyVideos(cached);
+          },
+          onFresh: (fresh) => {
+            applyDailyVideos(fresh);
+          },
+        });
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    [route?.params?.youtubeId, route?.params?.videoTitle, route?.params?.pastor]
+    [dailyVideosCacheKey, applyDailyVideos, route?.params?.youtubeId]
   );
 
   useEffect(() => {
@@ -302,14 +350,14 @@ export default function DailyVideoScreen({ navigation, route }: any) {
         console.warn('Failed to open YouTube channel:', err);
       }
       setIsSubscribed(true);
-      await AsyncStorage.setItem('@rhema_youtube_subscribed', 'true').catch(() => {});
+      await AsyncStorage.setItem(subKey, 'true').catch(() => { });
     }
   };
 
   const confirmUnsubscribe = async () => {
     setShowUnsubModal(false);
     setIsSubscribed(false);
-    await AsyncStorage.setItem('@rhema_youtube_subscribed', 'false').catch(() => {});
+    await AsyncStorage.setItem(subKey, 'false').catch(() => { });
     try {
       await Linking.openURL(channelUrl);
     } catch (err) {
@@ -633,7 +681,7 @@ export default function DailyVideoScreen({ navigation, route }: any) {
             <View style={[styles.authorRow, { borderTopColor: adminBorderColor }]}>
               <View style={styles.avatarWrap}>
                 {churchAvatar ? (
-                  <Image
+                  <CachedImage
                     source={{ uri: churchAvatar }}
                     style={styles.avatarImg}
                     resizeMode="cover"
@@ -767,7 +815,7 @@ export default function DailyVideoScreen({ navigation, route }: any) {
                     }}
                   >
                     <View style={styles.thumbBox}>
-                      <Image
+                      <CachedImage
                         source={{ uri: `https://img.youtube.com/vi/${vidId}/mqdefault.jpg` }}
                         style={styles.thumb}
                         resizeMode="cover"

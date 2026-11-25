@@ -24,11 +24,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import FirestoreService, { Sermon } from '../services/FirestoreService';
 import { formatSermonDuration, isSermonVisibleToMembers } from '../utils/DateUtils';
+import { CachedImage } from '../components/CachedImage';
+import { useAuth } from '../context/AuthContext';
+import { useChurch } from '../context/ChurchContext';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
-import { getInstantMemory, readInstantCache, writeInstantCache } from '../utils/instantCache';
-
-const SERMONS_CACHE_KEY = 'sermons_screen_v1';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../utils/instantCache';
 
 /* ───────────── Category Definitions & Colors ───────────── */
 const ALL_CATEGORIES = [
@@ -53,46 +54,46 @@ export interface CardColorDef {
 }
 
 export const SERMON_CARD_COLORS: CardColorDef[] = [
-  { name: 'Royal Sapphire',  color: '#174A7E' }, // 39 from user
-  { name: 'Peach Pink',      color: '#FFB7A5' }, // 20
-  { name: 'Forest',          color: '#22543D' }, // 7
-  { name: 'Cashmere',        color: '#D8C3A5' }, // 5
-  { name: 'Ultra Violet',    color: '#5F4B8B' }, // 13
-  { name: 'Candle',          color: '#FAD02C' }, // 28
-  { name: 'Charcoal',        color: '#243342' }, // 4 (rich deep midnight charcoal)
-  { name: 'Mint Green',      color: '#86EFAC' }, // 17
-  { name: 'Coral',           color: '#FF6F61' }, // 29
-  { name: 'Truffle',         color: '#5E4B3E' }, // 6
-  { name: 'Soft Sage',       color: '#A3B899' }, // 15
-  { name: 'Cognac',          color: '#9E472A' }, // 3
-  { name: 'Ocean Blue',      color: '#0284C7' }, // 11
-  { name: 'Alabaster',       color: '#E7E4DC' }, // 22
-  { name: 'Deep Burgundy',   color: '#58111A' }, // 10
-  { name: 'Golden Yellow',   color: '#F5B041' }, // 18
-  { name: 'Slate Green',     color: '#2E5F52' }, // 23 (rich jade slate)
-  { name: 'Dusty Mauve',     color: '#A77B91' }, // 40 from user
-  { name: 'Orange',          color: '#F97316' }, // 32
-  { name: 'Gunmetal',        color: '#2C465E' }, // 8 (rich steel navy gunmetal)
-  { name: 'Ivory',           color: '#FAF5E4' }, // 24
-  { name: 'Moss',            color: '#607D3B' }, // 9
-  { name: 'Pumpkin',         color: '#D35400' }, // 12
-  { name: 'Midnight Luxe',   color: '#121B28' }, // 37
-  { name: 'Lavender Pink',   color: '#E8AEB7' }, // 16
-  { name: 'Leaf',            color: '#4CAF50' }, // 30
-  { name: 'Warm Sand',       color: '#D4B28C' }, // 34
-  { name: 'Merlot Bliss',    color: '#6B1D2F' }, // 35
-  { name: 'Cove',            color: '#385A6C' }, // 1
-  { name: 'Apricot',         color: '#FDBA74' }, // 26
-  { name: 'Dark Emerald',    color: '#065F46' }, // 21
-  { name: 'Natural',         color: '#C8B69B' }, // 25
-  { name: 'Velours Noir',    color: '#1C1C1E' }, // 2
-  { name: 'Olive Grove',     color: '#6A7B44' }, // 33
-  { name: 'Creamy Taupe',    color: '#DFD3C3' }, // 36 (warm creamy almond)
-  { name: 'Juniper',         color: '#2E4E4C' }, // 31
-  { name: 'Organic',         color: '#C4AB8E' }, // 27 (warm honey taupe)
-  { name: 'Deep Olive',      color: '#4A5320' }, // 14
-  { name: 'Soft Ivory',      color: '#F0EAE1' }, // 38
-  { name: 'Sage Green',      color: '#5A7A64' }, // 19 (rich evergreen sage)
+  { name: 'Royal Sapphire', color: '#174A7E' }, // 39 from user
+  { name: 'Peach Pink', color: '#FFB7A5' }, // 20
+  { name: 'Forest', color: '#22543D' }, // 7
+  { name: 'Cashmere', color: '#D8C3A5' }, // 5
+  { name: 'Ultra Violet', color: '#5F4B8B' }, // 13
+  { name: 'Candle', color: '#FAD02C' }, // 28
+  { name: 'Charcoal', color: '#243342' }, // 4 (rich deep midnight charcoal)
+  { name: 'Mint Green', color: '#86EFAC' }, // 17
+  { name: 'Coral', color: '#FF6F61' }, // 29
+  { name: 'Truffle', color: '#5E4B3E' }, // 6
+  { name: 'Soft Sage', color: '#A3B899' }, // 15
+  { name: 'Cognac', color: '#9E472A' }, // 3
+  { name: 'Ocean Blue', color: '#0284C7' }, // 11
+  { name: 'Alabaster', color: '#E7E4DC' }, // 22
+  { name: 'Deep Burgundy', color: '#58111A' }, // 10
+  { name: 'Golden Yellow', color: '#F5B041' }, // 18
+  { name: 'Slate Green', color: '#2E5F52' }, // 23 (rich jade slate)
+  { name: 'Dusty Mauve', color: '#A77B91' }, // 40 from user
+  { name: 'Orange', color: '#F97316' }, // 32
+  { name: 'Gunmetal', color: '#2C465E' }, // 8 (rich steel navy gunmetal)
+  { name: 'Ivory', color: '#FAF5E4' }, // 24
+  { name: 'Moss', color: '#607D3B' }, // 9
+  { name: 'Pumpkin', color: '#D35400' }, // 12
+  { name: 'Midnight Luxe', color: '#121B28' }, // 37
+  { name: 'Lavender Pink', color: '#E8AEB7' }, // 16
+  { name: 'Leaf', color: '#4CAF50' }, // 30
+  { name: 'Warm Sand', color: '#D4B28C' }, // 34
+  { name: 'Merlot Bliss', color: '#6B1D2F' }, // 35
+  { name: 'Cove', color: '#385A6C' }, // 1
+  { name: 'Apricot', color: '#FDBA74' }, // 26
+  { name: 'Dark Emerald', color: '#065F46' }, // 21
+  { name: 'Natural', color: '#C8B69B' }, // 25
+  { name: 'Velours Noir', color: '#1C1C1E' }, // 2
+  { name: 'Olive Grove', color: '#6A7B44' }, // 33
+  { name: 'Creamy Taupe', color: '#DFD3C3' }, // 36 (warm creamy almond)
+  { name: 'Juniper', color: '#2E4E4C' }, // 31
+  { name: 'Organic', color: '#C4AB8E' }, // 27 (warm honey taupe)
+  { name: 'Deep Olive', color: '#4A5320' }, // 14
+  { name: 'Soft Ivory', color: '#F0EAE1' }, // 38
+  { name: 'Sage Green', color: '#5A7A64' }, // 19 (rich evergreen sage)
 ];
 
 export const getSermonCardColor = (index: number): CardColorDef => {
@@ -331,7 +332,7 @@ const Thumb = ({ s, style, small }: { s: SermonItemData; style?: any; small?: bo
   return (
     <View style={[{ overflow: 'hidden', backgroundColor: '#0F172A' }, style]}>
       {uri ? (
-        <Image
+        <CachedImage
           source={{ uri }}
           style={[StyleSheet.absoluteFill, { borderRadius: 8 }]}
           resizeMode="cover"
@@ -609,7 +610,7 @@ const DatePill = ({
 };
 
 /* ───────────── Sermon Item with Vibrant Folder-Tab ───────────── */
-const SermonItem = ({
+const SermonItem = React.memo(({
   s,
   onOpen,
   index,
@@ -641,33 +642,37 @@ const SermonItem = ({
     ? activeCategory
     : (s.cat || 'Sunday Service');
 
-  const a = useRef(new Animated.Value(0)).current;
+  const animateEntrance = index < 6;
+  const a = useRef(new Animated.Value(animateEntrance ? 0 : 1)).current;
 
   useEffect(() => {
+    if (!animateEntrance) return;
     Animated.timing(a, {
       toValue: 1,
-      duration: 380,
-      delay: Math.min(index * 60, 320),
+      duration: 240,
+      delay: Math.min(index * 45, 200),
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
-  }, [a, index]);
+  }, [a, index, animateEntrance]);
 
   return (
     <Animated.View
       style={[
         styles.item,
-        {
-          opacity: a,
-          transform: [
-            {
-              translateY: a.interpolate({
-                inputRange: [0, 1],
-                outputRange: [14, 0],
-              }),
-            },
-          ],
-        },
+        animateEntrance
+          ? {
+            opacity: a,
+            transform: [
+              {
+                translateY: a.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [12, 0],
+                }),
+              },
+            ],
+          }
+          : undefined,
       ]}
     >
       <View style={styles.itemRow}>
@@ -675,7 +680,7 @@ const SermonItem = ({
         <View style={styles.tl}>
           <Text style={[styles.tlD, { color: colors.text }]}>{d.getDate()}</Text>
           <Text style={[styles.tlM, { color: colors.textSecondary }]}>{MON[d.getMonth()].slice(0, 3)}</Text>
-          
+
           {/* Distinct dots between month and day */}
           <View style={styles.tlDots}>
             <View style={[styles.tlDot, { backgroundColor: dividerColor }]} />
@@ -760,7 +765,7 @@ const SermonItem = ({
       </View>
     </Animated.View>
   );
-};
+});
 
 /* ───────────── MAIN SERMONS SCREEN ───────────── */
 export default function SermonsScreen({ navigation }: any) {
@@ -768,11 +773,17 @@ export default function SermonsScreen({ navigation }: any) {
   const { width } = useWindowDimensions();
   const { colors, isDark, appearance } = useTheme();
   const { t } = useLanguage();
+  const { churchId } = useChurch();
+  const { user } = useAuth();
+  const sermonsCacheKey = useMemo(
+    () => makeScopedCacheKey('sermons_screen_v2', churchId, user?.uid),
+    [churchId, user?.uid]
+  );
 
   const initialSermonsCache = getInstantMemory<{
     sermons: SermonItemData[];
     categoryList: string[];
-  }>(SERMONS_CACHE_KEY);
+  }>(sermonsCacheKey);
 
   const [sermons, setSermons] = useState<SermonItemData[]>(
     () => initialSermonsCache?.sermons || []
@@ -879,71 +890,81 @@ export default function SermonsScreen({ navigation }: any) {
     };
   };
 
-  const fetchSermons = async (isRefresh = false) => {
-    let hasCached = Boolean(getInstantMemory(SERMONS_CACHE_KEY));
-    if (!isRefresh && !hasCached) {
-      const diskCached = await readInstantCache<{
-        sermons: SermonItemData[];
-        categoryList: string[];
-      }>(SERMONS_CACHE_KEY);
-      if (diskCached?.data?.sermons?.length) {
-        setSermons(diskCached.data.sermons);
-        if (diskCached.data.categoryList?.length) {
-          setCategoryList(diskCached.data.categoryList);
-        }
-        setLoading(false);
-        hasCached = true;
-      }
-    }
+  const fetchSermons = useCallback(async (isRefresh = false) => {
+    const memHit = getInstantMemory<{
+      sermons: SermonItemData[];
+      categoryList: string[];
+    }>(sermonsCacheKey);
+    let hasCached = Boolean(memHit?.sermons?.length);
 
-    if (!hasCached && !isRefresh) {
+    if (memHit?.sermons?.length) {
+      setSermons(memHit.sermons);
+      if (memHit.categoryList?.length) setCategoryList(memHit.categoryList);
+      setLoading(false);
+    } else if (!isRefresh) {
       setLoading(true);
     }
 
     try {
-      const [data, serverCats] = await Promise.all([
-        FirestoreService.getSermons(250),
-        FirestoreService.getSermonCategories().catch(() => [])
-      ]);
-      const visible = (data || []).filter((s: any) => isSermonVisibleToMembers(s));
-      const mapped = visible.map(mapFirestoreSermon);
-      setSermons(mapped);
+      await loadWithInstantCache<{
+        sermons: SermonItemData[];
+        categoryList: string[];
+      }>({
+        key: sermonsCacheKey,
+        screenName: 'Sermons',
+        freshSkipMs: 2 * 60 * 1000,
+        forceRefresh: isRefresh,
+        fetcher: async () => {
+          const data = await FirestoreService.getSermons(150);
+          const serverCats = await FirestoreService.getSermonCategories(data).catch(() => []);
+          const visible = (data || []).filter((s: any) => isSermonVisibleToMembers(s));
+          const mapped = visible.map(mapFirestoreSermon);
 
-      // Collect any custom categories from Firestore
-      const sermonCats: string[] = [];
-      visible.forEach((s: any) => {
-        if (typeof s.categories === 'string' && s.categories.trim()) {
-          s.categories.split(/[;,|]/).forEach((c: string) => {
-            const trimmed = c.trim();
-            if (trimmed && !sermonCats.includes(trimmed)) sermonCats.push(trimmed);
+          const sermonCats: string[] = [];
+          visible.forEach((s: any) => {
+            if (typeof s.categories === 'string' && s.categories.trim()) {
+              s.categories.split(/[;,|]/).forEach((c: string) => {
+                const trimmed = c.trim();
+                if (trimmed && !sermonCats.includes(trimmed)) sermonCats.push(trimmed);
+              });
+            } else if (Array.isArray(s.categories)) {
+              s.categories.forEach((c: any) => {
+                const trimmed = typeof c === 'string' ? c.trim() : '';
+                if (trimmed && !sermonCats.includes(trimmed)) sermonCats.push(trimmed);
+              });
+            } else if (s.category && typeof s.category === 'string') {
+              const trimmed = s.category.trim();
+              if (trimmed && !sermonCats.includes(trimmed)) sermonCats.push(trimmed);
+            }
           });
-        } else if (Array.isArray(s.categories)) {
-          s.categories.forEach((c: any) => {
-            const trimmed = typeof c === 'string' ? c.trim() : '';
-            if (trimmed && !sermonCats.includes(trimmed)) sermonCats.push(trimmed);
-          });
-        } else if (s.category && typeof s.category === 'string') {
-          const trimmed = s.category.trim();
-          if (trimmed && !sermonCats.includes(trimmed)) sermonCats.push(trimmed);
-        }
+
+          const merged = ['All'];
+          const addCat = (c: string) => {
+            if (c && c !== 'All' && c !== 'Uncategorized' && !merged.includes(c)) {
+              merged.push(c);
+            }
+          };
+          ALL_CATEGORIES.forEach(addCat);
+          (serverCats || []).forEach(addCat);
+          sermonCats.forEach(addCat);
+          merged.push('Uncategorized');
+
+          return { sermons: mapped, categoryList: merged };
+        },
+        onCached: (cached) => {
+          if (cached?.sermons?.length) {
+            setSermons(cached.sermons);
+            if (cached.categoryList?.length) setCategoryList(cached.categoryList);
+            setLoading(false);
+            hasCached = true;
+          }
+        },
+        onFresh: (fresh) => {
+          setSermons(fresh.sermons);
+          if (fresh.categoryList?.length) setCategoryList(fresh.categoryList);
+          setLoading(false);
+        },
       });
-
-      const merged = ['All'];
-      const addCat = (c: string) => {
-        if (c && c !== 'All' && c !== 'Uncategorized' && !merged.includes(c)) {
-          merged.push(c);
-        }
-      };
-      ALL_CATEGORIES.forEach(addCat);
-      (serverCats || []).forEach(addCat);
-      sermonCats.forEach(addCat);
-      merged.push('Uncategorized');
-
-      setCategoryList(merged);
-      writeInstantCache(SERMONS_CACHE_KEY, {
-        sermons: mapped,
-        categoryList: merged,
-      }).catch(() => {});
     } catch (err) {
       console.warn('Error fetching sermons from Firestore:', err);
       if (!hasCached) setSermons([]);
@@ -951,16 +972,16 @@ export default function SermonsScreen({ navigation }: any) {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [sermonsCacheKey]);
 
   useEffect(() => {
     fetchSermons(false);
-  }, []);
+  }, [fetchSermons]);
 
-  const onRefresh = () => {
+  const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchSermons(true);
-  };
+  }, [fetchSermons]);
 
   const catOK = (s: SermonItemData) => {
     if (activeCategory === 'All') return true;
@@ -1085,9 +1106,8 @@ export default function SermonsScreen({ navigation }: any) {
   // Share sermon
   const handleShareSermon = (s: SermonItemData) => {
     Share.share({
-      message: `${s.title} – Rhema Global Ministries\nSpeaker: ${s.spk}${
-        s.youtubeId ? `\nhttps://youtu.be/${s.youtubeId}` : ''
-      }`,
+      message: `${s.title} – Rhema Global Ministries\nSpeaker: ${s.spk}${s.youtubeId ? `\nhttps://youtu.be/${s.youtubeId}` : ''
+        }`,
     });
   };
 
@@ -1106,8 +1126,8 @@ export default function SermonsScreen({ navigation }: any) {
   const panelBg = isDark
     ? (colors.surface || '#121214')
     : isWarmWhite
-    ? '#F2EAE0'
-    : (colors.background || '#FFFFFF');
+      ? '#F2EAE0'
+      : (colors.background || '#FFFFFF');
 
   return (
     <View style={[styles.container, { backgroundColor: panelBg }]}>
@@ -1247,23 +1267,23 @@ export default function SermonsScreen({ navigation }: any) {
                         styles.chip,
                         isSelected
                           ? {
-                              backgroundColor: isDark ? '#FFFFFF' : '#1E293B',
-                              borderColor: isDark ? '#FFFFFF' : '#1E293B',
-                              borderWidth: 1.5,
-                            }
+                            backgroundColor: isDark ? '#FFFFFF' : '#1E293B',
+                            borderColor: isDark ? '#FFFFFF' : '#1E293B',
+                            borderWidth: 1.5,
+                          }
                           : {
-                              backgroundColor: isDark
-                                ? 'rgba(255,255,255,0.08)'
-                                : isWarmWhite
+                            backgroundColor: isDark
+                              ? 'rgba(255,255,255,0.08)'
+                              : isWarmWhite
                                 ? '#FAF6F0'
                                 : '#FFFFFF',
-                              borderColor: isDark
-                                ? 'rgba(255,255,255,0.28)'
-                                : isWarmWhite
+                            borderColor: isDark
+                              ? 'rgba(255,255,255,0.28)'
+                              : isWarmWhite
                                 ? '#DCD3C5'
                                 : '#94A3B8',
-                              borderWidth: 1.5,
-                            },
+                            borderWidth: 1.5,
+                          },
                       ]}
                       activeOpacity={0.7}
                     >

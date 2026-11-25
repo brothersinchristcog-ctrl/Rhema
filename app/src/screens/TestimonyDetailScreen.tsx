@@ -38,6 +38,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { RHEMA_CHURCH_ID } from '../constants/ChurchConfig';
 import TestimonyService, { MemberSummary } from '../services/TestimonyService';
+import { CachedImage } from '../components/CachedImage';
 import InAppDocumentViewerModal, {
   InAppDocumentViewerDoc,
 } from '../components/InAppDocumentViewerModal';
@@ -58,8 +59,8 @@ const formatDate = (ts: any): string => {
       typeof ts.toDate === 'function'
         ? ts.toDate()
         : typeof ts.seconds === 'number'
-        ? new Date(ts.seconds * 1000)
-        : new Date(ts);
+          ? new Date(ts.seconds * 1000)
+          : new Date(ts);
     if (Number.isNaN(date.getTime())) return '';
     return date.toLocaleDateString('en-US', {
       day: 'numeric',
@@ -115,12 +116,15 @@ export default function TestimonyDetailScreen({ route, navigation }: any) {
   const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
   const [openingAttachmentPath, setOpeningAttachmentPath] = useState<string | null>(null);
   const [viewerDoc, setViewerDoc] = useState<InAppDocumentViewerDoc | null>(null);
+  const lastResolvedVideoPathRef = useRef<string | null>(null);
+  const lastResolvedAttKeyRef = useRef<string>('');
+  const lastResolvedMemberKeyRef = useRef<string>('');
 
   const isUserAdmin = Boolean(
     isPlatformSuperAdmin ||
-      String(member?.userType || '').toLowerCase().includes('admin') ||
-      String(member?.userType || '').toLowerCase().includes('pastor') ||
-      String(member?.userType || '').toLowerCase().includes('super')
+    String(member?.userType || '').toLowerCase().includes('admin') ||
+    String(member?.userType || '').toLowerCase().includes('pastor') ||
+    String(member?.userType || '').toLowerCase().includes('super')
   );
 
   useEffect(() => {
@@ -163,42 +167,54 @@ export default function TestimonyDetailScreen({ route, navigation }: any) {
         }
         setLoading(false);
 
-        // Resolve member profile
-        TestimonyService.getMemberSummary(
-          item.churchId || activeChurchId,
-          item.memberId,
-          item.memberName,
-          item.memberPhotoUrl,
-          item.memberPhone
-        )
-          .then((summary) => setMemberInfo(summary))
-          .catch(() => {});
+        // Resolve member profile once per member key
+        const mKey = `${item.churchId || activeChurchId}_${item.memberId}_${item.memberPhotoUrl || ''}`;
+        if (lastResolvedMemberKeyRef.current !== mKey) {
+          lastResolvedMemberKeyRef.current = mKey;
+          TestimonyService.getMemberSummary(
+            item.churchId || activeChurchId,
+            item.memberId,
+            item.memberName,
+            item.memberPhotoUrl,
+            item.memberPhone
+          )
+            .then((summary) => setMemberInfo(summary))
+            .catch(() => { });
+        }
 
-        // Resolve video URL if present
+        // Resolve video URL only if storage path changed
         if (item.videoStoragePath) {
-          setVideoLoading(true);
-          setVideoError(null);
-          const signedUrl = await TestimonyService.getSignedMediaUrl(item.videoStoragePath);
-          if (signedUrl) {
-            setVideoUrl(signedUrl);
-          } else {
-            setVideoError('Unable to load video stream. Please tap Retry.');
+          if (lastResolvedVideoPathRef.current !== item.videoStoragePath) {
+            lastResolvedVideoPathRef.current = item.videoStoragePath;
+            setVideoLoading(true);
+            setVideoError(null);
+            const signedUrl = await TestimonyService.getSignedMediaUrl(item.videoStoragePath);
+            if (signedUrl) {
+              setVideoUrl(signedUrl);
+            } else {
+              setVideoError('Unable to load video stream. Please tap Retry.');
+            }
+            setVideoLoading(false);
           }
-          setVideoLoading(false);
         } else {
+          lastResolvedVideoPathRef.current = null;
           setVideoUrl(null);
         }
 
-        // Resolve image attachment URLs
+        // Resolve image attachment URLs only if attachment list changed
         if (item.attachmentStoragePaths && item.attachmentStoragePaths.length > 0) {
-          const resolvedMap: Record<string, string> = {};
-          await Promise.all(
-            item.attachmentStoragePaths.map(async (att) => {
-              const url = await TestimonyService.getSignedMediaUrl(att.path);
-              if (url) resolvedMap[att.path] = url;
-            })
-          );
-          setAttachmentUrls(resolvedMap);
+          const attKey = item.attachmentStoragePaths.map(a => a.path).join('|');
+          if (lastResolvedAttKeyRef.current !== attKey) {
+            lastResolvedAttKeyRef.current = attKey;
+            const resolvedMap: Record<string, string> = {};
+            await Promise.all(
+              item.attachmentStoragePaths.map(async (att) => {
+                const url = await TestimonyService.getSignedMediaUrl(att.path);
+                if (url) resolvedMap[att.path] = url;
+              })
+            );
+            setAttachmentUrls(resolvedMap);
+          }
         }
       },
       () => {
@@ -436,7 +452,7 @@ export default function TestimonyDetailScreen({ route, navigation }: any) {
         <View style={[styles.card, { backgroundColor: cardBg, borderColor }]}>
           <View style={styles.authorRow}>
             {displayPhoto ? (
-              <Image source={{ uri: displayPhoto }} style={styles.avatarImg} />
+              <CachedImage source={{ uri: displayPhoto }} style={styles.avatarImg} />
             ) : (
               <View
                 style={[
@@ -668,7 +684,7 @@ export default function TestimonyDetailScreen({ route, navigation }: any) {
                         onPress={() => setPreviewImageUri(resolvedImgUrl)}
                         style={[styles.inlineImagePreviewWrap, { borderColor }]}
                       >
-                        <Image
+                        <CachedImage
                           source={{ uri: resolvedImgUrl }}
                           style={styles.inlineImagePreview}
                           resizeMode="cover"
@@ -740,7 +756,7 @@ export default function TestimonyDetailScreen({ route, navigation }: any) {
             <X size={24} color="#FFFFFF" />
           </TouchableOpacity>
           {previewImageUri ? (
-            <Image
+            <CachedImage
               source={{ uri: previewImageUri }}
               style={styles.fullScreenImage}
               resizeMode="contain"

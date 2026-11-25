@@ -83,7 +83,7 @@ export interface ChurchDetails {
   };
   subscriptionTier?: 'free' | 'standard' | 'premium';
   memberCount?: number;
-  
+
   // Multi-branch
   isParentOrganization?: boolean;
   parentChurchId?: string;
@@ -114,10 +114,15 @@ class ChurchService {
     }
   }
 
+  private allChurchesCache: { ts: number; data: ChurchDetails[] } | null = null;
+
   /**
    * Fetch all registered churches (for selection screen)
    */
-  async getAllChurches(): Promise<ChurchDetails[]> {
+  async getAllChurches(forceRefresh = false): Promise<ChurchDetails[]> {
+    if (!forceRefresh && this.allChurchesCache && Date.now() - this.allChurchesCache.ts < 2 * 60_000) {
+      return this.allChurchesCache.data;
+    }
     try {
       const snapshot = await firestore().collection('Rhema Church').orderBy('name').get();
       const churches = snapshot.docs
@@ -137,10 +142,11 @@ class ChurchService {
         }
       }));
 
+      this.allChurchesCache = { ts: Date.now(), data: churchesWithCounts };
       return churchesWithCounts;
     } catch (error) {
       console.error('Error fetching all churches:', error);
-      return [];
+      return this.allChurchesCache?.data || [];
     }
   }
 
@@ -151,7 +157,7 @@ class ChurchService {
     try {
       const snapshot = await firestore().collection('Rhema Church').get();
       const tiers = new Set<string>();
-      
+
       // Default standard tiers
       tiers.add('free');
       tiers.add('premium');
@@ -226,7 +232,7 @@ class ChurchService {
           .collection('Rhema Church')
           .where('contactPhone', 'in', variants)
           .get();
-          
+
         if (!duplicateQuery.empty) {
           throw new Error('DUPLICATE_CHURCH_PHONE');
         }
@@ -246,7 +252,7 @@ class ChurchService {
           validUntil: trialEndsAt.toISOString()
         }
       };
-      
+
       const docRef = await firestore().collection('Rhema Church').add(churchData);
 
       this.notifySuperAdminsNewChurchRegistration({
@@ -303,7 +309,7 @@ class ChurchService {
 
       // 2. Write notifications in batch for all Super Admins
       const batch = firestore().batch();
-      
+
       for (const adminId of adminIds) {
         const notifRef = firestore()
           .collection('Rhema Church')
@@ -356,7 +362,7 @@ class ChurchService {
         .where('parentChurchId', '==', parentChurchId)
         .orderBy('name')
         .get();
-        
+
       const branches = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -470,13 +476,13 @@ class ChurchService {
     try {
       const church = await this.getChurchDetails(churchId);
       if (!church) throw new Error('Church not found');
-      
+
       let currentExpiry = church.subscription?.validUntil ? new Date(church.subscription.validUntil) : new Date();
       if (currentExpiry < new Date()) {
         currentExpiry = new Date();
       }
       currentExpiry.setFullYear(currentExpiry.getFullYear() + years);
-      
+
       await firestore().collection('Rhema Church').doc(churchId).update({
         'subscription.validUntil': currentExpiry.toISOString(),
         'subscription.status': 'active'
@@ -492,7 +498,7 @@ class ChurchService {
    */
   isSubscriptionExpired(church: ChurchDetails | null | undefined): boolean {
     if (!church) return false;
-    
+
     // 1. If manually deactivated or marked expired
     if (church.isActive === false || church.subscription?.status === 'expired') {
       return true;

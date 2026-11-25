@@ -34,10 +34,12 @@ interface RouteParams {
 const ConfettiPiece = ({ delay, duration, left, color }: any) => {
   const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.loop(
+    const loop = Animated.loop(
       Animated.timing(anim, { toValue: 1, duration, delay, easing: Easing.linear, useNativeDriver: true })
-    ).start();
-  }, []);
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [anim, duration, delay]);
   const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [-50, height + 100] });
   const rotate = anim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '540deg'] });
   return (
@@ -51,10 +53,12 @@ const ConfettiPiece = ({ delay, duration, left, color }: any) => {
 const Balloon = ({ delay, duration, left, color }: any) => {
   const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.loop(
+    const loop = Animated.loop(
       Animated.timing(anim, { toValue: 1, duration, delay, easing: Easing.linear, useNativeDriver: true })
-    ).start();
-  }, []);
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [anim, duration, delay]);
   const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [height + 100, -200] });
   const translateX = anim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 18, -10] });
   return (
@@ -73,10 +77,12 @@ const Balloon = ({ delay, duration, left, color }: any) => {
 const Sparkle = ({ delay, duration, left, top }: any) => {
   const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.loop(
+    const loop = Animated.loop(
       Animated.timing(anim, { toValue: 1, duration, delay, easing: Easing.inOut(Easing.ease), useNativeDriver: true })
-    ).start();
-  }, []);
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [anim, duration, delay]);
   const scale = anim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.4, 1.1, 0.4] });
   const opacity = anim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 1, 0] });
   return (
@@ -91,10 +97,12 @@ const Sparkle = ({ delay, duration, left, top }: any) => {
 const GoldParticle = ({ delay, duration, left }: any) => {
   const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.loop(
+    const loop = Animated.loop(
       Animated.timing(anim, { toValue: 1, duration, delay, easing: Easing.linear, useNativeDriver: true })
-    ).start();
-  }, []);
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [anim, duration, delay]);
   const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [0, -height - 150] });
   const translateX = anim.interpolate({ inputRange: [0, 1], outputRange: [0, 20] });
   const opacity = anim.interpolate({ inputRange: [0, 0.1, 0.9, 1], outputRange: [0, 1, 1, 0] });
@@ -110,10 +118,12 @@ const GoldParticle = ({ delay, duration, left }: any) => {
 const FloatingHeart = ({ delay, duration, left }: any) => {
   const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.loop(
+    const loop = Animated.loop(
       Animated.timing(anim, { toValue: 1, duration, delay, easing: Easing.linear, useNativeDriver: true })
-    ).start();
-  }, []);
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [anim, duration, delay]);
   const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [0, -height - 150] });
   const rotate = anim.interpolate({ inputRange: [0, 1], outputRange: ['-6deg', '6deg'] });
   const opacity = anim.interpolate({ inputRange: [0, 0.14, 0.86, 1], outputRange: [0, 0.6, 0.6, 0] });
@@ -140,10 +150,12 @@ const WeddingRings = () => {
 const Rays = () => {
   const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.loop(
+    const loop = Animated.loop(
       Animated.timing(anim, { toValue: 1, duration: 60000, easing: Easing.linear, useNativeDriver: true })
-    ).start();
-  }, []);
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [anim]);
   const rotate = anim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
   
   // Generating rays
@@ -168,10 +180,12 @@ const Rays = () => {
 const Ripple = ({ delay }: any) => {
   const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.loop(
+    const loop = Animated.loop(
       Animated.timing(anim, { toValue: 1, duration: 4000, delay, easing: Easing.out(Easing.ease), useNativeDriver: true })
-    ).start();
-  }, []);
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [anim, delay]);
   const scale = anim.interpolate({ inputRange: [0, 1], outputRange: [1, 26] }); // 20px to 520px
   const opacity = anim.interpolate({ inputRange: [0, 1], outputRange: [0.7, 0] });
   return (

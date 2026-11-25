@@ -51,7 +51,7 @@ interface ChatListRowProps {
   onLongPress: () => void;
 }
 
-export default function ChatListRow({
+const ChatListRow = React.memo(function ChatListRow({
   item,
   myUid,
   isOnline = false,
@@ -182,7 +182,9 @@ export default function ChatListRow({
       </View>
     </TouchableOpacity>
   );
-}
+});
+
+export default ChatListRow;
 
 const styles = StyleSheet.create({
   row: {

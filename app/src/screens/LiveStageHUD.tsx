@@ -114,8 +114,12 @@ export default function LiveStageHUD({ route, navigation }: any) {
     return () => clearInterval(interval);
   }, []);
 
-  // ── Pulsing LIVE dot ──
+  // ── Pulsing LIVE dot (runs only while service is live) ──
   useEffect(() => {
+    if (!liveState?.isLive) {
+      pulseAnim.setValue(1);
+      return;
+    }
     const pulse = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
@@ -132,13 +136,15 @@ export default function LiveStageHUD({ route, navigation }: any) {
     );
     pulse.start();
     return () => pulse.stop();
-  }, [pulseAnim]);
+  }, [pulseAnim, liveState?.isLive]);
 
   // ── Real-time Firestore Listener for Service Plan & Live State ──
   useEffect(() => {
     if (!churchId || !serviceId) return;
 
-    setLoading(true);
+    if (!servicePlan) {
+      setLoading(true);
+    }
     const unsubscribe = ServiceRosterService.listenLiveServicePlan(churchId, serviceId, (plan) => {
       if (plan) {
         setServicePlan(plan);
@@ -178,12 +184,12 @@ export default function LiveStageHUD({ route, navigation }: any) {
     const durationSec = (currentItem.durationMinutes || 5) * 60;
     setItemDurationSeconds(durationSec);
 
+    if (!liveState?.isLive || liveState?.status !== 'running') {
+      return;
+    }
+
     // Compute remaining seconds from itemStartedAt if running
     const updateCountdown = () => {
-      if (!liveState?.isLive || liveState?.status !== 'running') {
-        return;
-      }
-
       let startedMs = Date.now();
       if (liveState?.itemStartedAt) {
         if (typeof liveState.itemStartedAt.toMillis === 'function') {
