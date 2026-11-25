@@ -1991,3 +1991,10 @@ export {
   sendDailyWeddingAnniversaryPushScheduled,
   triggerCelebrationPushManual,
 } from './celebrationPushScheduler.js';
+
+export {
+  weCelebrationDailySweepV3,
+  triggerMorningCelebrations,
+  weCelebrationBatchedWishes,
+  executeBatchedWishes,
+} from './celebrations.js';

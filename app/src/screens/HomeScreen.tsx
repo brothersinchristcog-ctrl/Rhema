@@ -2780,58 +2780,64 @@ export default function HomeScreen() {
     if (!activeChurch?.id) return;
     try {
       const FirestoreService = require('../services/FirestoreService').default;
+      const {
+        getIstCalendarParts,
+        extractTodaysCelebrants,
+        matchesIstCelebrationDay,
+      } = require('../utils/celebrationDateHelper');
+
+      const ist = getIstCalendarParts();
       const allCelebs = await FirestoreService.getAllCelebrations(activeChurch.id);
-
-      const today = new Date();
-      const m = today.getMonth() + 1;
-      const d = today.getDate();
-
-      const todays = allCelebs.filter((c: any) => {
-        let isCeleb = false;
-        ['dob', 'anniversaryDate', 'baptismDate'].forEach(field => {
-          if (c[field]) {
-            const parts = c[field].split('-');
-            let mm, dd;
-            if (parts[0].length === 4) { mm = parseInt(parts[1], 10); dd = parseInt(parts[2], 10); }
-            else { dd = parseInt(parts[0], 10); mm = parseInt(parts[1], 10); }
-            if (mm === m && dd === d) isCeleb = true;
-          }
-        });
-        return isCeleb;
-      });
-
-
-      // Bulletproof check for the current user's own birthday
-      const todayMonthDay = `${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-      const isToday = (dateString?: string) => {
-        if (!dateString) return false;
-        const datePart = dateString.split('T')[0];
-        const parts = datePart.split(/[-/]/);
-        if (parts.length >= 3) {
-          let mm, dd;
-          if (parts[0].length === 4) {
-            mm = parts[1].padStart(2, '0');
-            dd = parts[2].padStart(2, '0');
-          } else {
-            dd = parts[0].padStart(2, '0');
-            mm = parts[1].padStart(2, '0');
-          }
-          return `${mm}-${dd}` === todayMonthDay;
-        }
-        return false;
-      };
+      const todays = extractTodaysCelebrants(allCelebs, ist);
 
       if (member) {
-        const isSelfBirthday = isToday((member as any).dob);
-        if (isSelfBirthday) {
-          const alreadyInTodays = todays.some((t: any) => t.Id === (member as any).id || t.Phone === (member as any).phone);
+        const mAny = member as any;
+        const selfChecks = [
+          {
+            raw: mAny.Birthdate || mAny.dob || mAny.birthdate || mAny.dateOfBirth || mAny.birthday,
+            suffix: 'bday',
+            type: 'Birthday',
+          },
+          {
+            raw: mAny.Anniversary_Date__c || mAny.anniversaryDate || mAny.marriageDate || mAny.weddingAnniversary || mAny.anniversary,
+            suffix: 'anniv',
+            type: 'Wedding Anniversary',
+          },
+          {
+            raw: mAny.Baptism_Date__c || mAny.baptismDate || mAny.baptism,
+            suffix: 'bap',
+            type: 'Baptism Anniversary',
+          },
+        ];
+
+        const selfId = String(mAny.id || mAny.Id || 'self');
+        const selfName = String(mAny.name || mAny.firstName || 'Member').trim();
+        const selfPhone10 = String(mAny.phone || mAny.mobile || '').replace(/\D/g, '').slice(-10);
+
+        for (const chk of selfChecks) {
+          if (!matchesIstCelebrationDay(chk.raw, ist)) continue;
+          const alreadyInTodays = todays.some(
+            (t: any) =>
+              t.type === chk.type &&
+              (t.memberId === selfId ||
+                t.Id === selfId ||
+                (selfPhone10 &&
+                  String(t.directPhone || t.Phone || t.phone || '')
+                    .replace(/\D/g, '')
+                    .slice(-10) === selfPhone10 &&
+                  String(t.Name || t.name || '').trim().toLowerCase() === selfName.toLowerCase()))
+          );
           if (!alreadyInTodays) {
             todays.push({
               ...member,
-              Id: (member as any).id || 'self',
-              Name: (member as any).name || (member as any).firstName || 'Member',
-              dob: (member as any).dob,
-              isSelf: true
+              id: `${selfId}_${chk.suffix}`,
+              memberId: selfId,
+              Id: selfId,
+              Name: selfName,
+              name: selfName,
+              type: chk.type,
+              celebrationType: chk.type,
+              isSelf: true,
             });
           }
         }
@@ -2923,7 +2929,8 @@ export default function HomeScreen() {
 
       if (liveCelebrations.length === 0 || !activeChurch?.id) return;
 
-      const todayStr = new Date().toISOString().split('T')[0];
+      const { getIstCalendarParts } = require('../utils/celebrationDateHelper');
+      const todayStr = getIstCalendarParts().dateStr;
       const unsubscribe = firestore()
         .collection('Rhema Church')
         .doc(activeChurch.id)
@@ -6236,7 +6243,12 @@ export default function HomeScreen() {
           <Animated.View style={{ transform: [{ scale: waveAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] }) }] }}>
             <TouchableOpacity
               activeOpacity={0.9}
-              onPress={() => navigation.navigate('LiveCelebrationsChat', { celebrations: liveCelebrations })}
+              onPress={() =>
+                navigation.navigate('LiveCelebrationsChat', {
+                  celebrations: liveCelebrations,
+                  churchId: activeChurch?.id,
+                })
+              }
               style={styles.floatingBtn}
             >
               <Animated.Text style={[styles.floatingEmoji, { opacity: emojiAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) }]}>

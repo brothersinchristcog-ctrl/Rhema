@@ -1711,7 +1711,6 @@ export default function UpdatesScreen({ navigation, route }: any) {
                   <Text style={[styles.emojiDecor, { fontSize: 44, marginTop: -15 }]}>🎂</Text>
                   <Text style={styles.emojiDecor}>🎈</Text>
                 </View>
-                <Sparkles size={32} color="#f59e0b" style={styles.sparkleIcon} />
                 <Text style={styles.celebrationTitleEn}>{t('updates.birthdayGreeting')}</Text>
                 <Text style={styles.celebrationTitleTe}>{t('updates.birthdaySubGreeting')}</Text>
                 <View style={styles.dividerGold} />
@@ -1735,7 +1734,6 @@ export default function UpdatesScreen({ navigation, route }: any) {
                   <Text style={[styles.emojiDecor, { fontSize: 44, marginTop: -15 }]}>💐</Text>
                   <Text style={styles.emojiDecor}>💖</Text>
                 </View>
-                <Sparkles size={32} color="#be185d" style={styles.sparkleIcon} />
                 <Text style={[styles.celebrationTitleEn, { color: '#be185d' }]}>{t('updates.anniversaryGreeting')}</Text>
                 <Text style={[styles.celebrationTitleTe, { color: '#be185d' }]}>{t('updates.anniversarySubGreeting')}</Text>
                 <View style={styles.dividerPink} />
@@ -1759,7 +1757,6 @@ export default function UpdatesScreen({ navigation, route }: any) {
                   <Text style={[styles.emojiDecor, { fontSize: 44, marginTop: -15 }]}>🎉</Text>
                   <Text style={styles.emojiDecor}>🕊️</Text>
                 </View>
-                <Sparkles size={32} color="#3b82f6" style={styles.sparkleIcon} />
                 <Text style={[styles.celebrationTitleEn, { color: '#3b82f6' }]}>{selectedUpdate?.title || t('updates.celebrationDefault')}</Text>
                 <View style={styles.dividerBlue} />
 
@@ -2812,13 +2809,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 15,
-    marginBottom: 10
+    marginBottom: 14
   },
   emojiDecor: {
     fontSize: 32,
-  },
-  sparkleIcon: {
-    marginBottom: 8
   },
   celebrationTitleEn: {
     fontSize: 20,

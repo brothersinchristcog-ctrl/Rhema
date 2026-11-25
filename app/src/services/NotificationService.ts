@@ -519,8 +519,14 @@ class NotificationService {
           nav.navigate('YouTubeLive', { url: liveUrl, videoId, title, churchId: targetChurchId });
           break;
         }
-        case 'LIVE_CELEBRATION':
-          nav.navigate('LiveCelebrationsChat', {});
+        case 'live_celebration':
+        case 'live_celebrations':
+          nav.navigate('LiveCelebrationsChat', {
+            churchId: rawData.churchId || undefined,
+            dateStr: rawData.dateStr || undefined,
+            celebrantId: rawData.celebrantId || undefined,
+            fromNotification: true,
+          });
           break;
         case 'new_church':
           nav.navigate('AdminRoot', { targetTab: 'App Admin' });

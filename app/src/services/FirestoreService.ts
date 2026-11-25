@@ -4583,20 +4583,16 @@ class FirestoreService {
 
   // --- 🎉 Celebrations ---
 
-  async getAllCelebrations(): Promise<any[]> {
-    const normalizeDate = (dateStr: string) => {
-      if (!dateStr) return null;
-      const parts = dateStr.split(/[-/]/);
-      if (parts.length < 3) return null;
-      if (parts[0].length === 4) {
-        return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-      } else if (parts[2].length === 4) {
-        return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-      }
-      return dateStr;
+  async getAllCelebrations(churchIdOverride?: string): Promise<any[]> {
+    const { parseCelebrationMonthDay } = require('../utils/celebrationDateHelper');
+    const normalizeDate = (rawVal: any) => {
+      const parsed = parseCelebrationMonthDay(rawVal);
+      if (!parsed) return null;
+      const y = parsed.year > 0 ? String(parsed.year).padStart(4, '0') : '2000';
+      return `${y}-${String(parsed.month).padStart(2, '0')}-${String(parsed.day).padStart(2, '0')}`;
     };
 
-    const churchKey = (await this.getChurchId()) || RHEMA_CHURCH_ID;
+    const churchKey = churchIdOverride || (await this.getChurchId()) || RHEMA_CHURCH_ID;
     const cached = this._celebrationsCache.get(churchKey);
     if (cached && Date.now() - cached.ts < 5 * 60_000) {
       return cached.list;
@@ -4626,10 +4622,10 @@ class FirestoreService {
             directPhone: directPhone,
             referencePhone: refPhone,
             isReferencePhone: !directPhone && !!refPhone, // true if phone is a parent reference
-            Birthdate: normalizeDate(data.dob || data.birthdate || data.dateOfBirth || data.birthday), // always YYYY-MM-DD
-            allBirthdates: [normalizeDate(data.dob), normalizeDate(data.birthdate), normalizeDate(data.dateOfBirth), normalizeDate(data.birthday)].filter(Boolean),
-            Anniversary_Date__c: normalizeDate(data.marriageDate || data.anniversaryDate || data.anniversary), // always YYYY-MM-DD
-            Baptism_Date__c: normalizeDate(data.baptismDate || data.baptism), // always YYYY-MM-DD
+            Birthdate: normalizeDate(data.Birthdate || data.dob || data.birthdate || data.dateOfBirth || data.birthday), // always YYYY-MM-DD
+            allBirthdates: [normalizeDate(data.Birthdate), normalizeDate(data.dob), normalizeDate(data.birthdate), normalizeDate(data.dateOfBirth), normalizeDate(data.birthday)].filter(Boolean),
+            Anniversary_Date__c: normalizeDate(data.Anniversary_Date__c || data.anniversaryDate || data.marriageDate || data.weddingAnniversary || data.anniversary), // always YYYY-MM-DD
+            Baptism_Date__c: normalizeDate(data.Baptism_Date__c || data.baptismDate || data.baptism), // always YYYY-MM-DD
             Gender__c: data.gender || data.Gender__c,
             AccountId: data.accountId || data.familyId || doc.id,
             ProfilePhoto: data.profilePhoto || data.photoURL || data.photoUrl || data.profileImageUrl || null
