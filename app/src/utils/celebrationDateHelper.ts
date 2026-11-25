@@ -185,3 +185,160 @@ export function extractTodaysCelebrants(allMembers: any[], ist: IstCalendarParts
 
   return result;
 }
+
+/**
+ * Returns crisp foreground text color for celebration card backgrounds.
+ * Prevents white-on-white unreadable text on light themes such as "Elegant White".
+ */
+export function getCelebrationCardTextColor(bgColors: string[], hasBgPhoto: boolean): string {
+  if (hasBgPhoto) return '#FFFFFF';
+  const hex = String(bgColors?.[0] || '').trim().replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return '#FFFFFF';
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.78 ? '#1E293B' : '#FFFFFF';
+}
+
+export interface CelebrationWhatsAppMessageParams {
+  memberName?: string | null;
+  nameOverlay?: string | null;
+  celebrationType?: string | null;
+  titleOverlay?: string | null;
+  dateStr?: string | null;
+  age?: number | string | null;
+  greetingMessage?: string | null;
+  verse?: { ref?: string | null; text?: string | null } | null;
+  churchName?: string | null;
+}
+
+function formatOrdinalSuffix(n: number): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  const lastDigit = n % 10;
+  if (lastDigit === 1) return `${n}st`;
+  if (lastDigit === 2) return `${n}nd`;
+  if (lastDigit === 3) return `${n}rd`;
+  return `${n}th`;
+}
+
+/**
+ * Normalizes a phone number into international digits (defaulting 10-digit numbers to India +91)
+ * for WhatsApp deep linking. Returns empty string when no dialable digits exist.
+ */
+export function formatWhatsAppPhoneNumber(rawPhone?: string | null): string {
+  const raw = String(rawPhone || '').trim();
+  if (!raw) return '';
+  let digits = raw.replace(/\D/g, '').replace(/^0+/, '');
+  if (!digits) return '';
+  if (digits.startsWith('910') && digits.length === 13) {
+    digits = `91${digits.slice(3)}`;
+  }
+  if (digits.length === 10) {
+    digits = `91${digits}`;
+  }
+  return digits.length >= 7 ? digits : '';
+}
+
+/**
+ * Builds the complete personalized WhatsApp celebration message including recipient name,
+ * celebration type & date/milestone details, prepared greeting, Scripture verse, and church sign-off.
+ */
+export function buildCelebrationWhatsAppMessage(params: CelebrationWhatsAppMessageParams): string {
+  const recipientName =
+    String(params.nameOverlay || '').trim() ||
+    String(params.memberName || '').trim() ||
+    'Dear Member';
+
+  const rawCategory = String(params.celebrationType || 'Birthday').trim() || 'Birthday';
+  const lowerCategory = rawCategory.toLowerCase();
+  const isWeddingAnniversary =
+    lowerCategory.includes('wedding') ||
+    (lowerCategory.includes('anniversary') && !lowerCategory.includes('baptism'));
+  const isBaptismAnniversary = lowerCategory.includes('baptism');
+
+  const emoji = isWeddingAnniversary ? '💐' : isBaptismAnniversary ? '🕊️' : '🎂';
+  const canonicalCategory = isWeddingAnniversary
+    ? 'Wedding Anniversary'
+    : isBaptismAnniversary
+      ? 'Baptism Anniversary'
+      : 'Birthday';
+
+  const title = String(params.titleOverlay || '').trim() || `Happy ${canonicalCategory}!`;
+  const cleanDate = String(params.dateStr || '').trim();
+  const datePart = cleanDate && cleanDate !== '--' ? cleanDate : '';
+
+  const rawAge = params.age;
+  const parsedAge = rawAge !== undefined && rawAge !== null && String(rawAge).trim() !== '' ? Number(rawAge) : NaN;
+  let milestonePart = '';
+  if (!Number.isNaN(parsedAge) && parsedAge > 0) {
+    if (isWeddingAnniversary) {
+      milestonePart = `${formatOrdinalSuffix(parsedAge)} Anniversary`;
+    } else if (isBaptismAnniversary) {
+      milestonePart = `${parsedAge} ${parsedAge === 1 ? 'yr' : 'yrs'} in Christ`;
+    } else {
+      milestonePart = `Turning ${parsedAge} yrs`;
+    }
+  }
+
+  const detailSegments = [canonicalCategory, datePart, milestonePart].filter(Boolean);
+  const firstName = recipientName.split(/\s+/)[0] || recipientName;
+
+  let body = String(params.greetingMessage || '').trim();
+  if (!body) {
+    if (isWeddingAnniversary) {
+      body = `Dear ${firstName}, wishing you a joyful Wedding Anniversary! May God continue to bless your marriage with love, peace, and happiness.`;
+    } else if (isBaptismAnniversary) {
+      body = `Dear ${firstName}, happy Baptism Anniversary! May you continue to grow in faith and walk in God's grace.`;
+    } else {
+      body = `Dear ${firstName}, wishing you a joy-filled birthday surrounded by God's love and grace. May this new year of life be your best yet!`;
+    }
+  }
+
+  const lines: string[] = [
+    'Praise the Lord! 🙏',
+    '',
+    `${emoji} *${title}*`,
+    `*For:* ${recipientName}`,
+    `*Celebration:* ${detailSegments.join(' • ')}`,
+    '',
+    body,
+  ];
+
+  const verseText = String(params.verse?.text || '').trim();
+  const verseRef = String(params.verse?.ref || '').trim();
+  if (verseText) {
+    lines.push('');
+    lines.push(`_"${verseText}"_${verseRef ? `\n— ${verseRef}` : ''}`);
+  }
+
+  const church = String(params.churchName || '').trim() || 'Your Church';
+  lines.push('');
+  lines.push(`With Love ❤️\n${church}`);
+
+  return lines.join('\n');
+}
+
+/**
+ * Builds properly URI-encoded WhatsApp deep links (`whatsapp://send`, `api.whatsapp.com`, `wa.me`).
+ */
+export function buildWhatsAppDeepLinkUrls(
+  formattedPhone: string,
+  messageText: string
+): { schemeUrl: string; apiUrl: string; waMeUrl: string } {
+  const cleanPhone = String(formattedPhone || '').replace(/\D/g, '');
+  const trimmedText = String(messageText || '').trim();
+  const encodedText = encodeURIComponent(trimmedText);
+  const phonePrefix = cleanPhone ? `phone=${cleanPhone}&` : '';
+
+  return {
+    schemeUrl: `whatsapp://send?${phonePrefix}text=${encodedText}`,
+    apiUrl: `https://api.whatsapp.com/send?${phonePrefix}text=${encodedText}`,
+    waMeUrl: cleanPhone
+      ? `https://wa.me/${cleanPhone}?text=${encodedText}`
+      : `https://wa.me/?text=${encodedText}`,
+  };
+}
+
+

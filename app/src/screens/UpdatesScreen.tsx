@@ -835,11 +835,33 @@ export default function UpdatesScreen({ navigation, route }: any) {
       icon = Droplets;
       color = '#0284c7';
       resolvedType = 'baptism';
+    } else if (data.type === 'celebration') {
+      const catHint = String(data.celebrationCategory || data.category || '').toLowerCase();
+      const titleHint = String(data.title || '').toLowerCase();
+      if (catHint.includes('birthday') || data.title?.includes('🎂') || titleHint.includes('birthday')) {
+        icon = Gift;
+        color = '#d97706';
+        resolvedType = 'birthday';
+      } else if (
+        catHint.includes('wedding') ||
+        (catHint.includes('anniversary') && !catHint.includes('baptism')) ||
+        data.title?.includes('💐') ||
+        data.title?.includes('💒') ||
+        (titleHint.includes('anniversary') && !titleHint.includes('baptism'))
+      ) {
+        icon = Heart;
+        color = '#be185d';
+        resolvedType = 'anniversary';
+      } else {
+        icon = Sparkles;
+        color = '#3b82f6';
+        resolvedType = 'celebration';
+      }
     } else if (data.type === 'birthday') {
       icon = Gift;
       color = '#d97706';
       resolvedType = 'birthday';
-    } else if (data.type === 'baptism_anniversary' || data.type === 'celebration' || (data.type === 'baptism' && data.isCelebration)) {
+    } else if (data.type === 'baptism_anniversary' || (data.type === 'baptism' && data.isCelebration)) {
       icon = Sparkles;
       color = '#3b82f6';
       resolvedType = 'celebration';
@@ -1708,21 +1730,28 @@ export default function UpdatesScreen({ navigation, route }: any) {
               <View style={styles.celebrationContainer}>
                 <View style={styles.balloonRow}>
                   <Text style={styles.emojiDecor}>🎈</Text>
-                  <Text style={[styles.emojiDecor, { fontSize: 44, marginTop: -15 }]}>🎂</Text>
+                  <Text style={[styles.emojiDecor, { fontSize: 44, marginTop: -12 }]}>🎂</Text>
                   <Text style={styles.emojiDecor}>🎈</Text>
                 </View>
                 <Text style={styles.celebrationTitleEn}>{t('updates.birthdayGreeting')}</Text>
                 <Text style={styles.celebrationTitleTe}>{t('updates.birthdaySubGreeting')}</Text>
                 <View style={styles.dividerGold} />
 
-                <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+                <ScrollView
+                  style={styles.modalScroll}
+                  contentContainerStyle={styles.modalScrollContent}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {selectedUpdate?.imageUrl && (
+                    <Image source={{ uri: selectedUpdate.imageUrl }} style={styles.modalImage} resizeMode="contain" />
+                  )}
                   <Text style={styles.celebrationGreeting}>
                     {selectedUpdate?.content}
                   </Text>
                 </ScrollView>
 
                 <View style={styles.celebrationFooter}>
-                  <Gift size={24} color="#b45309" />
+                  <Gift size={22} color="#b45309" />
                   <Text style={styles.footerBlessing}>{t('updates.birthdayBlessing')}</Text>
                 </View>
               </View>
@@ -1731,21 +1760,28 @@ export default function UpdatesScreen({ navigation, route }: any) {
               <View style={styles.celebrationContainer}>
                 <View style={styles.balloonRow}>
                   <Text style={styles.emojiDecor}>💖</Text>
-                  <Text style={[styles.emojiDecor, { fontSize: 44, marginTop: -15 }]}>💐</Text>
+                  <Text style={[styles.emojiDecor, { fontSize: 44, marginTop: -12 }]}>💐</Text>
                   <Text style={styles.emojiDecor}>💖</Text>
                 </View>
                 <Text style={[styles.celebrationTitleEn, { color: '#be185d' }]}>{t('updates.anniversaryGreeting')}</Text>
                 <Text style={[styles.celebrationTitleTe, { color: '#be185d' }]}>{t('updates.anniversarySubGreeting')}</Text>
                 <View style={styles.dividerPink} />
 
-                <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+                <ScrollView
+                  style={styles.modalScroll}
+                  contentContainerStyle={styles.modalScrollContent}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {selectedUpdate?.imageUrl && (
+                    <Image source={{ uri: selectedUpdate.imageUrl }} style={styles.modalImage} resizeMode="contain" />
+                  )}
                   <Text style={[styles.celebrationGreeting, { color: '#85144b' }]}>
                     {selectedUpdate?.content}
                   </Text>
                 </ScrollView>
 
                 <View style={styles.celebrationFooter}>
-                  <Heart size={24} color="#be185d" strokeWidth={2} />
+                  <Heart size={22} color="#be185d" strokeWidth={2} />
                   <Text style={[styles.footerBlessing, { color: '#be185d' }]}>{t('updates.anniversaryBlessing')}</Text>
                 </View>
               </View>
@@ -1754,15 +1790,19 @@ export default function UpdatesScreen({ navigation, route }: any) {
               <View style={styles.celebrationContainer}>
                 <View style={styles.balloonRow}>
                   <Text style={styles.emojiDecor}>🕊️</Text>
-                  <Text style={[styles.emojiDecor, { fontSize: 44, marginTop: -15 }]}>🎉</Text>
+                  <Text style={[styles.emojiDecor, { fontSize: 44, marginTop: -12 }]}>🎉</Text>
                   <Text style={styles.emojiDecor}>🕊️</Text>
                 </View>
                 <Text style={[styles.celebrationTitleEn, { color: '#3b82f6' }]}>{selectedUpdate?.title || t('updates.celebrationDefault')}</Text>
                 <View style={styles.dividerBlue} />
 
-                <ScrollView style={[styles.modalScroll, { maxHeight: 400 }]} showsVerticalScrollIndicator={false}>
+                <ScrollView
+                  style={styles.modalScroll}
+                  contentContainerStyle={styles.modalScrollContent}
+                  showsVerticalScrollIndicator={false}
+                >
                   {selectedUpdate?.imageUrl && (
-                    <Image source={{ uri: selectedUpdate.imageUrl }} style={styles.modalImage} resizeMode="cover" />
+                    <Image source={{ uri: selectedUpdate.imageUrl }} style={styles.modalImage} resizeMode="contain" />
                   )}
                   <Text style={[styles.celebrationGreeting, { color: '#1e3a8a' }]}>
                     {selectedUpdate?.content}
@@ -2758,13 +2798,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 24,
     width: '100%',
-    maxHeight: '80%',
-    padding: 24,
+    maxHeight: '85%',
+    padding: 20,
     elevation: 20,
     shadowColor: '#000',
     shadowOpacity: 0.25,
     shadowRadius: 15,
-    position: 'relative'
+    position: 'relative',
+    overflow: 'hidden'
   },
   modalCardBirthday: {
     backgroundColor: '#fffdf5',
@@ -2803,13 +2844,16 @@ const styles = StyleSheet.create({
   // Birthday & Anniversary Styles
   celebrationContainer: {
     alignItems: 'center',
-    paddingTop: 10
+    paddingTop: 8,
+    maxHeight: '100%',
+    flexShrink: 1,
+    width: '100%'
   },
   balloonRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 15,
-    marginBottom: 14
+    marginBottom: 10
   },
   emojiDecor: {
     fontSize: 32,
@@ -2833,51 +2877,55 @@ const styles = StyleSheet.create({
     height: 2,
     backgroundColor: '#f59e0b',
     width: 80,
-    marginVertical: 16,
+    marginVertical: 12,
     borderRadius: 1
   },
   dividerPink: {
     height: 2,
     backgroundColor: '#fda4af',
     width: 80,
-    marginVertical: 16,
+    marginVertical: 12,
     borderRadius: 1
   },
   dividerBlue: {
     height: 2,
     backgroundColor: '#3b82f6',
     width: 80,
-    marginVertical: 16,
+    marginVertical: 12,
     borderRadius: 1
   },
   modalScroll: {
     width: '100%',
-    maxHeight: 400,
-    marginVertical: 10
+    flexGrow: 0,
+    flexShrink: 1,
+    marginVertical: 6
+  },
+  modalScrollContent: {
+    alignItems: 'center',
+    paddingBottom: 6
   },
   modalImage: {
     width: '100%',
-    height: 220,
+    height: 250,
     borderRadius: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0'
+    marginBottom: 14
   },
   celebrationGreeting: {
     fontSize: 14,
     color: '#78350f',
     textAlign: 'center',
-    lineHeight: 24,
+    lineHeight: 22,
     fontWeight: '600',
     paddingHorizontal: 8
   },
   celebrationFooter: {
-    marginTop: 20,
+    marginTop: 10,
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
     borderTopWidth: 0.5,
     borderTopColor: '#f59e0b',
-    paddingTop: 16,
+    paddingTop: 12,
+    paddingBottom: 2,
     width: '100%'
   },
   footerBlessing: {
