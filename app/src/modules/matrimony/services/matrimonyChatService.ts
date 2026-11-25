@@ -1,4 +1,5 @@
 import nativeAuth from '@react-native-firebase/auth';
+import { AppState } from 'react-native';
 import type { Database } from 'firebase/database';
 import {
   endAt,
@@ -165,11 +166,71 @@ export const matrimonyChatService = {
 
     const cleanup = () => {
       unsub();
-      _presenceUid = null;
-      _presenceCleanup = null;
+      if (_presenceCleanup === cleanup) {
+        _presenceUid = null;
+        _presenceCleanup = null;
+      }
+      set(presenceRef, {
+        online: false,
+        lastSeen: serverTimestamp(),
+        activeChatId: null,
+      }).catch(() => {});
     };
     _presenceCleanup = cleanup;
     return cleanup;
+  },
+
+  startRootPresenceSession(uid: string): () => void {
+    if (!uid) return () => {};
+    const db = getMatrimonyRtdb();
+    const presenceRef = ref(db, `matrimony_presence/${uid}`);
+    const stopBase = this.startPresenceTracking(uid, null);
+
+    const markOffline = () => {
+      set(presenceRef, {
+        online: false,
+        lastSeen: serverTimestamp(),
+        activeChatId: null,
+      }).catch(() => {});
+    };
+
+    const markOnline = () => {
+      onDisconnect(presenceRef)
+        .set({
+          online: false,
+          lastSeen: serverTimestamp(),
+          activeChatId: null,
+        })
+        .catch(() => {});
+      update(presenceRef, {
+        online: true,
+        lastSeen: serverTimestamp(),
+      }).catch(() => {});
+    };
+
+    const appStateSub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        markOnline();
+      } else {
+        markOffline();
+      }
+    });
+
+    return () => {
+      appStateSub.remove();
+      stopBase();
+      markOffline();
+    };
+  },
+
+  setOffline(uid: string) {
+    if (!uid) return;
+    const db = getMatrimonyRtdb();
+    set(ref(db, `matrimony_presence/${uid}`), {
+      online: false,
+      lastSeen: serverTimestamp(),
+      activeChatId: null,
+    }).catch(() => {});
   },
 
   setActiveChatRoom(uid: string, roomId: string | null) {

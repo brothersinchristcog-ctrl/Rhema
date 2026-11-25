@@ -167,6 +167,8 @@ export interface MatrimonyProfile {
     food?: string[];
     languages?: string[];
   };
+  matrimonyId?: string;
+  profileCode?: string;
   profilePhoto?: string | null;
   signedProfilePhoto?: string | null;
   gallery?: string[];
@@ -356,6 +358,8 @@ export interface AdminMatrimonyCounts {
 }
 
 export interface AdminMatrimonyProfileSummary extends MatrimonyProfile {
+  matrimonyId?: string;
+  profileCode?: string;
   signedPhoto?: string | null;
   submittedAt?: any;
   updatedAt?: any;
@@ -599,6 +603,10 @@ export interface GetMatrimonyInterestsHubResponse {
 
 export interface AdminSubscriptionItem {
   uid: string;
+  memberName?: string | null;
+  memberProfileCode?: string | null;
+  memberCity?: string | null;
+  memberPhone?: string | null;
   subscriptionId: string;
   planId: string;
   planName: string;
@@ -616,13 +624,22 @@ export interface AdminSubscriptionItem {
 export interface AdminPaymentHistoryItem {
   id: string;
   uid: string;
+  memberName?: string | null;
+  memberProfileCode?: string | null;
+  memberCity?: string | null;
+  memberPhone?: string | null;
   planId: string;
+  planName?: string | null;
   tier: string;
+  durationMonths?: number | null;
   amountInr: number;
   status: string;
   source: string;
   paymentId: string | null;
   orderId: string | null;
+  note?: string | null;
+  startDateMs?: number | null;
+  expiryDateMs?: number | null;
   createdAtMs: number;
 }
 

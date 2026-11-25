@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,8 +7,11 @@ import {
   ScrollView,
   StatusBar,
   Image,
+  ImageBackground,
   Alert,
   RefreshControl,
+  Linking,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -22,11 +25,13 @@ import {
   Menu,
   Search,
   Camera,
+  Check,
   HeartHandshake,
   Users,
   Home,
   Heart,
   MessageCircle,
+  Phone,
   Crown,
   ChevronRight,
   ArrowLeft,
@@ -49,6 +54,7 @@ import {
   GetMatrimonyMatchesResponse,
   MatrimonyMatchCandidate,
   MatrimonyMatchTab,
+  MatrimonyPlanSpec,
   MatrimonyStatusResponse,
   StartRegistrationResponse,
 } from '../types/matrimony';
@@ -56,6 +62,15 @@ import {
 const ORANGE = '#EA580C';
 const VIEW_ALL_MEN_IMG = require('../../../../assets/matrimony_viewall_men.jpg');
 const VIEW_ALL_WOMEN_IMG = require('../../../../assets/matrimony_viewall_women.jpg');
+const PAID_MEMBER_BANNER_MEN_IMG = require('../../../../assets/matrimony_paid_member_men.jpg');
+const PAID_MEMBER_BANNER_WOMEN_IMG = require('../../../../assets/matrimony_paid_member_banner.jpg');
+const PAID_MEMBER_BANNER_ASPECT = 879 / 1024;
+const PAID_MEMBER_POINTS = [
+  'Chat & call matches',
+  'Unlimited messages',
+  'Higher chances of response',
+  'Priority profile visibility',
+] as const;
 const HOME_MATCHES_PARAMS = {
   tab: 'all' as const,
   matchBasis: 'partner_preferences' as const,
@@ -114,6 +129,7 @@ function dedupeCandidates(list: MatrimonyMatchCandidate[]): MatrimonyMatchCandid
 
 export default function MatrimonyHomeScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
   const { member, user } = useAuth();
   const { colors, isDark, fontStyle, scaleFont } = useTheme();
   const fontFamily = FONT_STYLE_OPTIONS.find((f) => f.id === fontStyle)?.family;
@@ -136,6 +152,9 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
   const [viewedByYouData, setViewedByYouData] = useState<GetMatrimonyMatchesResponse | null>(() =>
     matrimonyApi.getCachedMatches(HOME_VIEWED_BY_YOU_PARAMS)
   );
+  const [plans, setPlans] = useState<MatrimonyPlanSpec[]>(
+    () => matrimonyApi.getCachedPlans() || []
+  );
   const [unreadNotifCount, setUnreadNotifCount] = useState<number>(() =>
     matrimonyApi.getCachedNotificationsFeed()?.unreadCount || 0
   );
@@ -144,6 +163,11 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
   );
   const [refreshing, setRefreshing] = useState(false);
   const initialLoadRecordedRef = useRef(false);
+
+  const platinumDiscountPercent = useMemo(
+    () => matrimonyApi.getPlatinumDiscountPercent(plans),
+    [plans]
+  );
 
   const loadHomeData = useCallback(
     async (force = false) => {
@@ -154,6 +178,12 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
       let redirected = false;
       try {
         await matrimonyApi.hydrateCacheFromStorage();
+        matrimonyApi
+          .getPlans({ force })
+          .then((list) => {
+            if (Array.isArray(list)) setPlans(list);
+          })
+          .catch(() => undefined);
 
         // Single consolidated RPC (falls back automatically to parallel RPCs if not yet deployed)
         try {
@@ -331,6 +361,7 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
       const cachedViewedYou = matrimonyApi.getCachedMatches(HOME_VIEWED_YOU_PARAMS);
       const cachedViewedByYou = matrimonyApi.getCachedMatches(HOME_VIEWED_BY_YOU_PARAMS);
       const cachedNotifs = matrimonyApi.getCachedNotificationsFeed();
+      const cachedPlans = matrimonyApi.getCachedPlans();
       if (cachedStatus) setStatusData(cachedStatus);
       if (cachedReg) setRegData(cachedReg);
       if (cachedMatches) setMatchesData(cachedMatches);
@@ -338,11 +369,16 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
       if (cachedViewedYou) setViewedYouData(cachedViewedYou);
       if (cachedViewedByYou) setViewedByYouData(cachedViewedByYou);
       if (cachedNotifs) setUnreadNotifCount(cachedNotifs.unreadCount);
+      if (cachedPlans) setPlans(cachedPlans);
       loadHomeData(false);
+    });
+    const unsubPlans = matrimonyApi.subscribePlansUpdated((updatedPlans) => {
+      setPlans(updatedPlans);
     });
     return () => {
       clearTimeout(prefetchTimer);
       unsub();
+      unsubPlans();
     };
   }, [loadHomeData, navigation]);
 
@@ -413,6 +449,9 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
   const hasVisibleActionCards = showFamilyCard || showInterestsCard || showPhotosCard;
 
   const handleBackToChurchApp = () => {
+    if (user?.uid) {
+      matrimonyChatService.setOffline(user.uid);
+    }
     const parentNav = navigation.getParent();
     if (parentNav) {
       parentNav.goBack();
@@ -862,6 +901,9 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
             viewerGenderNorm === 'woman' ||
             targetGenderNorm === 'male';
           const viewAllBlurSource = showMenBlur ? VIEW_ALL_MEN_IMG : VIEW_ALL_WOMEN_IMG;
+          const paidBannerSource = showMenBlur
+            ? PAID_MEMBER_BANNER_MEN_IMG
+            : PAID_MEMBER_BANNER_WOMEN_IMG;
 
           const sections: {
             key: MatrimonyMatchTab;
@@ -918,28 +960,28 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
             const showViewAllBlurCard = sec.totalCount > 3 && sec.totalCount > sec.preview.length;
 
             return (
-              <View
-                key={sec.key}
-                style={[
-                  styles.matchesSection,
-                  secIdx > 0 && {
-                    borderTopWidth: StyleSheet.hairlineWidth,
-                    borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : '#E5E7EB',
-                  },
-                  { backgroundColor: colors.bg },
-                ]}
-              >
-                <View style={styles.matchesHeader}>
-                  <Text
-                    style={[
-                      styles.matchesHeading,
-                      { color: colors.text, fontFamily, fontSize: scaleFont(17.5) },
-                    ]}
-                  >
-                    {sec.title} ({sec.totalCount.toLocaleString()})
-                  </Text>
-                  <Text
-                    style={[
+              <React.Fragment key={sec.key}>
+                <View
+                  style={[
+                    styles.matchesSection,
+                    secIdx > 0 && {
+                      borderTopWidth: StyleSheet.hairlineWidth,
+                      borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : '#E5E7EB',
+                    },
+                    { backgroundColor: colors.bg },
+                  ]}
+                >
+                  <View style={styles.matchesHeader}>
+                    <Text
+                      style={[
+                        styles.matchesHeading,
+                        { color: colors.text, fontFamily, fontSize: scaleFont(17.5) },
+                      ]}
+                    >
+                      {sec.title} ({sec.totalCount.toLocaleString()})
+                    </Text>
+                    <Text
+                      style={[
                       styles.matchesSubheading,
                       { color: colors.textSecondary, fontFamily, fontSize: scaleFont(13) },
                     ]}
@@ -1106,9 +1148,152 @@ export default function MatrimonyHomeScreen({ navigation }: any) {
                   <ChevronRight size={16} color={ORANGE} strokeWidth={2.3} />
                 </TouchableOpacity>
               </View>
+
+              {sec.key === 'all' ? (
+                <ImageBackground
+                  source={paidBannerSource}
+                  resizeMode="cover"
+                  style={[
+                    styles.paidMemberBanner,
+                    { width: windowWidth },
+                  ]}
+                >
+                  <View style={styles.paidOfferHeaderBlock}>
+                    {platinumDiscountPercent > 0 ? (
+                      <>
+                        <Text
+                          style={[
+                            styles.paidOfferLine,
+                            { fontFamily, fontSize: scaleFont(15) },
+                          ]}
+                        >
+                          {'Get up to '}
+                          <Text
+                            style={[
+                              styles.paidOfferPercent,
+                              { fontFamily, fontSize: scaleFont(20.5) },
+                            ]}
+                          >
+                            {`${platinumDiscountPercent}% OFF`}
+                          </Text>
+                        </Text>
+                        <Text
+                          style={[
+                            styles.paidOfferLine,
+                            { fontFamily, fontSize: scaleFont(15) },
+                          ]}
+                        >
+                          on paid membership!
+                        </Text>
+                      </>
+                    ) : (
+                      <>
+                        <Text
+                          style={[
+                            styles.paidOfferLine,
+                            { fontFamily, fontSize: scaleFont(15) },
+                          ]}
+                        >
+                          {'Unlock '}
+                          <Text
+                            style={[
+                              styles.paidOfferPercent,
+                              { fontFamily, fontSize: scaleFont(18) },
+                            ]}
+                          >
+                            exclusive benefits
+                          </Text>
+                        </Text>
+                        <Text
+                          style={[
+                            styles.paidOfferLine,
+                            { fontFamily, fontSize: scaleFont(15) },
+                          ]}
+                        >
+                          with paid membership!
+                        </Text>
+                      </>
+                    )}
+                  </View>
+
+                  <View
+                    style={[
+                      styles.paidLowerBlock,
+                      { width: showMenBlur ? '60%' : '62%' },
+                    ]}
+                  >
+                    <View style={styles.paidBulletsList}>
+                      {PAID_MEMBER_POINTS.map((point) => (
+                        <View key={point} style={styles.paidBulletRow}>
+                          <Check
+                            size={14}
+                            color="#1F2937"
+                            strokeWidth={2.3}
+                            style={styles.paidBulletIcon}
+                          />
+                          <Text
+                            style={[
+                              styles.paidBulletText,
+                              { fontFamily, fontSize: scaleFont(12.8) },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {point}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.paidCtaBtn}
+                      activeOpacity={0.86}
+                      onPress={() => navigation.navigate('MatrimonyUpgrade')}
+                    >
+                      <Text
+                        style={[
+                          styles.paidCtaBtnText,
+                          { fontFamily, fontSize: scaleFont(12) },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        See membership plans
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </ImageBackground>
+              ) : null}
+            </React.Fragment>
             );
           });
         })()}
+
+        {/* ── Need help card ── */}
+        <View style={styles.helpCard}>
+          <Text style={[styles.helpCardTitle, { fontFamily }]}>
+            {'Need help in using\nRhema Matrimony?'}
+          </Text>
+          <Text style={[styles.helpCardSubtitle, { fontFamily }]}>
+            Reach out to us on this number or chat with us
+          </Text>
+          <View style={styles.helpCardBtns}>
+            <TouchableOpacity
+              style={styles.helpCardBtn}
+              activeOpacity={0.8}
+              onPress={() => Linking.openURL('tel:+919876543210')}
+            >
+              <Phone size={15} color="#C0392B" strokeWidth={2.2} />
+              <Text style={[styles.helpCardBtnText, { fontFamily }]}>Call now</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.helpCardBtn}
+              activeOpacity={0.8}
+              onPress={() => Linking.openURL('https://wa.me/919876543210')}
+            >
+              <MessageCircle size={15} color="#C0392B" strokeWidth={2.2} />
+              <Text style={[styles.helpCardBtnText, { fontFamily }]}>Chat with us</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </ScrollView>
     </View>
   );
@@ -1443,4 +1628,117 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   navLabel: { fontSize: 11 },
+  paidMemberBanner: {
+    aspectRatio: PAID_MEMBER_BANNER_ASPECT,
+    marginTop: 6,
+    marginBottom: 6,
+    overflow: 'hidden',
+  },
+  paidOfferHeaderBlock: {
+    position: 'absolute',
+    top: '21%',
+    left: 20,
+    width: '62%',
+  },
+  paidLowerBlock: {
+    position: 'absolute',
+    top: '43%',
+    left: 18,
+    bottom: '4%',
+  },
+  paidOfferLine: {
+    color: '#1F2937',
+    fontWeight: '500',
+    lineHeight: 23,
+  },
+  paidOfferPercent: {
+    color: '#E06014',
+    fontWeight: '900',
+    letterSpacing: -0.3,
+  },
+  paidBulletsList: {
+    gap: 11,
+    marginBottom: 18,
+  },
+  paidBulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  paidBulletIcon: {
+    marginTop: 2.5,
+  },
+  paidBulletText: {
+    flex: 1,
+    color: '#111827',
+    fontWeight: '600',
+    lineHeight: 19,
+  },
+  paidCtaBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#DF5F16',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 24,
+    shadowColor: '#DF5F16',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.22,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  paidCtaBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  helpCard: {
+    marginHorizontal: 16,
+    marginTop: 20,
+    marginBottom: 24,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 20,
+    paddingVertical: 22,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  helpCardTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#111827',
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 8,
+  },
+  helpCardSubtitle: {
+    fontSize: 13.5,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 18,
+  },
+  helpCardBtns: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  helpCardBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    borderWidth: 1.5,
+    borderColor: '#C0392B',
+    borderRadius: 24,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+  },
+  helpCardBtnText: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: '#C0392B',
+  },
 });

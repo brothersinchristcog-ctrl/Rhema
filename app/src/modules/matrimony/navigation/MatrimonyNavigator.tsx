@@ -7,6 +7,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import MatrimonyBottomTabBar from '../components/MatrimonyBottomTabBar';
 import MatrimonyMenuDrawer from '../components/MatrimonyMenuDrawer';
 import { matrimonyApi } from '../services/matrimonyApi';
+import { matrimonyChatService } from '../services/matrimonyChatService';
 import MatrimonySplashScreen from '../screens/MatrimonySplashScreen';
 import MatrimonyWelcomeScreen from '../screens/MatrimonyWelcomeScreen';
 import MatrimonyBasicDetailsScreen from '../screens/MatrimonyBasicDetailsScreen';
@@ -149,6 +150,36 @@ export default function MatrimonyNavigator() {
 
     return () => {
       unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    let stopRootPresence: (() => void) | null = null;
+    let activeUid: string | null = null;
+
+    const syncForUser = (nextUid: string | null) => {
+      if (activeUid === nextUid) return;
+      if (stopRootPresence) {
+        stopRootPresence();
+        stopRootPresence = null;
+      }
+      activeUid = nextUid;
+      if (nextUid) {
+        stopRootPresence = matrimonyChatService.startRootPresenceSession(nextUid);
+      }
+    };
+
+    syncForUser(auth().currentUser?.uid || null);
+    const unsubAuth = auth().onAuthStateChanged((u) => {
+      syncForUser(u?.uid || null);
+    });
+
+    return () => {
+      unsubAuth();
+      if (stopRootPresence) {
+        stopRootPresence();
+        stopRootPresence = null;
+      }
     };
   }, []);
 

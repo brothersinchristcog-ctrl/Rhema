@@ -1,14 +1,18 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Crown, Heart, Home, MessageCircle, Users } from 'lucide-react-native';
 import { useAuth } from '../../../context/AuthContext';
 import { FONT_STYLE_OPTIONS, useTheme } from '../../../context/ThemeContext';
+import { matrimonyApi } from '../services/matrimonyApi';
 import { matrimonyChatService } from '../services/matrimonyChatService';
+import { MatrimonyPlanSpec } from '../types/matrimony';
 
 const ORANGE = '#EA580C';
 const WHATSAPP_GREEN = '#00A884';
+const UPGRADE_BADGE_GRADIENT: readonly [string, string] = ['#221F8A', '#6D0F49'];
 
 const TAB_ITEMS = [
   { key: 'Home', routeName: 'MatrimonyHome', label: 'Home', Icon: Home },
@@ -24,6 +28,29 @@ export default function MatrimonyBottomTabBar({ state, navigation }: BottomTabBa
   const { colors, fontStyle } = useTheme();
   const fontFamily = FONT_STYLE_OPTIONS.find((f) => f.id === fontStyle)?.family;
   const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const [plans, setPlans] = useState<MatrimonyPlanSpec[]>(
+    () => matrimonyApi.getCachedPlans() || []
+  );
+
+  useEffect(() => {
+    const unsubPlans = matrimonyApi.subscribePlansUpdated((updated) => {
+      setPlans(updated);
+    });
+    if (!matrimonyApi.getCachedPlans()) {
+      matrimonyApi
+        .getPlans({ force: false })
+        .then((list) => {
+          if (Array.isArray(list)) setPlans(list);
+        })
+        .catch(() => undefined);
+    }
+    return unsubPlans;
+  }, []);
+
+  const platinumDiscountPercent = useMemo(
+    () => matrimonyApi.getPlatinumDiscountPercent(plans),
+    [plans]
+  );
 
   useEffect(() => {
     const uid = user?.uid;
@@ -65,6 +92,8 @@ export default function MatrimonyBottomTabBar({ state, navigation }: BottomTabBa
           }
         };
 
+        const showUpgradeOffer = key === 'Upgrade' && platinumDiscountPercent > 0;
+
         return (
           <TouchableOpacity
             key={key}
@@ -72,13 +101,25 @@ export default function MatrimonyBottomTabBar({ state, navigation }: BottomTabBa
             onPress={handlePress}
             activeOpacity={0.8}
           >
-            <View style={{ position: 'relative' }}>
+            <View style={showUpgradeOffer ? styles.upgradeIconStack : styles.iconWrap}>
               <Icon size={20} color={isActive ? ORANGE : colors.textSecondary} />
               {badge > 0 && (
                 <View style={styles.navBadge}>
                   <Text style={styles.navBadgeText}>{badge > 99 ? '99+' : badge}</Text>
                 </View>
               )}
+              {showUpgradeOffer ? (
+                <LinearGradient
+                  colors={UPGRADE_BADGE_GRADIENT}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={styles.upgradeOffBadge}
+                >
+                  <Text style={[styles.upgradeOffBadgeText, { fontFamily }]}>
+                    {`${platinumDiscountPercent}% OFF`}
+                  </Text>
+                </LinearGradient>
+              ) : null}
             </View>
             <Text
               style={[
@@ -88,6 +129,7 @@ export default function MatrimonyBottomTabBar({ state, navigation }: BottomTabBa
                   fontWeight: isActive ? '800' : '600',
                   fontFamily,
                 },
+                showUpgradeOffer && styles.upgradeNavLabelTight,
               ]}
             >
               {label}
@@ -108,11 +150,16 @@ const styles = StyleSheet.create({
   navItem: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
     gap: 3,
+    paddingTop: 2,
   },
   navLabel: {
     fontSize: 11,
+    includeFontPadding: false,
+  },
+  upgradeNavLabelTight: {
+    marginTop: -2,
   },
   navBadge: {
     position: 'absolute',
@@ -130,5 +177,30 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 9.5,
     fontWeight: '800',
+  },
+  iconWrap: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  upgradeIconStack: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  upgradeOffBadge: {
+    marginTop: -4,
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  upgradeOffBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 8.5,
+    fontWeight: '900',
+    letterSpacing: 0.2,
+    lineHeight: 11,
+    includeFontPadding: false,
   },
 });

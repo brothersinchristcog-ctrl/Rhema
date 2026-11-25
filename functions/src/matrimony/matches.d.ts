@@ -556,7 +556,7 @@ export declare const getMatrimonyInterestsHub: import("firebase-functions/v2/htt
 }>, unknown>;
 /**
  * 6. respondMatrimonyInterest
- * Accept / Decline received interest, or Withdraw sent pending interest.
+ * Accept / Decline / Withdraw acceptance for received interest, or Withdraw sent pending interest.
  */
 export declare const respondMatrimonyInterest: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
     success: boolean;

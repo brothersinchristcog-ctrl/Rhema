@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   FlatList,
   Image,
   Linking,
@@ -27,7 +28,6 @@ import {
   Crown,
   Heart,
   Home,
-  Image as ImageIcon,
   Mail,
   MessageCircle,
   MoreVertical,
@@ -35,6 +35,8 @@ import {
   RotateCcw,
   Search,
   SlidersHorizontal,
+  ThumbsDown,
+  ThumbsUp,
   User,
   Users,
   X,
@@ -44,12 +46,17 @@ import { FONT_STYLE_OPTIONS, useTheme } from '../../../context/ThemeContext';
 import InterestsEmptyIllustration from '../components/InterestsEmptyIllustration';
 import MatrimonyCachedImage from '../components/MatrimonyCachedImage';
 import MatrimonyTierToggle from '../components/MatrimonyTierToggle';
+import MatrimonyUpgradePromptModal from '../components/MatrimonyUpgradePromptModal';
 import ProtectedPhotoPlaceholder from '../components/ProtectedPhotoPlaceholder';
 import VerifiedRibbonBadge from '../components/VerifiedRibbonBadge';
 import { isMatrimonyInactiveError, matrimonyApi } from '../services/matrimonyApi';
 import { matrimonyChatService } from '../services/matrimonyChatService';
 import { matrimonyPerf } from '../services/matrimonyPerf';
-import { MatrimonyInterestEntry } from '../types/matrimony';
+import {
+  MatrimonyInterestEntry,
+  MatrimonyMatchCandidate,
+  MemberEntitlements,
+} from '../types/matrimony';
 
 const ORANGE_ACTIVE = '#EA580C';
 const CORAL_RED = '#E8535F';
@@ -74,7 +81,11 @@ interface InterestCardItemProps {
   onOpenSentMoreMenu: (entry: MatrimonyInterestEntry) => void;
   onCall: (entry: MatrimonyInterestEntry) => void;
   onSendMessage: (entry: MatrimonyInterestEntry) => void;
-  onRespond: (targetUid: string, action: 'accept' | 'decline' | 'withdraw', interestId?: string) => void;
+  onRespond: (
+    targetUid: string,
+    action: 'accept' | 'decline' | 'withdraw' | 'withdraw_accept',
+    interestId?: string
+  ) => void;
 }
 
 const InterestCardItem = React.memo(
@@ -223,22 +234,8 @@ const InterestCardItem = React.memo(
       );
     }
 
-    const receivedDetailsParts = [
-      c.age ? `${c.age} Yrs` : null,
-      formatCompactHeight(c.heightCm),
-      c.faithSummary?.division,
-      c.education?.qualification,
-      c.career?.profession,
-      c.location?.village || c.location?.city || c.location?.state,
-      c.faithSummary?.baptized === true ? 'Baptized' : null,
-    ].filter(Boolean);
-
-    const statusMeta =
-      item.status === 'accepted'
-        ? { bg: '#DCFCE7', text: '#15803D', label: 'Accepted' }
-        : item.status === 'declined'
-        ? { bg: '#FEE2E2', text: '#B91C1C', label: 'Declined' }
-        : { bg: '#FEF3C7', text: '#B45309', label: 'Pending' };
+    const subjectPronoun = isFemaleGender(c.gender) ? 'She' : 'He';
+    const possessivePronoun = isFemaleGender(c.gender) ? 'her' : 'his';
 
     return (
       <View
@@ -247,110 +244,147 @@ const InterestCardItem = React.memo(
           { backgroundColor: cardSurface, borderColor: dividerColor },
         ]}
       >
-        <View style={styles.cardTopRow}>
-          <TouchableOpacity
-            activeOpacity={0.9}
-            onPress={() => onOpenDetail(index)}
-            style={styles.thumbBox}
-          >
-            {c.signedProfilePhoto ? (
-              <MatrimonyCachedImage
-                uri={c.signedProfilePhoto}
-                recyclingKey={c.uid}
-                style={styles.thumbImg}
-                resizeMode="cover"
-              />
-            ) : c.isPhotoProtected ? (
-              <ProtectedPhotoPlaceholder
-                gender={c.gender}
-                compact
-                requestStatus={c.photoRequestStatus}
-                fontFamily={fontFamily}
-              />
-            ) : (
-              <View
-                style={[
-                  styles.thumbPlaceholder,
-                  { backgroundColor: isDark ? '#1E293B' : '#EEF2F6' },
-                ]}
-              >
-                <User size={40} color="#94A3B8" />
-              </View>
-            )}
-            {c.photoCount > 0 && (
-              <View style={styles.photoCountPill}>
-                <Text style={styles.photoCountText}>{c.photoCount}</Text>
-                <ImageIcon size={11} color="#0F172A" />
-              </View>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={() => onOpenDetail(index)}
-            style={styles.cardInfoCol}
-          >
-            <View style={styles.cardTopBadgeRow}>
-              <VerifiedRibbonBadge fontFamily={fontFamily} tier={c.candidateTier} />
-              <View style={[styles.statusBadge, { backgroundColor: statusMeta.bg }]}>
-                <Text style={[styles.statusBadgeText, { color: statusMeta.text }]}>
-                  {statusMeta.label}
-                </Text>
-              </View>
+        <TouchableOpacity
+          activeOpacity={0.88}
+          onPress={() => onOpenDetail(index)}
+          style={{ gap: 10 }}
+        >
+          <View style={styles.cardTopRow}>
+            <View style={styles.sentThumbBox}>
+              {c.signedProfilePhoto ? (
+                <MatrimonyCachedImage
+                  uri={c.signedProfilePhoto}
+                  recyclingKey={c.uid}
+                  style={styles.thumbImg}
+                  resizeMode="cover"
+                />
+              ) : c.isPhotoProtected ? (
+                <ProtectedPhotoPlaceholder
+                  gender={c.gender}
+                  compact
+                  requestStatus={c.photoRequestStatus}
+                  fontFamily={fontFamily}
+                />
+              ) : (
+                <View
+                  style={[
+                    styles.thumbPlaceholder,
+                    { backgroundColor: isDark ? '#1E293B' : '#EEF2F6' },
+                  ]}
+                >
+                  <User size={36} color="#94A3B8" />
+                </View>
+              )}
             </View>
 
-            <Text
-              style={[styles.cardName, { color: textColor, fontFamily, fontSize: nameFontSize }]}
-              numberOfLines={1}
-            >
-              {c.displayName}
+            <View style={styles.cardInfoCol}>
+              <View style={styles.cardTopBadgeRow}>
+                <VerifiedRibbonBadge fontFamily={fontFamily} tier={c.candidateTier} />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  {c.isShortlisted ? (
+                    <View style={styles.sentShortlistTag}>
+                      <Bookmark size={11} color={ORANGE_ACTIVE} fill={ORANGE_ACTIVE} />
+                      <Text style={styles.sentShortlistTagText}>Shortlisted</Text>
+                    </View>
+                  ) : null}
+                  <TouchableOpacity
+                    disabled={isBusy}
+                    onPress={() => onOpenSentMoreMenu(item)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <MoreVertical size={18} color={textSecondaryColor} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <Text
+                style={[styles.cardName, { color: textColor, fontFamily, fontSize: nameFontSize }]}
+                numberOfLines={1}
+              >
+                {c.displayName}
+              </Text>
+
+              <Text
+                style={[styles.cardDetails, { color: textColor, fontFamily }]}
+                numberOfLines={2}
+              >
+                {detailsParts.join('  •  ')}
+              </Text>
+            </View>
+          </View>
+
+          <View style={{ gap: 4 }}>
+            <Text style={[styles.sentStatusLine, { color: textColor, fontFamily }]}>
+              <Text style={{ fontWeight: '800' }}>
+                {item.status === 'accepted'
+                  ? `You accepted ${possessivePronoun} interest`
+                  : item.status === 'declined'
+                  ? `You declined ${possessivePronoun} interest`
+                  : `${subjectPronoun} sent you an interest`}
+              </Text>
+              <Text style={{ color: textSecondaryColor, fontWeight: '500' }}>
+                {` - ${sentDateStr}`}
+              </Text>
             </Text>
 
-            <Text
-              style={[styles.cardMeta, { color: textSecondaryColor, fontFamily }]}
-              numberOfLines={1}
-            >
-              {c.profileCode} | {formatTimeAgo(item.updatedAtMs || item.createdAtMs)}
-            </Text>
+            {item.status === 'pending' ? (
+              <Text style={[styles.receivedHelperText, { color: textColor, fontFamily }]}>
+                {`Accept ${possessivePronoun} interest to start a conversation`}
+              </Text>
+            ) : null}
+          </View>
+        </TouchableOpacity>
 
-            <Text
-              style={[styles.cardDetails, { color: textColor, fontFamily }]}
-              numberOfLines={3}
-            >
-              {receivedDetailsParts.join('  •  ')}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {item.status === 'pending' && (
+        {item.status === 'pending' ? (
           <View style={styles.cardActionsRow}>
             <TouchableOpacity
-              style={[styles.outlineActionBtn, { borderColor: dividerColor }]}
+              style={[
+                styles.declineOutlineBtn,
+                { borderColor: isDark ? '#475569' : '#94A3B8' },
+              ]}
+              activeOpacity={0.82}
               disabled={isBusy}
               onPress={() => onRespond(c.uid, 'decline', item.id)}
             >
-              <X size={15} color={textSecondaryColor} />
-              <Text style={[styles.outlineActionText, { color: textSecondaryColor, fontFamily }]}>
+              <ThumbsDown size={15} color={textSecondaryColor} strokeWidth={1.9} />
+              <Text style={[styles.declineOutlineText, { color: textSecondaryColor, fontFamily }]}>
                 Decline
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.acceptActionBtn}
+              style={styles.acceptInterestSolidBtn}
+              activeOpacity={0.85}
               disabled={isBusy}
               onPress={() => onRespond(c.uid, 'accept', item.id)}
             >
-              {isBusy ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <>
-                  <Check size={15} color="#FFFFFF" strokeWidth={2.6} />
-                  <Text style={[styles.acceptActionText, { fontFamily }]}>Accept</Text>
-                </>
-              )}
+              <ThumbsUp size={15} color="#FFFFFF" strokeWidth={2} />
+              <Text style={[styles.acceptInterestSolidText, { fontFamily }]}>
+                Accept Interest
+              </Text>
             </TouchableOpacity>
           </View>
-        )}
+        ) : item.status === 'accepted' ? (
+          <View style={styles.cardActionsRow}>
+            <TouchableOpacity
+              style={[styles.callOutlineBtn, { borderColor: CORAL_RED }]}
+              activeOpacity={0.82}
+              onPress={() => onCall(item)}
+            >
+              <Phone size={15} color={CORAL_RED} strokeWidth={2} />
+              <Text style={[styles.callOutlineText, { fontFamily }]}>Call Now</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.sendMessageSolidBtn}
+              activeOpacity={0.85}
+              onPress={() => onSendMessage(item)}
+            >
+              <Mail size={15} color="#FFFFFF" strokeWidth={2} />
+              <Text style={[styles.sendMessageSolidText, { fontFamily }]}>Send Message</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
       </View>
     );
   },
@@ -448,6 +482,47 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
   const [readIds, setReadIds] = useState<string[]>([]);
   const [menuTargetUid, setMenuTargetUid] = useState<string | null>(null);
   const [shortlistBusyUid, setShortlistBusyUid] = useState<string | null>(null);
+  const [entitlements, setEntitlements] = useState<MemberEntitlements | null>(
+    () => initialHubSnapshot?.viewerEntitlements || matrimonyApi.getCachedEntitlements()
+  );
+  const [upgradePromptCandidate, setUpgradePromptCandidate] =
+    useState<MatrimonyMatchCandidate | null>(null);
+  const [recentlyAcceptedUids, setRecentlyAcceptedUids] = useState<string[]>([]);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastOpacity = useRef(new Animated.Value(0)).current;
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showBottomToast = useCallback(
+    (message: string) => {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+      }
+      setToastMessage(message);
+      toastOpacity.stopAnimation();
+      toastOpacity.setValue(0);
+      Animated.timing(toastOpacity, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      }).start();
+      toastTimerRef.current = setTimeout(() => {
+        Animated.timing(toastOpacity, {
+          toValue: 0,
+          duration: 220,
+          useNativeDriver: true,
+        }).start(() => {
+          setToastMessage(null);
+        });
+      }, 3400);
+    },
+    [toastOpacity]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     AsyncStorage.getItem(READ_STORAGE_KEY)
@@ -486,15 +561,20 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
     if (cached && !force) {
       setReceivedList(cached.received || []);
       setSentList(cached.sent || []);
+      if (cached.viewerEntitlements) setEntitlements(cached.viewerEntitlements);
       hasHubDataRef.current = true;
       setLoading(false);
     } else if (!silent && !hasHubDataRef.current) {
       setLoading(true);
     }
     try {
+      if (force) {
+        setRecentlyAcceptedUids([]);
+      }
       const res = await matrimonyApi.getInterestsHub({ force });
       setReceivedList(res.received || []);
       setSentList(res.sent || []);
+      if (res.viewerEntitlements) setEntitlements(res.viewerEntitlements);
       hasHubDataRef.current = true;
       trace.stop(true, {
         receivedCount: res.received?.length ?? 0,
@@ -534,7 +614,17 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
           (c.matchScore >= 65 || c.faithSummary?.baptized === true);
         if (!isPrime) return false;
       }
-      if (subTab !== 'all' && entry.status !== subTab) return false;
+      if (
+        subTab !== 'all' &&
+        entry.status !== subTab &&
+        !(
+          subTab === 'pending' &&
+          direction === 'received' &&
+          recentlyAcceptedUids.includes(entry.candidate.uid)
+        )
+      ) {
+        return false;
+      }
       if (direction === 'received') {
         const isRead = readIds.includes(entry.id) || entry.status !== 'pending';
         if (filterUnread && !filterRead && isRead) return false;
@@ -558,7 +648,17 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
       return true;
     });
   },
-  [activeSourceList, matchTier, subTab, direction, filterUnread, filterRead, readIds, searchQuery]
+  [
+    activeSourceList,
+    matchTier,
+    subTab,
+    direction,
+    filterUnread,
+    filterRead,
+    readIds,
+    searchQuery,
+    recentlyAcceptedUids,
+  ]
   );
 
   const contextHeading = useMemo(() => {
@@ -667,7 +767,7 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
   const handleRespond = useCallback(
     async (
       targetUid: string,
-      action: 'accept' | 'decline' | 'withdraw',
+      action: 'accept' | 'decline' | 'withdraw' | 'withdraw_accept',
       interestId?: string
     ) => {
       if (busyUidRef.current === targetUid) return;
@@ -675,34 +775,68 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
       if (interestId) markInterestAsRead(interestId);
       setBusyUid(targetUid);
 
+      const candidateName =
+        receivedList.find((r) => r.candidate.uid === targetUid)?.candidate.displayName ||
+        sentList.find((s) => s.candidate.uid === targetUid)?.candidate.displayName ||
+        'Member';
+
       if (action === 'withdraw') {
         setSentList((prev) => prev.filter((row) => row.candidate.uid !== targetUid));
+        showBottomToast('Your pending interest request has been withdrawn');
+      } else if (action === 'withdraw_accept') {
+        const nowMs = Date.now();
+        setRecentlyAcceptedUids((prev) => prev.filter((id) => id !== targetUid));
+        setSentList((prev) =>
+          prev.filter((row) => !(row.candidate.uid === targetUid && row.status === 'accepted'))
+        );
+        setReceivedList((prev) =>
+          prev.map((row) =>
+            row.candidate.uid === targetUid
+              ? {
+                  ...row,
+                  status: 'pending',
+                  updatedAtMs: nowMs,
+                  candidate: { ...row.candidate, interestStatus: 'pending' },
+                }
+              : row
+          )
+        );
+        showBottomToast(`You have withdrawn acceptance for ${candidateName}`);
       } else {
         const optimisticStatus = action === 'accept' ? 'accepted' : 'declined';
+        const nowMs = Date.now();
         setReceivedList((prev) =>
           prev.map((row) =>
             row.candidate.uid === targetUid
               ? {
                   ...row,
                   status: optimisticStatus,
+                  updatedAtMs: nowMs,
                   candidate: { ...row.candidate, interestStatus: optimisticStatus },
                 }
               : row
           )
         );
+        if (action === 'accept') {
+          setRecentlyAcceptedUids((prev) =>
+            prev.includes(targetUid) ? prev : [...prev, targetUid]
+          );
+          showBottomToast(`You have successfully accepted ${candidateName}'s interest`);
+        } else {
+          setRecentlyAcceptedUids((prev) => prev.filter((id) => id !== targetUid));
+          showBottomToast(`You have declined ${candidateName}'s interest`);
+        }
       }
 
       const trace = matrimonyPerf.startTrace('respond_interest_rpc', { action });
       try {
         await matrimonyApi.respondInterest(targetUid, action);
         trace.stop(true);
-        if (action === 'accept') {
-          Alert.alert('Interest Accepted', 'You and this member are now a Mutual Match!');
-        } else if (action === 'withdraw') {
-          Alert.alert('Interest Withdrawn', 'Your pending interest request has been removed.');
-        }
       } catch (err: any) {
         trace.stop(false);
+        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+        setToastMessage(null);
+        setRecentlyAcceptedUids((prev) => prev.filter((id) => id !== targetUid));
         await loadInterests(true, true);
         Alert.alert('Error', err?.message || 'Unable to update interest.');
       } finally {
@@ -712,7 +846,7 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
         setBusyUid(null);
       }
     },
-    [loadInterests, markInterestAsRead]
+    [loadInterests, markInterestAsRead, receivedList, sentList, showBottomToast]
   );
 
   const openDetail = useCallback(
@@ -739,32 +873,43 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
     [direction, filteredItems, markInterestAsRead, navigation, subTab]
   );
 
-  const handleCallCandidate = useCallback((entry: MatrimonyInterestEntry) => {
-    const c = entry.candidate;
-    if (c.mobilePrivacy === 'messages_only') {
+  const handleCallCandidate = useCallback(
+    (entry: MatrimonyInterestEntry) => {
+      const c = entry.candidate;
+      if (!entitlements || entitlements.tier === 'free' || !entitlements.callAccess) {
+        setUpgradePromptCandidate(c);
+        return;
+      }
+      if (c.mobilePrivacy === 'messages_only') {
+        Alert.alert(
+          'Messages Only',
+          `${c.displayName} has restricted phone calls to Messages only.`
+        );
+        return;
+      }
+      if (c.contactPhone) {
+        Linking.openURL(`tel:${c.contactPhone}`).catch(() => {
+          Alert.alert('Call Failed', 'Could not open phone dialer.');
+        });
+        return;
+      }
       Alert.alert(
-        'Messages Only',
-        `${c.displayName} has restricted phone calls to Messages only.`
+        'Contact Protected',
+        entry.status === 'accepted'
+          ? `Phone number (${c.maskedPhone || 'hidden'}) could not be loaded.`
+          : `Direct phone calling unlocks once ${c.displayName} accepts your interest.`
       );
-      return;
-    }
-    if (c.contactPhone) {
-      Linking.openURL(`tel:${c.contactPhone}`).catch(() => {
-        Alert.alert('Call Failed', 'Could not open phone dialer.');
-      });
-      return;
-    }
-    Alert.alert(
-      'Contact Protected',
-      entry.status === 'accepted'
-        ? `Phone number (${c.maskedPhone || 'hidden'}) could not be loaded.`
-        : `Direct phone calling unlocks once ${c.displayName} accepts your interest.`
-    );
-  }, []);
+    },
+    [entitlements]
+  );
 
   const handleSendMessageCandidate = useCallback(
     (entry: MatrimonyInterestEntry) => {
       const c = entry.candidate;
+      if (!entitlements || entitlements.tier === 'free' || !entitlements.messageAccess) {
+        setUpgradePromptCandidate(c);
+        return;
+      }
       if (entry.status === 'accepted') {
         navigation.navigate('MatrimonyChat', {
           targetUid: c.uid,
@@ -794,7 +939,7 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
         `Direct messaging opens once ${c.displayName} accepts your interest.`
       );
     },
-    [navigation]
+    [entitlements, navigation]
   );
 
   const handleToggleShortlistFromCard = useCallback(async (entry: MatrimonyInterestEntry) => {
@@ -910,7 +1055,10 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
               styles.primaryTabItem,
               direction === 'received' && styles.primaryTabItemActive,
             ]}
-            onPress={() => setDirection('received')}
+            onPress={() => {
+              setDirection('received');
+              setRecentlyAcceptedUids([]);
+            }}
           >
             <Text
               style={[
@@ -931,7 +1079,10 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
               styles.primaryTabItem,
               direction === 'sent' && styles.primaryTabItemActive,
             ]}
-            onPress={() => setDirection('sent')}
+            onPress={() => {
+              setDirection('sent');
+              setRecentlyAcceptedUids([]);
+            }}
           >
             <Text
               style={[
@@ -968,7 +1119,10 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
                 <TouchableOpacity
                   key={item.key}
                   activeOpacity={0.85}
-                  onPress={() => setSubTab(item.key)}
+                  onPress={() => {
+                    setSubTab(item.key);
+                    setRecentlyAcceptedUids([]);
+                  }}
                 >
                   <LinearGradient
                     colors={ORANGE_GRADIENT}
@@ -987,7 +1141,10 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
               <TouchableOpacity
                 key={item.key}
                 activeOpacity={0.8}
-                onPress={() => setSubTab(item.key)}
+                onPress={() => {
+                  setSubTab(item.key);
+                  setRecentlyAcceptedUids([]);
+                }}
                 style={[
                   styles.subTabChip,
                   {
@@ -1362,7 +1519,7 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
                           style={[styles.menuMemberSub, { color: colors.textSecondary, fontFamily }]}
                           numberOfLines={1}
                         >
-                          {c.profileCode} • Sent {sentDateStr}
+                          {c.profileCode} • {direction === 'received' ? 'Received' : 'Sent'} {sentDateStr}
                         </Text>
                       </View>
                       <TouchableOpacity
@@ -1382,24 +1539,16 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
                       <TouchableOpacity
                         style={[
                           styles.menuActionRow,
-                          {
-                            backgroundColor: isDark ? '#1E293B' : '#F8FAFC',
-                            borderColor: isDark ? colors.border : '#E2E8F0',
-                          },
+                          { borderBottomColor: dividerColor },
                         ]}
-                        activeOpacity={0.78}
+                        activeOpacity={0.7}
                         onPress={() => {
                           setMenuTargetUid(null);
                           openDetail(liveIndex);
                         }}
                       >
-                        <View
-                          style={[
-                            styles.menuIconCircle,
-                            { backgroundColor: isDark ? 'rgba(2,132,199,0.2)' : '#E0F2FE' },
-                          ]}
-                        >
-                          <User size={18} color="#0284C7" strokeWidth={2.2} />
+                        <View style={styles.menuIconWrap}>
+                          <User size={20} color={colors.text} strokeWidth={1.9} />
                         </View>
                         <View style={{ flex: 1 }}>
                           <Text style={[styles.menuActionTitle, { color: colors.text, fontFamily }]}>
@@ -1419,36 +1568,26 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
                         style={[
                           styles.menuActionRow,
                           {
-                            backgroundColor: isDark ? '#1E293B' : '#F8FAFC',
-                            borderColor: isDark ? colors.border : '#E2E8F0',
+                            borderBottomColor:
+                              (direction === 'sent' && liveEntry.status === 'pending') ||
+                              (direction === 'received' && liveEntry.status === 'accepted')
+                                ? dividerColor
+                                : 'transparent',
                             opacity: isShortlistBusy ? 0.65 : 1,
                           },
                         ]}
-                        activeOpacity={0.78}
+                        activeOpacity={0.7}
                         onPress={() => {
                           setMenuTargetUid(null);
                           handleToggleShortlistFromCard(liveEntry);
                         }}
                       >
-                        <View
-                          style={[
-                            styles.menuIconCircle,
-                            {
-                              backgroundColor: c.isShortlisted
-                                ? isDark
-                                  ? 'rgba(234,88,12,0.22)'
-                                  : '#FFEDD5'
-                                : isDark
-                                ? 'rgba(217,119,6,0.2)'
-                                : '#FEF3C7',
-                            },
-                          ]}
-                        >
+                        <View style={styles.menuIconWrap}>
                           <Bookmark
-                            size={18}
-                            color={c.isShortlisted ? ORANGE_ACTIVE : '#D97706'}
+                            size={20}
+                            color={c.isShortlisted ? ORANGE_ACTIVE : colors.text}
                             fill={c.isShortlisted ? ORANGE_ACTIVE : 'transparent'}
-                            strokeWidth={2.1}
+                            strokeWidth={1.9}
                           />
                         </View>
                         <View style={{ flex: 1 }}>
@@ -1466,30 +1605,24 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
                         <ChevronRight size={18} color={colors.textSecondary} />
                       </TouchableOpacity>
 
-                      {liveEntry.status === 'pending' && (
+                      {direction === 'sent' && liveEntry.status === 'pending' && (
                         <TouchableOpacity
                           disabled={isActionBusy}
                           style={[
                             styles.menuActionRow,
                             {
-                              backgroundColor: isDark ? 'rgba(220,38,38,0.12)' : '#FEF2F2',
-                              borderColor: isDark ? 'rgba(248,113,113,0.3)' : '#FECACA',
+                              borderBottomColor: 'transparent',
                               opacity: isActionBusy ? 0.65 : 1,
                             },
                           ]}
-                          activeOpacity={0.78}
+                          activeOpacity={0.7}
                           onPress={() => {
                             setMenuTargetUid(null);
                             handleRespond(c.uid, 'withdraw');
                           }}
                         >
-                          <View
-                            style={[
-                              styles.menuIconCircle,
-                              { backgroundColor: isDark ? 'rgba(220,38,38,0.25)' : '#FEE2E2' },
-                            ]}
-                          >
-                            <RotateCcw size={18} color="#DC2626" strokeWidth={2.2} />
+                          <View style={styles.menuIconWrap}>
+                            <RotateCcw size={20} color="#DC2626" strokeWidth={2} />
                           </View>
                           <View style={{ flex: 1 }}>
                             <Text style={[styles.menuActionTitle, { color: '#DC2626', fontFamily }]}>
@@ -1502,6 +1635,42 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
                               ]}
                             >
                               Cancel your pending interest request
+                            </Text>
+                          </View>
+                          <ChevronRight size={18} color="#DC2626" />
+                        </TouchableOpacity>
+                      )}
+
+                      {direction === 'received' && liveEntry.status === 'accepted' && (
+                        <TouchableOpacity
+                          disabled={isActionBusy}
+                          style={[
+                            styles.menuActionRow,
+                            {
+                              borderBottomColor: 'transparent',
+                              opacity: isActionBusy ? 0.65 : 1,
+                            },
+                          ]}
+                          activeOpacity={0.7}
+                          onPress={() => {
+                            setMenuTargetUid(null);
+                            handleRespond(c.uid, 'withdraw_accept', liveEntry.id);
+                          }}
+                        >
+                          <View style={styles.menuIconWrap}>
+                            <RotateCcw size={20} color="#DC2626" strokeWidth={2} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.menuActionTitle, { color: '#DC2626', fontFamily }]}>
+                              Withdraw Acceptance
+                            </Text>
+                            <Text
+                              style={[
+                                styles.menuActionSub,
+                                { color: isDark ? '#FCA5A5' : '#B91C1C', fontFamily },
+                              ]}
+                            >
+                              Cancel your acceptance and move back to pending
                             </Text>
                           </View>
                           <ChevronRight size={18} color="#DC2626" />
@@ -1528,6 +1697,47 @@ export default function MatrimonyInterestsHubScreen({ navigation, route }: any) 
           </Modal>
         );
       })()}
+
+      {toastMessage ? (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.bottomToastBar,
+            {
+              opacity: toastOpacity,
+              transform: [
+                {
+                  translateY: toastOpacity.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [12, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          <Text style={[styles.bottomToastText, { fontFamily }]} numberOfLines={2}>
+            {toastMessage}
+          </Text>
+        </Animated.View>
+      ) : null}
+
+      <MatrimonyUpgradePromptModal
+        visible={Boolean(upgradePromptCandidate)}
+        candidate={upgradePromptCandidate}
+        viewerPhoto={
+          matrimonyApi.getCachedStatus()?.signedProfilePhoto ||
+          matrimonyApi.getCachedRegistration()?.profile?.signedProfilePhoto ||
+          (user as any)?.photoURL ||
+          null
+        }
+        fontFamily={fontFamily}
+        onClose={() => setUpgradePromptCandidate(null)}
+        onContinue={() => {
+          setUpgradePromptCandidate(null);
+          navigation.navigate('MatrimonyUpgrade');
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -1742,6 +1952,39 @@ const styles = StyleSheet.create({
   sentStatusLine: {
     fontSize: 13.5,
     paddingTop: 2,
+  },
+  receivedHelperText: {
+    fontSize: 13.5,
+    lineHeight: 19,
+  },
+  declineOutlineBtn: {
+    flex: 0.9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 24,
+    borderWidth: 1.2,
+  },
+  declineOutlineText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  acceptInterestSolidBtn: {
+    flex: 1.45,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 10,
+    borderRadius: 24,
+    backgroundColor: CORAL_RED,
+  },
+  acceptInterestSolidText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
   },
   callOutlineBtn: {
     flex: 0.9,
@@ -2025,22 +2268,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   menuOptionsList: {
-    gap: 10,
-    marginTop: 14,
+    marginTop: 4,
   },
   menuActionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 13,
-    borderRadius: 14,
-    borderWidth: 1,
+    gap: 14,
+    paddingHorizontal: 2,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  menuIconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+  menuIconWrap: {
+    width: 26,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2076,5 +2315,22 @@ const styles = StyleSheet.create({
     color: ORANGE_ACTIVE,
     fontSize: 11,
     fontWeight: '700',
+  },
+  bottomToastBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#323437',
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    zIndex: 50,
+    elevation: 8,
+  },
+  bottomToastText: {
+    color: '#FFFFFF',
+    fontSize: 13.5,
+    fontWeight: '500',
+    lineHeight: 19,
   },
 });
