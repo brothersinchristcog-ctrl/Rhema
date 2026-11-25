@@ -5,27 +5,21 @@ import Share from 'react-native-share';
 import * as Clipboard from 'expo-clipboard';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
-import { Gift, Heart, PlusCircle, ChevronLeft , ArrowLeft } from 'lucide-react-native';
+import { Gift, Heart, PlusCircle, ChevronLeft, ArrowLeft } from 'lucide-react-native';
 import FirestoreService from '../../services/FirestoreService';
 import Theme from '../../theme/Theme';
 import ChurchService from '../../services/ChurchService';
 import { AdminTabContext } from '../../context/AdminTabContext';
-import AdminCelebrationsList from './AdminCelebrationsList';
-import AdminCelebrationsPersonalize from './AdminCelebrationsPersonalize';
-import AdminCelebrationsMemberDetails from './AdminCelebrationsMemberDetails';
-import AdminCelebrationsThemePicker from './AdminCelebrationsThemePicker';
-import AdminCelebrationsCustomTheme from './AdminCelebrationsCustomTheme';
-import AdminCelebrationsVersePicker from './AdminCelebrationsVersePicker';
-import AdminCelebrationsPhotoPicker from './AdminCelebrationsPhotoPicker'; // TS refresh
-import storage from '@react-native-firebase/storage';
-import AdminCelebrationsPreview from './AdminCelebrationsPreview';
-import AdminCelebrationsWhatsAppPreview from './AdminCelebrationsWhatsAppPreview';
-import AdminCelebrationsConfirm from './AdminCelebrationsConfirm';
-import SuccessPopup from '../../components/SuccessPopup';
-
 import { useChurch } from '../../context/ChurchContext';
 import { functions } from '../../services/firebaseConfig';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
+import SuccessPopup from '../../components/SuccessPopup';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  readInstantCache,
+  writeInstantCache,
+} from '../../utils/instantCache';
 
 type ViewMode = 'dashboard' | 'list' | 'details' | 'personalize' | 'themePicker' | 'customTheme' | 'versePicker' | 'photoPicker' | 'preview' | 'whatsapp' | 'confirm';
 
@@ -33,7 +27,23 @@ export default function AdminCelebrations({ navigation }: any) {
   const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { activeChurch, setActiveChurch } = useChurch();
   const { setActiveTab } = React.useContext(AdminTabContext);
-  const [loading, setLoading] = useState(true);
+  const celebStatsCacheKey = React.useMemo(
+    () => makeScopedCacheKey('admin_celebrations_stats_v1', activeChurch?.id, 'admin'),
+    [activeChurch?.id]
+  );
+  const initialStatsCache = React.useMemo(
+    () =>
+      getInstantMemory<{
+        total: number;
+        today: number;
+        thisWeek: number;
+        birthdays: { total: number; thisWeek: number };
+        anniversaries: { total: number; thisWeek: number };
+        baptisms: { total: number; thisWeek: number };
+      }>(celebStatsCacheKey),
+    [celebStatsCacheKey]
+  );
+  const [loading, setLoading] = useState(!initialStatsCache);
   const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
   const [activeDateFilter, setActiveDateFilter] = useState('Today');
   const [activeCategoryFilter, setActiveCategoryFilter] = useState('All');
@@ -43,11 +53,11 @@ export default function AdminCelebrations({ navigation }: any) {
   const [layout, setLayout] = useState<'theme' | 'photo'>('theme');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [selectedThemeId, setSelectedThemeId] = useState<string | null>(null);
-  const [selectedVerse, setSelectedVerse] = useState<{ref: string, text: string} | null>(null);
+  const [selectedVerse, setSelectedVerse] = useState<{ ref: string, text: string } | null>(null);
   const [greetingMessage, setGreetingMessage] = useState<string>('');
   const [titleOverlay, setTitleOverlay] = useState<string>('');
   const [nameOverlay, setNameOverlay] = useState<string>('');
-  
+
   // Toast state
   const [toastMsg, setToastMsg] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -62,10 +72,30 @@ export default function AdminCelebrations({ navigation }: any) {
   });
 
   useEffect(() => {
+    if (viewMode === 'list') {
+      setViewMode('dashboard');
+    }
+  }, [viewMode]);
+
+  useEffect(() => {
+    let active = true;
+    const mem = getInstantMemory<typeof stats>(celebStatsCacheKey);
+    if (mem) {
+      setStats(mem);
+      setLoading(false);
+    } else {
+      readInstantCache<typeof stats>(celebStatsCacheKey).then((cached) => {
+        if (active && cached?.data) {
+          setStats(cached.data);
+          setLoading(false);
+        }
+      });
+    }
+
     const loadData = async () => {
       try {
         const data = await FirestoreService.getAllCelebrations();
-        
+
         let total = 0;
         let today = 0;
         let thisWeek = 0;
@@ -76,7 +106,7 @@ export default function AdminCelebrations({ navigation }: any) {
         const now = new Date();
         const currentMonth = now.getMonth() + 1;
         const currentDate = now.getDate();
-        
+
         // Simple week logic: within next 7 days
         const isThisWeek = (m: number, d: number) => {
           const target = new Date(now.getFullYear(), m - 1, d);
@@ -141,14 +171,16 @@ export default function AdminCelebrations({ navigation }: any) {
           }
         });
 
-        setStats({
+        const nextStats = {
           total,
           today,
           thisWeek,
           birthdays: { total: bTotal, thisWeek: bWeek },
           anniversaries: { total: aTotal, thisWeek: aWeek },
           baptisms: { total: baptTotal, thisWeek: baptWeek },
-        });
+        };
+        setStats(nextStats);
+        writeInstantCache(celebStatsCacheKey, nextStats).catch(() => { });
       } catch (err) {
         console.error("Error loading stats:", err);
       } finally {
@@ -157,7 +189,7 @@ export default function AdminCelebrations({ navigation }: any) {
     };
 
     loadData();
-  }, []);
+  }, [celebStatsCacheKey]);
 
   if (loading) {
     return (
@@ -168,8 +200,6 @@ export default function AdminCelebrations({ navigation }: any) {
   }
 
   if (viewMode === 'list') {
-    // viewMode list is obsolete as it's merged with dashboard
-    setViewMode('dashboard');
     return null;
   }
 
@@ -180,12 +210,12 @@ export default function AdminCelebrations({ navigation }: any) {
       Alert.alert('Error', 'This member does not have a phone number on record. For kids, please ensure a parent reference number is assigned in the Household section.');
       return;
     }
-    
+
     setIsSending(true);
     try {
       let formattedPhone = effectivePhone.replace(/\D/g, '');
       if (formattedPhone.length === 10) {
-        formattedPhone = `91${formattedPhone}`; 
+        formattedPhone = `91${formattedPhone}`;
       }
 
       let msg = greetingMessage;
@@ -203,7 +233,7 @@ export default function AdminCelebrations({ navigation }: any) {
 
       let text = `Praise the Lord!\n\n${msg || ""}`;
       if (selectedVerse?.text) {
-         text += `\n\n"${selectedVerse.text}"\n— ${selectedVerse.ref}`;
+        text += `\n\n"${selectedVerse.text}"\n— ${selectedVerse.ref}`;
       }
       text += `\n\nWith Love ❤️\n${activeChurch?.name || 'Your Church'}`;
 
@@ -332,33 +362,33 @@ export default function AdminCelebrations({ navigation }: any) {
     try {
       let text = `Praise the Lord!\n\n${greetingMessage || ""}`;
       if (selectedVerse?.text) {
-         text += `\n\n"${selectedVerse.text}"\n— ${selectedVerse.ref}`;
+        text += `\n\n"${selectedVerse.text}"\n— ${selectedVerse.ref}`;
       }
       text += `\n\nWith Love ❤️\n${activeChurch?.name || 'Your Church'}`;
 
       let imageUrl = null;
       if (localImageUri) {
-         try {
-            const storage = require('@react-native-firebase/storage').default;
-            const ext = localImageUri.substring(localImageUri.lastIndexOf('.') + 1) || 'jpg';
-            const storagePath = `celebrations/image_${Date.now()}.${ext}`;
-            const reference = storage().ref(storagePath);
-            await reference.putFile(localImageUri);
-            imageUrl = await reference.getDownloadURL();
-         } catch (e) {
-            console.error('Failed to upload celebration image', e);
-         }
+        try {
+          const storage = require('@react-native-firebase/storage').default;
+          const ext = localImageUri.substring(localImageUri.lastIndexOf('.') + 1) || 'jpg';
+          const storagePath = `celebrations/image_${Date.now()}.${ext}`;
+          const reference = storage().ref(storagePath);
+          await reference.putFile(localImageUri);
+          imageUrl = await reference.getDownloadURL();
+        } catch (e) {
+          console.error('Failed to upload celebration image', e);
+        }
       }
 
       await FirestoreService.createNotificationBroadcast({
-         title: `${(selectedMember?.celebrationType || 'Birthday') === 'Birthday' ? '🎂 Happy Birthday' : (selectedMember?.celebrationType || 'Birthday') === 'Anniversary' ? '💒 Happy Anniversary' : '🎉 Happy Baptism Anniversary'}, ${selectedMember.name}!`,
-         content: text,
-         date: new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' }),
-         type: 'celebration',
-         targetChurchId: activeChurch.id,
-         targetPhone: selectedMember.phone,
-         imageUrl,
-         silent: false,
+        title: `${(selectedMember?.celebrationType || 'Birthday') === 'Birthday' ? '🎂 Happy Birthday' : (selectedMember?.celebrationType || 'Birthday') === 'Anniversary' ? '💒 Happy Anniversary' : '🎉 Happy Baptism Anniversary'}, ${selectedMember.name}!`,
+        content: text,
+        date: new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' }),
+        type: 'celebration',
+        targetChurchId: activeChurch.id,
+        targetPhone: selectedMember.phone,
+        imageUrl,
+        silent: false,
       });
 
       Alert.alert('Push Notification Sent', `A notification was sent directly to ${selectedMember.name}!`);
@@ -372,9 +402,10 @@ export default function AdminCelebrations({ navigation }: any) {
   };
 
   switch (viewMode) {
-    case 'details':
+    case 'details': {
+      const AdminCelebrationsMemberDetails = require('./AdminCelebrationsMemberDetails').default;
       return (
-        <AdminCelebrationsMemberDetails 
+        <AdminCelebrationsMemberDetails
           member={selectedMember}
           category={(selectedMember?.celebrationType || 'Birthday')}
           onBack={() => setViewMode('list')}
@@ -397,10 +428,12 @@ export default function AdminCelebrations({ navigation }: any) {
           }}
         />
       );
-    case 'personalize':
+    }
+    case 'personalize': {
+      const AdminCelebrationsPersonalize = require('./AdminCelebrationsPersonalize').default;
       return (
-        <View style={{flex: 1}}>
-          <AdminCelebrationsPersonalize 
+        <View style={{ flex: 1 }}>
+          <AdminCelebrationsPersonalize
             member={selectedMember}
             category={(selectedMember?.celebrationType || 'Birthday')}
             layout={layout}
@@ -423,9 +456,11 @@ export default function AdminCelebrations({ navigation }: any) {
           <SuccessPopup visible={!!toastMsg} message={toastMsg} onDismiss={() => setToastMsg('')} />
         </View>
       );
-    case 'themePicker':
+    }
+    case 'themePicker': {
+      const AdminCelebrationsThemePicker = require('./AdminCelebrationsThemePicker').default;
       return (
-        <View style={{flex: 1}}>
+        <View style={{ flex: 1 }}>
           <AdminCelebrationsThemePicker
             onBack={() => setViewMode('personalize')}
             onSelectTheme={(themeId: string) => {
@@ -441,9 +476,11 @@ export default function AdminCelebrations({ navigation }: any) {
           <SuccessPopup visible={!!toastMsg} message={toastMsg} onDismiss={() => setToastMsg('')} />
         </View>
       );
-    case 'customTheme':
+    }
+    case 'customTheme': {
+      const AdminCelebrationsCustomTheme = require('./AdminCelebrationsCustomTheme').default;
       return (
-        <View style={{flex: 1}}>
+        <View style={{ flex: 1 }}>
           <AdminCelebrationsCustomTheme
             onBack={() => setViewMode('themePicker')}
             onSave={(newTheme: any) => {
@@ -461,19 +498,23 @@ export default function AdminCelebrations({ navigation }: any) {
           <SuccessPopup visible={!!toastMsg} message={toastMsg} onDismiss={() => setToastMsg('')} />
         </View>
       );
-    case 'versePicker':
+    }
+    case 'versePicker': {
+      const AdminCelebrationsVersePicker = require('./AdminCelebrationsVersePicker').default;
       return (
         <AdminCelebrationsVersePicker
           category={(selectedMember?.celebrationType || 'Birthday')}
           selectedVerseRef={selectedVerse?.ref}
           onBack={() => setViewMode('personalize')}
-          onSelectVerse={(verse) => {
+          onSelectVerse={(verse: any) => {
             setSelectedVerse(verse);
             setViewMode('personalize');
           }}
         />
       );
-    case 'photoPicker':
+    }
+    case 'photoPicker': {
+      const AdminCelebrationsPhotoPicker = require('./AdminCelebrationsPhotoPicker').default;
       return (
         <AdminCelebrationsPhotoPicker
           member={selectedMember}
@@ -484,7 +525,9 @@ export default function AdminCelebrations({ navigation }: any) {
           }}
         />
       );
+    }
     case 'preview': {
+      const AdminCelebrationsPreview = require('./AdminCelebrationsPreview').default;
       // Find full theme object (default to royalblue if not found)
       let themeObj = THEMES.find(t => t.id === selectedThemeId || (t.id === 'royalblue' && selectedThemeId === 'royal') || (t.id === 'royal' && selectedThemeId === 'royalblue'));
       if (!themeObj && selectedThemeId?.startsWith('custom_')) {
@@ -506,7 +549,7 @@ export default function AdminCelebrations({ navigation }: any) {
           titleOverlay={titleOverlay}
           nameOverlay={nameOverlay}
           message={greetingMessage}
-          verse={selectedVerse || {ref: '', text: ''}}
+          verse={selectedVerse || { ref: '', text: '' }}
           churchName={activeChurch?.name || ''}
           onBack={() => setViewMode('personalize')}
           onEdit={() => setViewMode('personalize')}
@@ -515,6 +558,7 @@ export default function AdminCelebrations({ navigation }: any) {
       );
     }
     case 'whatsapp': {
+      const AdminCelebrationsWhatsAppPreview = require('./AdminCelebrationsWhatsAppPreview').default;
       let themeObj = THEMES.find(t => t.id === selectedThemeId || (t.id === 'royalblue' && selectedThemeId === 'royal') || (t.id === 'royal' && selectedThemeId === 'royalblue'));
       if (!themeObj && selectedThemeId?.startsWith('custom_')) {
         themeObj = activeChurch?.customThemes?.find((t: any) => t.id === selectedThemeId);
@@ -534,7 +578,7 @@ export default function AdminCelebrations({ navigation }: any) {
           titleOverlay={titleOverlay}
           nameOverlay={nameOverlay}
           message={greetingMessage}
-          verse={selectedVerse || {ref: '', text: ''}}
+          verse={selectedVerse || { ref: '', text: '' }}
           churchName={activeChurch?.name || ''}
           onEdit={() => setViewMode('personalize')}
           onSendWhatsApp={handleSendWhatsApp}
@@ -542,7 +586,8 @@ export default function AdminCelebrations({ navigation }: any) {
         />
       );
     }
-    case 'confirm':
+    case 'confirm': {
+      const AdminCelebrationsConfirm = require('./AdminCelebrationsConfirm').default;
       return (
         <AdminCelebrationsConfirm
           member={selectedMember}
@@ -550,206 +595,212 @@ export default function AdminCelebrations({ navigation }: any) {
           onDone={() => setViewMode('dashboard')}
         />
       );
+    }
   }
 
 
   return (
     <View style={{ flex: 1 }}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      
-      {/* ── Fixed Header ── */}
-      <View style={[
-        styles.header,
-        {
-          backgroundColor: isDark ? '#000000' : '#FFFFFF',
-          borderBottomWidth: 1.5,
-          borderBottomColor: isDark ? '#27272A' : '#CBD5E1',
-          paddingBottom: 14,
-          paddingTop: 12,
-          paddingHorizontal: 20,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }
-      ]}>
-        <TouchableOpacity 
-          style={styles.circularBackBtn} 
-          onPress={() => setActiveTab(0)} 
-          activeOpacity={0.7}
-        >
-          <ArrowLeft size={22} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.2} />
-        </TouchableOpacity>
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#0F172A', textAlign: 'center' }]}>Celebrations</Text>
-          <Text style={[styles.headerSub, { color: isDark ? '#A1A1AA' : '#64748B', textAlign: 'center' }]}>Manage birthdays & anniversaries</Text>
-        </View>
-        <View style={{ width: 40 }} />
-      </View>
 
-      {/* Hero Card - Honey Amber Gradient Glassmorphism (same in dark & white theme) */}
-      <LinearGradient
-        colors={['#FFF2DF', '#FED5A5', '#FCAE68']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0.1, y: 1 }}
-        style={[
-          styles.heroCard,
-          {
-            borderColor: 'rgba(255, 255, 255, 0.8)',
-            borderWidth: 1.5,
-            shadowColor: '#8C3B0D',
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.18,
-            shadowRadius: 18,
-            elevation: 6,
-            position: 'relative',
-            overflow: 'hidden',
-          }
-        ]}
-      >
-        {/* Semi-circle button at right top corner */}
-        <TouchableOpacity
-          style={[
-            styles.heroCornerBtn,
-            {
-              backgroundColor: 'rgba(255, 255, 255, 0.45)',
-              borderColor: 'rgba(255, 255, 255, 0.75)',
-            }
-          ]}
-          onPress={() => {
-            const next = activeDateFilter === 'Today' ? 'Upcoming' : 'Today';
-            setActiveDateFilter(next);
-            setToastMsg(`Filtered to ${next} Celebrations`);
-          }}
-          activeOpacity={0.75}
-        >
-          <Gift size={20} color="#3D1403" strokeWidth={2.2} />
-        </TouchableOpacity>
-
-        <Text style={[styles.heroEyebrow, { color: '#8C3B0D' }]}>THIS SEASON</Text>
-        <Text style={[
-          styles.heroTitle, 
-          { 
-            color: '#3D1403',
-            fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-          }
-        ]}>
-          Celebrations{'\n'}worth remembering
-        </Text>
-        <Text style={[styles.heroDesc, { color: '#78350F' }]}>
-          Browse birthdays, anniversaries and baptisms across the parish, and prepare a beautiful wish in moments.
-        </Text>
-        
-        {/* Frosted Glassmorphism Stats Tray with perfect column alignment */}
+        {/* ── Fixed Header ── */}
         <View style={[
-          styles.statsRow,
+          styles.header,
           {
-            backgroundColor: 'rgba(255, 255, 255, 0.42)',
-            borderRadius: 14,
-            paddingVertical: 10,
-            paddingHorizontal: 8,
-            borderWidth: 1,
-            borderColor: 'rgba(255, 255, 255, 0.7)',
+            backgroundColor: isDark ? '#000000' : '#FFFFFF',
+            borderBottomWidth: 1.5,
+            borderBottomColor: isDark ? '#27272A' : '#CBD5E1',
+            paddingBottom: 14,
+            paddingTop: 12,
+            paddingHorizontal: 20,
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'space-between',
-            marginTop: 4,
           }
         ]}>
-          <View style={[styles.statItem, { flex: 1, alignItems: 'center', justifyContent: 'center', minWidth: 0, paddingHorizontal: 2, marginRight: 0 }]}>
-            <Text style={[styles.statNumber, { color: '#3D1403', textAlign: 'center' }]} numberOfLines={1}>{stats.total}</Text>
-            <Text style={[styles.statLabel, { color: '#8C3B0D', textAlign: 'center', fontSize: 9.5, letterSpacing: 0.3 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>TOTAL RECORDS</Text>
+          <TouchableOpacity
+            style={styles.circularBackBtn}
+            onPress={() => setActiveTab(0)}
+            activeOpacity={0.7}
+          >
+            <ArrowLeft size={22} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.2} />
+          </TouchableOpacity>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#0F172A', textAlign: 'center' }]}>Celebrations</Text>
+            <Text style={[styles.headerSub, { color: isDark ? '#A1A1AA' : '#64748B', textAlign: 'center' }]}>Manage birthdays & anniversaries</Text>
           </View>
-          <View style={{ width: 1, height: 26, backgroundColor: 'rgba(61, 20, 3, 0.15)', alignSelf: 'center' }} />
-          <View style={[styles.statItem, { flex: 1, alignItems: 'center', justifyContent: 'center', minWidth: 0, paddingHorizontal: 2, marginRight: 0 }]}>
-            <Text style={[styles.statNumber, { color: '#3D1403', textAlign: 'center' }]} numberOfLines={1}>{stats.today}</Text>
-            <Text style={[styles.statLabel, { color: '#8C3B0D', textAlign: 'center', fontSize: 9.5, letterSpacing: 0.3 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>TODAY</Text>
-          </View>
-          <View style={{ width: 1, height: 26, backgroundColor: 'rgba(61, 20, 3, 0.15)', alignSelf: 'center' }} />
-          <View style={[styles.statItem, { flex: 1, alignItems: 'center', justifyContent: 'center', minWidth: 0, paddingHorizontal: 2, marginRight: 0 }]}>
-            <Text style={[styles.statNumber, { color: '#3D1403', textAlign: 'center' }]} numberOfLines={1}>{stats.thisWeek}</Text>
-            <Text style={[styles.statLabel, { color: '#8C3B0D', textAlign: 'center', fontSize: 9.5, letterSpacing: 0.3 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>THIS WEEK</Text>
-          </View>
+          <View style={{ width: 40 }} />
         </View>
-      </LinearGradient>
+
+        {/* Hero Card - Honey Amber Gradient Glassmorphism (same in dark & white theme) */}
+        <LinearGradient
+          colors={['#FFF2DF', '#FED5A5', '#FCAE68']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0.1, y: 1 }}
+          style={[
+            styles.heroCard,
+            {
+              borderColor: 'rgba(255, 255, 255, 0.8)',
+              borderWidth: 1.5,
+              shadowColor: '#8C3B0D',
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.18,
+              shadowRadius: 18,
+              elevation: 6,
+              position: 'relative',
+              overflow: 'hidden',
+            }
+          ]}
+        >
+          {/* Semi-circle button at right top corner */}
+          <TouchableOpacity
+            style={[
+              styles.heroCornerBtn,
+              {
+                backgroundColor: 'rgba(255, 255, 255, 0.45)',
+                borderColor: 'rgba(255, 255, 255, 0.75)',
+              }
+            ]}
+            onPress={() => {
+              const next = activeDateFilter === 'Today' ? 'Upcoming' : 'Today';
+              setActiveDateFilter(next);
+              setToastMsg(`Filtered to ${next} Celebrations`);
+            }}
+            activeOpacity={0.75}
+          >
+            <Gift size={20} color="#3D1403" strokeWidth={2.2} />
+          </TouchableOpacity>
+
+          <Text style={[styles.heroEyebrow, { color: '#8C3B0D' }]}>THIS SEASON</Text>
+          <Text style={[
+            styles.heroTitle,
+            {
+              color: '#3D1403',
+              fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+            }
+          ]}>
+            Celebrations{'\n'}worth remembering
+          </Text>
+          <Text style={[styles.heroDesc, { color: '#78350F' }]}>
+            Browse birthdays, anniversaries and baptisms across the parish, and prepare a beautiful wish in moments.
+          </Text>
+
+          {/* Frosted Glassmorphism Stats Tray with perfect column alignment */}
+          <View style={[
+            styles.statsRow,
+            {
+              backgroundColor: 'rgba(255, 255, 255, 0.42)',
+              borderRadius: 14,
+              paddingVertical: 10,
+              paddingHorizontal: 8,
+              borderWidth: 1,
+              borderColor: 'rgba(255, 255, 255, 0.7)',
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginTop: 4,
+            }
+          ]}>
+            <View style={[styles.statItem, { flex: 1, alignItems: 'center', justifyContent: 'center', minWidth: 0, paddingHorizontal: 2, marginRight: 0 }]}>
+              <Text style={[styles.statNumber, { color: '#3D1403', textAlign: 'center' }]} numberOfLines={1}>{stats.total}</Text>
+              <Text style={[styles.statLabel, { color: '#8C3B0D', textAlign: 'center', fontSize: 9.5, letterSpacing: 0.3 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>TOTAL RECORDS</Text>
+            </View>
+            <View style={{ width: 1, height: 26, backgroundColor: 'rgba(61, 20, 3, 0.15)', alignSelf: 'center' }} />
+            <View style={[styles.statItem, { flex: 1, alignItems: 'center', justifyContent: 'center', minWidth: 0, paddingHorizontal: 2, marginRight: 0 }]}>
+              <Text style={[styles.statNumber, { color: '#3D1403', textAlign: 'center' }]} numberOfLines={1}>{stats.today}</Text>
+              <Text style={[styles.statLabel, { color: '#8C3B0D', textAlign: 'center', fontSize: 9.5, letterSpacing: 0.3 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>TODAY</Text>
+            </View>
+            <View style={{ width: 1, height: 26, backgroundColor: 'rgba(61, 20, 3, 0.15)', alignSelf: 'center' }} />
+            <View style={[styles.statItem, { flex: 1, alignItems: 'center', justifyContent: 'center', minWidth: 0, paddingHorizontal: 2, marginRight: 0 }]}>
+              <Text style={[styles.statNumber, { color: '#3D1403', textAlign: 'center' }]} numberOfLines={1}>{stats.thisWeek}</Text>
+              <Text style={[styles.statLabel, { color: '#8C3B0D', textAlign: 'center', fontSize: 9.5, letterSpacing: 0.3 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>THIS WEEK</Text>
+            </View>
+          </View>
+        </LinearGradient>
 
 
 
-      {/* Date Filters */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 8, marginBottom: 20 }}>
-        {['Today', 'Upcoming', 'Week', 'Month', 'Past', 'All'].map(filter => {
-          const isActive = activeDateFilter === filter;
-          return (
-            <TouchableOpacity 
-              key={filter}
-              style={[
-                styles.filterBtn,
-                isActive ? {
-                  backgroundColor: isDark ? '#FFFFFF' : '#000000',
-                  borderColor: isDark ? '#FFFFFF' : '#000000',
-                  borderWidth: 1.5,
-                } : {
-                  backgroundColor: isDark ? '#18181B' : '#FFFFFF',
-                  borderColor: isDark ? '#27272A' : '#CBD5E1',
-                  borderWidth: 1.5,
-                }
-              ]}
-              onPress={() => setActiveDateFilter(filter)}
-              activeOpacity={0.75}
-            >
-              <Text 
+        {/* Date Filters */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 8, marginBottom: 20 }}>
+          {['Today', 'Upcoming', 'Week', 'Month', 'Past', 'All'].map(filter => {
+            const isActive = activeDateFilter === filter;
+            return (
+              <TouchableOpacity
+                key={filter}
                 style={[
-                  styles.filterBtnTxt, 
+                  styles.filterBtn,
                   isActive ? {
-                    color: isDark ? '#000000' : '#FFFFFF',
-                    fontWeight: '700',
+                    backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                    borderColor: isDark ? '#FFFFFF' : '#000000',
+                    borderWidth: 1.5,
                   } : {
-                    color: isDark ? '#A1A1AA' : '#64748B',
-                    fontWeight: '600',
+                    backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                    borderColor: isDark ? '#27272A' : '#CBD5E1',
+                    borderWidth: 1.5,
                   }
                 ]}
+                onPress={() => setActiveDateFilter(filter)}
+                activeOpacity={0.75}
               >
-                {filter}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
+                <Text
+                  style={[
+                    styles.filterBtnTxt,
+                    isActive ? {
+                      color: isDark ? '#000000' : '#FFFFFF',
+                      fontWeight: '700',
+                    } : {
+                      color: isDark ? '#A1A1AA' : '#64748B',
+                      fontWeight: '600',
+                    }
+                  ]}
+                >
+                  {filter}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        {/* Category Buttons */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 10, marginBottom: 16 }}>
+          {['Birthday', 'Wedding Anniversary', 'Baptism Anniversary'].map(cat => {
+            let bgColor = cat === 'Birthday' ? '#F3E4B6' : cat === 'Wedding Anniversary' ? '#E2E5F2' : '#DDF1E7';
+            let textColor = cat === 'Birthday' ? '#B88A2E' : cat === 'Wedding Anniversary' ? '#455490' : '#358B6D';
+            return (
+              <TouchableOpacity
+                key={cat}
+                style={[{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: bgColor }, activeCategoryFilter === cat && { borderWidth: 2, borderColor: textColor }]}
+                onPress={() => setActiveCategoryFilter(activeCategoryFilter === cat ? 'All' : cat)}
+              >
+                <Text style={[{ fontSize: 13, color: textColor }, activeCategoryFilter === cat && { fontWeight: '800' }]}>{cat}</Text>
+              </TouchableOpacity>
+            )
+          })}
+        </ScrollView>
+
+        {/* Embedded List */}
+        <View style={{ flex: 1, minHeight: 400 }}>
+          {(() => {
+            const AdminCelebrationsList = require('./AdminCelebrationsList').default;
+            return (
+              <AdminCelebrationsList
+                category={activeCategoryFilter}
+                activeTab={activeDateFilter}
+                onSelectMember={(member: any) => {
+                  setSelectedMember(member);
+                  setViewMode('details');
+                }}
+              />
+            );
+          })()}
+        </View>
+
+        <Text style={styles.footerText}>
+          <Text style={{ color: '#1D4ED8', fontWeight: 'bold' }}>WeChristian</Text> - {activeChurch?.name?.toUpperCase() || ''}
+        </Text>
       </ScrollView>
-
-      {/* Category Buttons */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 10, marginBottom: 16 }}>
-        {['Birthday', 'Wedding Anniversary', 'Baptism Anniversary'].map(cat => {
-          let bgColor = cat === 'Birthday' ? '#F3E4B6' : cat === 'Wedding Anniversary' ? '#E2E5F2' : '#DDF1E7';
-          let textColor = cat === 'Birthday' ? '#B88A2E' : cat === 'Wedding Anniversary' ? '#455490' : '#358B6D';
-          return (
-            <TouchableOpacity 
-              key={cat}
-              style={[{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: bgColor }, activeCategoryFilter === cat && { borderWidth: 2, borderColor: textColor }]}
-              onPress={() => setActiveCategoryFilter(activeCategoryFilter === cat ? 'All' : cat)}
-            >
-              <Text style={[{ fontSize: 13, color: textColor }, activeCategoryFilter === cat && { fontWeight: '800' }]}>{cat}</Text>
-            </TouchableOpacity>
-          )
-        })}
-      </ScrollView>
-
-      {/* Embedded List */}
-      <View style={{ flex: 1, minHeight: 400 }}>
-        <AdminCelebrationsList 
-          category={activeCategoryFilter} 
-          activeTab={activeDateFilter}
-          onSelectMember={(member) => {
-            setSelectedMember(member);
-            setViewMode('details');
-          }}
-        />
-      </View>
-
-      <Text style={styles.footerText}>
-        <Text style={{color: '#1D4ED8', fontWeight: 'bold'}}>WeChristian</Text> - {activeChurch?.name?.toUpperCase() || ''}
-      </Text>
-    </ScrollView>
-    <SuccessPopup visible={!!toastMsg} message={toastMsg} onDismiss={() => setToastMsg('')} />
-  </View>
+      <SuccessPopup visible={!!toastMsg} message={toastMsg} onDismiss={() => setToastMsg('')} />
+    </View>
   );
 }
 
@@ -784,17 +835,17 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center'
   },
-    content: {
+  content: {
     padding: 0,
     paddingBottom: 40,
   },
-  header: { 
-    backgroundColor: 'transparent', 
+  header: {
+    backgroundColor: 'transparent',
     paddingTop: 8,
     paddingHorizontal: 16,
     paddingBottom: 12,
-    
-    
+
+
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -871,7 +922,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 1,
   },
-    sectionTitle: {
+  sectionTitle: {
     color: '#848796',
     fontSize: 11,
     fontWeight: '700',

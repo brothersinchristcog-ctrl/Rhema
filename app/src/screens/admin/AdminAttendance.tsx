@@ -322,7 +322,13 @@ export default function AdminAttendance() {
     try {
       setIsDeletingEvent(true);
       await FirestoreService.deleteEvent(eventToDelete.id, deleteMode);
-      setEventsList(prev => prev.filter(e => e.id !== eventToDelete.id));
+      setEventsList(prev => {
+        const next = prev.filter(e => e.id !== eventToDelete.id);
+        if (memoryAttendanceCache && memoryAttendanceCache.churchId === churchId) {
+          memoryAttendanceCache = { ...memoryAttendanceCache, eventsList: next, timestamp: Date.now() };
+        }
+        return next;
+      });
       if (selectedEvent?.id === eventToDelete.id) {
         setSelectedEvent(null);
       }
@@ -360,16 +366,19 @@ export default function AdminAttendance() {
           .collection('Rhema Church')
           .doc(churchId)
           .collection('events')
+          .limit(150)
           .get(),
         firestore()
           .collection('Rhema Church')
           .doc(churchId)
           .collection('attendanceRequests')
+          .limit(200)
           .get(),
         firestore()
           .collection('Rhema Church')
           .doc(churchId)
           .collection('attendanceRecords')
+          .limit(250)
           .get(),
       ]);
 
@@ -757,6 +766,8 @@ export default function AdminAttendance() {
       return {
         presentList: [],
         absentList: [],
+        absentIdsSet: new Set<string>(),
+        absentPhonesSet: new Set<string>(),
         guestsList: [],
         totalExpected: 0,
         presentCount: 0,
@@ -816,11 +827,21 @@ export default function AdminAttendance() {
       p => p.method === 'FAMILY_CHECKIN' || p.id?.startsWith('fam_') || (p.memberName && p.memberName.includes('Family'))
     ).length;
     const absentCount = absentList.length;
+    const absentIdsSet = new Set<string>();
+    const absentPhonesSet = new Set<string>();
+    absentList.forEach(a => {
+      if (a.id) absentIdsSet.add(a.id);
+      if (a.Id) absentIdsSet.add(a.Id);
+      const p = normalizePhone10(a.phone || a.MobilePhone || a.phoneNumber || '');
+      if (p) absentPhonesSet.add(p);
+    });
     const turnoutPercent = totalExpected > 0 ? Math.min(100, Math.round((presentList.length / totalExpected) * 100)) : 0;
 
     return {
       presentList,
       absentList,
+      absentIdsSet,
+      absentPhonesSet,
       guestsList,
       totalExpected,
       presentCount,
@@ -1671,7 +1692,8 @@ export default function AdminAttendance() {
                 const rawName = item.guestName || item.name || item.Name || item.memberName || 'Member';
                 const name = stripGuestSuffix(rawName) || 'Member';
                 const phone = item.phone || item.MobilePhone || item.memberPhone || '';
-                const isAbsent = reportFilter === 'Absent' || reportData.absentList.some(a => (a.id && a.id === item.id) || (a.phone && a.phone === phone));
+                const cleanPhone = normalizePhone10(phone);
+                const isAbsent = reportFilter === 'Absent' || (item.id ? reportData.absentIdsSet.has(item.id) : false) || (cleanPhone ? reportData.absentPhonesSet.has(cleanPhone) : false);
                 const isGuest = Boolean(item.isGuest || item.id?.startsWith('guest_') || (item.memberName && /\(guest\)\s*$/i.test(item.memberName)));
 
                 return (

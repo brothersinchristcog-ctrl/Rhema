@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { 
-  StyleSheet, 
-  View, 
-  Text, 
-  ScrollView, 
-  TextInput, 
-  TouchableOpacity, 
+import {
+  StyleSheet,
+  View,
+  Text,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
   Switch,
   Alert,
   Dimensions,
@@ -16,11 +16,11 @@ import {
 } from 'react-native';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import { AdminTabContext } from '../../context/AdminTabContext';
-import { 
-  Bell, 
-  Send, 
-  ShieldCheck, 
-  Layout, 
+import {
+  Bell,
+  Send,
+  ShieldCheck,
+  Layout,
   Mic,
   Save,
   Users,
@@ -33,20 +33,30 @@ import {
   Gift,
   Heart,
   AlertTriangle
-, ArrowLeft } from 'lucide-react-native';
+  , ArrowLeft
+} from 'lucide-react-native';
 import Theme from '../../theme/Theme';
 import FirestoreService from '../../services/FirestoreService';
 import {
-  getFirestore, 
-  collection, 
-  doc, 
-  getDoc, 
-  setDoc, 
-  addDoc, 
-  getDocs, 
-  serverTimestamp 
+  getFirestore,
+  collection,
+  doc,
+  getDoc,
+  setDoc,
+  addDoc,
+  getDocs,
+  query,
+  limit,
+  serverTimestamp
 } from '@react-native-firebase/firestore';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
+import { useChurch } from '../../context/ChurchContext';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  readInstantCache,
+  writeInstantCache,
+} from '../../utils/instantCache';
 
 const { width } = Dimensions.get('window');
 
@@ -185,7 +195,7 @@ export default function AdminNotificationBroadcast() {
         anniversaryNotif,
         updatedAt: serverTimestamp()
       }, { merge: true });
-      
+
       setShowSaveSuccess(true);
       setTimeout(() => setShowSaveSuccess(false), 2500);
     } catch (err: any) {
@@ -208,7 +218,7 @@ export default function AdminNotificationBroadcast() {
     try {
       const now = new Date();
       const dateStr = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-      
+
       const newBroadcast = {
         date: dateStr,
         count: 1250, // Mock count
@@ -240,7 +250,7 @@ export default function AdminNotificationBroadcast() {
       } catch (fErr) {
         console.warn('⚠️ Firestore Sync (broadcasts) bypassed due to Security Rules:', fErr);
       }
-      
+
       setLastBroadcast(newBroadcast);
       Alert.alert('Broadcast Sent', `Message successfully sent to ${manualBroadcast.sendTo}!`);
       setManualBroadcast({ ...manualBroadcast, title: '', message: '' });
@@ -289,7 +299,9 @@ export default function AdminNotificationBroadcast() {
 
       let count = 1250;
       try {
-        const membersSnap = await getDocs(collection(db, 'Rhema Church', churchId, 'members'));
+        const membersSnap = await getDocs(
+          query(collection(db, 'Rhema Church', churchId, 'members'), limit(500))
+        );
         count = membersSnap.docs.filter(doc => doc.data()?.fcmToken).length;
       } catch (fErr) {
         console.warn('⚠️ Firestore Sync (members) bypassed:', fErr);
@@ -364,23 +376,25 @@ export default function AdminNotificationBroadcast() {
       } else {
         const names = bdays.map(b => b.name).join(', ');
         const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-        
-        for (const member of bdays) {
-          try {
-            const churchId = await FirestoreService.getChurchId();
-            await FirestoreService.createNotificationBroadcast({
-              title: `🎂 Happy Birthday, ${member.name}!`,
-              content: birthdayNotif.greeting,
-              date: dateStr,
-              type: 'birthday',
-              silent: true,
-              targetChurchId: churchId,
-              targetPhone: member.phone,
-            });
-          } catch (fErr) {
-            console.warn('⚠️ Firestore Sync (broadcasts) bypassed due to Security Rules:', fErr);
-          }
-        }
+        const churchId = await FirestoreService.getChurchId();
+
+        await Promise.all(
+          bdays.map(async (member) => {
+            try {
+              await FirestoreService.createNotificationBroadcast({
+                title: `🎂 Happy Birthday, ${member.name}!`,
+                content: birthdayNotif.greeting,
+                date: dateStr,
+                type: 'birthday',
+                silent: true,
+                targetChurchId: churchId,
+                targetPhone: member.phone,
+              });
+            } catch (fErr) {
+              console.warn('⚠️ Firestore Sync (broadcasts) bypassed due to Security Rules:', fErr);
+            }
+          })
+        );
         setShowSimulateSuccess({
           visible: true,
           title: 'Success',
@@ -433,22 +447,24 @@ export default function AdminNotificationBroadcast() {
         );
       } else {
         const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-        for (const ann of annivs) {
-          try {
-            const churchId = await FirestoreService.getChurchId();
-            await FirestoreService.createNotificationBroadcast({
-              title: `💍 Happy Wedding Anniversary!`,
-              content: `Wishing Brother ${ann.husband} & Sister ${ann.wife} a wonderful ${ann.years}th Wedding Anniversary! ${anniversaryNotif.greeting}`,
-              date: dateStr,
-              type: 'anniversary',
-              silent: true,
-              targetChurchId: churchId,
-              targetPhone: ann.husbandPhone || ann.wifePhone,
-            });
-          } catch (fErr) {
-            console.warn('⚠️ Firestore Sync (broadcasts) bypassed due to Security Rules:', fErr);
-          }
-        }
+        const churchId = await FirestoreService.getChurchId();
+        await Promise.all(
+          annivs.map(async (ann) => {
+            try {
+              await FirestoreService.createNotificationBroadcast({
+                title: `💍 Happy Wedding Anniversary!`,
+                content: `Wishing Brother ${ann.husband} & Sister ${ann.wife} a wonderful ${ann.years}th Wedding Anniversary! ${anniversaryNotif.greeting}`,
+                date: dateStr,
+                type: 'anniversary',
+                silent: true,
+                targetChurchId: churchId,
+                targetPhone: ann.husbandPhone || ann.wifePhone,
+              });
+            } catch (fErr) {
+              console.warn('⚠️ Firestore Sync (broadcasts) bypassed due to Security Rules:', fErr);
+            }
+          })
+        );
         setShowSimulateSuccess({
           visible: true,
           title: 'Success',
@@ -474,7 +490,7 @@ export default function AdminNotificationBroadcast() {
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#000000' : '#F8FAFC' }]}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
-      
+
       {/* ── Header Section ── */}
       <View style={[
         styles.header,
@@ -510,7 +526,7 @@ export default function AdminNotificationBroadcast() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scroll, { paddingBottom: 40 }]}>
-        
+
         {/* ── 1. Daily Promise Notification ── */}
         <View style={[
           styles.sectionHeader,
@@ -534,9 +550,9 @@ export default function AdminNotificationBroadcast() {
         ]}>
           <View style={styles.row}>
             <Text style={[styles.fLabel, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>Send daily promise notification</Text>
-            <Switch 
-              value={dailyPromise.enabled} 
-              onValueChange={(v) => setDailyPromise({...dailyPromise, enabled: v})} 
+            <Switch
+              value={dailyPromise.enabled}
+              onValueChange={(v) => setDailyPromise({ ...dailyPromise, enabled: v })}
               trackColor={{ false: isDark ? '#3F3F46' : '#CBD5E1', true: isDark ? '#34D399' : '#10B981' }}
               thumbColor="#fff"
             />
@@ -544,8 +560,8 @@ export default function AdminNotificationBroadcast() {
 
           <View style={styles.inputGroup}>
             <Text style={[styles.fLabelSmall, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Send time (IST)</Text>
-            <TouchableOpacity 
-              activeOpacity={0.7} 
+            <TouchableOpacity
+              activeOpacity={0.7}
               style={[
                 styles.inputBox,
                 isDark && {
@@ -581,7 +597,7 @@ export default function AdminNotificationBroadcast() {
 
         {/* ── 2. Automated Birthdays & Anniversaries ── */}
         <View style={[
-          styles.sectionHeader, 
+          styles.sectionHeader,
           { borderLeftColor: '#F59E0B' },
           isDark && {
             backgroundColor: '#1E1E22',
@@ -604,9 +620,9 @@ export default function AdminNotificationBroadcast() {
           {/* Birthday greeting toggle */}
           <View style={styles.row}>
             <Text style={[styles.fLabel, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>Automated Daily Birthday Alerts</Text>
-            <Switch 
-              value={birthdayNotif.enabled} 
-              onValueChange={(v) => setBirthdayNotif({...birthdayNotif, enabled: v})} 
+            <Switch
+              value={birthdayNotif.enabled}
+              onValueChange={(v) => setBirthdayNotif({ ...birthdayNotif, enabled: v })}
               trackColor={{ false: isDark ? '#3F3F46' : '#CBD5E1', true: isDark ? '#F59E0B' : '#D97706' }}
               thumbColor="#fff"
             />
@@ -614,26 +630,26 @@ export default function AdminNotificationBroadcast() {
 
           <View style={[styles.inputGroup, { marginTop: 10 }]}>
             <Text style={[styles.fLabelSmall, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Birthday greeting message</Text>
-            <TextInput 
+            <TextInput
               style={[
-                styles.inputBoxAlt, 
+                styles.inputBoxAlt,
                 styles.textArea,
                 isDark && {
                   backgroundColor: '#222226',
                   borderColor: 'rgba(255, 255, 255, 0.2)',
                   color: '#FFFFFF'
                 }
-              ]} 
+              ]}
               placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
               multiline
               value={birthdayNotif.greeting}
-              onChangeText={(v) => setBirthdayNotif({...birthdayNotif, greeting: v})}
+              onChangeText={(v) => setBirthdayNotif({ ...birthdayNotif, greeting: v })}
             />
           </View>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[
-              styles.simulateBtn, 
+              styles.simulateBtn,
               isDark ? {
                 backgroundColor: 'rgba(245, 158, 11, 0.15)',
                 borderColor: 'rgba(245, 158, 11, 0.4)',
@@ -641,7 +657,7 @@ export default function AdminNotificationBroadcast() {
                 backgroundColor: '#FEFBF0',
                 borderColor: '#F5DFA0',
               }
-            ]} 
+            ]}
             onPress={handleSimulateBirthdays}
           >
             <Gift size={16} color={isDark ? '#FBBF24' : '#B76E00'} />
@@ -653,9 +669,9 @@ export default function AdminNotificationBroadcast() {
           {/* Anniversary greeting toggle */}
           <View style={[styles.row, { marginTop: 10 }]}>
             <Text style={[styles.fLabel, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>Automated Daily Anniversary Alerts</Text>
-            <Switch 
-              value={anniversaryNotif.enabled} 
-              onValueChange={(v) => setAnniversaryNotif({...anniversaryNotif, enabled: v})} 
+            <Switch
+              value={anniversaryNotif.enabled}
+              onValueChange={(v) => setAnniversaryNotif({ ...anniversaryNotif, enabled: v })}
               trackColor={{ false: isDark ? '#3F3F46' : '#CBD5E1', true: isDark ? '#34D399' : '#10B981' }}
               thumbColor="#fff"
             />
@@ -663,26 +679,26 @@ export default function AdminNotificationBroadcast() {
 
           <View style={[styles.inputGroup, { marginTop: 10 }]}>
             <Text style={[styles.fLabelSmall, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Anniversary greeting message</Text>
-            <TextInput 
+            <TextInput
               style={[
-                styles.inputBoxAlt, 
+                styles.inputBoxAlt,
                 styles.textArea,
                 isDark && {
                   backgroundColor: '#222226',
                   borderColor: 'rgba(255, 255, 255, 0.2)',
                   color: '#FFFFFF'
                 }
-              ]} 
+              ]}
               placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
               multiline
               value={anniversaryNotif.greeting}
-              onChangeText={(v) => setAnniversaryNotif({...anniversaryNotif, greeting: v})}
+              onChangeText={(v) => setAnniversaryNotif({ ...anniversaryNotif, greeting: v })}
             />
           </View>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[
-              styles.simulateBtn, 
+              styles.simulateBtn,
               isDark ? {
                 backgroundColor: 'rgba(16, 185, 129, 0.15)',
                 borderColor: 'rgba(52, 211, 153, 0.4)',
@@ -690,7 +706,7 @@ export default function AdminNotificationBroadcast() {
                 backgroundColor: '#EDF7F1',
                 borderColor: '#A3D9B8',
               }
-            ]} 
+            ]}
             onPress={handleSimulateAnniversaries}
           >
             <Heart size={16} color={isDark ? '#34D399' : '#2E7D52'} />
@@ -700,7 +716,7 @@ export default function AdminNotificationBroadcast() {
 
         {/* ── 3. Emergency Meeting Alerts ── */}
         <View style={[
-          styles.sectionHeader, 
+          styles.sectionHeader,
           { borderLeftColor: '#DC2626' },
           isDark && {
             backgroundColor: '#1E1E22',
@@ -714,13 +730,13 @@ export default function AdminNotificationBroadcast() {
         </View>
 
         <View style={[
-          styles.card, 
+          styles.card,
           { borderColor: isDark ? 'rgba(248, 113, 113, 0.35)' : 'rgba(220,38,38,0.3)' },
           isDark && { backgroundColor: '#161618' }
         ]}>
           <View style={styles.inputGroup}>
             <Text style={[styles.fLabelSmall, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Meeting Title</Text>
-            <TextInput 
+            <TextInput
               style={[
                 styles.inputBoxAlt,
                 isDark && {
@@ -728,26 +744,26 @@ export default function AdminNotificationBroadcast() {
                   borderColor: 'rgba(255, 255, 255, 0.2)',
                   color: '#FFFFFF'
                 }
-              ]} 
+              ]}
               placeholder="🚨 EMERGENCY MEETING NOTICE"
               placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
               value={emergencyAlert.title}
-              onChangeText={(v) => setEmergencyAlert({...emergencyAlert, title: v})}
+              onChangeText={(v) => setEmergencyAlert({ ...emergencyAlert, title: v })}
             />
           </View>
 
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 12, width: '100%' }}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.fLabelSmall, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Meeting Date</Text>
-              <TouchableOpacity 
-                activeOpacity={0.7} 
+              <TouchableOpacity
+                activeOpacity={0.7}
                 style={[
                   styles.pickerBtn,
                   isDark && {
                     backgroundColor: '#222226',
                     borderColor: 'rgba(255, 255, 255, 0.2)',
                   }
-                ]} 
+                ]}
                 onPress={() => setShowMeetingDatePicker(true)}
               >
                 <Text style={[styles.pickerTxt, { color: isDark ? '#FFFFFF' : '#0F172A' }]} numberOfLines={1}>
@@ -758,15 +774,15 @@ export default function AdminNotificationBroadcast() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.fLabelSmall, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Meeting Time</Text>
-              <TouchableOpacity 
-                activeOpacity={0.7} 
+              <TouchableOpacity
+                activeOpacity={0.7}
                 style={[
                   styles.pickerBtn,
                   isDark && {
                     backgroundColor: '#222226',
                     borderColor: 'rgba(255, 255, 255, 0.2)',
                   }
-                ]} 
+                ]}
                 onPress={() => setShowMeetingTimePicker(true)}
               >
                 <Text style={[styles.pickerTxt, { color: isDark ? '#FFFFFF' : '#0F172A' }]} numberOfLines={1}>
@@ -784,7 +800,7 @@ export default function AdminNotificationBroadcast() {
 
           <View style={styles.inputGroup}>
             <Text style={[styles.fLabelSmall, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Location</Text>
-            <TextInput 
+            <TextInput
               style={[
                 styles.inputBoxAlt,
                 isDark && {
@@ -792,39 +808,39 @@ export default function AdminNotificationBroadcast() {
                   borderColor: 'rgba(255, 255, 255, 0.2)',
                   color: '#FFFFFF'
                 }
-              ]} 
+              ]}
               placeholder="Main Sanctuary"
               placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
               value={emergencyAlert.location}
-              onChangeText={(v) => setEmergencyAlert({...emergencyAlert, location: v})}
+              onChangeText={(v) => setEmergencyAlert({ ...emergencyAlert, location: v })}
             />
           </View>
 
           <View style={styles.inputGroup}>
             <Text style={[styles.fLabelSmall, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Emergency Message Details</Text>
-            <TextInput 
+            <TextInput
               style={[
-                styles.inputBoxAlt, 
+                styles.inputBoxAlt,
                 styles.textArea,
                 isDark && {
                   backgroundColor: '#222226',
                   borderColor: 'rgba(255, 255, 255, 0.2)',
                   color: '#FFFFFF'
                 }
-              ]} 
+              ]}
               multiline
               placeholder="URGENT: All church members are requested to join us for an emergency meeting regarding upcoming church events and building project updates."
               placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
               value={emergencyAlert.message}
-              onChangeText={(v) => setEmergencyAlert({...emergencyAlert, message: v})}
+              onChangeText={(v) => setEmergencyAlert({ ...emergencyAlert, message: v })}
             />
           </View>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[
               styles.emergencyBtn,
               { backgroundColor: '#DC2626' }
-            ]} 
+            ]}
             onPress={handleSendEmergencyAlert}
             activeOpacity={0.8}
           >
@@ -867,7 +883,7 @@ export default function AdminNotificationBroadcast() {
 
         {/* ── 4. Manual Custom Broadcast ── */}
         <View style={[
-          styles.sectionHeader, 
+          styles.sectionHeader,
           { borderLeftColor: isDark ? '#60A5FA' : '#1a2d5a' },
           isDark && {
             backgroundColor: '#1E1E22',
@@ -889,7 +905,7 @@ export default function AdminNotificationBroadcast() {
         ]}>
           <View style={styles.inputGroup}>
             <Text style={[styles.fLabelSmall, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Title</Text>
-            <TextInput 
+            <TextInput
               style={[
                 styles.inputBoxAlt,
                 isDark && {
@@ -897,40 +913,40 @@ export default function AdminNotificationBroadcast() {
                   borderColor: 'rgba(255, 255, 255, 0.2)',
                   color: '#FFFFFF'
                 }
-              ]} 
+              ]}
               placeholder="Special announcement title..."
               placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
               value={manualBroadcast.title}
-              onChangeText={(v) => setManualBroadcast({...manualBroadcast, title: v})}
+              onChangeText={(v) => setManualBroadcast({ ...manualBroadcast, title: v })}
             />
           </View>
 
           <View style={styles.inputGroup}>
             <Text style={[styles.fLabelSmall, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Message</Text>
-            <TextInput 
+            <TextInput
               style={[
-                styles.inputBoxAlt, 
+                styles.inputBoxAlt,
                 styles.textArea,
                 isDark && {
                   backgroundColor: '#222226',
                   borderColor: 'rgba(255, 255, 255, 0.2)',
                   color: '#FFFFFF'
                 }
-              ]} 
+              ]}
               placeholder="Type your message to members..."
               placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
               multiline
               value={manualBroadcast.message}
-              onChangeText={(v) => setManualBroadcast({...manualBroadcast, message: v})}
+              onChangeText={(v) => setManualBroadcast({ ...manualBroadcast, message: v })}
             />
           </View>
 
           <View style={styles.actionRow}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[
                 styles.sendBtn,
                 { backgroundColor: isDark ? '#2563EB' : '#1a2d5a' }
-              ]} 
+              ]}
               onPress={handleSendNow}
               activeOpacity={0.8}
             >
@@ -954,7 +970,7 @@ export default function AdminNotificationBroadcast() {
         </View>
 
         {/* ── Save Settings Button (inline at the bottom of the screen) ── */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[
             styles.saveBtn,
             {
@@ -966,7 +982,7 @@ export default function AdminNotificationBroadcast() {
               marginTop: 10,
               marginBottom: Platform.OS === 'ios' ? 44 : 36,
             }
-          ]} 
+          ]}
           onPress={handleSaveSettings}
           activeOpacity={0.8}
         >
@@ -1011,8 +1027,8 @@ export default function AdminNotificationBroadcast() {
               <Text style={styles.successDesc}>
                 {showSimulateSuccess.message}
               </Text>
-              <TouchableOpacity 
-                style={[styles.saveBtn, { marginTop: 24, width: '100%', height: 44 }]} 
+              <TouchableOpacity
+                style={[styles.saveBtn, { marginTop: 24, width: '100%', height: 44 }]}
                 onPress={() => setShowSimulateSuccess({ visible: false, title: '', message: '' })}
               >
                 <Text style={styles.saveBtnTxt}>Done</Text>
@@ -1057,13 +1073,13 @@ const styles = createAdminThemedStyles(StyleSheet.create({
 
   scroll: { padding: 14, paddingBottom: 160 },
 
-  sectionHeader: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    gap: 8, 
-    backgroundColor: '#FFFFFF', 
-    padding: 14, 
-    borderTopLeftRadius: 14, 
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFFFFF',
+    padding: 14,
+    borderTopLeftRadius: 14,
     borderTopRightRadius: 14,
     borderLeftWidth: 4,
     borderLeftColor: '#3B82F6',
@@ -1076,10 +1092,10 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   },
   sectionTitle: { fontSize: 12, fontWeight: '800', color: '#0F172A', textTransform: 'uppercase', letterSpacing: 0.5 },
 
-  card: { 
-    backgroundColor: '#FFFFFF', 
-    padding: 18, 
-    borderBottomLeftRadius: 14, 
+  card: {
+    backgroundColor: '#FFFFFF',
+    padding: 18,
+    borderBottomLeftRadius: 14,
     borderBottomRightRadius: 14,
     marginBottom: 20,
     elevation: 2,
@@ -1097,22 +1113,22 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   fLabelSmall: { fontSize: 11, fontWeight: '800', color: '#64748B', textTransform: 'uppercase', marginBottom: 6, marginTop: 10, letterSpacing: 0.5 },
 
   inputGroup: { marginBottom: 12 },
-  inputBox: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    backgroundColor: '#FFFFFF', 
-    borderWidth: 1.5, 
-    borderColor: '#CBD5E1', 
-    borderRadius: 12, 
-    paddingHorizontal: 16, 
-    height: 48 
+  inputBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    height: 48
   },
   inputBoxAlt: {
-    backgroundColor: '#F8FAFC', 
-    borderWidth: 1.5, 
-    borderColor: '#CBD5E1', 
-    borderRadius: 12, 
-    paddingHorizontal: 16, 
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    borderRadius: 12,
+    paddingHorizontal: 16,
     height: 48,
     fontSize: 14,
     color: '#0F172A',
@@ -1124,28 +1140,28 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     paddingTop: 14,
   },
   textInput: { flex: 1, fontSize: 14, fontWeight: '600', color: '#0F172A' },
-  
-  pickerBtn: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'space-between', 
-    backgroundColor: '#F8FAFC', 
-    borderWidth: 1.5, 
-    borderColor: '#CBD5E1', 
-    borderRadius: 12, 
-    paddingHorizontal: 16, 
-    height: 48 
+
+  pickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    height: 48
   },
   pickerTxt: { fontSize: 13, color: '#0F172A', fontWeight: '600' },
-  dropdown: { 
+  dropdown: {
     position: 'absolute',
     top: 60,
     right: 0,
     left: 0,
-    backgroundColor: '#FFFFFF', 
-    borderWidth: 1.5, 
-    borderColor: '#CBD5E1', 
-    borderRadius: 12, 
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    borderRadius: 12,
     zIndex: 1000,
     elevation: 5,
     overflow: 'hidden'
@@ -1154,19 +1170,19 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   dropTxt: { fontSize: 13, color: '#0F172A', fontWeight: '600' },
 
   divider: { height: 1.5, backgroundColor: '#E2E8F0', marginVertical: 18 },
-  
-  simulateBtn: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    gap: 8, 
+
+  simulateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
     borderWidth: 1.5,
     borderColor: '#CBD5E1',
-    borderRadius: 12, 
+    borderRadius: 12,
     paddingVertical: 10,
     paddingHorizontal: 20,
     alignSelf: 'center',
-    marginTop: 10 
+    marginTop: 10
   },
   simulateBtnTxt: { fontSize: 13, fontWeight: '700', color: '#0F172A' },
 
@@ -1189,12 +1205,12 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   emergencyBtnTxt: { color: '#fff', fontSize: 12, fontWeight: '800' },
 
   actionRow: { marginTop: 15 },
-  sendBtn: { 
-    height: 48, 
-    backgroundColor: '#1a2d5a', 
-    borderRadius: 12, 
+  sendBtn: {
+    height: 48,
+    backgroundColor: '#1a2d5a',
+    borderRadius: 12,
     flexDirection: 'row',
-    alignItems: 'center', 
+    alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
     elevation: 2,
@@ -1204,47 +1220,47 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   },
   sendBtnTxt: { color: '#fff', fontSize: 13, fontWeight: '800' },
 
-  statusBox: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    gap: 8, 
-    backgroundColor: '#F0FDF4', 
-    padding: 12, 
-    borderRadius: 10, 
-    marginTop: 15, 
-    borderWidth: 1.5, 
-    borderColor: 'rgba(46,107,79,0.2)' 
+  statusBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F0FDF4',
+    padding: 12,
+    borderRadius: 10,
+    marginTop: 15,
+    borderWidth: 1.5,
+    borderColor: 'rgba(46,107,79,0.2)'
   },
   statusTxt: { flex: 1, fontSize: 11, color: '#2E6B4F', lineHeight: 16 },
 
-  footer: { 
-    position: 'absolute', 
-    bottom: 0, 
-    left: 0, 
-    right: 0, 
-    backgroundColor: '#FFFFFF', 
-    paddingHorizontal: 16, 
-    paddingTop: 12, 
-    paddingBottom: 28, 
-    borderTopWidth: 1.5, 
-    borderTopColor: '#CBD5E1', 
-    elevation: 10, 
-    shadowColor: '#000', 
-    shadowOpacity: 0.08, 
-    shadowRadius: 10 
+  footer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 28,
+    borderTopWidth: 1.5,
+    borderTopColor: '#CBD5E1',
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 10
   },
-  saveBtn: { 
-    backgroundColor: '#000000', 
-    height: 52, 
-    borderRadius: 14, 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    gap: 10, 
-    elevation: 3, 
-    shadowColor: '#000000', 
-    shadowOpacity: 0.2, 
-    shadowRadius: 6 
+  saveBtn: {
+    backgroundColor: '#000000',
+    height: 52,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    elevation: 3,
+    shadowColor: '#000000',
+    shadowOpacity: 0.2,
+    shadowRadius: 6
   },
   saveBtnTxt: { color: '#fff', fontSize: 14, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 },
 

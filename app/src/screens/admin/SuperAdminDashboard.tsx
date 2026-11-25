@@ -5,9 +5,6 @@ import { useAuth } from '../../context/AuthContext';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Shield, X, Search, ArrowLeft } from 'lucide-react-native';
-import SuperAdminVersesManager from './SuperAdminVersesManager';
-import SuperAdminDailyQuizManager from './SuperAdminDailyQuizManager';
-import SuperAdminRoleManager from './SuperAdminRoleManager';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import { useAdminTheme } from '../../utils/adminThemeHelper';
 
@@ -127,8 +124,8 @@ export default function SuperAdminDashboard({ navigation }: any) {
                 activeTab === 'verses'
                   ? 'Search daily verses...'
                   : activeTab === 'daily_quiz'
-                  ? 'Search church quizzes, date, scripture...'
-                  : 'Search super admins by name or phone...'
+                    ? 'Search church quizzes, date, scripture...'
+                    : 'Search super admins by name or phone...'
               }
               placeholderTextColor={secondaryText}
               value={searchQuery}
@@ -142,14 +139,19 @@ export default function SuperAdminDashboard({ navigation }: any) {
           </View>
         </View>
 
-        {/* Tab Content */}
-        {activeTab === 'verses' ? (
-          <SuperAdminVersesManager searchQuery={searchQuery} />
-        ) : activeTab === 'daily_quiz' ? (
-          <SuperAdminDailyQuizManager searchQuery={searchQuery} />
-        ) : (
-          <SuperAdminRoleManager searchQuery={searchQuery} />
-        )}
+        {/* Tab Content (lazy-loaded per active tab) */}
+        {(() => {
+          if (activeTab === 'verses') {
+            const SuperAdminVersesManager = require('./SuperAdminVersesManager').default;
+            return <SuperAdminVersesManager searchQuery={searchQuery} />;
+          }
+          if (activeTab === 'daily_quiz') {
+            const SuperAdminDailyQuizManager = require('./SuperAdminDailyQuizManager').default;
+            return <SuperAdminDailyQuizManager searchQuery={searchQuery} />;
+          }
+          const SuperAdminRoleManager = require('./SuperAdminRoleManager').default;
+          return <SuperAdminRoleManager searchQuery={searchQuery} />;
+        })()}
       </View>
     </View>
   );

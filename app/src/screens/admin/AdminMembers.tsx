@@ -14,7 +14,6 @@ import {
   Modal,
   Share,
   KeyboardAvoidingView,
-  Image,
   Linking
 } from 'react-native';
 import { Users, Phone, Mail, ChevronDown, ChevronUp, Clock, UserCheck, UserX, Shield, Plus, X, Trash2, Edit2, ChevronLeft, UserPlus, Search, MoreVertical, Award, Sparkles, Check, Briefcase, ArrowLeft, Calendar, Heart, Droplets, ChevronRight } from 'lucide-react-native';
@@ -29,6 +28,8 @@ import { AdminTabContext } from '../../context/AdminTabContext';
 import InviteMembersModal from '../../components/InviteMembersModal';
 import { CHURCH_SKILL_CATEGORIES, ALL_PREDEFINED_SKILLS } from '../../constants/churchSkills';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
+import CachedImage from '../../components/CachedImage';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../../utils/instantCache';
 
 const { width } = Dimensions.get('window');
 const serifFont = Platform.OS === 'ios' ? 'Georgia' : 'serif';
@@ -68,8 +69,8 @@ const MemberAvatar = ({ member, initials, styles, size, style }: any) => {
 
   if (validUrl && !imgError) {
     return (
-      <Image 
-        source={{ uri: validUrl }} 
+      <CachedImage 
+        uri={validUrl} 
         style={[styles.avatar, dynamicStyle, style, { borderRadius: avatarSize / 2 }]} 
         resizeMode="cover"
         onError={() => setImgError(true)}
@@ -97,8 +98,16 @@ export default function AdminMembers() {
   const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { activeChurch, churchId } = useChurch();
   const { setActiveTab } = React.useContext(AdminTabContext);
-  const [members, setMembers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const membersCacheKey = useMemo(
+    () => makeScopedCacheKey('admin_members_v1', activeChurch?.id || churchId || 'default', 'admin'),
+    [activeChurch?.id, churchId]
+  );
+  const initialCachedMembers = useMemo(
+    () => getInstantMemory<any[]>(membersCacheKey),
+    [membersCacheKey]
+  );
+  const [members, setMembers] = useState<any[]>(() => initialCachedMembers || []);
+  const [loading, setLoading] = useState(!initialCachedMembers);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -166,28 +175,49 @@ export default function AdminMembers() {
     type: 'info'
   });
 
+  const mountedRef = useRef(true);
+
   const fetchMembers = async (isRefresh = false) => {
+    const mem = getInstantMemory<any[]>(membersCacheKey);
     if (isRefresh) {
       setRefreshing(true);
-    } else {
+    } else if (mem) {
+      setMembers(mem);
+      setLoading(false);
+    } else if (members.length === 0) {
       setLoading(true);
     }
     setError(null);
     try {
-      const data = await FirestoreService.getAllMembers();
-      setMembers(data);
+      await loadWithInstantCache<any[]>(
+        membersCacheKey,
+        () => FirestoreService.getAllMembers(),
+        (data) => {
+          if (!mountedRef.current) return;
+          setMembers(data);
+          setLoading(false);
+          setRefreshing(false);
+        },
+        { ttlMs: 10 * 60 * 1000, freshSkipMs: 0, force: isRefresh }
+      );
     } catch (err: any) {
       console.error('Error fetching members:', err);
-      setError(err?.message || 'Failed to fetch members');
+      if (mountedRef.current) setError(err?.message || 'Failed to fetch members');
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (mountedRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   };
 
   useEffect(() => {
-    fetchMembers();
-  }, []);
+    mountedRef.current = true;
+    fetchMembers(false);
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [membersCacheKey]);
 
   const handlePromoteAdmin = async (memberId: string) => {
     // Optimistic UI Update
@@ -754,37 +784,53 @@ May God bless you abundantly! ❤️`;
     }
   };
 
-  const filteredMembers = villageFilteredMembers.filter(m => {
-    // Map Firebase schema fields
-    const nameStr = (m.name || (`${m.firstName || ''} ${m.lastName || ''}`.trim()) || '').toLowerCase();
-    const emailStr = (m.email || '').toLowerCase();
-    const phoneStr = m.phone || '';
-    const villageStr = (m.city || m.village || '').toLowerCase();
-    const primarySkillStr = (m.primarySkill || '').toLowerCase();
-    const secondarySkillStr = (m.secondarySkill || '').toLowerCase();
-    
-    const matchesSearch = 
-      nameStr.includes(searchQuery.toLowerCase()) ||
-      emailStr.includes(searchQuery.toLowerCase()) ||
-      villageStr.includes(searchQuery.toLowerCase()) ||
-      phoneStr.includes(searchQuery) ||
-      primarySkillStr.includes(searchQuery.toLowerCase()) ||
-      secondarySkillStr.includes(searchQuery.toLowerCase());
+  const membersByAccountId = useMemo(() => {
+    const map = new Map<string, any[]>();
+    for (let i = 0; i < members.length; i++) {
+      const m = members[i];
+      if (!m?.accountId) continue;
+      const list = map.get(m.accountId);
+      if (list) list.push(m);
+      else map.set(m.accountId, [m]);
+    }
+    return map;
+  }, [members]);
 
-    const isActive = true; // Assuming active by default in Firebase
-    const matchesStatus = 
-      statusFilter === 'All' || 
-      (statusFilter === 'Active' && isActive) ||
-      (statusFilter === 'Inactive' && !isActive);
+  const filteredMembers = useMemo(() => {
+    const queryLower = searchQuery.toLowerCase();
+    return villageFilteredMembers.filter(m => {
+      // Map Firebase schema fields
+      const nameStr = (m.name || (`${m.firstName || ''} ${m.lastName || ''}`.trim()) || '').toLowerCase();
+      const emailStr = (m.email || '').toLowerCase();
+      const phoneStr = m.phone || '';
+      const villageStr = (m.city || m.village || '').toLowerCase();
+      const primarySkillStr = (m.primarySkill || '').toLowerCase();
+      const secondarySkillStr = (m.secondarySkill || '').toLowerCase();
+      
+      const matchesSearch = 
+        !queryLower ||
+        nameStr.includes(queryLower) ||
+        emailStr.includes(queryLower) ||
+        villageStr.includes(queryLower) ||
+        phoneStr.includes(searchQuery) ||
+        primarySkillStr.includes(queryLower) ||
+        secondarySkillStr.includes(queryLower);
 
-    const isGuest = isGuestMemberDoc(m);
-    const matchesRole =
-      roleFilter === 'All' ||
-      (roleFilter === 'Guests' && isGuest) ||
-      (roleFilter === 'Members' && !isGuest);
+      const isActive = true; // Assuming active by default in Firebase
+      const matchesStatus = 
+        statusFilter === 'All' || 
+        (statusFilter === 'Active' && isActive) ||
+        (statusFilter === 'Inactive' && !isActive);
 
-    return matchesSearch && matchesStatus && matchesRole;
-  });
+      const isGuest = isGuestMemberDoc(m);
+      const matchesRole =
+        roleFilter === 'All' ||
+        (roleFilter === 'Guests' && isGuest) ||
+        (roleFilter === 'Members' && !isGuest);
+
+      return matchesSearch && matchesStatus && matchesRole;
+    });
+  }, [villageFilteredMembers, searchQuery, statusFilter, roleFilter]);
 
   if (loading && members.length === 0) {
     return (
@@ -1827,7 +1873,7 @@ May God bless you abundantly! ❤️`;
           {filteredMembers.map((member, index) => {
             const isExpanded = expandedId === member.id;
             const associated = member.accountId
-              ? members.filter(m => m.accountId === member.accountId && m.id !== member.id)
+              ? (membersByAccountId.get(member.accountId) || []).filter(m => m.id !== member.id)
               : [];
             const isActive = true; // Placeholder for future active/inactive flag in Firebase
             const rawDisplayName = (member.name && member.name.trim()) ||

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,6 @@ import {
   Alert,
   ScrollView,
   StatusBar,
-  Image,
   Share,
   Clipboard,
   KeyboardAvoidingView,
@@ -27,6 +26,8 @@ import { useAuth } from '../../context/AuthContext';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import storage from '@react-native-firebase/storage';
 import { CustomAlert } from '../../components/CustomAlert';
+import CachedImage from '../../components/CachedImage';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey, writeInstantCache } from '../../utils/instantCache';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const PRESET_COLORS = [
@@ -40,14 +41,24 @@ export default function AdminChurchSettings({ navigation }: any) {
   const { member } = useAuth();
   const { churchId, activeChurch, setActiveChurch } = useChurch();
   const { goBack } = React.useContext(AdminTabContext);
-  const [loading, setLoading] = useState(true);
+  const settingsCacheKey = useMemo(
+    () => makeScopedCacheKey('admin_church_settings_v1', churchId || 'default', 'admin'),
+    [churchId]
+  );
+  const initialCachedSettings = useMemo(
+    () => getInstantMemory<{ data: Partial<ChurchDetails> | null; secrets: any }>(settingsCacheKey),
+    [settingsCacheKey]
+  );
+  const mountedRef = useRef(true);
+
+  const [loading, setLoading] = useState(!initialCachedSettings?.data);
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState<'logo' | 'banner' | null>(null);
 
-  const [form, setForm] = useState<Partial<ChurchDetails>>({});
+  const [form, setForm] = useState<Partial<ChurchDetails>>(() => initialCachedSettings?.data || {});
   const [linkCode, setLinkCode] = useState('');
   const [linking, setLinking] = useState(false);
-  const [secrets, setSecrets] = useState<{ razorpayKeyId?: string; razorpayKeySecret?: string; whatsappAccessToken?: string; whatsappPhoneId?: string; useWeChristianWhatsApp?: boolean }>({});
+  const [secrets, setSecrets] = useState<{ razorpayKeyId?: string; razorpayKeySecret?: string; whatsappAccessToken?: string; whatsappPhoneId?: string; useWeChristianWhatsApp?: boolean }>(() => initialCachedSettings?.secrets || {});
   const [activeTab, setActiveTab] = useState<'info' | 'giving'>('info');
   const [isEditing, setIsEditing] = useState(false);
   const [alertConfig, setAlertConfig] = useState<{
@@ -58,20 +69,45 @@ export default function AdminChurchSettings({ navigation }: any) {
   }>({ visible: false, title: '', message: '', type: 'info' });
 
   useEffect(() => {
+    mountedRef.current = true;
     loadChurchData();
-  }, [churchId]);
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [churchId, settingsCacheKey]);
 
   const loadChurchData = async () => {
-    if (!churchId) return;
-    const data = await ChurchService.getChurchDetails(churchId);
-    if (data) {
-      setForm(data);
+    if (!churchId) {
+      setLoading(false);
+      return;
     }
-    const churchSecrets = await ChurchService.getChurchSecrets(churchId);
-    if (churchSecrets) {
-      setSecrets(churchSecrets);
+    const mem = getInstantMemory<{ data: Partial<ChurchDetails> | null; secrets: any }>(settingsCacheKey);
+    if (mem?.data) {
+      setForm(mem.data);
+      if (mem.secrets) setSecrets(mem.secrets);
+      setLoading(false);
     }
-    setLoading(false);
+    try {
+      await loadWithInstantCache(
+        settingsCacheKey,
+        async () => {
+          const [data, churchSecrets] = await Promise.all([
+            ChurchService.getChurchDetails(churchId),
+            ChurchService.getChurchSecrets(churchId),
+          ]);
+          return { data: data || null, secrets: churchSecrets || {} };
+        },
+        (payload) => {
+          if (!mountedRef.current) return;
+          if (payload.data) setForm(payload.data);
+          if (payload.secrets) setSecrets(payload.secrets);
+          setLoading(false);
+        },
+        { ttlMs: 10 * 60 * 1000, freshSkipMs: 0 }
+      );
+    } finally {
+      if (mountedRef.current) setLoading(false);
+    }
   };
 
   const updateSecret = (field: string, value: string | boolean) => {
@@ -245,11 +281,14 @@ export default function AdminChurchSettings({ navigation }: any) {
     if (!churchId) return;
     setSaving(true);
     try {
-      await ChurchService.updateChurch(churchId, form);
-      await ChurchService.updateChurchSecrets(churchId, secrets);
-      // Refresh the context so the app updates immediately
+      await Promise.all([
+        ChurchService.updateChurch(churchId, form),
+        ChurchService.updateChurchSecrets(churchId, secrets),
+      ]);
+      // Refresh the context & cache so the app updates immediately
       const updated = await ChurchService.getChurchDetails(churchId);
       if (updated) setActiveChurch(updated);
+      writeInstantCache(settingsCacheKey, { data: updated || form, secrets }).catch(() => {});
       setAlertConfig({ visible: true, title: 'Success', message: 'Church settings updated successfully!', type: 'success' });
     } catch (e) {
       console.error(e);
@@ -494,7 +533,7 @@ export default function AdminChurchSettings({ navigation }: any) {
                   {uploadingImage === 'logo' ? (
                     <ActivityIndicator color={isDark ? '#FFFFFF' : primaryColor} size="small" />
                   ) : form.theme?.logoUrl ? (
-                    <Image source={{ uri: form.theme.logoUrl }} style={{ width: 115, height: 115, borderRadius: 57.5 }} resizeMode="cover" />
+                    <CachedImage uri={form.theme.logoUrl} style={{ width: 115, height: 115, borderRadius: 57.5 }} resizeMode="cover" />
                   ) : (
                     <View style={{ alignItems: 'center', justifyContent: 'center' }}>
                       <ImageIcon size={34} color={isDark ? '#94A3B8' : '#64748B'} />

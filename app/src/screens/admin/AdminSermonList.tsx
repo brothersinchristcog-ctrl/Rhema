@@ -1,34 +1,37 @@
-import React, { useState, useEffect, useContext } from 'react';
-import { 
-  StyleSheet, 
-  View, 
-  Text, 
-  ScrollView, 
-  TouchableOpacity, 
-  TextInput, 
-  ActivityIndicator, 
-  Platform, 
+import React, { useState, useEffect, useContext, useMemo, useRef } from 'react';
+import {
+  StyleSheet,
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  ActivityIndicator,
+  Platform,
   StatusBar,
   Dimensions,
   Alert,
-  Modal,
-  Image
+  Modal
 } from 'react-native';
-import { 
-  Search, 
-  Play, 
-  Plus, 
-  ChevronRight, 
+import {
+  Search,
+  Play,
+  Plus,
+  ChevronRight,
   RefreshCw,
   Clock,
   Edit2,
   Trash2,
   ChevronLeft
-, ArrowLeft } from 'lucide-react-native';
+  , ArrowLeft
+} from 'lucide-react-native';
 import { AdminTabContext } from '../../context/AdminTabContext';
+import { useChurch } from '../../context/ChurchContext';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import FirestoreService, { Sermon } from '../../services/FirestoreService';
+import CachedImage from '../../components/CachedImage';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey, writeInstantCache } from '../../utils/instantCache';
 import { Linking } from 'react-native';
 import { formatSermonDuration, formatDateDisplay, formatDateTimeDisplay } from '../../utils/DateUtils';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
@@ -45,31 +48,68 @@ const extractYoutubeId = (url: string) => {
 export default function AdminSermonList() {
   const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { setActiveTab, setEditingData, setTabByName } = useContext(AdminTabContext);
-  const [sermons, setSermons] = useState<Sermon[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { activeChurch } = useChurch();
+  const sermonsCacheKey = useMemo(
+    () => makeScopedCacheKey('admin_sermons_v1', activeChurch?.id || 'default', 'admin'),
+    [activeChurch?.id]
+  );
+  const initialCached = useMemo(
+    () => getInstantMemory<{ sermons: Sermon[]; customCategories: string[] }>(sermonsCacheKey),
+    [sermonsCacheKey]
+  );
+
+  const [sermons, setSermons] = useState<Sermon[]>(() => initialCached?.sermons || []);
+  const [loading, setLoading] = useState(!initialCached);
   const [filter, setFilter] = useState('All');
   const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
   const [sermonToDelete, setSermonToDelete] = useState<Sermon | null>(null);
 
-  const [customCategories, setCustomCategories] = useState<string[]>([]);
+  const [customCategories, setCustomCategories] = useState<string[]>(() => initialCached?.customCategories || []);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
-    fetchSermons();
-  }, []);
+    mountedRef.current = true;
+    fetchSermons(false);
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [sermonsCacheKey]);
 
-  const fetchSermons = async () => {
-    setLoading(true);
+  const fetchSermons = async (forceRefresh = false) => {
+    const mem = getInstantMemory<{ sermons: Sermon[]; customCategories: string[] }>(sermonsCacheKey);
+    if (mem && !forceRefresh) {
+      setSermons(mem.sermons);
+      setCustomCategories(mem.customCategories);
+      setLoading(false);
+    } else if (sermons.length === 0) {
+      setLoading(true);
+    }
+
     try {
-      const [data, cats] = await Promise.all([
-        FirestoreService.getSermons(50),
-        FirestoreService.getSermonCategories().catch(() => [])
-      ]);
-      setSermons(data);
-      if (Array.isArray(cats)) setCustomCategories(cats);
+      await loadWithInstantCache<{ sermons: Sermon[]; customCategories: string[] }>(
+        sermonsCacheKey,
+        async () => {
+          const [data, cats] = await Promise.all([
+            FirestoreService.getSermons(50),
+            FirestoreService.getSermonCategories().catch(() => [])
+          ]);
+          return {
+            sermons: data,
+            customCategories: Array.isArray(cats) ? cats : [],
+          };
+        },
+        (payload) => {
+          if (!mountedRef.current) return;
+          setSermons(payload.sermons);
+          setCustomCategories(payload.customCategories);
+          setLoading(false);
+        },
+        { ttlMs: 10 * 60 * 1000, freshSkipMs: 0, force: forceRefresh }
+      );
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   };
 
@@ -84,7 +124,7 @@ export default function AdminSermonList() {
       if (sermon.audioUrl) Linking.openURL(sermon.audioUrl);
       return;
     }
-    
+
     let url = id;
     if (!id.includes('http') && id.length === 11) {
       url = `https://www.youtube.com/watch?v=${id}`;
@@ -95,42 +135,55 @@ export default function AdminSermonList() {
   const confirmDeleteSermon = async () => {
     if (!sermonToDelete?.id) return;
     try {
-      setLoading(true);
-      await FirestoreService.deleteSermon(sermonToDelete.id);
-      fetchSermons(); // Refresh list after delete
+      const deletedId = sermonToDelete.id;
       setSermonToDelete(null);
+      setSermons((prev) => {
+        const next = prev.filter((s) => s.id !== deletedId);
+        writeInstantCache(sermonsCacheKey, { sermons: next, customCategories }).catch(() => { });
+        return next;
+      });
       setShowDeleteSuccess(true);
       setTimeout(() => setShowDeleteSuccess(false), 2500);
+      await FirestoreService.deleteSermon(deletedId);
+      fetchSermons(true);
     } catch (err: any) {
       Alert.alert("Delete Failed", err.message || "Could not delete sermon.");
       setSermonToDelete(null);
-      setLoading(false);
+      fetchSermons(true);
     }
   };
 
-  // Parse all unique categories
-  const allCategories = [
-    ...sermons.flatMap(s => s.categories ? s.categories.split(';') : []),
-    ...customCategories
-  ];
-  const uniqueCategories = [...new Set(allCategories.filter(Boolean))];
+  // Parse all unique categories (memoized)
+  const uniqueCategories = useMemo(() => {
+    const allCategories = [
+      ...sermons.flatMap(s => s.categories ? s.categories.split(';') : []),
+      ...customCategories
+    ];
+    return [...new Set(allCategories.filter(Boolean))];
+  }, [sermons, customCategories]);
 
-  const stats = {
-    published: sermons.filter(s => s.status === 'Published' || !s.status).length,
-    scheduled: sermons.filter(s => s.status === 'Scheduled').length,
-    drafts: sermons.filter(s => s.status === 'Draft').length,
-    categories: uniqueCategories.length
-  };
+  const stats = useMemo(() => {
+    let published = 0;
+    let scheduled = 0;
+    let drafts = 0;
+    for (let i = 0; i < sermons.length; i++) {
+      const st = sermons[i].status;
+      if (st === 'Published' || !st) published++;
+      else if (st === 'Scheduled') scheduled++;
+      else if (st === 'Draft') drafts++;
+    }
+    return { published, scheduled, drafts, categories: uniqueCategories.length };
+  }, [sermons, uniqueCategories.length]);
 
-  const categoryList = ['All', ...uniqueCategories];
-  const filteredSermons = sermons.filter(s => {
+  const categoryList = useMemo(() => ['All', ...uniqueCategories], [uniqueCategories]);
+  const filteredSermons = useMemo(() => sermons.filter(s => {
     if (filter === 'All') return true;
     if (filter === 'Published') return s.status === 'Published' || !s.status;
     if (filter === 'Scheduled') return s.status === 'Scheduled';
     if (filter === 'Drafts') return s.status === 'Draft';
     // Filter by specific category
     return s.categories && s.categories.split(';').includes(filter);
-  });
+  }), [sermons, filter]);
 
   if (loading && sermons.length === 0) {
     return (
@@ -173,8 +226,8 @@ export default function AdminSermonList() {
     const thumbUri = sermon.thumbnailUrl || sermon.imageUrl || (cleanYId && cleanYId.length === 11 ? `https://img.youtube.com/vi/${cleanYId}/hqdefault.jpg` : null);
 
     return (
-      <View 
-        key={sermon.id} 
+      <View
+        key={sermon.id}
         style={[
           styles.sermonItem,
           {
@@ -188,10 +241,10 @@ export default function AdminSermonList() {
         <View style={styles.sermonCardContent}>
           {/* Top Row: YouTube Thumbnail + English & Telugu Titles */}
           <View style={styles.sermonCardTopRow}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[
-                styles.siThumb, 
-                { 
+                styles.siThumb,
+                {
                   backgroundColor: isDark ? '#27272A' : '#1E293B',
                   borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : 'rgba(0, 0, 0, 0.1)',
                   borderWidth: 1,
@@ -202,7 +255,7 @@ export default function AdminSermonList() {
             >
               {thumbUri ? (
                 <>
-                  <Image source={{ uri: thumbUri }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+                  <CachedImage uri={thumbUri} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
                   <View style={styles.siThumbOverlay}>
                     <View style={styles.siPlayCircle}>
                       <Play size={12} color="#FFFFFF" fill="#FFFFFF" style={{ marginLeft: 1.5 }} />
@@ -216,27 +269,27 @@ export default function AdminSermonList() {
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={styles.siTitlesContainer} 
+            <TouchableOpacity
+              style={styles.siTitlesContainer}
               onPress={() => handleEdit(sermon)}
               activeOpacity={0.85}
             >
-              <Text 
+              <Text
                 style={[
-                  styles.siTitle, 
+                  styles.siTitle,
                   { color: isDark ? '#FFFFFF' : '#0F172A' }
-                ]} 
+                ]}
                 numberOfLines={2}
               >
                 {sermon.title}
               </Text>
 
               {sermon.titleTelugu ? (
-                <Text 
+                <Text
                   style={[
-                    styles.siTe, 
+                    styles.siTe,
                     { color: isDark ? '#C6A66B' : '#98713D' }
-                  ]} 
+                  ]}
                   numberOfLines={1}
                 >
                   {sermon.titleTelugu}
@@ -246,8 +299,8 @@ export default function AdminSermonList() {
           </View>
 
           {/* Bottom Section: Starts from below YouTube card */}
-          <TouchableOpacity 
-            style={styles.sermonCardBottomSection} 
+          <TouchableOpacity
+            style={styles.sermonCardBottomSection}
             onPress={() => handleEdit(sermon)}
             activeOpacity={0.85}
           >
@@ -272,9 +325,9 @@ export default function AdminSermonList() {
             )}
 
             {/* Horizontal scrollable badges row (Categories, Audio, Pending/Schedule) */}
-            <ScrollView 
-              horizontal 
-              showsHorizontalScrollIndicator={false} 
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
               style={{ marginTop: 8 }}
               contentContainerStyle={styles.siFootScroll}
             >
@@ -284,8 +337,8 @@ export default function AdminSermonList() {
                   const trimmed = cat.trim();
                   if (!trimmed) return null;
                   return (
-                    <View 
-                      key={trimmed} 
+                    <View
+                      key={trimmed}
                       style={[
                         styles.badgeSeries,
                         {
@@ -302,7 +355,7 @@ export default function AdminSermonList() {
 
               {/* Audio Badge */}
               {sermon.audioUrl ? (
-                <View 
+                <View
                   style={[
                     styles.badgeIcon,
                     {
@@ -318,15 +371,15 @@ export default function AdminSermonList() {
 
               {/* Pending or Schedule Badge */}
               {sermon.status === 'Draft' ? (
-                <View 
+                <View
                   style={[
-                    styles.badgeStatus, 
+                    styles.badgeStatus,
                     isDark ? styles.statusDraftBgDark : styles.statusDraftBg
                   ]}
                 >
-                  <Text 
+                  <Text
                     style={[
-                      styles.badgeStatusTxt, 
+                      styles.badgeStatusTxt,
                       isDark ? styles.statusDraftTxtDark : styles.statusDraftTxt
                     ]}
                   >
@@ -334,15 +387,15 @@ export default function AdminSermonList() {
                   </Text>
                 </View>
               ) : sermon.status === 'Scheduled' ? (
-                <View 
+                <View
                   style={[
-                    styles.badgeStatus, 
+                    styles.badgeStatus,
                     isDark ? styles.statusSchedBgDark : styles.statusSchedBg
                   ]}
                 >
-                  <Text 
+                  <Text
                     style={[
-                      styles.badgeStatusTxt, 
+                      styles.badgeStatusTxt,
                       isDark ? styles.statusSchedTxtDark : styles.statusSchedTxt
                     ]}
                   >
@@ -355,7 +408,7 @@ export default function AdminSermonList() {
         </View>
 
         {/* Right Side Only: Edit & Delete Actions (Clean icon+text, square boxes removed, line moved right) */}
-        <View 
+        <View
           style={[
             styles.actionsContainer,
             {
@@ -363,8 +416,8 @@ export default function AdminSermonList() {
             }
           ]}
         >
-          <TouchableOpacity 
-            style={styles.editAction} 
+          <TouchableOpacity
+            style={styles.editAction}
             onPress={() => handleEdit(sermon)}
             activeOpacity={0.6}
             hitSlop={{ top: 8, bottom: 6, left: 6, right: 6 }}
@@ -373,8 +426,8 @@ export default function AdminSermonList() {
             <Text style={[styles.editActionTxt, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>Edit</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={styles.deleteAction} 
+          <TouchableOpacity
+            style={styles.deleteAction}
             onPress={() => setSermonToDelete(sermon)}
             activeOpacity={0.6}
             hitSlop={{ top: 6, bottom: 8, left: 6, right: 6 }}
@@ -409,8 +462,8 @@ export default function AdminSermonList() {
             borderColor: isSelected
               ? activeColor
               : isDark
-              ? 'rgba(255, 255, 255, 0.14)'
-              : 'rgba(0, 0, 0, 0.08)',
+                ? 'rgba(255, 255, 255, 0.14)'
+                : 'rgba(0, 0, 0, 0.08)',
             borderWidth: isSelected ? 2 : 1,
             backgroundColor: isDark ? '#18181B' : '#FFFFFF',
           }
@@ -451,7 +504,7 @@ export default function AdminSermonList() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
-      
+
       {/* ── Hero Section ── */}
       <View style={[styles.hero, {
         backgroundColor: isDark ? '#000000' : '#FFFFFF',
@@ -489,10 +542,10 @@ export default function AdminSermonList() {
             </Text>
           </View>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[
-              styles.newBtn, 
-              { 
+              styles.newBtn,
+              {
                 flexShrink: 0,
                 backgroundColor: isDark ? '#FFFFFF' : '#000000',
                 borderColor: isDark ? '#FFFFFF' : '#000000',
@@ -504,20 +557,20 @@ export default function AdminSermonList() {
                 alignItems: 'center',
                 gap: 4,
               }
-            ]} 
+            ]}
             onPress={() => { setEditingData(null); setTabByName?.('New Sermon'); }}
             activeOpacity={0.8}
           >
             <Plus size={14} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.5} />
-            <Text 
+            <Text
               style={[
-                styles.newBtnTxt, 
-                { 
-                  color: isDark ? '#000000' : '#FFFFFF', 
-                  fontWeight: '800', 
-                  fontSize: 11.5 
+                styles.newBtnTxt,
+                {
+                  color: isDark ? '#000000' : '#FFFFFF',
+                  fontWeight: '800',
+                  fontSize: 11.5
                 }
-              ]} 
+              ]}
               numberOfLines={1}
             >
               New Sermon
@@ -527,7 +580,7 @@ export default function AdminSermonList() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        
+
         {/* ── Stats Bar ── */}
         <View style={styles.statsRow}>
           {renderStatCard(
@@ -577,13 +630,13 @@ export default function AdminSermonList() {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={{ paddingRight: 14, paddingVertical: 4 }}>
           {categoryList.map(f => {
             const isSelected = filter === f;
-            const count = f === 'All' 
-              ? sermons.length 
+            const count = f === 'All'
+              ? sermons.length
               : sermons.filter(s => s.categories && s.categories.split(';').includes(f)).length;
 
             return (
-              <TouchableOpacity 
-                key={f} 
+              <TouchableOpacity
+                key={f}
                 style={[
                   styles.filterChip,
                   {
@@ -611,7 +664,7 @@ export default function AdminSermonList() {
                 onPress={() => setFilter(f)}
                 activeOpacity={0.8}
               >
-                <Text 
+                <Text
                   style={[
                     styles.filterChipTxt,
                     {
@@ -745,13 +798,13 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   heroTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 0 },
   heroTitle: { color: '#0F172A', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '800', letterSpacing: -0.4, textAlign: 'center' },
   heroSub: { color: '#64748b', fontSize: 13 },
-  newBtn: { 
-    backgroundColor: '#000000', 
+  newBtn: {
+    backgroundColor: '#000000',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 13, 
-    paddingVertical: 7.5, 
+    paddingHorizontal: 13,
+    paddingVertical: 7.5,
     borderRadius: 999,
     shadowColor: '#000',
     shadowOpacity: 0.15,
@@ -765,8 +818,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
 
   // ─── Stats Row ───────────────────────────────────────────────────────────
   statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
-  statCard: { 
-    flex: 1, 
+  statCard: {
+    flex: 1,
     minWidth: 96,
     borderRadius: 16,
     overflow: 'hidden',
@@ -788,9 +841,9 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     borderRadius: 1.5,
     marginBottom: 6,
   },
-  statNum: { 
-    fontSize: 22, 
-    fontWeight: '800', 
+  statNum: {
+    fontSize: 22,
+    fontWeight: '800',
     letterSpacing: -0.5,
   },
   statLabelRow: {
@@ -799,10 +852,10 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     gap: 4,
     marginTop: 2,
   },
-  statLbl: { 
-    fontSize: 10.5, 
-    fontWeight: '700', 
-    textTransform: 'uppercase', 
+  statLbl: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
   activeIndicatorDot: {
@@ -818,13 +871,13 @@ const styles = createAdminThemedStyles(StyleSheet.create({
 
   // ─── Filter Badges / Chips ────────────────────────────────────────────────
   filterRow: { flexDirection: 'row', marginBottom: 16 },
-  filterChip: { 
-    paddingHorizontal: 14, 
-    paddingVertical: 7, 
-    borderRadius: 999, 
-    backgroundColor: '#FFFFFF', 
-    borderWidth: 1.5, 
-    borderColor: '#E2E8F0', 
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
     marginRight: 8,
     shadowColor: '#000',
     shadowOpacity: 0.05,
@@ -839,18 +892,18 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   // ─── List ────────────────────────────────────────────────────────────────
   listLabel: { fontSize: 12, fontWeight: '700', color: '#374151', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10, marginTop: 4, paddingLeft: 4 },
 
-  sermonItem: { 
-    borderRadius: 18, 
-    borderWidth: 1.2, 
-    padding: 14, 
-    marginBottom: 14, 
-    flexDirection: 'row', 
+  sermonItem: {
+    borderRadius: 18,
+    borderWidth: 1.2,
+    padding: 14,
+    marginBottom: 14,
+    flexDirection: 'row',
     alignItems: 'flex-start',
     shadowColor: '#000',
     shadowOpacity: 0.08,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2 
+    elevation: 2
   },
   sermonCardContent: {
     flex: 1,
@@ -861,11 +914,11 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  siThumb: { 
-    width: 76, 
-    height: 52, 
-    borderRadius: 11, 
-    justifyContent: 'center', 
+  siThumb: {
+    width: 76,
+    height: 52,
+    borderRadius: 11,
+    justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
     position: 'relative',
@@ -890,39 +943,39 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
   },
-  siTitle: { 
-    fontSize: 15.5, 
-    fontWeight: '800', 
+  siTitle: {
+    fontSize: 15.5,
+    fontWeight: '800',
     lineHeight: 21,
     letterSpacing: -0.3,
   },
-  siTe: { 
-    fontSize: 13.5, 
-    fontStyle: 'italic', 
-    marginTop: 3, 
+  siTe: {
+    fontSize: 13.5,
+    fontStyle: 'italic',
+    marginTop: 3,
     lineHeight: 18,
   },
   sermonCardBottomSection: {
     marginTop: 9,
   },
-  siMeta: { 
-    fontSize: 12.5, 
+  siMeta: {
+    fontSize: 12.5,
     fontWeight: '700',
     lineHeight: 17,
   },
-  siPublishedMeta: { 
-    fontSize: 11.5, 
-    marginTop: 4, 
+  siPublishedMeta: {
+    fontSize: 11.5,
+    marginTop: 4,
     fontWeight: '600',
   },
-  siSchedMeta: { 
-    fontSize: 11.5, 
-    marginTop: 4, 
+  siSchedMeta: {
+    fontSize: 11.5,
+    marginTop: 4,
     fontWeight: '700',
   },
-  siDraftMeta: { 
-    fontSize: 11.5, 
-    marginTop: 4, 
+  siDraftMeta: {
+    fontSize: 11.5,
+    marginTop: 4,
     fontWeight: '600',
   },
   specialMsgBadge: {
@@ -935,43 +988,43 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
-  siFootScroll: { 
-    flexDirection: 'row', 
+  siFootScroll: {
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 7, 
+    gap: 7,
     paddingVertical: 2,
     paddingRight: 8,
   },
-  
-  badgeSeries: { 
-    paddingHorizontal: 9, 
-    paddingVertical: 4, 
-    borderRadius: 999, 
-    borderWidth: 1, 
-  },
-  badgeSeriesTxt: { 
-    fontSize: 10.5, 
-    fontWeight: '800', 
-    textTransform: 'uppercase', 
-    letterSpacing: 0.3,
-  },
-  
-  badgeIcon: { 
-    paddingHorizontal: 9, 
-    paddingVertical: 4, 
-    borderRadius: 999, 
+
+  badgeSeries: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
     borderWidth: 1,
   },
-  badgeIconTxt: { 
-    fontSize: 11, 
+  badgeSeriesTxt: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+
+  badgeIcon: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  badgeIconTxt: {
+    fontSize: 11,
     fontWeight: '700',
   },
 
-  badgeStatus: { 
-    paddingHorizontal: 9, 
-    paddingVertical: 4, 
-    borderRadius: 999, 
-    borderWidth: 1, 
+  badgeStatus: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
   },
   statusPubBg: { backgroundColor: '#EDF7F1', borderColor: '#A3D9B8' },
   statusPubTxt: { color: '#15803D' },
@@ -986,40 +1039,40 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   statusDraftBgDark: { backgroundColor: 'rgba(148, 163, 184, 0.14)', borderColor: 'rgba(148, 163, 184, 0.3)' },
   statusDraftTxtDark: { color: '#CBD5E1' },
   badgeStatusTxt: { fontSize: 10.5, fontWeight: '800' },
-  
+
   // Actions Container (Right Side Only - Line moved right, square boxes removed)
-  actionsContainer: { 
-    borderLeftWidth: 2, 
+  actionsContainer: {
+    borderLeftWidth: 2,
     paddingLeft: 8,
     alignSelf: 'flex-start',
     alignItems: 'center',
     gap: 10,
     paddingTop: 4,
   },
-  editAction: { 
-    alignItems: 'center', 
-    justifyContent: 'center', 
+  editAction: {
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 2,
     paddingHorizontal: 4,
     gap: 2.5,
   },
-  editActionTxt: { 
-    fontSize: 9.5, 
-    fontWeight: '800', 
-    textTransform: 'uppercase', 
+  editActionTxt: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  deleteAction: { 
-    alignItems: 'center', 
-    justifyContent: 'center', 
+  deleteAction: {
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 2,
     paddingHorizontal: 4,
     gap: 2.5,
   },
-  deleteActionTxt: { 
-    fontSize: 9.5, 
-    fontWeight: '800', 
-    textTransform: 'uppercase', 
+  deleteActionTxt: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
 

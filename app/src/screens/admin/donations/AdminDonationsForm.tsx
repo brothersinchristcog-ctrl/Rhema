@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Modal, FlatList, ActivityIndicator, Image, Alert, StatusBar, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Modal, FlatList, ActivityIndicator, Alert, StatusBar, Platform } from 'react-native';
 import { ArrowLeft, Check, ChevronDown, Camera, Image as ImageIcon, FileText as FilePdfIcon, X, Download, Share2, Search, Users, Phone } from 'lucide-react-native';
 import { COLORS, formatCurrency, formatDate, DEFAULT_CATEGORIES, PAYMENT_METHODS, getDonationReceiptHTML, generateDonationReceipt, formatReceiptNo } from './AdminDonationsUtils';
 import { WebView } from 'react-native-webview';
@@ -10,6 +10,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import CachedImage from '../../../components/CachedImage';
 import { useAdminTheme } from '../../../utils/adminThemeHelper';
 
 export default function AdminDonationsForm({ editData, onNavigate }: any) {
@@ -52,10 +53,14 @@ export default function AdminDonationsForm({ editData, onNavigate }: any) {
 
   const fetchNextReceiptNumber = async () => {
     try {
-      const snapshot = await db.collection('ledger_donations').get();
+      const recentSnap = await db.collection('ledger_donations')
+        .orderBy('createdAt', 'desc')
+        .limit(15)
+        .get()
+        .catch(() => null);
       let maxNum = 0;
-      if (snapshot && snapshot.docs) {
-        snapshot.docs.forEach((doc: any) => {
+      if (recentSnap && recentSnap.docs) {
+        recentSnap.docs.forEach((doc: any) => {
           const id = doc.id || '';
           const match = id.match(/Rhema-(\d+)/i);
           if (match) {
@@ -63,8 +68,13 @@ export default function AdminDonationsForm({ editData, onNavigate }: any) {
             if (!isNaN(num) && num > maxNum) maxNum = num;
           }
         });
-        if (maxNum === 0 && snapshot.docs.length > 0) {
-          maxNum = snapshot.docs.length;
+      }
+      if (maxNum === 0) {
+        try {
+          const countSnap = await db.collection('ledger_donations').count().get();
+          maxNum = countSnap?.data()?.count || 0;
+        } catch {
+          maxNum = recentSnap?.docs?.length || 0;
         }
       }
       const next = maxNum + 1;
@@ -819,7 +829,7 @@ export default function AdminDonationsForm({ editData, onNavigate }: any) {
                     </Text>
                   </View>
                 ) : (
-                  <Image source={{ uri: receiptFile.uri }} style={styles.imagePreview} />
+                  <CachedImage uri={receiptFile.uri} style={styles.imagePreview} resizeMode="cover" />
                 )}
                 <TouchableOpacity style={styles.removeBtn} onPress={() => setReceiptFile(null)}>
                   <X size={16} color="#fff" />

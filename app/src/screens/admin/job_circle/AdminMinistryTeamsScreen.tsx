@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useMemo, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -17,6 +17,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { useChurch } from '../../../context/ChurchContext';
 import { AdminTabContext } from '../../../context/AdminTabContext';
 import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../../../utils/instantCache';
 import JobCircleService from '../../../services/JobCircleService';
 import { MinistryTeam, DEFAULT_MINISTRY_CATEGORIES } from '../../../types/jobCircle';
 
@@ -40,9 +41,18 @@ export default function AdminMinistryTeamsScreen({ navigation }: AdminMinistryTe
   } = useAdminTheme();
 
   const churchId = activeChurch?.id || 'rhema';
+  const teamsCacheKey = useMemo(
+    () => makeScopedCacheKey('admin_ministry_teams_v1', churchId, 'admin'),
+    [churchId]
+  );
+  const initialCachedTeams = useMemo(
+    () => getInstantMemory<MinistryTeam[]>(teamsCacheKey),
+    [teamsCacheKey]
+  );
+  const mountedRef = useRef(true);
 
-  const [teams, setTeams] = useState<MinistryTeam[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [teams, setTeams] = useState<MinistryTeam[]>(() => initialCachedTeams || []);
+  const [loading, setLoading] = useState(!initialCachedTeams);
 
   // Create Team Modal
   const [createModalVisible, setCreateModalVisible] = useState(false);
@@ -60,18 +70,36 @@ export default function AdminMinistryTeamsScreen({ navigation }: AdminMinistryTe
   const [addingMember, setAddingMember] = useState(false);
 
   useEffect(() => {
-    loadTeams();
-  }, [churchId]);
+    mountedRef.current = true;
+    loadTeams(false);
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [churchId, teamsCacheKey]);
 
-  const loadTeams = async () => {
-    try {
+  const loadTeams = async (forceRefresh = false) => {
+    const mem = getInstantMemory<MinistryTeam[]>(teamsCacheKey);
+    if (mem && !forceRefresh) {
+      setTeams(mem);
+      setLoading(false);
+    } else if (teams.length === 0) {
       setLoading(true);
-      const data = await JobCircleService.getMinistryTeams(churchId);
-      setTeams(data);
+    }
+    try {
+      await loadWithInstantCache<MinistryTeam[]>(
+        teamsCacheKey,
+        () => JobCircleService.getMinistryTeams(churchId),
+        (data) => {
+          if (!mountedRef.current) return;
+          setTeams(data);
+          setLoading(false);
+        },
+        { ttlMs: 10 * 60 * 1000, freshSkipMs: 0, force: forceRefresh }
+      );
     } catch (err) {
       console.error('Error loading ministry teams:', err);
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   };
 

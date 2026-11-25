@@ -41,6 +41,12 @@ import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
 import { RHEMA_CHURCH_ID } from '../../constants/ChurchConfig';
 import { useAdminTheme } from '../../utils/adminThemeHelper';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  readInstantCache,
+  writeInstantCache,
+} from '../../utils/instantCache';
 
 const { width } = Dimensions.get('window');
 
@@ -67,9 +73,18 @@ export default function AdminRegistrationApprovals({ navigation }: any) {
     barStyle,
   } = useAdminTheme();
 
+  const approvalsCacheKey = useMemo(
+    () => makeScopedCacheKey('admin_registration_approvals_v1', churchId, 'admin'),
+    [churchId]
+  );
+  const initialApprovalsCache = useMemo(
+    () => getInstantMemory<RegistrationRequest[]>(approvalsCacheKey),
+    [approvalsCacheKey]
+  );
+
   const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'rejected'>('pending');
-  const [requests, setRequests] = useState<RegistrationRequest[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [requests, setRequests] = useState<RegistrationRequest[]>(initialApprovalsCache || []);
+  const [loading, setLoading] = useState(!initialApprovalsCache);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
@@ -96,24 +111,37 @@ export default function AdminRegistrationApprovals({ navigation }: any) {
     setRefreshing(false);
   };
 
-  // Live real-time listener for requests + initial fetch fallback
+  // Live real-time listener with instant cache hydration (eliminates duplicate initial fetch)
   useEffect(() => {
-    setLoading(true);
-    fetchRequests().finally(() => setLoading(false));
+    let active = true;
+    const mem = getInstantMemory<RegistrationRequest[]>(approvalsCacheKey);
+    if (mem) {
+      setRequests(mem);
+      setLoading(false);
+    } else {
+      readInstantCache<RegistrationRequest[]>(approvalsCacheKey).then((cached) => {
+        if (!active || !cached?.data) return;
+        setRequests(cached.data);
+        setLoading(false);
+      });
+    }
 
     const unsubscribe = FirestoreService.subscribeToRegistrationRequests(
       churchId,
       'all',
       (data) => {
+        if (!active) return;
         setRequests(data);
+        writeInstantCache(approvalsCacheKey, data).catch(() => { });
         setLoading(false);
       }
     );
 
     return () => {
+      active = false;
       if (unsubscribe) unsubscribe();
     };
-  }, [churchId]);
+  }, [churchId, approvalsCacheKey]);
 
   // Tab counts: strictly divided into Pending, Approved, and Rejected lists
   const pendingRequests = useMemo(
@@ -177,11 +205,11 @@ export default function AdminRegistrationApprovals({ navigation }: any) {
                   prev.map((r) =>
                     r.id === req.id
                       ? {
-                          ...r,
-                          status: 'approved',
-                          reviewedAt: new Date().toISOString(),
-                          reviewedByName: member?.name || member?.firstName || 'Admin',
-                        }
+                        ...r,
+                        status: 'approved',
+                        reviewedAt: new Date().toISOString(),
+                        reviewedByName: member?.name || member?.firstName || 'Admin',
+                      }
                       : r
                   )
                 );
@@ -264,12 +292,12 @@ export default function AdminRegistrationApprovals({ navigation }: any) {
           prev.map((r) =>
             r.id === targetRequest.id
               ? {
-                  ...r,
-                  status: 'rejected',
-                  rejectionReason: reasonToSave,
-                  reviewedAt: new Date().toISOString(),
-                  reviewedByName: member?.name || member?.firstName || 'Admin',
-                }
+                ...r,
+                status: 'rejected',
+                rejectionReason: reasonToSave,
+                reviewedAt: new Date().toISOString(),
+                reviewedByName: member?.name || member?.firstName || 'Admin',
+              }
               : r
           )
         );
@@ -350,12 +378,12 @@ export default function AdminRegistrationApprovals({ navigation }: any) {
 
     const formattedDate = item.createdAt
       ? new Date(item.createdAt).toLocaleDateString('en-IN', {
-          day: 'numeric',
-          month: 'short',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-        })
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
       : '—';
 
     return (
@@ -637,13 +665,13 @@ export default function AdminRegistrationApprovals({ navigation }: any) {
                 styles.roundBadge,
                 activeTab === 'pending'
                   ? {
-                      backgroundColor: '#262626',
-                      borderColor: '#262626',
-                    }
+                    backgroundColor: '#262626',
+                    borderColor: '#262626',
+                  }
                   : {
-                      backgroundColor: isDark ? '#1F2937' : '#F1F5F9',
-                      borderColor: isDark ? '#374151' : '#E2E8F0',
-                    },
+                    backgroundColor: isDark ? '#1F2937' : '#F1F5F9',
+                    borderColor: isDark ? '#374151' : '#E2E8F0',
+                  },
               ]}
               onPress={() => setActiveTab('pending')}
               activeOpacity={0.8}
@@ -654,8 +682,8 @@ export default function AdminRegistrationApprovals({ navigation }: any) {
                   activeTab === 'pending'
                     ? '#FFFFFF'
                     : isDark
-                    ? '#E5E7EB'
-                    : '#374151'
+                      ? '#E5E7EB'
+                      : '#374151'
                 }
               />
               <Text
@@ -666,8 +694,8 @@ export default function AdminRegistrationApprovals({ navigation }: any) {
                       activeTab === 'pending'
                         ? '#FFFFFF'
                         : isDark
-                        ? '#E5E7EB'
-                        : '#374151',
+                          ? '#E5E7EB'
+                          : '#374151',
                   },
                 ]}
               >
@@ -681,13 +709,13 @@ export default function AdminRegistrationApprovals({ navigation }: any) {
                 styles.roundBadge,
                 activeTab === 'approved'
                   ? {
-                      backgroundColor: '#059669',
-                      borderColor: '#059669',
-                    }
+                    backgroundColor: '#059669',
+                    borderColor: '#059669',
+                  }
                   : {
-                      backgroundColor: isDark ? 'rgba(5, 150, 105, 0.15)' : '#ECFDF5',
-                      borderColor: isDark ? 'rgba(5, 150, 105, 0.3)' : '#A7F3D0',
-                    },
+                    backgroundColor: isDark ? 'rgba(5, 150, 105, 0.15)' : '#ECFDF5',
+                    borderColor: isDark ? 'rgba(5, 150, 105, 0.3)' : '#A7F3D0',
+                  },
               ]}
               onPress={() => setActiveTab('approved')}
               activeOpacity={0.8}
@@ -714,13 +742,13 @@ export default function AdminRegistrationApprovals({ navigation }: any) {
                 styles.roundBadge,
                 activeTab === 'rejected'
                   ? {
-                      backgroundColor: '#DC2626',
-                      borderColor: '#DC2626',
-                    }
+                    backgroundColor: '#DC2626',
+                    borderColor: '#DC2626',
+                  }
                   : {
-                      backgroundColor: isDark ? 'rgba(220, 38, 38, 0.15)' : '#FEF2F2',
-                      borderColor: isDark ? 'rgba(220, 38, 38, 0.3)' : '#FECACA',
-                    },
+                    backgroundColor: isDark ? 'rgba(220, 38, 38, 0.15)' : '#FEF2F2',
+                    borderColor: isDark ? 'rgba(220, 38, 38, 0.3)' : '#FECACA',
+                  },
               ]}
               onPress={() => setActiveTab('rejected')}
               activeOpacity={0.8}
@@ -773,15 +801,15 @@ export default function AdminRegistrationApprovals({ navigation }: any) {
               {activeTab === 'pending'
                 ? 'No Pending Approvals'
                 : activeTab === 'approved'
-                ? 'No Approved Registrations'
-                : 'No Rejected Registrations'}
+                  ? 'No Approved Registrations'
+                  : 'No Rejected Registrations'}
             </Text>
             <Text style={[styles.emptySub, { color: secondaryText }]}>
               {activeTab === 'pending'
                 ? 'All new member registration requests have been reviewed!'
                 : activeTab === 'approved'
-                ? 'No approved registration requests in the record.'
-                : 'No registration requests have been rejected.'}
+                  ? 'No approved registration requests in the record.'
+                  : 'No registration requests have been rejected.'}
             </Text>
           </View>
         ) : (
@@ -865,8 +893,8 @@ export default function AdminRegistrationApprovals({ navigation }: any) {
                                 ? '#7F1D1D'
                                 : '#FEE2E2'
                               : isDark
-                              ? '#374151'
-                              : '#F1F5F9',
+                                ? '#374151'
+                                : '#F1F5F9',
                           borderColor: rejectionReason === chip ? '#EF4444' : 'transparent',
                         },
                       ]}

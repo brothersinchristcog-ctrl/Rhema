@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -199,10 +199,19 @@ export default function AdminMatrimonyPlansModal({ visible, onClose, profiles = 
     });
   };
 
-  const nameByUid = (uid: string) => {
-    const found = profiles.find((p) => p.uid === uid);
-    return found?.displayName || `${uid.slice(0, 10)}...`;
-  };
+  const profileNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (let i = 0; i < profiles.length; i++) {
+      const p = profiles[i];
+      if (p?.uid && p?.displayName) map.set(p.uid, p.displayName);
+    }
+    return map;
+  }, [profiles]);
+
+  const nameByUid = useCallback(
+    (uid: string) => profileNameMap.get(uid) || `${uid.slice(0, 10)}...`,
+    [profileNameMap]
+  );
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>

@@ -1,11 +1,5 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import PastorEventDashboard from '../screens/admin/pastor_events/PastorEventDashboard';
-import PastorEventDetail from '../screens/admin/pastor_events/PastorEventDetail';
-import PastorEventRoutePlanner from '../screens/admin/pastor_events/PastorEventRoutePlanner';
-import PastorEventMap from '../screens/admin/pastor_events/PastorEventMap';
-import CreatePastorEvent from '../screens/admin/pastor_events/CreatePastorEvent';
-import AIAssistantModal from '../screens/admin/pastor_events/AIAssistantModal';
 import { PastorEvent } from '../types/event';
 
 export type PastorEventStackParamList = {
@@ -29,27 +23,27 @@ export default function PastorEventNavigator() {
     >
       <Stack.Screen 
         name="Dashboard" 
-        component={PastorEventDashboard} 
+        getComponent={() => require('../screens/admin/pastor_events/PastorEventDashboard').default} 
       />
       <Stack.Screen 
         name="EventDetail" 
-        component={PastorEventDetail} 
+        getComponent={() => require('../screens/admin/pastor_events/PastorEventDetail').default} 
       />
       <Stack.Screen 
         name="RoutePlanner" 
-        component={PastorEventRoutePlanner} 
+        getComponent={() => require('../screens/admin/pastor_events/PastorEventRoutePlanner').default} 
       />
       <Stack.Screen 
         name="EventMap" 
-        component={PastorEventMap} 
+        getComponent={() => require('../screens/admin/pastor_events/PastorEventMap').default} 
       />
       <Stack.Screen 
         name="CreateEvent" 
-        component={CreatePastorEvent} 
+        getComponent={() => require('../screens/admin/pastor_events/CreatePastorEvent').default} 
       />
       <Stack.Screen 
         name="AIAssistant" 
-        component={AIAssistantModal} 
+        getComponent={() => require('../screens/admin/pastor_events/AIAssistantModal').default} 
         options={{ presentation: 'modal' }}
       />
     </Stack.Navigator>

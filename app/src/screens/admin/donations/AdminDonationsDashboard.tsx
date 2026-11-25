@@ -1,5 +1,6 @@
-import React, { useContext, useEffect, useRef } from 'react';
+import React, { useContext, useEffect, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, DeviceEventEmitter, StatusBar, Platform, Animated, Easing } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 import { ArrowLeft, FileText, Heart, Sun, Calendar, TrendingUp, BarChart3 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
@@ -10,14 +11,16 @@ import { useAdminTheme } from '../../../utils/adminThemeHelper';
 
 export default function AdminDonationsDashboard({ donations = [], pledgesCount = 0, onNavigate }: any) {
   const { isDark } = useAdminTheme();
+  const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
   const { setActiveTab } = useContext(AdminTabContext) || {};
   const today = new Date().toDateString();
 
-  // Splash shimmer wave animation moving from left to right across bottom badge
+  // Splash shimmer wave animation moving from left to right across bottom badge (paused when screen not focused)
   const splashAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (!isFocused) return;
     const splashLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(splashAnim, {
@@ -31,30 +34,32 @@ export default function AdminDonationsDashboard({ donations = [], pledgesCount =
     );
     splashLoop.start();
     return () => splashLoop.stop();
-  }, [splashAnim]);
+  }, [splashAnim, isFocused]);
 
   const splashTranslateX = splashAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [-60, 390],
   });
 
-  // Calculate start dates
+  // Single-pass memoized donation time buckets
   const now = new Date();
   const startWeek = new Date(now);
   startWeek.setDate(now.getDate() - now.getDay()); // Sunday as start of week
-  const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const startYear = new Date(now.getFullYear(), 0, 1);
+  const buckets = useMemo(() => {
+    const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startYear = new Date(now.getFullYear(), 0, 1);
 
-  const buckets = { today: [] as any[], week: [] as any[], month: [] as any[], year: [] as any[] };
-
-  donations.forEach((d: any) => {
-    if (!d.date) return;
-    const dt = new Date(d.date);
-    if (dt.toDateString() === today) buckets.today.push(d);
-    if (dt >= startWeek) buckets.week.push(d);
-    if (dt >= startMonth) buckets.month.push(d);
-    if (dt >= startYear) buckets.year.push(d);
-  });
+    const out = { today: [] as any[], week: [] as any[], month: [] as any[], year: [] as any[] };
+    donations.forEach((d: any) => {
+      if (!d.date) return;
+      const dt = new Date(d.date);
+      if (dt.toDateString() === today) out.today.push(d);
+      if (dt >= startWeek) out.week.push(d);
+      if (dt >= startMonth) out.month.push(d);
+      if (dt >= startYear) out.year.push(d);
+    });
+    return out;
+  }, [donations, today]);
 
   const getAmt = (arr: any[]) => arr.reduce((s, d) => s + (Number(d.amount) || 0), 0);
 

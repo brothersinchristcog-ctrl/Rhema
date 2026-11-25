@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Modal, Image, StatusBar, Platform } from 'react-native';
+import React, { useState, useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Modal, StatusBar, Platform } from 'react-native';
 import { ArrowLeft, User, Phone, Calendar, Tag, Target, FileText, CreditCard, Link, Receipt, Info, Clock, Edit2, Trash2, Download, Share2 } from 'lucide-react-native';
 import { COLORS, formatCurrency, formatDate, getInitials, generateDonationReceipt, getDonationReceiptHTML, formatReceiptNo } from './AdminDonationsUtils';
 import { db } from '../../../services/firebaseConfig';
@@ -7,6 +7,7 @@ import FirestoreService from '../../../services/FirestoreService';
 import { WebView } from 'react-native-webview';
 import { useAuth } from '../../../context/AuthContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import CachedImage from '../../../components/CachedImage';
 import { useAdminTheme } from '../../../utils/adminThemeHelper';
 
 export default function AdminDonationsDetails({ donation, onNavigate }: any) {
@@ -83,7 +84,10 @@ export default function AdminDonationsDetails({ donation, onNavigate }: any) {
     </View>
   );
 
-  const receiptHtml = getDonationReceiptHTML(donation, authorizerName);
+  const receiptHtml = useMemo(
+    () => (showPdfModal ? getDonationReceiptHTML(donation, authorizerName) : ''),
+    [showPdfModal, donation, authorizerName]
+  );
 
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#000000' : '#F8FAFC' }]}>
@@ -486,7 +490,7 @@ export default function AdminDonationsDetails({ donation, onNavigate }: any) {
             {donation.attachmentType === 'pdf' || donation.attachmentUrl?.includes('.pdf') ? (
               <WebView originWhitelist={['*']} source={{ uri: donation.attachmentUrl }} style={{ flex: 1 }} />
             ) : (
-              <Image source={{ uri: donation.attachmentUrl }} style={{ width: '100%', height: '100%', resizeMode: 'contain' }} />
+              <CachedImage uri={donation.attachmentUrl} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
             )}
           </View>
         </View>

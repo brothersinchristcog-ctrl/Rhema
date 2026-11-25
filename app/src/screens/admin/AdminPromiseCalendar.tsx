@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useMemo, useRef } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -14,6 +14,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, ArrowLeft } from 'lucide-react-native';
 import { AdminTabContext } from '../../context/AdminTabContext';
+import { useChurch } from '../../context/ChurchContext';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../../utils/instantCache';
 
 import FirestoreService from '../../services/FirestoreService';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
@@ -24,25 +26,63 @@ export default function AdminPromiseCalendar() {
   const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const insets = useSafeAreaInsets();
   const { setActiveTab, setTabByName, setEditingData } = useContext(AdminTabContext);
-  const [loading, setLoading] = useState(true);
-  const [promises, setPromises] = useState<any[]>([]);
+  const { activeChurch } = useChurch();
+  const calendarCacheKey = useMemo(() => {
+    const n = new Date();
+    return makeScopedCacheKey(`admin_promise_calendar_${n.getFullYear()}_${n.getMonth() + 1}_v1`, activeChurch?.id || 'default', 'admin');
+  }, [activeChurch?.id]);
+  const initialCachedPromises = useMemo(
+    () => getInstantMemory<any[]>(calendarCacheKey),
+    [calendarCacheKey]
+  );
+
+  const [loading, setLoading] = useState(!initialCachedPromises);
+  const [promises, setPromises] = useState<any[]>(() => initialCachedPromises || []);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
+    mountedRef.current = true;
     fetchCalendarData();
-  }, []);
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [calendarCacheKey]);
 
   const fetchCalendarData = async () => {
-    setLoading(true);
+    const mem = getInstantMemory<any[]>(calendarCacheKey);
+    if (mem) {
+      setPromises(mem);
+      setLoading(false);
+    } else if (promises.length === 0) {
+      setLoading(true);
+    }
     try {
       const now = new Date();
-      const data = await FirestoreService.getCalendarData(now.getFullYear(), now.getMonth() + 1);
-      setPromises(data);
+      await loadWithInstantCache<any[]>(
+        calendarCacheKey,
+        () => FirestoreService.getCalendarData(now.getFullYear(), now.getMonth() + 1),
+        (data) => {
+          if (!mountedRef.current) return;
+          setPromises(data);
+          setLoading(false);
+        },
+        { ttlMs: 10 * 60 * 1000, freshSkipMs: 0 }
+      );
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   };
+
+  const promiseByDate = useMemo(() => {
+    const map = new Map<string, any>();
+    for (let i = 0; i < promises.length; i++) {
+      const p = promises[i];
+      if (p?.date) map.set(p.date, p);
+    }
+    return map;
+  }, [promises]);
 
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   
@@ -126,7 +166,7 @@ export default function AdminPromiseCalendar() {
             {days.map(day => {
               const isToday = day === todayDate;
               const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-              const promise = promises.find(p => p.date === dStr);
+              const promise = promiseByDate.get(dStr);
               
               const isMissing = !promise;
               const isDraft = promise?.status === 'Draft';

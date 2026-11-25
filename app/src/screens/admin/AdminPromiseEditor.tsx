@@ -354,7 +354,13 @@ const TELUGU_NAMES = [
   'పేతురు 1వ పత్రిక', 'పేతురు 2వ పత్రిక', 'యోహాను 1వ పత్రిక', 'యోహాను 2వ పత్రిక', 'యోహాను 3వ పత్రిక', 'యూదా', 'ప్రకటన గ్రంథము'
 ];
 
-const LOCAL_TELUGU_BIBLE: any = require('../../../assets/telugu_bible.json');
+let _teluguBibleCache: any = null;
+function getLocalTeluguBible() {
+  if (!_teluguBibleCache) {
+    _teluguBibleCache = require('../../../assets/telugu_bible.json');
+  }
+  return _teluguBibleCache;
+}
 
 const STATUS_OPTIONS = [
   { label: 'Draft — save only, not visible', value: 'Draft' },
@@ -442,6 +448,14 @@ export default function AdminPromiseEditor() {
   useEffect(() => {
     loadTeluguFonts().then(() => setFontsReady(true));
   }, []);
+
+  useEffect(() => {
+    const d = new Date();
+    const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    if (form.date === todayStr && form.status !== 'Published') {
+      setForm(prev => ({ ...prev, status: 'Published' }));
+    }
+  }, [form.date, form.status]);
 
   // ─── Thumbnail Color & Theme State ─────────────────────────────────────────
   const [colorMode, setColorMode] = useState<'solid' | 'gradient' | 'custom'>('solid');
@@ -602,7 +616,7 @@ export default function AdminPromiseEditor() {
       }
 
       let telText = '';
-      const bookData = LOCAL_TELUGU_BIBLE.Book[bookIndex];
+      const bookData = getLocalTeluguBible().Book[bookIndex];
       if (bookData && bookData.Chapter && bookData.Chapter[chapterNumber - 1]) {
         const chapterData = bookData.Chapter[chapterNumber - 1].Verse;
         if (chapterData && chapterData[verseNumber - 1]) {
@@ -1469,11 +1483,6 @@ export default function AdminPromiseEditor() {
               })();
               const isToday = form.date === todayStr;
 
-              // Auto-switch to Published if today is selected but a non-publishable status is set
-              if (isToday && form.status !== 'Published') {
-                setTimeout(() => setForm(prev => ({ ...prev, status: 'Published' })), 0);
-              }
-
               return (
                 <View style={styles.statusSelectorContainer}>
                   {isToday && (
@@ -1788,7 +1797,7 @@ export default function AdminPromiseEditor() {
                 </TouchableOpacity>
               ))}
               
-              {selectionModalType === 'chapter' && selectedBook !== null && Array.from({ length: LOCAL_TELUGU_BIBLE.Book[selectedBook]?.Chapter?.length || 0 }).map((_, idx) => (
+              {selectionModalType === 'chapter' && selectedBook !== null && Array.from({ length: getLocalTeluguBible().Book[selectedBook]?.Chapter?.length || 0 }).map((_, idx) => (
                 <TouchableOpacity 
                   key={idx} 
                   style={[styles.modalOption, selectedChapter === idx + 1 && styles.modalOptionActive]}
@@ -1802,7 +1811,7 @@ export default function AdminPromiseEditor() {
                 </TouchableOpacity>
               ))}
 
-              {selectionModalType === 'verse' && selectedBook !== null && selectedChapter !== null && Array.from({ length: LOCAL_TELUGU_BIBLE.Book[selectedBook]?.Chapter?.[selectedChapter - 1]?.Verse?.length || 0 }).map((_, idx) => (
+              {selectionModalType === 'verse' && selectedBook !== null && selectedChapter !== null && Array.from({ length: getLocalTeluguBible().Book[selectedBook]?.Chapter?.[selectedChapter - 1]?.Verse?.length || 0 }).map((_, idx) => (
                 <TouchableOpacity 
                   key={idx} 
                   style={[styles.modalOption, selectedVerse === idx + 1 && styles.modalOptionActive]}

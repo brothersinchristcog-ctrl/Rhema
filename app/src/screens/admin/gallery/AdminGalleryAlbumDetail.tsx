@@ -1,6 +1,6 @@
 // @ts-nocheck - Forced IDE refresh to clear false positive module error
-import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, Image, Dimensions, ActivityIndicator, Alert, Modal, SafeAreaView, Animated, TouchableWithoutFeedback, Platform, StatusBar } from 'react-native';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, Dimensions, ActivityIndicator, Alert, Modal, SafeAreaView, Animated, TouchableWithoutFeedback, Platform, StatusBar } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -12,6 +12,9 @@ import * as MediaLibrary from 'expo-media-library';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AdminGalleryStackParamList } from './AdminGalleryNavigator';
 import GalleryService, { GalleryPhoto } from '../../../services/GalleryService';
+import { useChurch } from '../../../context/ChurchContext';
+import CachedImage from '../../../components/CachedImage';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey, writeInstantCache } from '../../../utils/instantCache';
 import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
 
 const { width } = Dimensions.get('window');
@@ -28,9 +31,19 @@ export default function AdminGalleryAlbumDetail() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RouteProps>();
   const { albumId, albumName, albumDescription } = route.params;
+  const { activeChurch } = useChurch();
+  const albumCacheKey = useMemo(
+    () => makeScopedCacheKey(`admin_gallery_album_${albumId}_v1`, activeChurch?.id || 'default', 'admin'),
+    [albumId, activeChurch?.id]
+  );
+  const initialCachedPhotos = useMemo(
+    () => getInstantMemory<GalleryPhoto[]>(albumCacheKey),
+    [albumCacheKey]
+  );
+  const mountedRef = useRef(true);
 
-  const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [photos, setPhotos] = useState<GalleryPhoto[]>(() => initialCachedPhotos || []);
+  const [loading, setLoading] = useState(!initialCachedPhotos);
   const [uploading, setUploading] = useState(false);
   
   // Image Viewer State
@@ -49,18 +62,36 @@ export default function AdminGalleryAlbumDetail() {
   const [controlsVisible, setControlsVisible] = useState(true);
 
   useEffect(() => {
-    loadPhotos();
-  }, [albumId]);
+    mountedRef.current = true;
+    loadPhotos(false);
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [albumId, albumCacheKey]);
 
-  const loadPhotos = async () => {
-    try {
+  const loadPhotos = async (forceRefresh = false) => {
+    const mem = getInstantMemory<GalleryPhoto[]>(albumCacheKey);
+    if (mem && !forceRefresh) {
+      setPhotos(mem);
+      setLoading(false);
+    } else if (photos.length === 0) {
       setLoading(true);
-      const data = await GalleryService.getAlbumPhotos(albumId);
-      setPhotos(data);
+    }
+    try {
+      await loadWithInstantCache<GalleryPhoto[]>(
+        albumCacheKey,
+        () => GalleryService.getAlbumPhotos(albumId),
+        (data) => {
+          if (!mountedRef.current) return;
+          setPhotos(data);
+          setLoading(false);
+        },
+        { ttlMs: 10 * 60 * 1000, freshSkipMs: 0, force: forceRefresh }
+      );
     } catch (error) {
       console.error(error);
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   };
 
@@ -80,7 +111,7 @@ export default function AdminGalleryAlbumDetail() {
         await GalleryService.uploadPhotosToAlbum(albumId, uris, 'Admin');
         
         showToast(`${uris.length} images uploaded successfully!`);
-        loadPhotos(); // Refresh list
+        loadPhotos(true); // Refresh list
       }
     } catch (error) {
       console.error(error);
@@ -98,11 +129,17 @@ export default function AdminGalleryAlbumDetail() {
     if (!photoToDelete) return;
     try {
       setIsDeleting(true);
-      await GalleryService.deletePhoto(photoToDelete.id, albumId, photoToDelete.url);
+      const deletedId = photoToDelete.id;
+      await GalleryService.deletePhoto(deletedId, albumId, photoToDelete.url);
       if (isViewerVisible) setIsViewerVisible(false);
       showToast("Photo deleted successfully!");
       setPhotoToDelete(null);
-      loadPhotos(); // Refresh list
+      setPhotos((prev) => {
+        const next = prev.filter((p) => p.id !== deletedId);
+        writeInstantCache(albumCacheKey, next).catch(() => {});
+        return next;
+      });
+      loadPhotos(true); // Refresh list
     } catch (error) {
       showToast("Failed to delete photo");
       console.error(error);
@@ -228,8 +265,8 @@ export default function AdminGalleryAlbumDetail() {
         activeOpacity={0.8}
         onPress={() => openViewer(index)}
       >
-        <Image 
-          source={{ uri: item.url }} 
+        <CachedImage 
+          uri={item.url} 
           style={[styles.photo, { height: isTall ? 250 : 200 }]} 
           resizeMode="cover" 
         />
@@ -257,6 +294,10 @@ export default function AdminGalleryAlbumDetail() {
         contentContainerStyle={styles.listContent}
         columnWrapperStyle={styles.row}
         showsVerticalScrollIndicator={false}
+        initialNumToRender={8}
+        maxToRenderPerBatch={6}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
         ListEmptyComponent={
           !loading ? (
             <Text style={[styles.emptyText, { color: secondaryText }]}>No photos yet. Start uploading!</Text>
@@ -341,8 +382,8 @@ export default function AdminGalleryAlbumDetail() {
                     <View style={{ width, flex: 1, justifyContent: 'center', paddingBottom: 60 }}>
                       <View style={styles.instaCard}>
                         {/* Image Area */}
-                        <Image 
-                          source={{ uri: item.url }} 
+                        <CachedImage 
+                          uri={item.url} 
                           style={styles.instaImage}
                           resizeMode="contain"
                         />

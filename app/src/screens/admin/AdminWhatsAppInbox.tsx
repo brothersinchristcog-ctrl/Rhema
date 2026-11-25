@@ -1,14 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useContext } from 'react';
 import { 
-  View, Text, StyleSheet, TouchableOpacity, FlatList, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, ImageBackground, Image
+  View, Text, StyleSheet, TouchableOpacity, FlatList, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MessageSquare, ArrowLeft, Send, CheckCheck, MoreVertical, Phone as PhoneIcon, Video, ChevronLeft, Search } from 'lucide-react-native';
+import { MessageSquare, ArrowLeft, Send, CheckCheck, MoreVertical, Phone as PhoneIcon, Search } from 'lucide-react-native';
 import { firestore, functions } from '../../services/firebaseConfig';
 import { useChurch } from '../../context/ChurchContext';
 import { AdminTabContext } from '../../context/AdminTabContext';
-import { useContext } from 'react';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
+import CachedImage from '../../components/CachedImage';
 
 interface WhatsAppMessage {
   id: string;
@@ -48,140 +48,168 @@ export default function AdminWhatsAppInbox() {
   const [replyText, setReplyText] = useState('');
   const [sending, setSending] = useState(false);
 
-  useEffect(() => {
-    if (!activeChurch) return;
+  const membersByLast10Ref = useRef<Map<string, Member>>(new Map());
+  const mappedMsgsRef = useRef<WhatsAppMessage[]>([]);
+  const unmappedMsgsRef = useRef<WhatsAppMessage[]>([]);
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const rebuildConversations = React.useCallback(() => {
+    const allMsgs = [...mappedMsgsRef.current, ...unmappedMsgsRef.current];
+    const groups = new Map<string, WhatsAppMessage[]>();
+    allMsgs.forEach((m) => {
+      const remotePhone = m.from;
+      if (!groups.has(remotePhone)) groups.set(remotePhone, []);
+      groups.get(remotePhone)!.push(m);
+    });
+
+    const newConvos: Conversation[] = [];
+    groups.forEach((groupMsgs, phone) => {
+      const cleanMetaPhone = phone.replace(/\D/g, '');
+      const memberMatch =
+        cleanMetaPhone.length >= 10
+          ? membersByLast10Ref.current.get(cleanMetaPhone.slice(-10))
+          : undefined;
+
+      const uniqueMsgsMap = new Map<string, WhatsAppMessage>();
+      groupMsgs.forEach((m) => uniqueMsgsMap.set(m.id, m));
+      const sortedMsgs = Array.from(uniqueMsgsMap.values()).sort((a, b) => {
+        const t1 = a.timestamp ? a.timestamp.toMillis() : 0;
+        const t2 = b.timestamp ? b.timestamp.toMillis() : 0;
+        return t1 - t2;
+      });
+
+      newConvos.push({
+        phone,
+        member: memberMatch,
+        messages: sortedMsgs,
+        lastMessage: sortedMsgs[sortedMsgs.length - 1],
+      });
+    });
+
+    newConvos.sort((a, b) => {
+      const t1 = a.lastMessage?.timestamp ? a.lastMessage.timestamp.toMillis() : 0;
+      const t2 = b.lastMessage?.timestamp ? b.lastMessage.timestamp.toMillis() : 0;
+      return t2 - t1;
+    });
+
+    setConversations(newConvos);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (!activeChurch?.id) {
+      setLoading(false);
+      return;
+    }
+
+    let isMounted = true;
     const fetchMembers = async () => {
       try {
         const snap = await firestore()
           .collection('Rhema Church')
           .doc(activeChurch.id)
           .collection('members')
+          .limit(500)
           .get();
-        
-        const membersData = snap.docs.map(doc => {
+
+        if (!isMounted) return;
+        const phoneMap = new Map<string, Member>();
+        const membersData = snap.docs.map((doc) => {
           const data = doc.data();
-          return {
+          const m: Member = {
             id: doc.id,
             name: data.name || data.firstName || 'Unknown',
             phone: data.phone || data.mobile || '',
-            avatarUrl: data.profilePhoto || data.avatarUrl || data.photoUrl || null
+            avatarUrl: data.profilePhoto || data.avatarUrl || data.photoUrl || null,
           };
+          const clean = m.phone.replace(/\D/g, '');
+          if (clean.length >= 10) {
+            phoneMap.set(clean.slice(-10), m);
+          }
+          return m;
         });
+        membersByLast10Ref.current = phoneMap;
         setMembers(membersData);
+        if (mappedMsgsRef.current.length > 0 || unmappedMsgsRef.current.length > 0) {
+          rebuildConversations();
+        }
       } catch (err) {
-        console.error("Error fetching members:", err);
+        console.error('Error fetching members:', err);
       }
     };
 
+    // Fetch members & attach message listeners in parallel (do not block on members)
     fetchMembers();
-  }, [activeChurch]);
-
-  useEffect(() => {
-    if (!activeChurch || members.length === 0) {
-      if (loading) setLoading(false);
-      return;
-    }
-
-    let mappedMsgs: WhatsAppMessage[] = [];
-    let unmappedMsgs: WhatsAppMessage[] = [];
-
-    const processMessages = () => {
-      const allMsgs = [...mappedMsgs, ...unmappedMsgs];
-      
-      const groups = new Map<string, WhatsAppMessage[]>();
-      allMsgs.forEach(m => {
-        // Assume from is the remote phone regardless of inbound/outbound now based on our backend code
-        const remotePhone = m.from; 
-        if (!groups.has(remotePhone)) groups.set(remotePhone, []);
-        groups.get(remotePhone)!.push(m);
-      });
-
-      const newConvos: Conversation[] = [];
-      groups.forEach((groupMsgs, phone) => {
-        const member = members.find(m => {
-          if (!m.phone) return false;
-          const cleanMetaPhone = phone.replace(/\D/g, '');
-          const cleanMemberPhone = m.phone.replace(/\D/g, '');
-          if (cleanMetaPhone.length < 10 || cleanMemberPhone.length < 10) return false;
-          return cleanMetaPhone.endsWith(cleanMemberPhone.slice(-10));
-        });
-
-        const uniqueMsgsMap = new Map<string, WhatsAppMessage>();
-        groupMsgs.forEach(m => uniqueMsgsMap.set(m.id, m));
-        const uniqueMsgs = Array.from(uniqueMsgsMap.values());
-
-        const sortedMsgs = uniqueMsgs.sort((a, b) => {
-           const t1 = a.timestamp ? a.timestamp.toMillis() : 0;
-           const t2 = b.timestamp ? b.timestamp.toMillis() : 0;
-           return t1 - t2;
-        });
-
-        newConvos.push({
-          phone,
-          member,
-          messages: sortedMsgs,
-          lastMessage: sortedMsgs[sortedMsgs.length - 1]
-        });
-      });
-
-      newConvos.sort((a, b) => {
-          const t1 = a.lastMessage?.timestamp ? a.lastMessage.timestamp.toMillis() : 0;
-          const t2 = b.lastMessage?.timestamp ? b.lastMessage.timestamp.toMillis() : 0;
-          return t2 - t1;
-      });
-      
-      setConversations(newConvos);
-      setLoading(false);
-    };
 
     const unsubscribe = firestore()
       .collection('Rhema Church')
       .doc(activeChurch.id)
       .collection('whatsappMessages')
       .orderBy('timestamp', 'desc')
-      .onSnapshot((snapshot) => {
-        if (!snapshot) return;
-        mappedMsgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WhatsAppMessage));
-        processMessages();
-      }, err => {
-        console.error("Error fetching whatsapp messages:", err);
-      });
+      .limit(200)
+      .onSnapshot(
+        (snapshot) => {
+          if (!isMounted || !snapshot) return;
+          mappedMsgsRef.current = snapshot.docs.map(
+            (doc) => ({ id: doc.id, ...doc.data() } as WhatsAppMessage)
+          );
+          rebuildConversations();
+        },
+        (err) => {
+          console.error('Error fetching whatsapp messages:', err);
+          if (isMounted) setLoading(false);
+        }
+      );
 
     const unsubscribeUnmapped = firestore()
       .collection('unmappedWhatsappMessages')
       .orderBy('timestamp', 'desc')
-      .onSnapshot((snapshot) => {
-        if (!snapshot) return;
-        unmappedMsgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WhatsAppMessage));
-        processMessages();
-      }, err => {
-        console.error("Error fetching unmapped messages:", err);
-      });
+      .limit(100)
+      .onSnapshot(
+        (snapshot) => {
+          if (!isMounted || !snapshot) return;
+          unmappedMsgsRef.current = snapshot.docs.map(
+            (doc) => ({ id: doc.id, ...doc.data() } as WhatsAppMessage)
+          );
+          rebuildConversations();
+        },
+        (err) => {
+          console.error('Error fetching unmapped messages:', err);
+          if (isMounted) setLoading(false);
+        }
+      );
 
     return () => {
+      isMounted = false;
       unsubscribe();
       unsubscribeUnmapped();
     };
-  }, [activeChurch, members]);
+  }, [activeChurch?.id, rebuildConversations]);
 
   // Sync selectedConversation when conversations update
   useEffect(() => {
     if (selectedConversation) {
-      const updated = conversations.find(c => c.phone === selectedConversation.phone);
+      const updated = conversations.find((c) => c.phone === selectedConversation.phone);
       if (updated && updated.messages.length !== selectedConversation.messages.length) {
         setSelectedConversation(updated);
       }
     }
   }, [conversations]);
 
-  // Scroll to bottom when new messages arrive or conversation is opened
+  // Scroll to bottom when new messages arrive or conversation is opened (cleaned up)
   useEffect(() => {
     if (selectedConversation && flatListRef.current) {
-      setTimeout(() => {
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+      scrollTimeoutRef.current = setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: true });
       }, 200);
     }
+    return () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+        scrollTimeoutRef.current = null;
+      }
+    };
   }, [selectedConversation?.messages.length, selectedConversation?.phone]);
 
   const handleSendReply = async () => {
@@ -253,7 +281,11 @@ export default function AdminWhatsAppInbox() {
         <FlatList
           data={filteredConversations}
           keyExtractor={item => item.phone}
-                    contentContainerStyle={{ paddingBottom: 40, paddingTop: 10 }}
+          contentContainerStyle={{ paddingBottom: 40, paddingTop: 10 }}
+          initialNumToRender={12}
+          maxToRenderPerBatch={10}
+          windowSize={7}
+          removeClippedSubviews={Platform.OS === 'android'}
           renderItem={({ item }) => {
             const isOutbound = item.lastMessage.direction === 'outbound';
             return (
@@ -263,7 +295,7 @@ export default function AdminWhatsAppInbox() {
               >
                 <View style={styles.avatar}>
                   {item.member?.avatarUrl ? (
-                    <Image source={{ uri: item.member.avatarUrl }} style={styles.avatarImage} />
+                    <CachedImage uri={item.member.avatarUrl} style={styles.avatarImage} resizeMode="cover" />
                   ) : (
                     <Text style={styles.avatarText}>
                       {item.member ? item.member.name.charAt(0).toUpperCase() : '#'}
@@ -320,6 +352,10 @@ export default function AdminWhatsAppInbox() {
             data={selectedConversation.messages}
             keyExtractor={item => item.id}
             contentContainerStyle={styles.chatListContent}
+            initialNumToRender={16}
+            maxToRenderPerBatch={12}
+            windowSize={7}
+            removeClippedSubviews={Platform.OS === 'android'}
             onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
             onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
             renderItem={({ item }) => {

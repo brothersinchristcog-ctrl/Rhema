@@ -1,16 +1,16 @@
 import React, { useMemo } from 'react';
-import { 
-  StyleSheet, 
-  View, 
-  Text, 
-  ScrollView, 
-  TouchableOpacity, 
+import {
+  StyleSheet,
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
   Platform
 } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
-import { 
-  CalendarDays, Receipt, ChevronRight, TrendingUp, AlertCircle, 
+import {
+  CalendarDays, Receipt, ChevronRight, TrendingUp, AlertCircle,
   ArrowUpRight, Clock, Layers
 } from 'lucide-react-native';
 import { fmt, todayISO, GroupOf, getCategoryIconComponent, GROUP_COLORS } from './AdminExpenseUtils';
@@ -141,29 +141,34 @@ export default function AdminExpenseDashboard({
       const sum = e.items.reduce((s: number, i: any) => s + Number(i.amount || 0), 0);
       total += sum;
       totalCount += 1;
-      
+
       if (e.paymentMethod === 'Pending') {
         pendingTotal += sum;
         pendingCount += 1;
       }
-      
+
       if (e.date === today) { todayTotal += sum; todayCount += 1; }
       if (e.date >= weekAgo && e.date <= today) { weekTotal += sum; weekCount += 1; }
       if (e.date.slice(0, 7) === month) { monthTotal += sum; monthCount += 1; }
-      
+
       e.items.forEach((i: any) => { byGroup[GroupOf(i.category)] += Number(i.amount || 0); });
     });
-    return { 
-      total, todayTotal, weekTotal, monthTotal, byGroup, 
-      totalCount, todayCount, weekCount, monthCount, 
-      pendingTotal, pendingCount 
+    return {
+      total, todayTotal, weekTotal, monthTotal, byGroup,
+      totalCount, todayCount, weekCount, monthCount,
+      pendingTotal, pendingCount
     };
   }, [expenses]);
 
-  const pieData = Object.entries(totals.byGroup)
-    .filter(([, v]) => (v as number) > 0)
-    .map(([name, value]) => ({ name, value: value as number }));
-  const recent = [...expenses].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 5);
+  const pieData = useMemo(() => (
+    Object.entries(totals.byGroup)
+      .filter(([, v]) => (v as number) > 0)
+      .map(([name, value]) => ({ name, value: value as number }))
+  ), [totals]);
+  const recent = useMemo(
+    () => [...expenses].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 5),
+    [expenses]
+  );
 
   const getGroupColor = (name: string) => {
     return GROUP_COLORS[name] || "#6366F1";
@@ -307,7 +312,7 @@ export default function AdminExpenseDashboard({
               <ChevronRight size={14} color={isDark ? '#38BDF8' : '#0284C7'} />
             </TouchableOpacity>
           </View>
-          
+
           <View style={styles.recentList}>
             {recent.length === 0 ? (
               <Text style={[styles.emptyHint, { color: secondaryText }]}>
@@ -319,7 +324,7 @@ export default function AdminExpenseDashboard({
                 const cat = e.items[0]?.category || "Miscellaneous";
                 const CatIcon = getCategoryIconComponent(cat);
                 const isLast = idx === recent.length - 1;
-                
+
                 return (
                   <View
                     key={e.id}
@@ -375,7 +380,7 @@ export default function AdminExpenseDashboard({
           ]}
         >
           <Text style={[styles.cardHeaderTitle, { color: primaryText }]}>Spend by Category</Text>
-          
+
           <View style={styles.pieChartContainer}>
             <View style={styles.pieWrapper}>
               <Svg width={140} height={140} viewBox="0 0 140 140">
@@ -383,7 +388,7 @@ export default function AdminExpenseDashboard({
                   let currentAngle = -Math.PI / 2;
                   const radius = 70;
                   const center = 70;
-                  
+
                   if (!totals.total) {
                     return <Circle cx={center} cy={center} r={radius} fill={isDark ? '#27272A' : '#E2E8F0'} />;
                   }
@@ -392,7 +397,7 @@ export default function AdminExpenseDashboard({
                     if (d.value === 0) return null;
                     const sliceAngle = (d.value / totals.total) * 2 * Math.PI;
                     const nextAngle = currentAngle + sliceAngle;
-                    
+
                     if (d.value === totals.total) {
                       return <Circle key={d.name} cx={center} cy={center} r={radius} fill={getGroupColor(d.name)} />;
                     }

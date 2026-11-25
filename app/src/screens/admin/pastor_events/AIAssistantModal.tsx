@@ -72,19 +72,23 @@ export default function AIAssistantModal({ navigation }: { navigation: any }) {
 
   useEffect(() => {
     if (isVoiceMode && voiceState === 'listening') {
-      Animated.loop(
+      const waveLoop = Animated.loop(
         Animated.timing(waveAnim, {
           toValue: 1,
           duration: 1200,
           easing: Easing.linear,
           useNativeDriver: true
         })
-      ).start();
+      );
+      waveLoop.start();
+      return () => {
+        waveLoop.stop();
+      };
     } else {
       waveAnim.stopAnimation();
       waveAnim.setValue(0);
     }
-  }, [isVoiceMode, voiceState]);
+  }, [isVoiceMode, voiceState, waveAnim]);
 
   const opacity1 = waveAnim.interpolate({ inputRange: [0, 0.2, 0.4, 1], outputRange: [0.3, 1, 0.3, 0.3] });
   const opacity2 = waveAnim.interpolate({ inputRange: [0, 0.2, 0.4, 0.6, 1], outputRange: [0.3, 0.3, 1, 0.3, 0.3] });

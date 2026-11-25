@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useRef } from 'react';
+import React, { useState, useEffect, useContext, useRef, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -42,6 +42,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { useChurch } from '../../../context/ChurchContext';
 import { AdminTabContext } from '../../../context/AdminTabContext';
 import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../../../utils/instantCache';
 import { parseLocalDate, toStandardDateString } from '../../../utils/DateUtils';
 import JobCircleService from '../../../services/JobCircleService';
 import InAppDocumentViewerModal from '../../../components/InAppDocumentViewerModal';
@@ -156,6 +157,15 @@ export default function AdminJobCircleDashboard({ navigation, routeParams }: Adm
   } = useAdminTheme();
 
   const churchId = activeChurch?.id || 'rhema';
+  const jobCircleCacheKey = useMemo(
+    () => makeScopedCacheKey('admin_job_circle_v1', churchId, 'admin'),
+    [churchId]
+  );
+  const initialCachedJobData = useMemo(
+    () => getInstantMemory<{ opps: JobOpportunity[]; apps: JobApplication[] }>(jobCircleCacheKey),
+    [jobCircleCacheKey]
+  );
+  const mountedRef = useRef(true);
 
   // Integrated Stat Filters: all, active_opps, pending_opps, total_apps, under_review, shortlisted, selected, volunteers
   type StatFilter =
@@ -169,12 +179,12 @@ export default function AdminJobCircleDashboard({ navigation, routeParams }: Adm
     | 'volunteers';
 
   const [selectedStat, setSelectedStat] = useState<StatFilter>('all');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialCachedJobData);
   const [refreshing, setRefreshing] = useState(false);
 
   // Data states
-  const [opportunities, setOpportunities] = useState<JobOpportunity[]>([]);
-  const [applications, setApplications] = useState<JobApplication[]>([]);
+  const [opportunities, setOpportunities] = useState<JobOpportunity[]>(() => initialCachedJobData?.opps || []);
+  const [applications, setApplications] = useState<JobApplication[]>(() => initialCachedJobData?.apps || []);
 
   // Application Review Modal State
   const [selectedApp, setSelectedApp] = useState<JobApplication | null>(null);
@@ -197,8 +207,12 @@ export default function AdminJobCircleDashboard({ navigation, routeParams }: Adm
   const lastHandledAppDeepLinkRef = useRef<string>('');
 
   useEffect(() => {
-    loadAdminData();
-  }, [churchId]);
+    mountedRef.current = true;
+    loadAdminData(false);
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [churchId, jobCircleCacheKey]);
 
   // Deep link handling when navigated with applicationId from push/in-app notification
   useEffect(() => {
@@ -231,26 +245,47 @@ export default function AdminJobCircleDashboard({ navigation, routeParams }: Adm
     };
   }, [routeParams?.applicationId, routeParams?.timestamp, applications, churchId]);
 
-  const loadAdminData = async () => {
-    try {
+  const loadAdminData = async (forceRefresh = false) => {
+    const mem = getInstantMemory<{ opps: JobOpportunity[]; apps: JobApplication[] }>(jobCircleCacheKey);
+    if (mem && !forceRefresh) {
+      setOpportunities(mem.opps);
+      setApplications(mem.apps);
+      setLoading(false);
+    } else if (opportunities.length === 0 && applications.length === 0) {
       setLoading(true);
-      const [opps, apps] = await Promise.all([
-        JobCircleService.getOpportunities(churchId),
-        JobCircleService.getAllApplications(churchId),
-      ]);
-      setOpportunities(opps);
-      setApplications(apps);
+    }
+    try {
+      await loadWithInstantCache<{ opps: JobOpportunity[]; apps: JobApplication[] }>(
+        jobCircleCacheKey,
+        async () => {
+          const [opps, apps] = await Promise.all([
+            JobCircleService.getOpportunities(churchId),
+            JobCircleService.getAllApplications(churchId),
+          ]);
+          return { opps, apps };
+        },
+        (data) => {
+          if (!mountedRef.current) return;
+          setOpportunities(data.opps);
+          setApplications(data.apps);
+          setLoading(false);
+          setRefreshing(false);
+        },
+        { ttlMs: 5 * 60 * 1000, freshSkipMs: 0, force: forceRefresh }
+      );
     } catch (err) {
       console.error('Error loading admin Job Circle data:', err);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (mountedRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   };
 
   const handleRefresh = () => {
     setRefreshing(true);
-    loadAdminData();
+    loadAdminData(true);
   };
 
   const handleBack = () => {

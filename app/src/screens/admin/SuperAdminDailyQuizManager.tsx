@@ -121,12 +121,14 @@ export default function SuperAdminDailyQuizManager({ searchQuery = '' }: { searc
 
   const loadAllData = async () => {
     setLoading(true);
+    // Render the default Daily Bank tab as soon as its own data is ready;
+    // the cross-church quiz scan continues in the background.
     await Promise.all([
       loadScheduleConfig(),
       loadDailyQuizzes(),
-      loadAllChurchQuizzes(),
     ]);
     setLoading(false);
+    loadAllChurchQuizzes();
   };
 
   const loadScheduleConfig = async () => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -33,6 +33,7 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
+import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey, writeInstantCache } from '../../utils/instantCache';
 
 interface SuperAdminItem {
   id: string;
@@ -57,21 +58,40 @@ export default function SuperAdminRoleManager({ searchQuery: externalQuery = '' 
   const { user, member } = useAuth();
   const { activeChurch } = useChurch();
   const churchId = activeChurch?.id || 'rhema';
+  const superAdminsCacheKey = useMemo(
+    () => makeScopedCacheKey('superadmin_platform_admins_v1', churchId, 'admin'),
+    [churchId]
+  );
+  const churchAdminsCacheKey = useMemo(
+    () => makeScopedCacheKey('superadmin_church_admins_v1', churchId, 'admin'),
+    [churchId]
+  );
+  const initialSuperAdmins = useMemo(
+    () => getInstantMemory<SuperAdminItem[]>(superAdminsCacheKey),
+    [superAdminsCacheKey]
+  );
+  const initialChurchAdmins = useMemo(
+    () => getInstantMemory<ChurchAdminItem[]>(churchAdminsCacheKey),
+    [churchAdminsCacheKey]
+  );
+  const mountedRef = useRef(true);
 
-  const [loading, setLoading] = useState(true);
-  const [superAdmins, setSuperAdmins] = useState<SuperAdminItem[]>([]);
-  const [churchAdmins, setChurchAdmins] = useState<ChurchAdminItem[]>([]);
+  const [loading, setLoading] = useState(!initialSuperAdmins);
+  const [superAdmins, setSuperAdmins] = useState<SuperAdminItem[]>(() => initialSuperAdmins || []);
+  const [churchAdmins, setChurchAdmins] = useState<ChurchAdminItem[]>(() => initialChurchAdmins || []);
   const [promoteModalVisible, setPromoteModalVisible] = useState(false);
   const [modalSearch, setModalSearch] = useState('');
   const [processingId, setProcessingId] = useState<string | null>(null);
 
   // 1. Real-time listener for platform_admins collection
   useEffect(() => {
+    mountedRef.current = true;
     const unsubscribe = firestore()
       .collection('platform_admins')
+      .limit(100)
       .onSnapshot(
         (snapshot) => {
-          if (snapshot) {
+          if (snapshot && mountedRef.current) {
             const list: SuperAdminItem[] = snapshot.docs.map((doc) => {
               const data = doc.data();
               return {
@@ -85,56 +105,80 @@ export default function SuperAdminRoleManager({ searchQuery: externalQuery = '' 
               };
             });
             setSuperAdmins(list);
+            writeInstantCache(superAdminsCacheKey, list).catch(() => {});
           }
-          setLoading(false);
+          if (mountedRef.current) setLoading(false);
         },
         (error) => {
           console.error('Error listening to platform_admins:', error);
-          setLoading(false);
+          if (mountedRef.current) setLoading(false);
         }
       );
 
-    return () => unsubscribe();
-  }, []);
+    return () => {
+      mountedRef.current = false;
+      unsubscribe();
+    };
+  }, [superAdminsCacheKey]);
 
-  // 2. Fetch all church admins from Rhema Church/{churchId}/members
-  const loadChurchAdmins = async () => {
+  // 2. Fetch church admins/pastors using targeted indexed queries instead of full congregation scan
+  const loadChurchAdmins = async (forceRefresh = false) => {
     try {
-      const snap = await firestore()
-        .collection('Rhema Church')
-        .doc(churchId)
-        .collection('members')
-        .get();
+      await loadWithInstantCache<ChurchAdminItem[]>(
+        churchAdminsCacheKey,
+        async () => {
+          const membersRef = firestore()
+            .collection('Rhema Church')
+            .doc(churchId)
+            .collection('members');
+          const adminRoleValues = [
+            'Admin', 'admin', 'Pastor', 'pastor', 'Super Admin', 'super_admin',
+            'Senior Pastor', 'Associate Pastor', 'Youth Pastor', 'Assistant Pastor',
+          ];
 
-      const admins: ChurchAdminItem[] = [];
-      snap.docs.forEach((doc) => {
-        const d = doc.data();
-        const uType = String(d.userType || d.role || '').toLowerCase();
-        // Include any member who is an Admin or Pastor
-        if (
-          d.isAdmin === true ||
-          uType.includes('admin') ||
-          uType.includes('pastor')
-        ) {
-          admins.push({
-            id: doc.id,
-            name: d.name || `${d.firstName || ''} ${d.lastName || ''}`.trim() || 'Admin',
-            phone: d.phone || '',
-            userType: d.userType || 'Admin',
-            role: d.role || d.userType || 'Admin',
-            email: d.email || '',
+          const [byFlagSnap, byUserTypeSnap, byRoleSnap] = await Promise.all([
+            membersRef.where('isAdmin', '==', true).limit(100).get().catch(() => null),
+            membersRef.where('userType', 'in', adminRoleValues).limit(100).get().catch(() => null),
+            membersRef.where('role', 'in', adminRoleValues).limit(100).get().catch(() => null),
+          ]);
+
+          const mergedDocs = new Map<string, any>();
+          [byFlagSnap, byUserTypeSnap, byRoleSnap].forEach((snap) => {
+            snap?.docs?.forEach((doc: any) => {
+              if (!mergedDocs.has(doc.id)) mergedDocs.set(doc.id, doc);
+            });
           });
-        }
-      });
-      setChurchAdmins(admins);
+
+          const admins: ChurchAdminItem[] = [];
+          mergedDocs.forEach((doc) => {
+            const d = doc.data();
+            const uType = String(d.userType || d.role || '').toLowerCase();
+            if (d.isAdmin === true || uType.includes('admin') || uType.includes('pastor')) {
+              admins.push({
+                id: doc.id,
+                name: d.name || `${d.firstName || ''} ${d.lastName || ''}`.trim() || 'Admin',
+                phone: d.phone || '',
+                userType: d.userType || 'Admin',
+                role: d.role || d.userType || 'Admin',
+                email: d.email || '',
+              });
+            }
+          });
+          return admins;
+        },
+        (admins) => {
+          if (mountedRef.current) setChurchAdmins(admins);
+        },
+        { ttlMs: 10 * 60 * 1000, freshSkipMs: 0, force: forceRefresh }
+      );
     } catch (err) {
       console.error('Error fetching church admins:', err);
     }
   };
 
   useEffect(() => {
-    loadChurchAdmins();
-  }, [churchId]);
+    loadChurchAdmins(false);
+  }, [churchId, churchAdminsCacheKey]);
 
   // List of Super Admin IDs
   const superAdminIds = useMemo(() => new Set(superAdmins.map((sa) => sa.id)), [superAdmins]);

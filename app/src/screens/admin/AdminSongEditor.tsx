@@ -30,7 +30,8 @@ import {
   Music, Save, ChevronDown, CheckCircle, Pencil, X, List, Eye, Square,
   Trash2, Star, ChevronLeft, Plus, Share2, Sparkles, Sliders, ChevronRight,
   Users, Search, Calendar, CalendarDays, Clock, ArrowUp, ArrowDown, FolderPlus, BookOpen, Check
-, ArrowLeft } from 'lucide-react-native';
+  , ArrowLeft
+} from 'lucide-react-native';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AdminTabContext } from '../../context/AdminTabContext';
@@ -325,6 +326,9 @@ export default function AdminSongEditor() {
     try {
       const allSongs = await FirestoreService.getWorshipSongs({ forceRefresh });
       setPostedSongs(allSongs);
+      setMemberSongs(allSongs);
+      const stored = await AsyncStorage.getItem(SONGBOOK_KEY);
+      if (stored) setSavedIds(JSON.parse(stored));
     } catch (err) {
       console.error(err);
     } finally {
@@ -335,12 +339,11 @@ export default function AdminSongEditor() {
 
   useEffect(() => {
     fetchPostedSongs();
-    fetchMemberSongs();
     loadSetlists();
     loadCustomCategories();
     loadCustomPresets();
     fetchChurchMembers();
-  }, []);
+  }, [activeChurch?.id]);
 
   useEffect(() => {
     if (toastNotification) {
@@ -1053,7 +1056,7 @@ export default function AdminSongEditor() {
       Alert.alert('Uploading', 'Starting bulk upload...');
       const songs = require('../../../master_songs.json');
       const db = getFirestore();
-      
+
       let batch = writeBatch(db);
       let count = 0;
       let total = 0;
@@ -1061,25 +1064,26 @@ export default function AdminSongEditor() {
       for (const song of songs) {
         const newRef = doc(collection(db, 'masterSongs'));
         batch.set(newRef, {
-           ...song,
-           createdAt: serverTimestamp()
+          ...song,
+          createdAt: serverTimestamp()
         });
         count++;
         total++;
 
         if (count === 400) {
-           await batch.commit();
-           batch = writeBatch(db);
-           count = 0;
+          await batch.commit();
+          batch = writeBatch(db);
+          count = 0;
         }
       }
-      
+
       if (count > 0) {
         await batch.commit();
       }
+      FirestoreService.clearWorshipSongsCache();
       Alert.alert('Success', `Uploaded ${total} global master songs!`);
-      fetchPostedSongs();
-    } catch(err: any) {
+      fetchPostedSongs(true);
+    } catch (err: any) {
       Alert.alert('Error', err.message);
     }
   };
@@ -1190,9 +1194,9 @@ export default function AdminSongEditor() {
     }
   };
 
-    const renderSongItem = ({ item, index }: { item: WorshipSong; index: number }) => {
+  const renderSongItem = ({ item, index }: { item: WorshipSong; index: number }) => {
     const isTheme = (item.category || '').split(';').map(c => c.trim()).includes('Theme Songs');
-    const songIndex = postedSongs.findIndex(s => s.id === item.id) + 1 || (index + 1);
+    const songIndex = songIndexMap.get(item.id) || (index + 1);
 
     return (
       <TouchableOpacity
@@ -1304,13 +1308,13 @@ export default function AdminSongEditor() {
                   ? 'rgba(245, 158, 11, 0.18)'
                   : '#FEF3C7'
                 : isDark
-                ? 'rgba(255, 255, 255, 0.06)'
-                : '#F8FAFC',
+                  ? 'rgba(255, 255, 255, 0.06)'
+                  : '#F8FAFC',
               borderColor: isTheme
                 ? '#F59E0B'
                 : isDark
-                ? 'rgba(255, 255, 255, 0.22)'
-                : '#CBD5E1',
+                  ? 'rgba(255, 255, 255, 0.22)'
+                  : '#CBD5E1',
             }}
           >
             <Star
@@ -1321,8 +1325,8 @@ export default function AdminSongEditor() {
                     ? '#FBBF24'
                     : '#D97706'
                   : isDark
-                  ? '#A1A1AA'
-                  : '#64748B'
+                    ? '#A1A1AA'
+                    : '#64748B'
               }
               fill={isTheme ? '#F59E0B' : 'none'}
             />
@@ -1336,8 +1340,8 @@ export default function AdminSongEditor() {
                     ? '#FBBF24'
                     : '#B45309'
                   : isDark
-                  ? '#E2E8F0'
-                  : '#334155',
+                    ? '#E2E8F0'
+                    : '#334155',
               }}
             >
               {isTheme ? 'THEME SONG' : 'MAKE THEME'}
@@ -1452,14 +1456,14 @@ export default function AdminSongEditor() {
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', backgroundColor: '#FFFFFF', margin: 16, borderRadius: 14, padding: 4, gap: 4, elevation: 2, shadowColor: '#1a2d5a', shadowOpacity: 0.05, shadowRadius: 5, borderWidth: 1, borderColor: 'rgba(26,45,90,0.05)' }}>
           <TouchableOpacity
             style={[{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 10, gap: 6 },
-              memberTab === 'browse' && { backgroundColor: '#1a2d5a' }]}
+            memberTab === 'browse' && { backgroundColor: '#1a2d5a' }]}
             onPress={() => setMemberTab('browse')}>
             <Music size={13} color={memberTab === 'browse' ? '#fff' : '#64748b'} />
             <Text style={{ fontSize: 12, fontWeight: '700', color: memberTab === 'browse' ? '#fff' : '#64748b' }}>Browse Songs</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 10, gap: 6 },
-              memberTab === 'theme' && { backgroundColor: '#1a2d5a' }]}
+            memberTab === 'theme' && { backgroundColor: '#1a2d5a' }]}
             onPress={() => setMemberTab('theme')}>
             <Music size={13} color={memberTab === 'theme' ? '#fff' : '#64748b'} />
             <Text style={{ fontSize: 12, fontWeight: '700', color: memberTab === 'theme' ? '#fff' : '#64748b' }}>Theme Songs</Text>
@@ -1467,22 +1471,22 @@ export default function AdminSongEditor() {
         </View>
 
         {/* Search */}
-        <View style={{ 
-          flexDirection: 'row', 
-          alignItems: 'center', 
-          marginHorizontal: 16, 
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginHorizontal: 16,
           marginBottom: 12,
-          borderRadius: 999, 
-          paddingHorizontal: 16, 
-          height: 48, 
+          borderRadius: 999,
+          paddingHorizontal: 16,
+          height: 48,
           backgroundColor: isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(255, 255, 255, 0.9)',
-          elevation: 2, 
-          shadowColor: '#0F172A', 
-          shadowOpacity: isDark ? 0.25 : 0.06, 
-          shadowRadius: 8, 
+          elevation: 2,
+          shadowColor: '#0F172A',
+          shadowOpacity: isDark ? 0.25 : 0.06,
+          shadowRadius: 8,
           shadowOffset: { width: 0, height: 3 },
-          borderWidth: 1.5, 
-          borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#CBD5E1' 
+          borderWidth: 1.5,
+          borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#CBD5E1'
         }}>
           <Search size={18} color={isDark ? '#A1A1AA' : '#64748B'} style={{ marginRight: 10 }} />
           <TextInput
@@ -1512,19 +1516,25 @@ export default function AdminSongEditor() {
           removeClippedSubviews={true}
           contentContainerStyle={{ paddingBottom: 40 }}
           ListHeaderComponent={() => (
-            <Text style={{ fontSize: 10, fontWeight: '800', color: '#9CA3AF', letterSpacing: 0.8,
-              marginHorizontal: 16, marginBottom: 10, marginTop: 4 }}>
+            <Text style={{
+              fontSize: 10, fontWeight: '800', color: '#9CA3AF', letterSpacing: 0.8,
+              marginHorizontal: 16, marginBottom: 10, marginTop: 4
+            }}>
               {memberTab === 'browse' ? 'ALL SONGS' : 'THEME SONGS'} · {displaySongs.length} Songs
             </Text>
           )}
           renderItem={({ item }) => (
             <TouchableOpacity
-              style={{ borderRadius: 14, borderWidth: 1, borderColor: 'rgba(26,45,90,0.08)', marginHorizontal: 16,
+              style={{
+                borderRadius: 14, borderWidth: 1, borderColor: 'rgba(26,45,90,0.08)', marginHorizontal: 16,
                 marginBottom: 10, flexDirection: 'row', alignItems: 'center', padding: 14, backgroundColor: '#FFFFFF',
-                elevation: 2, shadowColor: '#1a2d5a', shadowOpacity: 0.05, shadowRadius: 4 }}
+                elevation: 2, shadowColor: '#1a2d5a', shadowOpacity: 0.05, shadowRadius: 4
+              }}
               onPress={() => setAdminSelectedSong(item)}>
-              <View style={{ width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center',
-                marginRight: 12, backgroundColor: '#F8FAFC' }}>
+              <View style={{
+                width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center',
+                marginRight: 12, backgroundColor: '#F8FAFC'
+              }}>
                 <Text style={{ fontSize: 13, fontWeight: '800', color: '#1a2d5a' }}>{item.absoluteIndex + 1}</Text>
               </View>
               <View style={{ flex: 1 }}>
@@ -1586,662 +1596,662 @@ export default function AdminSongEditor() {
     ];
 
     return (
-    <View style={{ flex: 1 }}>
-      {/* ── CARD 1: SONG DETAILS & LEADER ── */}
-      <View style={cardStyle}>
-        <View style={styles.studioCardHeader}>
-          <View style={styles.studioCardTitleRow}>
-            <Music size={16} color={isDark ? '#60A5FA' : '#1a2d5a'} />
-            <Text style={cardTitleStyle}>SONG IDENTITY & LEADER</Text>
+      <View style={{ flex: 1 }}>
+        {/* ── CARD 1: SONG DETAILS & LEADER ── */}
+        <View style={cardStyle}>
+          <View style={styles.studioCardHeader}>
+            <View style={styles.studioCardTitleRow}>
+              <Music size={16} color={isDark ? '#60A5FA' : '#1a2d5a'} />
+              <Text style={cardTitleStyle}>SONG IDENTITY & LEADER</Text>
+            </View>
           </View>
-        </View>
 
-        {/* English Title */}
-        <View style={styles.inputGroup}>
-          <Text style={labelStyle}>SONG TITLE (ENGLISH) *</Text>
-          <TextInput
-            style={inputStyle}
-            placeholder="e.g. Amazing Grace, Way Maker..."
-            placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
-            value={titleEn}
-            onChangeText={setTitleEn}
-          />
-        </View>
-
-        {/* Telugu Title */}
-        <View style={styles.inputGroup}>
-          <Text style={labelStyle}>SONG TITLE (TELUGU)</Text>
-          <TextInput
-            style={inputStyle}
-            placeholder="ఉదాహరణ: అద్భుతమైన కృప..."
-            placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
-            value={titleTe}
-            onChangeText={setTitleTe}
-          />
-        </View>
-
-        {/* YouTube Video Link */}
-        <View style={styles.inputGroup}>
-          <Text style={labelStyle}>YOUTUBE VIDEO LINK</Text>
-          <View style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            backgroundColor: isDark ? '#27272A' : '#F8FAFC',
-            borderWidth: 1.2,
-            borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
-            borderRadius: 10,
-            paddingHorizontal: 12,
-            height: 46
-          }}>
-            <Text style={{ fontSize: 11, fontWeight: '800', color: '#DC2626', marginRight: 6 }}>▶ YouTube</Text>
+          {/* English Title */}
+          <View style={styles.inputGroup}>
+            <Text style={labelStyle}>SONG TITLE (ENGLISH) *</Text>
             <TextInput
-              style={{ flex: 1, fontSize: 13, color: isDark ? '#FFFFFF' : '#0F172A', fontWeight: '600' }}
-              placeholder="https://youtu.be/... or Video ID"
+              style={inputStyle}
+              placeholder="e.g. Amazing Grace, Way Maker..."
               placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
-              value={youtubeId}
-              onChangeText={setYoutubeId}
+              value={titleEn}
+              onChangeText={setTitleEn}
             />
-            {youtubeId.length > 0 && (
-              <TouchableOpacity onPress={() => setYoutubeId('')}>
-                <X size={15} color={isDark ? '#A1A1AA' : '#94A3B8'} />
+          </View>
+
+          {/* Telugu Title */}
+          <View style={styles.inputGroup}>
+            <Text style={labelStyle}>SONG TITLE (TELUGU)</Text>
+            <TextInput
+              style={inputStyle}
+              placeholder="ఉదాహరణ: అద్భుతమైన కృప..."
+              placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+              value={titleTe}
+              onChangeText={setTitleTe}
+            />
+          </View>
+
+          {/* YouTube Video Link */}
+          <View style={styles.inputGroup}>
+            <Text style={labelStyle}>YOUTUBE VIDEO LINK</Text>
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+              borderWidth: 1.2,
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
+              borderRadius: 10,
+              paddingHorizontal: 12,
+              height: 46
+            }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: '#DC2626', marginRight: 6 }}>▶ YouTube</Text>
+              <TextInput
+                style={{ flex: 1, fontSize: 13, color: isDark ? '#FFFFFF' : '#0F172A', fontWeight: '600' }}
+                placeholder="https://youtu.be/... or Video ID"
+                placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+                value={youtubeId}
+                onChangeText={setYoutubeId}
+              />
+              {youtubeId.length > 0 && (
+                <TouchableOpacity onPress={() => setYoutubeId('')}>
+                  <X size={15} color={isDark ? '#A1A1AA' : '#94A3B8'} />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          {/* Artist / Band */}
+          <View style={styles.inputGroup}>
+            <Text style={labelStyle}>ARTIST / BAND (Optional)</Text>
+            <TextInput
+              style={inputStyle}
+              placeholder="e.g. Hillsong, Bethel, Local Choir..."
+              placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+              value={artist}
+              onChangeText={setArtist}
+            />
+          </View>
+
+          {/* Song Leader Search Section */}
+          <View style={{ marginTop: 6, paddingTop: 14, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#F1F5F9' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <Text style={[labelStyle, { marginBottom: 0 }]}>SONG LEADING PERSON</Text>
+              <TouchableOpacity
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 5,
+                  backgroundColor: isDark ? 'rgba(37, 99, 235, 0.2)' : '#EFF6FF',
+                  paddingHorizontal: 10,
+                  paddingVertical: 5,
+                  borderRadius: 999,
+                  borderWidth: 1.2,
+                  borderColor: isDark ? 'rgba(59, 130, 246, 0.4)' : '#BFDBFE'
+                }}
+                activeOpacity={0.75}
+                onPress={() => {
+                  setMemberPickerTarget('post');
+                  setMemberSearchQuery('');
+                  setShowMemberPickerModal(true);
+                }}
+              >
+                <Users size={12} color={isDark ? '#60A5FA' : '#1D4ED8'} />
+                <Text style={{ fontSize: 10.5, fontWeight: '700', color: isDark ? '#93C5FD' : '#1D4ED8', letterSpacing: 0.2 }}>Browse Directory</Text>
               </TouchableOpacity>
+            </View>
+
+            {postLedBy ? (
+              /* Selected Person Card */
+              <View style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                backgroundColor: isDark ? 'rgba(21, 128, 61, 0.25)' : '#F0FDF4',
+                borderWidth: 1,
+                borderColor: isDark ? 'rgba(34, 197, 94, 0.45)' : '#BBF7D0',
+                borderRadius: 12,
+                padding: 10
+              }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                  <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: '#15803D', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: '#fff', fontSize: 14, fontWeight: '800' }}>
+                      {postLedBy.charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '800', color: isDark ? '#86EFAC' : '#14532D' }} numberOfLines={1}>{postLedBy}</Text>
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: isDark ? '#4ADE80' : '#16A34A' }}>🎤 Designated Song Leader</Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  onPress={() => { setPostLedBy(''); setPostLeaderSearch(''); }}
+                  style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: isDark ? 'rgba(34, 197, 94, 0.3)' : '#DCFCE7' }}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#86EFAC' : '#15803D' }}>Change</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              /* Search Church Member Input */
+              <View>
+                <View style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                  borderWidth: 1.2,
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
+                  borderRadius: 10,
+                  paddingHorizontal: 12,
+                  height: 46
+                }}>
+                  <Search size={16} color={isDark ? '#60A5FA' : '#3B82F6'} />
+                  <TextInput
+                    style={{ flex: 1, fontSize: 13, color: isDark ? '#FFFFFF' : '#0F172A', fontWeight: '600', marginLeft: 8 }}
+                    value={postLeaderSearch}
+                    onChangeText={setPostLeaderSearch}
+                    placeholder="Type member name or phone to search..."
+                    placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+                  />
+                  {postLeaderSearch.length > 0 && (
+                    <TouchableOpacity onPress={() => setPostLeaderSearch('')} style={{ padding: 4 }}>
+                      <X size={16} color={isDark ? '#A1A1AA' : '#94A3B8'} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* Live Autocomplete Results */}
+                {postLeaderSearch.trim().length > 0 && (
+                  <View style={{
+                    marginTop: 6,
+                    backgroundColor: isDark ? '#1F1F23' : '#FFFFFF',
+                    borderRadius: 10,
+                    borderWidth: 1.2,
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
+                    maxHeight: 180,
+                    overflow: 'hidden',
+                    elevation: 3
+                  }}>
+                    <ScrollView nestedScrollEnabled>
+                      <TouchableOpacity
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: 10,
+                          backgroundColor: isDark ? 'rgba(37, 99, 235, 0.25)' : '#EFF6FF',
+                          borderBottomWidth: 1,
+                          borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#DBEAFE'
+                        }}
+                        onPress={() => {
+                          setPostLedBy(postLeaderSearch.trim());
+                          setPostLeaderSearch('');
+                        }}
+                      >
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#93C5FD' : '#1D4ED8' }}>
+                          Use: "{postLeaderSearch.trim()}"
+                        </Text>
+                        <CheckCircle size={14} color={isDark ? '#93C5FD' : '#1D4ED8'} />
+                      </TouchableOpacity>
+
+                      {churchMembers
+                        .filter(m => {
+                          if (!m) return false;
+                          const q = postLeaderSearch.toLowerCase().trim();
+                          const name = (m.name || m.firstName || '').toLowerCase();
+                          const phone = (m.phone || '').toLowerCase();
+                          return name.includes(q) || phone.includes(q);
+                        })
+                        .slice(0, 8)
+                        .map(m => {
+                          const name = m?.name || m?.firstName || 'Member';
+                          return (
+                            <TouchableOpacity
+                              key={m?.id || name}
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                padding: 10,
+                                borderBottomWidth: 1,
+                                borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9'
+                              }}
+                              onPress={() => {
+                                setPostLedBy(name);
+                                setPostLeaderSearch('');
+                              }}
+                            >
+                              <View style={{
+                                width: 28,
+                                height: 28,
+                                borderRadius: 14,
+                                backgroundColor: isDark ? '#3B82F6' : '#1a2d5a',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                marginRight: 10
+                              }}>
+                                <Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>
+                                  {name.charAt(0).toUpperCase()}
+                                </Text>
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? '#FFFFFF' : '#1a2d5a' }}>{name}</Text>
+                                {m.phone && <Text style={{ fontSize: 10, color: isDark ? '#A1A1AA' : '#64748B' }}>{m.phone}</Text>}
+                              </View>
+                              <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#60A5FA' : '#2563EB' }}>Select</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                    </ScrollView>
+                  </View>
+                )}
+              </View>
             )}
           </View>
         </View>
 
-        {/* Artist / Band */}
-        <View style={styles.inputGroup}>
-          <Text style={labelStyle}>ARTIST / BAND (Optional)</Text>
-          <TextInput
-            style={inputStyle}
-            placeholder="e.g. Hillsong, Bethel, Local Choir..."
-            placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
-            value={artist}
-            onChangeText={setArtist}
-          />
-        </View>
-
-        {/* Song Leader Search Section */}
-        <View style={{ marginTop: 6, paddingTop: 14, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#F1F5F9' }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <Text style={[labelStyle, { marginBottom: 0 }]}>SONG LEADING PERSON</Text>
-            <TouchableOpacity
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 5,
-                backgroundColor: isDark ? 'rgba(37, 99, 235, 0.2)' : '#EFF6FF',
-                paddingHorizontal: 10,
-                paddingVertical: 5,
-                borderRadius: 999,
-                borderWidth: 1.2,
-                borderColor: isDark ? 'rgba(59, 130, 246, 0.4)' : '#BFDBFE'
-              }}
-              activeOpacity={0.75}
-              onPress={() => {
-                setMemberPickerTarget('post');
-                setMemberSearchQuery('');
-                setShowMemberPickerModal(true);
-              }}
-            >
-              <Users size={12} color={isDark ? '#60A5FA' : '#1D4ED8'} />
-              <Text style={{ fontSize: 10.5, fontWeight: '700', color: isDark ? '#93C5FD' : '#1D4ED8', letterSpacing: 0.2 }}>Browse Directory</Text>
-            </TouchableOpacity>
+        {/* ── CARD 2: MUSICAL ARRANGEMENT & BAND FLOW ── */}
+        <View style={cardStyle}>
+          <View style={styles.studioCardHeader}>
+            <View style={styles.studioCardTitleRow}>
+              <Sliders size={15} color={isDark ? '#60A5FA' : '#1a2d5a'} />
+              <Text style={cardTitleStyle}>MUSICAL ARRANGEMENT & BAND FLOW</Text>
+            </View>
           </View>
 
-          {postLedBy ? (
-            /* Selected Person Card */
-            <View style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              backgroundColor: isDark ? 'rgba(21, 128, 61, 0.25)' : '#F0FDF4',
-              borderWidth: 1,
-              borderColor: isDark ? 'rgba(34, 197, 94, 0.45)' : '#BBF7D0',
-              borderRadius: 12,
-              padding: 10
-            }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-                <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: '#15803D', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ color: '#fff', fontSize: 14, fontWeight: '800' }}>
-                    {postLedBy.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '800', color: isDark ? '#86EFAC' : '#14532D' }} numberOfLines={1}>{postLedBy}</Text>
-                  <Text style={{ fontSize: 10, fontWeight: '700', color: isDark ? '#4ADE80' : '#16A34A' }}>🎤 Designated Song Leader</Text>
-                </View>
-              </View>
+          {/* 4 Aligned Columns */}
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
+            {/* KEY */}
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.colHeaderLabel, { color: isDark ? '#A1A1AA' : '#64748B' }]} numberOfLines={1}>KEY</Text>
               <TouchableOpacity
-                onPress={() => { setPostLedBy(''); setPostLeaderSearch(''); }}
-                style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: isDark ? 'rgba(34, 197, 94, 0.3)' : '#DCFCE7' }}
+                style={[
+                  styles.colInputBox,
+                  {
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 4,
+                    backgroundColor: songKey ? (isDark ? 'rgba(37, 99, 235, 0.3)' : '#EFF6FF') : (isDark ? '#27272A' : '#F8FAFC'),
+                    borderColor: songKey ? (isDark ? '#3B82F6' : '#2563EB') : (isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1'),
+                    borderWidth: 1.2,
+                  }
+                ]}
+                onPress={() => setShowKeyPicker(true)}
               >
-                <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#86EFAC' : '#15803D' }}>Change</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            /* Search Church Member Input */
-            <View>
-              <View style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                backgroundColor: isDark ? '#27272A' : '#F8FAFC',
-                borderWidth: 1.2,
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
-                borderRadius: 10,
-                paddingHorizontal: 12,
-                height: 46
-              }}>
-                <Search size={16} color={isDark ? '#60A5FA' : '#3B82F6'} />
-                <TextInput
-                  style={{ flex: 1, fontSize: 13, color: isDark ? '#FFFFFF' : '#0F172A', fontWeight: '600', marginLeft: 8 }}
-                  value={postLeaderSearch}
-                  onChangeText={setPostLeaderSearch}
-                  placeholder="Type member name or phone to search..."
-                  placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
-                />
-                {postLeaderSearch.length > 0 && (
-                  <TouchableOpacity onPress={() => setPostLeaderSearch('')} style={{ padding: 4 }}>
-                    <X size={16} color={isDark ? '#A1A1AA' : '#94A3B8'} />
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              {/* Live Autocomplete Results */}
-              {postLeaderSearch.trim().length > 0 && (
-                <View style={{
-                  marginTop: 6,
-                  backgroundColor: isDark ? '#1F1F23' : '#FFFFFF',
-                  borderRadius: 10,
-                  borderWidth: 1.2,
-                  borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
-                  maxHeight: 180,
-                  overflow: 'hidden',
-                  elevation: 3
-                }}>
-                  <ScrollView nestedScrollEnabled>
-                    <TouchableOpacity
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: 10,
-                        backgroundColor: isDark ? 'rgba(37, 99, 235, 0.25)' : '#EFF6FF',
-                        borderBottomWidth: 1,
-                        borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#DBEAFE'
-                      }}
-                      onPress={() => {
-                        setPostLedBy(postLeaderSearch.trim());
-                        setPostLeaderSearch('');
-                      }}
-                    >
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#93C5FD' : '#1D4ED8' }}>
-                        Use: "{postLeaderSearch.trim()}"
-                      </Text>
-                      <CheckCircle size={14} color={isDark ? '#93C5FD' : '#1D4ED8'} />
-                    </TouchableOpacity>
-
-                    {churchMembers
-                      .filter(m => {
-                        if (!m) return false;
-                        const q = postLeaderSearch.toLowerCase().trim();
-                        const name = (m.name || m.firstName || '').toLowerCase();
-                        const phone = (m.phone || '').toLowerCase();
-                        return name.includes(q) || phone.includes(q);
-                      })
-                      .slice(0, 8)
-                      .map(m => {
-                        const name = m?.name || m?.firstName || 'Member';
-                        return (
-                          <TouchableOpacity
-                            key={m?.id || name}
-                            style={{
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              padding: 10,
-                              borderBottomWidth: 1,
-                              borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9'
-                            }}
-                            onPress={() => {
-                              setPostLedBy(name);
-                              setPostLeaderSearch('');
-                            }}
-                          >
-                            <View style={{
-                              width: 28,
-                              height: 28,
-                              borderRadius: 14,
-                              backgroundColor: isDark ? '#3B82F6' : '#1a2d5a',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              marginRight: 10
-                            }}>
-                              <Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>
-                                {name.charAt(0).toUpperCase()}
-                              </Text>
-                            </View>
-                            <View style={{ flex: 1 }}>
-                              <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? '#FFFFFF' : '#1a2d5a' }}>{name}</Text>
-                              {m.phone && <Text style={{ fontSize: 10, color: isDark ? '#A1A1AA' : '#64748B' }}>{m.phone}</Text>}
-                            </View>
-                            <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#60A5FA' : '#2563EB' }}>Select</Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                  </ScrollView>
-                </View>
-              )}
-            </View>
-          )}
-        </View>
-      </View>
-
-      {/* ── CARD 2: MUSICAL ARRANGEMENT & BAND FLOW ── */}
-      <View style={cardStyle}>
-        <View style={styles.studioCardHeader}>
-          <View style={styles.studioCardTitleRow}>
-            <Sliders size={15} color={isDark ? '#60A5FA' : '#1a2d5a'} />
-            <Text style={cardTitleStyle}>MUSICAL ARRANGEMENT & BAND FLOW</Text>
-          </View>
-        </View>
-
-        {/* 4 Aligned Columns */}
-        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
-          {/* KEY */}
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.colHeaderLabel, { color: isDark ? '#A1A1AA' : '#64748B' }]} numberOfLines={1}>KEY</Text>
-            <TouchableOpacity
-              style={[
-                styles.colInputBox,
-                {
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 4,
-                  backgroundColor: songKey ? (isDark ? 'rgba(37, 99, 235, 0.3)' : '#EFF6FF') : (isDark ? '#27272A' : '#F8FAFC'),
-                  borderColor: songKey ? (isDark ? '#3B82F6' : '#2563EB') : (isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1'),
-                  borderWidth: 1.2,
-                }
-              ]}
-              onPress={() => setShowKeyPicker(true)}
-            >
-              <Text
-                style={{
-                  fontSize: songKey ? 13 : 12,
-                  fontWeight: songKey ? '900' : '700',
-                  color: songKey ? (isDark ? '#93C5FD' : '#1D4ED8') : (isDark ? '#71717A' : '#94A3B8'),
-                  textAlign: 'center'
-                }}
-                numberOfLines={1}
-              >
-                {songKey || 'Select'}
-              </Text>
-              <ChevronDown size={12} color={songKey ? (isDark ? '#93C5FD' : '#1D4ED8') : (isDark ? '#71717A' : '#94A3B8')} />
-            </TouchableOpacity>
-          </View>
-
-          {/* TIME SIGNATURE */}
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.colHeaderLabel, { color: isDark ? '#A1A1AA' : '#64748B' }]} numberOfLines={1}>TIME SIG</Text>
-            <View style={[styles.colInputBox, {
-              backgroundColor: isDark ? '#27272A' : '#F8FAFC',
-              borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
-              borderWidth: 1.2
-            }]}>
-              <TextInput
-                style={[styles.colInputText, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
-                placeholder="4/4"
-                placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
-                value={timeSignature}
-                onChangeText={setTimeSignature}
-              />
-            </View>
-          </View>
-
-          {/* TEMPO WITH EMBEDDED BPM BADGE */}
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.colHeaderLabel, { color: isDark ? '#A1A1AA' : '#64748B' }]} numberOfLines={1}>TEMPO</Text>
-            <View style={[styles.colInputBox, {
-              paddingHorizontal: 6,
-              backgroundColor: isDark ? '#27272A' : '#F8FAFC',
-              borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
-              borderWidth: 1.2
-            }]}>
-              <TextInput
-                style={[styles.colInputText, { paddingRight: 2, color: isDark ? '#FFFFFF' : '#0F172A' }]}
-                placeholder="100"
-                placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
-                keyboardType="numeric"
-                value={tempo}
-                onChangeText={setTempo}
-              />
-              <Text style={{ fontSize: 8, fontWeight: '900', color: isDark ? '#A1A1AA' : '#94A3B8' }}>BPM</Text>
-            </View>
-          </View>
-
-          {/* VERSES */}
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.colHeaderLabel, { color: isDark ? '#A1A1AA' : '#64748B' }]} numberOfLines={1}>VERSES</Text>
-            <View style={[styles.colInputBox, {
-              backgroundColor: isDark ? '#27272A' : '#F8FAFC',
-              borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
-              borderWidth: 1.2
-            }]}>
-              <TextInput
-                style={[styles.colInputText, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
-                placeholder="4V"
-                placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
-                value={verses}
-                onChangeText={setVerses}
-              />
-            </View>
-          </View>
-        </View>
-
-        {/* Quick Tempo Presets Ribbon */}
-        <View style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Text style={{ fontSize: 9, fontWeight: '800', color: isDark ? '#A1A1AA' : '#94A3B8' }}>TEMPO:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-            {[
-              { label: 'Slow (72 BPM)', val: '72' },
-              { label: 'Mid (96 BPM)', val: '96' },
-              { label: 'Fast (124 BPM)', val: '124' },
-              { label: 'Upbeat (138 BPM)', val: '138' },
-            ].map(p => {
-              const isSelected = tempo === p.val;
-              return (
-                <TouchableOpacity
-                  key={p.val}
-                  onPress={() => setTempo(p.val)}
+                <Text
                   style={{
-                    paddingHorizontal: 9,
-                    paddingVertical: 4,
-                    borderRadius: 8,
-                    backgroundColor: isSelected ? (isDark ? '#FFFFFF' : '#1a2d5a') : (isDark ? '#27272A' : '#F1F5F9'),
-                    borderWidth: 1,
-                    borderColor: isSelected ? (isDark ? '#FFFFFF' : '#1a2d5a') : (isDark ? 'rgba(255, 255, 255, 0.16)' : '#E2E8F0')
+                    fontSize: songKey ? 13 : 12,
+                    fontWeight: songKey ? '900' : '700',
+                    color: songKey ? (isDark ? '#93C5FD' : '#1D4ED8') : (isDark ? '#71717A' : '#94A3B8'),
+                    textAlign: 'center'
                   }}
+                  numberOfLines={1}
                 >
-                  <Text style={{ fontSize: 10, fontWeight: '800', color: isSelected ? (isDark ? '#000000' : '#FFFFFF') : (isDark ? '#D4D4D8' : '#475569') }}>
-                    {p.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-
-        {/* Prelude & Interlude Live Arrangement - Two Full Rows */}
-        <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#F1F5F9' }}>
-          {/* Row 1: Prelude */}
-          <View style={{ marginBottom: 14 }}>
-            <Text style={labelStyle}>PRELUDE INSTRUMENTS</Text>
-            <TextInput
-              style={[inputStyle, { marginBottom: 6 }]}
-              placeholder="e.g. Acoustic + Drum"
-              placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
-              value={prelude}
-              onChangeText={setPrelude}
-            />
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 4 }}>
-              {PRELUDE_SUGGESTIONS.map(sug => {
-                const isSelected = prelude === sug;
-                return (
-                  <TouchableOpacity
-                    key={sug}
-                    style={{
-                      paddingHorizontal: 8,
-                      paddingVertical: 4,
-                      borderRadius: 8,
-                      backgroundColor: isSelected ? '#0D9488' : (isDark ? 'rgba(13, 148, 136, 0.2)' : '#F0FDFA'),
-                      borderWidth: 1,
-                      borderColor: isSelected ? '#0D9488' : (isDark ? 'rgba(13, 148, 136, 0.4)' : '#CCFBF1')
-                    }}
-                    onPress={() => setPrelude(sug)}
-                  >
-                    <Text style={{ fontSize: 10, fontWeight: '700', color: isSelected ? '#fff' : (isDark ? '#5EEAD4' : '#0F766E') }}>{sug}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </View>
-
-          {/* Row 2: Interlude */}
-          <View>
-            <Text style={labelStyle}>INTERLUDE ARRANGEMENT</Text>
-            <TextInput
-              style={[inputStyle, { marginBottom: 6 }]}
-              placeholder="e.g. Keys + Elec"
-              placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
-              value={interlude}
-              onChangeText={setInterlude}
-            />
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 4 }}>
-              {INTERLUDE_SUGGESTIONS.map(sug => {
-                const isSelected = interlude === sug;
-                return (
-                  <TouchableOpacity
-                    key={sug}
-                    style={{
-                      paddingHorizontal: 8,
-                      paddingVertical: 4,
-                      borderRadius: 8,
-                      backgroundColor: isSelected ? '#2563EB' : (isDark ? 'rgba(37, 99, 235, 0.2)' : '#EFF6FF'),
-                      borderWidth: 1,
-                      borderColor: isSelected ? '#2563EB' : (isDark ? 'rgba(37, 99, 235, 0.4)' : '#DBEAFE')
-                    }}
-                    onPress={() => setInterlude(sug)}
-                  >
-                    <Text style={{ fontSize: 10, fontWeight: '700', color: isSelected ? '#fff' : (isDark ? '#93C5FD' : '#1D4ED8') }}>{sug}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </View>
-        </View>
-
-        {/* Thematic Notes */}
-        <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#F1F5F9' }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-            <Text style={labelStyle}>WORSHIP & THEMATIC NOTES</Text>
-            {notes ? (
-              <TouchableOpacity onPress={() => setNotes('')}>
-                <Text style={{ fontSize: 10, fontWeight: '700', color: '#DC2626' }}>Clear</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-          <TextInput
-            style={[inputStyle, { height: 56, textAlignVertical: 'top', paddingTop: 8, marginBottom: 8 }]}
-            multiline
-            placeholder="e.g. Celebrate God's power, grace and praise..."
-            placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
-            value={notes}
-            onChangeText={setNotes}
-          />
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-            {NOTES_SUGGESTIONS.map(sug => {
-              const isAdded = (notes || '').includes(sug);
-              return (
-                <TouchableOpacity
-                  key={sug}
-                  style={{
-                    paddingHorizontal: 9,
-                    paddingVertical: 4,
-                    borderRadius: 8,
-                    backgroundColor: isAdded ? '#F59E0B' : (isDark ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7'),
-                    borderWidth: 1,
-                    borderColor: isAdded ? '#D97706' : (isDark ? 'rgba(245, 158, 11, 0.4)' : '#FDE68A')
-                  }}
-                  onPress={() => {
-                    if (!notes.trim()) setNotes(sug);
-                    else if (!notes.includes(sug)) setNotes(`${notes} • ${sug}`);
-                  }}
-                >
-                  <Text style={{ fontSize: 10, fontWeight: '700', color: isAdded ? '#fff' : (isDark ? '#FCD34D' : '#92400E') }}>
-                    {isAdded ? '✓ ' : '+ '}{sug}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-      </View>
-
-      {/* ── CARD 3: CATEGORIES, LYRICS & PUBLISH STATUS ── */}
-      <View style={cardStyle}>
-        {/* Categories */}
-        <View style={styles.studioCardHeader}>
-          <View style={styles.studioCardTitleRow}>
-            <Text style={cardTitleStyle}>CATEGORIES & THEMES</Text>
-          </View>
-          <Text style={{ fontSize: 10, color: isDark ? '#A1A1AA' : '#64748B', fontWeight: '700' }}>
-            {categories.length} Selected
-          </Text>
-        </View>
-
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
-          {CATEGORIES.map(cat => {
-            const isThemeCat = cat === 'Theme Songs';
-            const isSelected = categories.includes(cat);
-            return (
-              <TouchableOpacity
-                key={cat}
-                style={[{
-                  paddingHorizontal: 11,
-                  paddingVertical: 6,
-                  borderRadius: 14,
-                  borderWidth: 1.2,
-                  borderColor: isSelected
-                    ? (isThemeCat ? '#D97706' : (isDark ? '#FFFFFF' : '#1a2d5a'))
-                    : (isDark ? 'rgba(255, 255, 255, 0.18)' : '#CBD5E1'),
-                  backgroundColor: isSelected
-                    ? (isThemeCat ? (isDark ? 'rgba(245, 158, 11, 0.25)' : '#FEF3C7') : (isDark ? '#FFFFFF' : '#1a2d5a'))
-                    : (isDark ? '#27272A' : '#F8FAFC'),
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 4
-                }]}
-                onPress={() => {
-                  setCategories(prev =>
-                    prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
-                  );
-                }}
-              >
-                {isThemeCat && <Star size={11} color={isSelected ? '#D97706' : (isDark ? '#A1A1AA' : '#94A3B8')} fill={isSelected ? '#F59E0B' : 'none'} />}
-                <Text style={{
-                  fontSize: 11,
-                  fontWeight: '700',
-                  color: isSelected
-                    ? (isThemeCat ? (isDark ? '#FCD34D' : '#B45309') : (isDark ? '#000000' : '#FFFFFF'))
-                    : (isDark ? '#CBD5E1' : '#475569')
-                }}>
-                  {cat}
+                  {songKey || 'Select'}
                 </Text>
+                <ChevronDown size={12} color={songKey ? (isDark ? '#93C5FD' : '#1D4ED8') : (isDark ? '#71717A' : '#94A3B8')} />
               </TouchableOpacity>
-            );
-          })}
+            </View>
+
+            {/* TIME SIGNATURE */}
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.colHeaderLabel, { color: isDark ? '#A1A1AA' : '#64748B' }]} numberOfLines={1}>TIME SIG</Text>
+              <View style={[styles.colInputBox, {
+                backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
+                borderWidth: 1.2
+              }]}>
+                <TextInput
+                  style={[styles.colInputText, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
+                  placeholder="4/4"
+                  placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+                  value={timeSignature}
+                  onChangeText={setTimeSignature}
+                />
+              </View>
+            </View>
+
+            {/* TEMPO WITH EMBEDDED BPM BADGE */}
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.colHeaderLabel, { color: isDark ? '#A1A1AA' : '#64748B' }]} numberOfLines={1}>TEMPO</Text>
+              <View style={[styles.colInputBox, {
+                paddingHorizontal: 6,
+                backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
+                borderWidth: 1.2
+              }]}>
+                <TextInput
+                  style={[styles.colInputText, { paddingRight: 2, color: isDark ? '#FFFFFF' : '#0F172A' }]}
+                  placeholder="100"
+                  placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+                  keyboardType="numeric"
+                  value={tempo}
+                  onChangeText={setTempo}
+                />
+                <Text style={{ fontSize: 8, fontWeight: '900', color: isDark ? '#A1A1AA' : '#94A3B8' }}>BPM</Text>
+              </View>
+            </View>
+
+            {/* VERSES */}
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.colHeaderLabel, { color: isDark ? '#A1A1AA' : '#64748B' }]} numberOfLines={1}>VERSES</Text>
+              <View style={[styles.colInputBox, {
+                backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
+                borderWidth: 1.2
+              }]}>
+                <TextInput
+                  style={[styles.colInputText, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
+                  placeholder="4V"
+                  placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+                  value={verses}
+                  onChangeText={setVerses}
+                />
+              </View>
+            </View>
+          </View>
+
+          {/* Quick Tempo Presets Ribbon */}
+          <View style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text style={{ fontSize: 9, fontWeight: '800', color: isDark ? '#A1A1AA' : '#94A3B8' }}>TEMPO:</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+              {[
+                { label: 'Slow (72 BPM)', val: '72' },
+                { label: 'Mid (96 BPM)', val: '96' },
+                { label: 'Fast (124 BPM)', val: '124' },
+                { label: 'Upbeat (138 BPM)', val: '138' },
+              ].map(p => {
+                const isSelected = tempo === p.val;
+                return (
+                  <TouchableOpacity
+                    key={p.val}
+                    onPress={() => setTempo(p.val)}
+                    style={{
+                      paddingHorizontal: 9,
+                      paddingVertical: 4,
+                      borderRadius: 8,
+                      backgroundColor: isSelected ? (isDark ? '#FFFFFF' : '#1a2d5a') : (isDark ? '#27272A' : '#F1F5F9'),
+                      borderWidth: 1,
+                      borderColor: isSelected ? (isDark ? '#FFFFFF' : '#1a2d5a') : (isDark ? 'rgba(255, 255, 255, 0.16)' : '#E2E8F0')
+                    }}
+                  >
+                    <Text style={{ fontSize: 10, fontWeight: '800', color: isSelected ? (isDark ? '#000000' : '#FFFFFF') : (isDark ? '#D4D4D8' : '#475569') }}>
+                      {p.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+
+          {/* Prelude & Interlude Live Arrangement - Two Full Rows */}
+          <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#F1F5F9' }}>
+            {/* Row 1: Prelude */}
+            <View style={{ marginBottom: 14 }}>
+              <Text style={labelStyle}>PRELUDE INSTRUMENTS</Text>
+              <TextInput
+                style={[inputStyle, { marginBottom: 6 }]}
+                placeholder="e.g. Acoustic + Drum"
+                placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+                value={prelude}
+                onChangeText={setPrelude}
+              />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 4 }}>
+                {PRELUDE_SUGGESTIONS.map(sug => {
+                  const isSelected = prelude === sug;
+                  return (
+                    <TouchableOpacity
+                      key={sug}
+                      style={{
+                        paddingHorizontal: 8,
+                        paddingVertical: 4,
+                        borderRadius: 8,
+                        backgroundColor: isSelected ? '#0D9488' : (isDark ? 'rgba(13, 148, 136, 0.2)' : '#F0FDFA'),
+                        borderWidth: 1,
+                        borderColor: isSelected ? '#0D9488' : (isDark ? 'rgba(13, 148, 136, 0.4)' : '#CCFBF1')
+                      }}
+                      onPress={() => setPrelude(sug)}
+                    >
+                      <Text style={{ fontSize: 10, fontWeight: '700', color: isSelected ? '#fff' : (isDark ? '#5EEAD4' : '#0F766E') }}>{sug}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            {/* Row 2: Interlude */}
+            <View>
+              <Text style={labelStyle}>INTERLUDE ARRANGEMENT</Text>
+              <TextInput
+                style={[inputStyle, { marginBottom: 6 }]}
+                placeholder="e.g. Keys + Elec"
+                placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+                value={interlude}
+                onChangeText={setInterlude}
+              />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 4 }}>
+                {INTERLUDE_SUGGESTIONS.map(sug => {
+                  const isSelected = interlude === sug;
+                  return (
+                    <TouchableOpacity
+                      key={sug}
+                      style={{
+                        paddingHorizontal: 8,
+                        paddingVertical: 4,
+                        borderRadius: 8,
+                        backgroundColor: isSelected ? '#2563EB' : (isDark ? 'rgba(37, 99, 235, 0.2)' : '#EFF6FF'),
+                        borderWidth: 1,
+                        borderColor: isSelected ? '#2563EB' : (isDark ? 'rgba(37, 99, 235, 0.4)' : '#DBEAFE')
+                      }}
+                      onPress={() => setInterlude(sug)}
+                    >
+                      <Text style={{ fontSize: 10, fontWeight: '700', color: isSelected ? '#fff' : (isDark ? '#93C5FD' : '#1D4ED8') }}>{sug}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          </View>
+
+          {/* Thematic Notes */}
+          <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#F1F5F9' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <Text style={labelStyle}>WORSHIP & THEMATIC NOTES</Text>
+              {notes ? (
+                <TouchableOpacity onPress={() => setNotes('')}>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: '#DC2626' }}>Clear</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+            <TextInput
+              style={[inputStyle, { height: 56, textAlignVertical: 'top', paddingTop: 8, marginBottom: 8 }]}
+              multiline
+              placeholder="e.g. Celebrate God's power, grace and praise..."
+              placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+              value={notes}
+              onChangeText={setNotes}
+            />
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+              {NOTES_SUGGESTIONS.map(sug => {
+                const isAdded = (notes || '').includes(sug);
+                return (
+                  <TouchableOpacity
+                    key={sug}
+                    style={{
+                      paddingHorizontal: 9,
+                      paddingVertical: 4,
+                      borderRadius: 8,
+                      backgroundColor: isAdded ? '#F59E0B' : (isDark ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7'),
+                      borderWidth: 1,
+                      borderColor: isAdded ? '#D97706' : (isDark ? 'rgba(245, 158, 11, 0.4)' : '#FDE68A')
+                    }}
+                    onPress={() => {
+                      if (!notes.trim()) setNotes(sug);
+                      else if (!notes.includes(sug)) setNotes(`${notes} • ${sug}`);
+                    }}
+                  >
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: isAdded ? '#fff' : (isDark ? '#FCD34D' : '#92400E') }}>
+                      {isAdded ? '✓ ' : '+ '}{sug}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
         </View>
 
-        {/* Song Lyrics & Scripts */}
-        <View style={{ paddingTop: 14, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#F1F5F9' }}>
-          <Text style={[labelStyle, { marginBottom: 8 }]}>SONG LYRICS & SCRIPTS *</Text>
-          <TextInput
-            style={[inputStyle, {
-              height: 240,
-              textAlignVertical: 'top',
-              paddingTop: 12,
-              paddingHorizontal: 12,
-              lineHeight: 20,
-              fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-              fontSize: 13,
-            }]}
-            placeholder={`Verse 1:\nAmazing grace! How sweet the sound...\n\nChorus:\nMy chains are gone, I've been set free...`}
-            placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
-            multiline
-            value={lyrics}
-            onChangeText={setLyrics}
-          />
-        </View>
-
-        {/* Publish Status Toggle */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#F1F5F9' }}>
-          <View>
-            <Text style={{ fontSize: 13, fontWeight: '800', color: isDark ? '#FFFFFF' : '#1a2d5a' }}>Publish Status</Text>
-            <Text style={{ fontSize: 11, color: isDark ? '#A1A1AA' : '#64748B' }}>
-              {status === 'Published' ? 'Visible in church library' : 'Saved as private draft'}
+        {/* ── CARD 3: CATEGORIES, LYRICS & PUBLISH STATUS ── */}
+        <View style={cardStyle}>
+          {/* Categories */}
+          <View style={styles.studioCardHeader}>
+            <View style={styles.studioCardTitleRow}>
+              <Text style={cardTitleStyle}>CATEGORIES & THEMES</Text>
+            </View>
+            <Text style={{ fontSize: 10, color: isDark ? '#A1A1AA' : '#64748B', fontWeight: '700' }}>
+              {categories.length} Selected
             </Text>
           </View>
-          <View style={{ flexDirection: 'row', gap: 6 }}>
-            <TouchableOpacity
-              style={[{
-                paddingVertical: 8,
-                paddingHorizontal: 14,
-                borderRadius: 8,
-                borderWidth: 1
-              }, status === 'Published'
-                ? { backgroundColor: '#15803D', borderColor: '#15803D' }
-                : { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#CBD5E1' }
-              ]}
-              onPress={() => setStatus('Published')}
-            >
-              <Text style={{ fontSize: 12, fontWeight: '800', color: status === 'Published' ? '#fff' : (isDark ? '#CBD5E1' : '#64748B') }}>Published</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[{
-                paddingVertical: 8,
-                paddingHorizontal: 14,
-                borderRadius: 8,
-                borderWidth: 1
-              }, status === 'Draft'
-                ? { backgroundColor: isDark ? '#3B82F6' : '#1a2d5a', borderColor: isDark ? '#3B82F6' : '#1a2d5a' }
-                : { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#CBD5E1' }
-              ]}
-              onPress={() => setStatus('Draft')}
-            >
-              <Text style={{ fontSize: 12, fontWeight: '800', color: status === 'Draft' ? '#fff' : (isDark ? '#CBD5E1' : '#64748B') }}>Draft</Text>
-            </TouchableOpacity>
+
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+            {CATEGORIES.map(cat => {
+              const isThemeCat = cat === 'Theme Songs';
+              const isSelected = categories.includes(cat);
+              return (
+                <TouchableOpacity
+                  key={cat}
+                  style={[{
+                    paddingHorizontal: 11,
+                    paddingVertical: 6,
+                    borderRadius: 14,
+                    borderWidth: 1.2,
+                    borderColor: isSelected
+                      ? (isThemeCat ? '#D97706' : (isDark ? '#FFFFFF' : '#1a2d5a'))
+                      : (isDark ? 'rgba(255, 255, 255, 0.18)' : '#CBD5E1'),
+                    backgroundColor: isSelected
+                      ? (isThemeCat ? (isDark ? 'rgba(245, 158, 11, 0.25)' : '#FEF3C7') : (isDark ? '#FFFFFF' : '#1a2d5a'))
+                      : (isDark ? '#27272A' : '#F8FAFC'),
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 4
+                  }]}
+                  onPress={() => {
+                    setCategories(prev =>
+                      prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
+                    );
+                  }}
+                >
+                  {isThemeCat && <Star size={11} color={isSelected ? '#D97706' : (isDark ? '#A1A1AA' : '#94A3B8')} fill={isSelected ? '#F59E0B' : 'none'} />}
+                  <Text style={{
+                    fontSize: 11,
+                    fontWeight: '700',
+                    color: isSelected
+                      ? (isThemeCat ? (isDark ? '#FCD34D' : '#B45309') : (isDark ? '#000000' : '#FFFFFF'))
+                      : (isDark ? '#CBD5E1' : '#475569')
+                  }}>
+                    {cat}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Song Lyrics & Scripts */}
+          <View style={{ paddingTop: 14, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#F1F5F9' }}>
+            <Text style={[labelStyle, { marginBottom: 8 }]}>SONG LYRICS & SCRIPTS *</Text>
+            <TextInput
+              style={[inputStyle, {
+                height: 240,
+                textAlignVertical: 'top',
+                paddingTop: 12,
+                paddingHorizontal: 12,
+                lineHeight: 20,
+                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                fontSize: 13,
+              }]}
+              placeholder={`Verse 1:\nAmazing grace! How sweet the sound...\n\nChorus:\nMy chains are gone, I've been set free...`}
+              placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+              multiline
+              value={lyrics}
+              onChangeText={setLyrics}
+            />
+          </View>
+
+          {/* Publish Status Toggle */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#F1F5F9' }}>
+            <View>
+              <Text style={{ fontSize: 13, fontWeight: '800', color: isDark ? '#FFFFFF' : '#1a2d5a' }}>Publish Status</Text>
+              <Text style={{ fontSize: 11, color: isDark ? '#A1A1AA' : '#64748B' }}>
+                {status === 'Published' ? 'Visible in church library' : 'Saved as private draft'}
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              <TouchableOpacity
+                style={[{
+                  paddingVertical: 8,
+                  paddingHorizontal: 14,
+                  borderRadius: 8,
+                  borderWidth: 1
+                }, status === 'Published'
+                  ? { backgroundColor: '#15803D', borderColor: '#15803D' }
+                  : { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#CBD5E1' }
+                ]}
+                onPress={() => setStatus('Published')}
+              >
+                <Text style={{ fontSize: 12, fontWeight: '800', color: status === 'Published' ? '#fff' : (isDark ? '#CBD5E1' : '#64748B') }}>Published</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[{
+                  paddingVertical: 8,
+                  paddingHorizontal: 14,
+                  borderRadius: 8,
+                  borderWidth: 1
+                }, status === 'Draft'
+                  ? { backgroundColor: isDark ? '#3B82F6' : '#1a2d5a', borderColor: isDark ? '#3B82F6' : '#1a2d5a' }
+                  : { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#CBD5E1' }
+                ]}
+                onPress={() => setStatus('Draft')}
+              >
+                <Text style={{ fontSize: 12, fontWeight: '800', color: status === 'Draft' ? '#fff' : (isDark ? '#CBD5E1' : '#64748B') }}>Draft</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
+
+        {/* Bottom Save Action Button */}
+        <TouchableOpacity
+          style={[{
+            backgroundColor: isDark ? '#FFFFFF' : '#000000',
+            height: 50,
+            borderRadius: 999,
+            borderWidth: 1.5,
+            borderColor: isDark ? '#FFFFFF' : '#000000',
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 10,
+            elevation: 3,
+            shadowColor: '#000000',
+            shadowOpacity: isDark ? 0.25 : 0.2,
+            shadowRadius: 6,
+            shadowOffset: { width: 0, height: 2 },
+            marginTop: 10,
+            marginBottom: 10,
+          }, submitting && { opacity: 0.6 }]}
+          onPress={handlePublishSong}
+          disabled={submitting}
+          activeOpacity={0.8}
+        >
+          {submitting ? (
+            <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
+          ) : (
+            <>
+              <Save size={18} color={isDark ? '#000000' : '#FFFFFF'} />
+              <Text style={{ color: isDark ? '#000000' : '#FFFFFF', fontSize: 15, fontWeight: '900', letterSpacing: 0.3 }}>
+                Publish Song to Church Library
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
       </View>
-
-      {/* Bottom Save Action Button */}
-      <TouchableOpacity
-        style={[{
-          backgroundColor: isDark ? '#FFFFFF' : '#000000',
-          height: 50,
-          borderRadius: 999,
-          borderWidth: 1.5,
-          borderColor: isDark ? '#FFFFFF' : '#000000',
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 10,
-          elevation: 3,
-          shadowColor: '#000000',
-          shadowOpacity: isDark ? 0.25 : 0.2,
-          shadowRadius: 6,
-          shadowOffset: { width: 0, height: 2 },
-          marginTop: 10,
-          marginBottom: 10,
-        }, submitting && { opacity: 0.6 }]}
-        onPress={handlePublishSong}
-        disabled={submitting}
-        activeOpacity={0.8}
-      >
-        {submitting ? (
-          <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
-        ) : (
-          <>
-            <Save size={18} color={isDark ? '#000000' : '#FFFFFF'} />
-            <Text style={{ color: isDark ? '#000000' : '#FFFFFF', fontSize: 15, fontWeight: '900', letterSpacing: 0.3 }}>
-              Publish Song to Church Library
-            </Text>
-          </>
-        )}
-      </TouchableOpacity>
-    </View>
-  );
-};
+    );
+  };
 
   const renderPostModal = () => (
     <Modal visible={showPostModal} animationType="slide" onRequestClose={() => setShowPostModal(false)}>
@@ -2352,18 +2362,18 @@ export default function AdminSongEditor() {
               const titleEnMatch = s.title ? s.title.toLowerCase().includes(q) : false;
               const titleTeMatch = s.titleTe ? s.titleTe.toLowerCase().includes(q) : false;
               const artistMatch = s.artist ? s.artist.toLowerCase().includes(q) : false;
-              
+
               const absoluteIndex = postedSongs.findIndex(ps => ps.id === s.id);
               const numberMatch = (absoluteIndex + 1).toString().includes(q);
-              
+
               const matchesSearch = !q || titleEnMatch || titleTeMatch || artistMatch || numberMatch;
               if (!matchesSearch) return false;
 
               const cats = (s.category || 'Other').split(';').map(c => c.trim()).filter(Boolean);
-              
+
               // Theme Songs Tab filter
               if (screenTab === 'theme' && !cats.includes('Theme Songs')) return false;
-              
+
               // Church Own Songs Tab filter
               // Category Ribbon filter
               if (selectedCategory !== 'All' && !cats.includes(selectedCategory)) return false;
@@ -2375,21 +2385,21 @@ export default function AdminSongEditor() {
             contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 60 }}
             showsVerticalScrollIndicator={false}
             ListEmptyComponent={() => (
-            <View style={{ padding: 40, alignItems: 'center' }}>
-              <Music size={44} color="#cbd5e1" />
-              <Text style={{ fontSize: 15, fontWeight: '800', color: '#1a2d5a', marginTop: 12 }}>No songs yet</Text>
-              <Text style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>Post your first song using the "Post Song" tab.</Text>
-            </View>
-          )}
-          refreshing={loadingList}
-          onRefresh={() => fetchPostedSongs(true)}
-          ListFooterComponent={() => loadingMore ? (
-            <View style={{ padding: 16, alignItems: 'center' }}>
-              <ActivityIndicator size="small" color="#1a2d5a" />
-              <Text style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>Loading more songs...</Text>
-            </View>
-          ) : null}
-        />
+              <View style={{ padding: 40, alignItems: 'center' }}>
+                <Music size={44} color="#cbd5e1" />
+                <Text style={{ fontSize: 15, fontWeight: '800', color: '#1a2d5a', marginTop: 12 }}>No songs yet</Text>
+                <Text style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>Post your first song using the "Post Song" tab.</Text>
+              </View>
+            )}
+            refreshing={loadingList}
+            onRefresh={() => fetchPostedSongs(true)}
+            ListFooterComponent={() => loadingMore ? (
+              <View style={{ padding: 16, alignItems: 'center' }}>
+                <ActivityIndicator size="small" color="#1a2d5a" />
+                <Text style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>Loading more songs...</Text>
+              </View>
+            ) : null}
+          />
         </>
       )}
     </View>
@@ -3321,7 +3331,7 @@ export default function AdminSongEditor() {
             {/* Quick Presets for Selected Category: Only + New option and saved custom presets */}
             <View style={{ marginBottom: 14 }}>
               <Text style={styles.label}>SUGGESTED NAMES (TAP TO AUTO-FILL)</Text>
-              
+
               {showAddCustomPresetInput && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
                   <TextInput
@@ -3933,7 +3943,7 @@ export default function AdminSongEditor() {
             {/* Quick Presets for Selected Category: Only + New option and saved custom presets */}
             <View style={{ marginBottom: 14 }}>
               <Text style={styles.label}>SUGGESTED NAMES (TAP TO AUTO-FILL)</Text>
-              
+
               {showAddCustomPresetInput && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
                   <TextInput
@@ -4657,248 +4667,71 @@ export default function AdminSongEditor() {
                   Save to church song library & add to {activeService?.name || 'Service'}
                 </Text>
               </View>
-            <TouchableOpacity onPress={() => setShowCreateSongModal(false)} style={styles.editCloseBtn}>
-              <X size={20} color="#475569" />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView style={{ padding: 20 }} showsVerticalScrollIndicator={false}>
-            <Text style={styles.label}>SONG TITLE (ENGLISH) *</Text>
-            <TextInput
-              style={[styles.textInput, { marginBottom: 12 }]}
-              value={newSongTitleEn}
-              onChangeText={setNewSongTitleEn}
-              placeholder="English title..."
-            />
-
-            <Text style={styles.label}>SONG TITLE (TELUGU) · తెలుగు శీర్షిక</Text>
-            <TextInput
-              style={[styles.textInput, { marginBottom: 12 }]}
-              value={newSongTitleTe}
-              onChangeText={setNewSongTitleTe}
-              placeholder="తెలుగు శీర్షిక..."
-            />
-
-            <Text style={styles.label}>ARTIST / AUTHOR / COMPOSE</Text>
-            <TextInput
-              style={[styles.textInput, { marginBottom: 12 }]}
-              value={newSongArtist}
-              onChangeText={setNewSongArtist}
-              placeholder="e.g. Hosanna Ministries"
-            />
-
-            <Text style={styles.label}>CATEGORY</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, marginBottom: 14 }}>
-              {CATEGORIES.map(cat => {
-                const isSel = newSongCategory === cat;
-                return (
-                  <TouchableOpacity
-                    key={cat}
-                    onPress={() => setNewSongCategory(cat)}
-                    style={[{
-                      paddingHorizontal: 12,
-                      paddingVertical: 6,
-                      borderRadius: 12,
-                      backgroundColor: isSel ? '#1a2d5a' : '#F1F5F9',
-                      borderWidth: 1,
-                      borderColor: isSel ? '#1a2d5a' : '#E2E8F0'
-                    }]}
-                  >
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: isSel ? '#fff' : '#475569' }}>
-                      {cat}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-
-            <Text style={styles.label}>LYRICS *</Text>
-            <TextInput
-              style={[styles.textInput, { height: 120, textAlignVertical: 'top', paddingTop: 10, marginBottom: 14 }]}
-              multiline
-              value={newSongLyrics}
-              onChangeText={setNewSongLyrics}
-              placeholder="Type or paste song lyrics..."
-            />
-
-            {/* Song Leader */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-              <Text style={styles.studioLabel}>SONG LEADER / LEADING PERSON</Text>
-              <TouchableOpacity
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#EFF6FF', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#BFDBFE' }}
-                onPress={() => {
-                  setMemberPickerTarget('setlist');
-                  setMemberSearchQuery('');
-                  setShowMemberPickerModal(true);
-                }}
-              >
-                <Users size={12} color="#1D4ED8" />
-                <Text style={{ fontSize: 10, fontWeight: '800', color: '#1D4ED8' }}>Browse Directory</Text>
+              <TouchableOpacity onPress={() => setShowCreateSongModal(false)} style={styles.editCloseBtn}>
+                <X size={20} color="#475569" />
               </TouchableOpacity>
             </View>
 
-            {setlistForm.ledBy ? (
-              <View style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                backgroundColor: '#F0FDF4',
-                borderWidth: 1,
-                borderColor: '#BBF7D0',
-                borderRadius: 12,
-                padding: 10,
-                marginBottom: 12
-              }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-                  <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#15803D', alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ color: '#fff', fontSize: 13, fontWeight: '800' }}>
-                      {setlistForm.ledBy.charAt(0).toUpperCase()}
-                    </Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '800', color: '#14532D' }} numberOfLines={1}>{setlistForm.ledBy}</Text>
-                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#16A34A' }}>🎤 Designated Song Leader</Text>
-                  </View>
-                </View>
-                <TouchableOpacity
-                  onPress={() => setSetlistForm(prev => ({ ...prev, ledBy: '' }))}
-                  style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: '#DCFCE7' }}
-                >
-                  <Text style={{ fontSize: 11, fontWeight: '800', color: '#15803D' }}>Change</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
+            <ScrollView style={{ padding: 20 }} showsVerticalScrollIndicator={false}>
+              <Text style={styles.label}>SONG TITLE (ENGLISH) *</Text>
               <TextInput
                 style={[styles.textInput, { marginBottom: 12 }]}
-                value={setlistForm.ledBy}
-                onChangeText={v => setSetlistForm(prev => ({ ...prev, ledBy: v }))}
-                placeholder="Type leader name or browse directory..."
+                value={newSongTitleEn}
+                onChangeText={setNewSongTitleEn}
+                placeholder="English title..."
               />
-            )}
 
-            {/* Arrangement Row */}
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.colHeaderLabel}>KEY</Text>
-                <View style={styles.colInputBox}>
-                  <TextInput
-                    style={styles.colInputText}
-                    value={setlistForm.key}
-                    onChangeText={v => setSetlistForm(prev => ({ ...prev, key: v }))}
-                    placeholder="F"
-                  />
-                </View>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.colHeaderLabel}>TIME SIG</Text>
-                <View style={styles.colInputBox}>
-                  <TextInput
-                    style={styles.colInputText}
-                    value={setlistForm.timeSignature}
-                    onChangeText={v => setSetlistForm(prev => ({ ...prev, timeSignature: v }))}
-                    placeholder="4/4"
-                  />
-                </View>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.colHeaderLabel}>TEMPO</Text>
-                <View style={[styles.colInputBox, { paddingHorizontal: 6 }]}>
-                  <TextInput
-                    style={styles.colInputText}
-                    value={setlistForm.tempo}
-                    onChangeText={v => setSetlistForm(prev => ({ ...prev, tempo: v }))}
-                    placeholder="100"
-                    keyboardType="numeric"
-                  />
-                  <Text style={{ fontSize: 8, fontWeight: '900', color: '#94A3B8' }}>BPM</Text>
-                </View>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.colHeaderLabel}>VERSES</Text>
-                <View style={styles.colInputBox}>
-                  <TextInput
-                    style={styles.colInputText}
-                    value={setlistForm.verses}
-                    onChangeText={v => setSetlistForm(prev => ({ ...prev, verses: v }))}
-                    placeholder="4V"
-                  />
-                </View>
-              </View>
-            </View>
-
-            {/* Offertory */}
-            <TouchableOpacity
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 }}
-              onPress={() => setSetlistForm(prev => ({ ...prev, isOffertory: !prev.isOffertory }))}
-            >
-              <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: setlistForm.isOffertory ? '#F59E0B' : '#94A3B8', backgroundColor: setlistForm.isOffertory ? '#F59E0B' : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-                {setlistForm.isOffertory && <CheckCircle size={14} color="#fff" />}
-              </View>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: '#1a2d5a' }}>Is this the Offertory Song?</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              disabled={creatingAndAddingSong}
-              style={[styles.saveBtn, { marginTop: 12, backgroundColor: '#059669' }]}
-              onPress={handleCreateAndAddSongToService}
-            >
-              {creatingAndAddingSong ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <>
-                  <Save size={18} color="#fff" />
-                  <Text style={styles.saveBtnTxt}>Save & Add to {activeService?.name || 'Service'}</Text>
-                </>
-              )}
-            </TouchableOpacity>
-            <View style={{ height: 40 }} />
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
-  );
-};
-
-  // ── ADD/EDIT SETLIST SONG MODAL (ARRANGEMENT EDITOR) ──
-  const renderAddSetlistModal = () => {
-    if (!showAddSetlistModal) return null;
-
-    return (
-      <Modal transparent animationType="slide" visible={showAddSetlistModal} onRequestClose={() => setShowAddSetlistModal(false)}>
-        <View style={styles.editModalBg}>
-          <View style={styles.editModalCard}>
-            <View style={styles.editModalHeader}>
-              <View>
-                <Text style={styles.editModalTitle}>{editingSetlistIdx !== null ? 'Edit Song Arrangement' : `Add Song to ${activeService?.name || 'Service'}`}</Text>
-              <Text style={{ fontSize: 11, color: '#64748B' }}>Configure musical key, band cues, and song leader</Text>
-            </View>
-            <TouchableOpacity onPress={() => setShowAddSetlistModal(false)} style={styles.editCloseBtn}>
-              <X size={20} color="#475569" />
-            </TouchableOpacity>
-          </View>
-          <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-            <View style={{ padding: 20 }}>
-              <Text style={styles.label}>SONG TITLE *</Text>
+              <Text style={styles.label}>SONG TITLE (TELUGU) · తెలుగు శీర్షిక</Text>
               <TextInput
                 style={[styles.textInput, { marginBottom: 12 }]}
-                value={setlistForm.title}
-                onChangeText={v => setSetlistForm(prev => ({ ...prev, title: v }))}
-                placeholder="Song Title..."
+                value={newSongTitleTe}
+                onChangeText={setNewSongTitleTe}
+                placeholder="తెలుగు శీర్షిక..."
               />
 
-              {setlistForm.titleTe ? (
-                <View style={{ marginBottom: 12 }}>
-                  <Text style={styles.label}>TELUGU TITLE · తెలుగు శీర్షిక</Text>
-                  <TextInput
-                    style={[styles.textInput]}
-                    value={setlistForm.titleTe}
-                    onChangeText={v => setSetlistForm(prev => ({ ...prev, titleTe: v }))}
-                    placeholder="తెలుగు శీర్షిక..."
-                  />
-                </View>
-              ) : null}
+              <Text style={styles.label}>ARTIST / AUTHOR / COMPOSE</Text>
+              <TextInput
+                style={[styles.textInput, { marginBottom: 12 }]}
+                value={newSongArtist}
+                onChangeText={setNewSongArtist}
+                placeholder="e.g. Hosanna Ministries"
+              />
 
-              {/* Leading Person with Church Member Search */}
+              <Text style={styles.label}>CATEGORY</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, marginBottom: 14 }}>
+                {CATEGORIES.map(cat => {
+                  const isSel = newSongCategory === cat;
+                  return (
+                    <TouchableOpacity
+                      key={cat}
+                      onPress={() => setNewSongCategory(cat)}
+                      style={[{
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 12,
+                        backgroundColor: isSel ? '#1a2d5a' : '#F1F5F9',
+                        borderWidth: 1,
+                        borderColor: isSel ? '#1a2d5a' : '#E2E8F0'
+                      }]}
+                    >
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: isSel ? '#fff' : '#475569' }}>
+                        {cat}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              <Text style={styles.label}>LYRICS *</Text>
+              <TextInput
+                style={[styles.textInput, { height: 120, textAlignVertical: 'top', paddingTop: 10, marginBottom: 14 }]}
+                multiline
+                value={newSongLyrics}
+                onChangeText={setNewSongLyrics}
+                placeholder="Type or paste song lyrics..."
+              />
+
+              {/* Song Leader */}
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                 <Text style={styles.studioLabel}>SONG LEADER / LEADING PERSON</Text>
                 <TouchableOpacity
@@ -4945,256 +4778,67 @@ export default function AdminSongEditor() {
                   </TouchableOpacity>
                 </View>
               ) : (
-                <View style={{ marginBottom: 12 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 10, paddingHorizontal: 12, height: 46 }}>
-                    <Search size={16} color="#3B82F6" />
-                    <TextInput
-                      style={{ flex: 1, fontSize: 13, color: '#1a2d5a', fontWeight: '600', marginLeft: 8 }}
-                      value={setlistForm.ledBy}
-                      onChangeText={v => setSetlistForm(prev => ({ ...prev, ledBy: v }))}
-                      placeholder="Type name or search member..."
-                      placeholderTextColor="#94A3B8"
-                    />
-                    {setlistForm.ledBy.length > 0 && (
-                      <TouchableOpacity onPress={() => setSetlistForm(prev => ({ ...prev, ledBy: '' }))}>
-                        <X size={16} color="#94A3B8" />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-
-                  {/* Inline Member Autocomplete dropdown if user is typing */}
-                  {setlistForm.ledBy.trim().length > 0 && churchMembers.filter(m => m && (m.name || m.firstName || '').toLowerCase().includes(setlistForm.ledBy.toLowerCase()) && (m.name || m.firstName || '') !== setlistForm.ledBy).length > 0 && (
-                    <View style={{ backgroundColor: '#FFFFFF', borderRadius: 10, borderWidth: 1, borderColor: '#CBD5E1', marginTop: 6, maxHeight: 150, overflow: 'hidden', elevation: 3 }}>
-                      <ScrollView nestedScrollEnabled>
-                        {churchMembers
-                          .filter(m => m && (m.name || m.firstName || '').toLowerCase().includes(setlistForm.ledBy.toLowerCase()) && (m.name || m.firstName || '') !== setlistForm.ledBy)
-                          .slice(0, 6)
-                          .map(m => {
-                            const name = m?.name || m?.firstName || 'Member';
-                            return (
-                              <TouchableOpacity
-                                key={m?.id || name}
-                                style={{ flexDirection: 'row', alignItems: 'center', padding: 8, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}
-                                onPress={() => setSetlistForm(prev => ({ ...prev, ledBy: name }))}
-                              >
-                                <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: '#1a2d5a', alignItems: 'center', justifyContent: 'center', marginRight: 8 }}>
-                                  <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>{name.charAt(0).toUpperCase()}</Text>
-                                </View>
-                                <View style={{ flex: 1 }}>
-                                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#1a2d5a' }}>{name}</Text>
-                                  {m.phone && <Text style={{ fontSize: 10, color: '#64748B' }}>{m.phone}</Text>}
-                                </View>
-                                <CheckCircle size={14} color="#10B981" />
-                              </TouchableOpacity>
-                            );
-                          })}
-                      </ScrollView>
-                    </View>
-                  )}
-                </View>
+                <TextInput
+                  style={[styles.textInput, { marginBottom: 12 }]}
+                  value={setlistForm.ledBy}
+                  onChangeText={v => setSetlistForm(prev => ({ ...prev, ledBy: v }))}
+                  placeholder="Type leader name or browse directory..."
+                />
               )}
 
-              {/* Key, Time.S, Tempo, Verses with Aligned Layout */}
-              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8, alignItems: 'flex-start' }}>
-                {/* KEY - Dropdown Selector */}
+              {/* Arrangement Row */}
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.colHeaderLabel} numberOfLines={1}>KEY</Text>
-                  <TouchableOpacity
-                    style={[styles.colInputBox, {
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      paddingHorizontal: 8,
-                      borderColor: setlistForm.key ? '#2563EB' : '#CBD5E1',
-                      borderWidth: 1.5,
-                      backgroundColor: '#FFFFFF'
-                    }]}
-                    onPress={() => setShowSetlistKeyPicker(true)}
-                  >
-                    <Text style={{ fontSize: 13, fontWeight: '900', color: setlistForm.key ? '#1D4ED8' : '#94A3B8' }}>
-                      {setlistForm.key || 'Key'}
-                    </Text>
-                    <ChevronDown size={13} color="#2563EB" />
-                  </TouchableOpacity>
+                  <Text style={styles.colHeaderLabel}>KEY</Text>
+                  <View style={styles.colInputBox}>
+                    <TextInput
+                      style={styles.colInputText}
+                      value={setlistForm.key}
+                      onChangeText={v => setSetlistForm(prev => ({ ...prev, key: v }))}
+                      placeholder="F"
+                    />
+                  </View>
                 </View>
-
-                {/* TIME SIGNATURE */}
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.colHeaderLabel} numberOfLines={1}>TIME SIG</Text>
+                  <Text style={styles.colHeaderLabel}>TIME SIG</Text>
                   <View style={styles.colInputBox}>
                     <TextInput
                       style={styles.colInputText}
                       value={setlistForm.timeSignature}
                       onChangeText={v => setSetlistForm(prev => ({ ...prev, timeSignature: v }))}
                       placeholder="4/4"
-                      placeholderTextColor="#94A3B8"
                     />
                   </View>
                 </View>
-
-                {/* TEMPO */}
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.colHeaderLabel} numberOfLines={1}>TEMPO</Text>
-                  <View style={[styles.colInputBox, { paddingHorizontal: 6, borderColor: setlistForm.tempo ? '#0D9488' : '#CBD5E1', borderWidth: 1.5 }]}>
+                  <Text style={styles.colHeaderLabel}>TEMPO</Text>
+                  <View style={[styles.colInputBox, { paddingHorizontal: 6 }]}>
                     <TextInput
-                      style={[styles.colInputText, { paddingRight: 2 }]}
+                      style={styles.colInputText}
                       value={setlistForm.tempo}
                       onChangeText={v => setSetlistForm(prev => ({ ...prev, tempo: v }))}
                       placeholder="100"
-                      placeholderTextColor="#94A3B8"
                       keyboardType="numeric"
                     />
-                    <Text style={{ fontSize: 8, fontWeight: '900', color: '#0D9488' }}>BPM</Text>
+                    <Text style={{ fontSize: 8, fontWeight: '900', color: '#94A3B8' }}>BPM</Text>
                   </View>
                 </View>
-
-                {/* VERSES */}
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.colHeaderLabel} numberOfLines={1}>VERSES</Text>
+                  <Text style={styles.colHeaderLabel}>VERSES</Text>
                   <View style={styles.colInputBox}>
                     <TextInput
                       style={styles.colInputText}
                       value={setlistForm.verses}
                       onChangeText={v => setSetlistForm(prev => ({ ...prev, verses: v }))}
                       placeholder="4V"
-                      placeholderTextColor="#94A3B8"
                     />
                   </View>
                 </View>
               </View>
 
-              {/* Suggested Tempo Presets */}
-              <View style={{ marginBottom: 12 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
-                  <Text style={{ fontSize: 10, fontWeight: '800', color: '#64748B', letterSpacing: 0.3 }}>
-                    SUGGESTED TEMPOS (BPM)
-                  </Text>
-                  {setlistForm.tempo ? (
-                    <Text style={{ fontSize: 10, fontWeight: '800', color: '#0D9488' }}>
-                      Selected: {setlistForm.tempo} BPM
-                    </Text>
-                  ) : null}
-                </View>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-                  {TEMPO_SUGGESTIONS.map(sug => {
-                    const isSelected = setlistForm.tempo === sug.bpm;
-                    return (
-                      <TouchableOpacity
-                        key={sug.bpm}
-                        style={{
-                          paddingHorizontal: 10,
-                          paddingVertical: 5,
-                          borderRadius: 8,
-                          backgroundColor: isSelected ? '#0D9488' : '#F0FDFA',
-                          borderWidth: 1,
-                          borderColor: isSelected ? '#0D9488' : '#CCFBF1',
-                        }}
-                        onPress={() => setSetlistForm(prev => ({ ...prev, tempo: sug.bpm }))}
-                      >
-                        <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0F766E' }}>
-                          {sug.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              </View>
-
-              {/* Prelude Instruments with Suggestion Chips */}
-              <Text style={styles.studioLabel}>PRELUDE INSTRUMENTS</Text>
-              <TextInput
-                style={[styles.textInput, { marginBottom: 6 }]}
-                value={setlistForm.prelude}
-                onChangeText={v => setSetlistForm(prev => ({ ...prev, prelude: v }))}
-                placeholder="e.g. Acoustic + Drum"
-              />
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, marginBottom: 12 }}>
-                {PRELUDE_SUGGESTIONS.map(sug => {
-                  const isSelected = setlistForm.prelude === sug;
-                  return (
-                    <TouchableOpacity
-                      key={sug}
-                      style={[{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: isSelected ? '#0D9488' : '#F0FDFA', borderWidth: 1, borderColor: isSelected ? '#0D9488' : '#CCFBF1' }]}
-                      onPress={() => setSetlistForm(prev => ({ ...prev, prelude: sug }))}
-                    >
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#fff' : '#0F766E' }}>
-                        🎵 {sug}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-
-              {/* Interlude Arrangement with Suggestion Chips */}
-              <Text style={styles.label}>INTERLUDE ARRANGEMENT · మధ్యంతర సంగీతం</Text>
-              <TextInput
-                style={[styles.textInput, { marginBottom: 6 }]}
-                value={setlistForm.interlude}
-                onChangeText={v => setSetlistForm(prev => ({ ...prev, interlude: v }))}
-                placeholder="e.g. Keys + Elec (Alt)"
-              />
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, marginBottom: 12 }}>
-                {INTERLUDE_SUGGESTIONS.map(sug => {
-                  const isSelected = setlistForm.interlude === sug;
-                  return (
-                    <TouchableOpacity
-                      key={sug}
-                      style={[{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: isSelected ? '#2563EB' : '#EFF6FF', borderWidth: 1, borderColor: isSelected ? '#2563EB' : '#DBEAFE' }]}
-                      onPress={() => setSetlistForm(prev => ({ ...prev, interlude: sug }))}
-                    >
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#fff' : '#1D4ED8' }}>
-                        🎸 {sug}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-
-              {/* Worship / Thematic Notes with Presets */}
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <Text style={styles.label}>WORSHIP / THEMATIC NOTES · ఆరాధన వివరణ</Text>
-                {setlistForm.notes ? (
-                  <TouchableOpacity onPress={() => setSetlistForm(prev => ({ ...prev, notes: '' }))}>
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#DC2626' }}>Clear Notes</Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-              <TextInput
-                style={[styles.textInput, { height: 68, textAlignVertical: 'top', paddingTop: 10, marginBottom: 6 }]}
-                multiline
-                value={setlistForm.notes}
-                onChangeText={v => setSetlistForm(prev => ({ ...prev, notes: v }))}
-                placeholder="e.g. Celebrate God's power, strength, and salvation"
-              />
-              <Text style={{ fontSize: 10, fontWeight: '800', color: '#94A3B8', marginBottom: 4, letterSpacing: 0.3 }}>
-                SUGGESTED THEMATIC FOCUS (TAP TO ADD):
-              </Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, marginBottom: 12 }}>
-                {NOTES_SUGGESTIONS.map(sug => {
-                  const isAdded = (setlistForm.notes || '').includes(sug);
-                  return (
-                    <TouchableOpacity
-                      key={sug}
-                      style={[{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: isAdded ? '#F59E0B' : '#FEF3C7', borderWidth: 1, borderColor: isAdded ? '#D97706' : '#FDE68A' }]}
-                      onPress={() => {
-                        setSetlistForm(prev => {
-                          if (!prev.notes.trim()) return { ...prev, notes: sug };
-                          if (prev.notes.includes(sug)) return prev;
-                          return { ...prev, notes: `${prev.notes} • ${sug}` };
-                        });
-                      }}
-                    >
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: isAdded ? '#fff' : '#92400E' }}>
-                        {isAdded ? '✓ ' : '+ '}{sug}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-
-              {/* Offertory Toggle */}
+              {/* Offertory */}
               <TouchableOpacity
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 }}
                 onPress={() => setSetlistForm(prev => ({ ...prev, isOffertory: !prev.isOffertory }))}
               >
                 <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: setlistForm.isOffertory ? '#F59E0B' : '#94A3B8', backgroundColor: setlistForm.isOffertory ? '#F59E0B' : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
@@ -5204,20 +4848,386 @@ export default function AdminSongEditor() {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.saveBtn, { marginTop: 10 }]}
-                onPress={handleSaveSetlistSong}
+                disabled={creatingAndAddingSong}
+                style={[styles.saveBtn, { marginTop: 12, backgroundColor: '#059669' }]}
+                onPress={handleCreateAndAddSongToService}
               >
-                <Save size={18} color="#fff" />
-                <Text style={styles.saveBtnTxt}>{editingSetlistIdx !== null ? 'Update Setlist Song' : 'Add to Service Setlist'}</Text>
+                {creatingAndAddingSong ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Save size={18} color="#fff" />
+                    <Text style={styles.saveBtnTxt}>Save & Add to {activeService?.name || 'Service'}</Text>
+                  </>
+                )}
               </TouchableOpacity>
               <View style={{ height: 40 }} />
-            </View>
-          </ScrollView>
+            </ScrollView>
+          </View>
         </View>
-      </View>
-    </Modal>
-  );
-};
+      </Modal>
+    );
+  };
+
+  // ── ADD/EDIT SETLIST SONG MODAL (ARRANGEMENT EDITOR) ──
+  const renderAddSetlistModal = () => {
+    if (!showAddSetlistModal) return null;
+
+    return (
+      <Modal transparent animationType="slide" visible={showAddSetlistModal} onRequestClose={() => setShowAddSetlistModal(false)}>
+        <View style={styles.editModalBg}>
+          <View style={styles.editModalCard}>
+            <View style={styles.editModalHeader}>
+              <View>
+                <Text style={styles.editModalTitle}>{editingSetlistIdx !== null ? 'Edit Song Arrangement' : `Add Song to ${activeService?.name || 'Service'}`}</Text>
+                <Text style={{ fontSize: 11, color: '#64748B' }}>Configure musical key, band cues, and song leader</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowAddSetlistModal(false)} style={styles.editCloseBtn}>
+                <X size={20} color="#475569" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+              <View style={{ padding: 20 }}>
+                <Text style={styles.label}>SONG TITLE *</Text>
+                <TextInput
+                  style={[styles.textInput, { marginBottom: 12 }]}
+                  value={setlistForm.title}
+                  onChangeText={v => setSetlistForm(prev => ({ ...prev, title: v }))}
+                  placeholder="Song Title..."
+                />
+
+                {setlistForm.titleTe ? (
+                  <View style={{ marginBottom: 12 }}>
+                    <Text style={styles.label}>TELUGU TITLE · తెలుగు శీర్షిక</Text>
+                    <TextInput
+                      style={[styles.textInput]}
+                      value={setlistForm.titleTe}
+                      onChangeText={v => setSetlistForm(prev => ({ ...prev, titleTe: v }))}
+                      placeholder="తెలుగు శీర్షిక..."
+                    />
+                  </View>
+                ) : null}
+
+                {/* Leading Person with Church Member Search */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <Text style={styles.studioLabel}>SONG LEADER / LEADING PERSON</Text>
+                  <TouchableOpacity
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#EFF6FF', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#BFDBFE' }}
+                    onPress={() => {
+                      setMemberPickerTarget('setlist');
+                      setMemberSearchQuery('');
+                      setShowMemberPickerModal(true);
+                    }}
+                  >
+                    <Users size={12} color="#1D4ED8" />
+                    <Text style={{ fontSize: 10, fontWeight: '800', color: '#1D4ED8' }}>Browse Directory</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {setlistForm.ledBy ? (
+                  <View style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    backgroundColor: '#F0FDF4',
+                    borderWidth: 1,
+                    borderColor: '#BBF7D0',
+                    borderRadius: 12,
+                    padding: 10,
+                    marginBottom: 12
+                  }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                      <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#15803D', alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ color: '#fff', fontSize: 13, fontWeight: '800' }}>
+                          {setlistForm.ledBy.charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '800', color: '#14532D' }} numberOfLines={1}>{setlistForm.ledBy}</Text>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#16A34A' }}>🎤 Designated Song Leader</Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => setSetlistForm(prev => ({ ...prev, ledBy: '' }))}
+                      style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: '#DCFCE7' }}
+                    >
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: '#15803D' }}>Change</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={{ marginBottom: 12 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 10, paddingHorizontal: 12, height: 46 }}>
+                      <Search size={16} color="#3B82F6" />
+                      <TextInput
+                        style={{ flex: 1, fontSize: 13, color: '#1a2d5a', fontWeight: '600', marginLeft: 8 }}
+                        value={setlistForm.ledBy}
+                        onChangeText={v => setSetlistForm(prev => ({ ...prev, ledBy: v }))}
+                        placeholder="Type name or search member..."
+                        placeholderTextColor="#94A3B8"
+                      />
+                      {setlistForm.ledBy.length > 0 && (
+                        <TouchableOpacity onPress={() => setSetlistForm(prev => ({ ...prev, ledBy: '' }))}>
+                          <X size={16} color="#94A3B8" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    {/* Inline Member Autocomplete dropdown if user is typing */}
+                    {setlistForm.ledBy.trim().length > 0 && churchMembers.filter(m => m && (m.name || m.firstName || '').toLowerCase().includes(setlistForm.ledBy.toLowerCase()) && (m.name || m.firstName || '') !== setlistForm.ledBy).length > 0 && (
+                      <View style={{ backgroundColor: '#FFFFFF', borderRadius: 10, borderWidth: 1, borderColor: '#CBD5E1', marginTop: 6, maxHeight: 150, overflow: 'hidden', elevation: 3 }}>
+                        <ScrollView nestedScrollEnabled>
+                          {churchMembers
+                            .filter(m => m && (m.name || m.firstName || '').toLowerCase().includes(setlistForm.ledBy.toLowerCase()) && (m.name || m.firstName || '') !== setlistForm.ledBy)
+                            .slice(0, 6)
+                            .map(m => {
+                              const name = m?.name || m?.firstName || 'Member';
+                              return (
+                                <TouchableOpacity
+                                  key={m?.id || name}
+                                  style={{ flexDirection: 'row', alignItems: 'center', padding: 8, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}
+                                  onPress={() => setSetlistForm(prev => ({ ...prev, ledBy: name }))}
+                                >
+                                  <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: '#1a2d5a', alignItems: 'center', justifyContent: 'center', marginRight: 8 }}>
+                                    <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>{name.charAt(0).toUpperCase()}</Text>
+                                  </View>
+                                  <View style={{ flex: 1 }}>
+                                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#1a2d5a' }}>{name}</Text>
+                                    {m.phone && <Text style={{ fontSize: 10, color: '#64748B' }}>{m.phone}</Text>}
+                                  </View>
+                                  <CheckCircle size={14} color="#10B981" />
+                                </TouchableOpacity>
+                              );
+                            })}
+                        </ScrollView>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {/* Key, Time.S, Tempo, Verses with Aligned Layout */}
+                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8, alignItems: 'flex-start' }}>
+                  {/* KEY - Dropdown Selector */}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.colHeaderLabel} numberOfLines={1}>KEY</Text>
+                    <TouchableOpacity
+                      style={[styles.colInputBox, {
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        paddingHorizontal: 8,
+                        borderColor: setlistForm.key ? '#2563EB' : '#CBD5E1',
+                        borderWidth: 1.5,
+                        backgroundColor: '#FFFFFF'
+                      }]}
+                      onPress={() => setShowSetlistKeyPicker(true)}
+                    >
+                      <Text style={{ fontSize: 13, fontWeight: '900', color: setlistForm.key ? '#1D4ED8' : '#94A3B8' }}>
+                        {setlistForm.key || 'Key'}
+                      </Text>
+                      <ChevronDown size={13} color="#2563EB" />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* TIME SIGNATURE */}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.colHeaderLabel} numberOfLines={1}>TIME SIG</Text>
+                    <View style={styles.colInputBox}>
+                      <TextInput
+                        style={styles.colInputText}
+                        value={setlistForm.timeSignature}
+                        onChangeText={v => setSetlistForm(prev => ({ ...prev, timeSignature: v }))}
+                        placeholder="4/4"
+                        placeholderTextColor="#94A3B8"
+                      />
+                    </View>
+                  </View>
+
+                  {/* TEMPO */}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.colHeaderLabel} numberOfLines={1}>TEMPO</Text>
+                    <View style={[styles.colInputBox, { paddingHorizontal: 6, borderColor: setlistForm.tempo ? '#0D9488' : '#CBD5E1', borderWidth: 1.5 }]}>
+                      <TextInput
+                        style={[styles.colInputText, { paddingRight: 2 }]}
+                        value={setlistForm.tempo}
+                        onChangeText={v => setSetlistForm(prev => ({ ...prev, tempo: v }))}
+                        placeholder="100"
+                        placeholderTextColor="#94A3B8"
+                        keyboardType="numeric"
+                      />
+                      <Text style={{ fontSize: 8, fontWeight: '900', color: '#0D9488' }}>BPM</Text>
+                    </View>
+                  </View>
+
+                  {/* VERSES */}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.colHeaderLabel} numberOfLines={1}>VERSES</Text>
+                    <View style={styles.colInputBox}>
+                      <TextInput
+                        style={styles.colInputText}
+                        value={setlistForm.verses}
+                        onChangeText={v => setSetlistForm(prev => ({ ...prev, verses: v }))}
+                        placeholder="4V"
+                        placeholderTextColor="#94A3B8"
+                      />
+                    </View>
+                  </View>
+                </View>
+
+                {/* Suggested Tempo Presets */}
+                <View style={{ marginBottom: 12 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                    <Text style={{ fontSize: 10, fontWeight: '800', color: '#64748B', letterSpacing: 0.3 }}>
+                      SUGGESTED TEMPOS (BPM)
+                    </Text>
+                    {setlistForm.tempo ? (
+                      <Text style={{ fontSize: 10, fontWeight: '800', color: '#0D9488' }}>
+                        Selected: {setlistForm.tempo} BPM
+                      </Text>
+                    ) : null}
+                  </View>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                    {TEMPO_SUGGESTIONS.map(sug => {
+                      const isSelected = setlistForm.tempo === sug.bpm;
+                      return (
+                        <TouchableOpacity
+                          key={sug.bpm}
+                          style={{
+                            paddingHorizontal: 10,
+                            paddingVertical: 5,
+                            borderRadius: 8,
+                            backgroundColor: isSelected ? '#0D9488' : '#F0FDFA',
+                            borderWidth: 1,
+                            borderColor: isSelected ? '#0D9488' : '#CCFBF1',
+                          }}
+                          onPress={() => setSetlistForm(prev => ({ ...prev, tempo: sug.bpm }))}
+                        >
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0F766E' }}>
+                            {sug.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+
+                {/* Prelude Instruments with Suggestion Chips */}
+                <Text style={styles.studioLabel}>PRELUDE INSTRUMENTS</Text>
+                <TextInput
+                  style={[styles.textInput, { marginBottom: 6 }]}
+                  value={setlistForm.prelude}
+                  onChangeText={v => setSetlistForm(prev => ({ ...prev, prelude: v }))}
+                  placeholder="e.g. Acoustic + Drum"
+                />
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, marginBottom: 12 }}>
+                  {PRELUDE_SUGGESTIONS.map(sug => {
+                    const isSelected = setlistForm.prelude === sug;
+                    return (
+                      <TouchableOpacity
+                        key={sug}
+                        style={[{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: isSelected ? '#0D9488' : '#F0FDFA', borderWidth: 1, borderColor: isSelected ? '#0D9488' : '#CCFBF1' }]}
+                        onPress={() => setSetlistForm(prev => ({ ...prev, prelude: sug }))}
+                      >
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#fff' : '#0F766E' }}>
+                          🎵 {sug}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+
+                {/* Interlude Arrangement with Suggestion Chips */}
+                <Text style={styles.label}>INTERLUDE ARRANGEMENT · మధ్యంతర సంగీతం</Text>
+                <TextInput
+                  style={[styles.textInput, { marginBottom: 6 }]}
+                  value={setlistForm.interlude}
+                  onChangeText={v => setSetlistForm(prev => ({ ...prev, interlude: v }))}
+                  placeholder="e.g. Keys + Elec (Alt)"
+                />
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, marginBottom: 12 }}>
+                  {INTERLUDE_SUGGESTIONS.map(sug => {
+                    const isSelected = setlistForm.interlude === sug;
+                    return (
+                      <TouchableOpacity
+                        key={sug}
+                        style={[{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: isSelected ? '#2563EB' : '#EFF6FF', borderWidth: 1, borderColor: isSelected ? '#2563EB' : '#DBEAFE' }]}
+                        onPress={() => setSetlistForm(prev => ({ ...prev, interlude: sug }))}
+                      >
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#fff' : '#1D4ED8' }}>
+                          🎸 {sug}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+
+                {/* Worship / Thematic Notes with Presets */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <Text style={styles.label}>WORSHIP / THEMATIC NOTES · ఆరాధన వివరణ</Text>
+                  {setlistForm.notes ? (
+                    <TouchableOpacity onPress={() => setSetlistForm(prev => ({ ...prev, notes: '' }))}>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#DC2626' }}>Clear Notes</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+                <TextInput
+                  style={[styles.textInput, { height: 68, textAlignVertical: 'top', paddingTop: 10, marginBottom: 6 }]}
+                  multiline
+                  value={setlistForm.notes}
+                  onChangeText={v => setSetlistForm(prev => ({ ...prev, notes: v }))}
+                  placeholder="e.g. Celebrate God's power, strength, and salvation"
+                />
+                <Text style={{ fontSize: 10, fontWeight: '800', color: '#94A3B8', marginBottom: 4, letterSpacing: 0.3 }}>
+                  SUGGESTED THEMATIC FOCUS (TAP TO ADD):
+                </Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, marginBottom: 12 }}>
+                  {NOTES_SUGGESTIONS.map(sug => {
+                    const isAdded = (setlistForm.notes || '').includes(sug);
+                    return (
+                      <TouchableOpacity
+                        key={sug}
+                        style={[{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: isAdded ? '#F59E0B' : '#FEF3C7', borderWidth: 1, borderColor: isAdded ? '#D97706' : '#FDE68A' }]}
+                        onPress={() => {
+                          setSetlistForm(prev => {
+                            if (!prev.notes.trim()) return { ...prev, notes: sug };
+                            if (prev.notes.includes(sug)) return prev;
+                            return { ...prev, notes: `${prev.notes} • ${sug}` };
+                          });
+                        }}
+                      >
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: isAdded ? '#fff' : '#92400E' }}>
+                          {isAdded ? '✓ ' : '+ '}{sug}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+
+                {/* Offertory Toggle */}
+                <TouchableOpacity
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 }}
+                  onPress={() => setSetlistForm(prev => ({ ...prev, isOffertory: !prev.isOffertory }))}
+                >
+                  <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: setlistForm.isOffertory ? '#F59E0B' : '#94A3B8', backgroundColor: setlistForm.isOffertory ? '#F59E0B' : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+                    {setlistForm.isOffertory && <CheckCircle size={14} color="#fff" />}
+                  </View>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#1a2d5a' }}>Is this the Offertory Song?</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.saveBtn, { marginTop: 10 }]}
+                  onPress={handleSaveSetlistSong}
+                >
+                  <Save size={18} color="#fff" />
+                  <Text style={styles.saveBtnTxt}>{editingSetlistIdx !== null ? 'Update Setlist Song' : 'Add to Service Setlist'}</Text>
+                </TouchableOpacity>
+                <View style={{ height: 40 }} />
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
 
   // ── CHURCH MEMBER DIRECTORY MODAL (Leading Person Picker) ──
   const renderMemberPickerModal = () => (
@@ -5451,8 +5461,8 @@ export default function AdminSongEditor() {
 
       {/* Screen Tabs — Long circle pill badge (White in Dark theme, Black in White theme) */}
       <View style={[
-        styles.screenTabBar, 
-        { 
+        styles.screenTabBar,
+        {
           backgroundColor: isDark ? '#18181B' : '#FFFFFF',
           borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#94A3B8',
           borderRadius: 999,
@@ -5479,8 +5489,8 @@ export default function AdminSongEditor() {
           <Text style={[
             styles.screenTabTxt,
             {
-              color: screenTab === 'list' 
-                ? (isDark ? '#000000' : '#FFFFFF') 
+              color: screenTab === 'list'
+                ? (isDark ? '#000000' : '#FFFFFF')
                 : (isDark ? '#A1A1AA' : '#64748B'),
               fontWeight: screenTab === 'list' ? '800' : '700',
               fontSize: 12,
@@ -5503,8 +5513,8 @@ export default function AdminSongEditor() {
           <Text style={[
             styles.screenTabTxt,
             {
-              color: screenTab === 'theme' 
-                ? (isDark ? '#000000' : '#FFFFFF') 
+              color: screenTab === 'theme'
+                ? (isDark ? '#000000' : '#FFFFFF')
                 : (isDark ? '#A1A1AA' : '#64748B'),
               fontWeight: screenTab === 'theme' ? '800' : '700',
               fontSize: 12,
@@ -5528,22 +5538,22 @@ export default function AdminSongEditor() {
                   paddingVertical: 7.5,
                   borderRadius: 999,
                   borderWidth: 1.5,
-                  borderColor: isSelected 
-                    ? (isDark ? '#FFFFFF' : '#000000') 
+                  borderColor: isSelected
+                    ? (isDark ? '#FFFFFF' : '#000000')
                     : (isDark ? 'rgba(255, 255, 255, 0.18)' : '#CBD5E1'),
-                  backgroundColor: isSelected 
-                    ? (isDark ? '#FFFFFF' : '#000000') 
+                  backgroundColor: isSelected
+                    ? (isDark ? '#FFFFFF' : '#000000')
                     : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#FFFFFF'),
                 }}
                 onPress={() => setSelectedCategory(cat)}
                 activeOpacity={0.8}
               >
-                <Text style={{ 
-                  fontSize: 12.5, 
-                  fontWeight: '800', 
-                  color: isSelected 
-                    ? (isDark ? '#000000' : '#FFFFFF') 
-                    : (isDark ? '#E4E4E7' : '#374151') 
+                <Text style={{
+                  fontSize: 12.5,
+                  fontWeight: '800',
+                  color: isSelected
+                    ? (isDark ? '#000000' : '#FFFFFF')
+                    : (isDark ? '#E4E4E7' : '#374151')
                 }}>
                   {cat}
                 </Text>
@@ -6107,68 +6117,68 @@ export default function AdminSongEditor() {
                 {/* Prelude & Interlude Live Arrangement - Two Rows */}
                 <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#F1F5F9' }}>
                   <View style={{ marginBottom: 14 }}>
-                      <Text style={[styles.studioLabel, { color: isDark ? '#CBD5E1' : '#334155' }]}>PRELUDE INSTRUMENTS</Text>
-                      <TextInput
-                        style={[styles.studioInput, { marginBottom: 6 }]}
-                        placeholder="e.g. Acoustic + Drum"
-                        placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
-                        value={editPrelude}
-                        onChangeText={setEditPrelude}
-                      />
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 4 }}>
-                        {PRELUDE_SUGGESTIONS.map(sug => {
-                          const isSelected = editPrelude === sug;
-                          return (
-                            <TouchableOpacity
-                              key={sug}
-                              style={{
-                                paddingHorizontal: 8,
-                                paddingVertical: 4,
-                                borderRadius: 8,
-                                backgroundColor: isSelected ? '#0D9488' : '#F0FDFA',
-                                borderWidth: 1,
-                                borderColor: isSelected ? '#0D9488' : '#CCFBF1'
-                              }}
-                              onPress={() => setEditPrelude(sug)}
-                            >
-                              <Text style={{ fontSize: 10, fontWeight: '700', color: isSelected ? '#fff' : '#0F766E' }}>{sug}</Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </ScrollView>
+                    <Text style={[styles.studioLabel, { color: isDark ? '#CBD5E1' : '#334155' }]}>PRELUDE INSTRUMENTS</Text>
+                    <TextInput
+                      style={[styles.studioInput, { marginBottom: 6 }]}
+                      placeholder="e.g. Acoustic + Drum"
+                      placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+                      value={editPrelude}
+                      onChangeText={setEditPrelude}
+                    />
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 4 }}>
+                      {PRELUDE_SUGGESTIONS.map(sug => {
+                        const isSelected = editPrelude === sug;
+                        return (
+                          <TouchableOpacity
+                            key={sug}
+                            style={{
+                              paddingHorizontal: 8,
+                              paddingVertical: 4,
+                              borderRadius: 8,
+                              backgroundColor: isSelected ? '#0D9488' : '#F0FDFA',
+                              borderWidth: 1,
+                              borderColor: isSelected ? '#0D9488' : '#CCFBF1'
+                            }}
+                            onPress={() => setEditPrelude(sug)}
+                          >
+                            <Text style={{ fontSize: 10, fontWeight: '700', color: isSelected ? '#fff' : '#0F766E' }}>{sug}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
                   </View>
 
                   {/* Interlude */}
                   <View>
-                      <Text style={[styles.studioLabel, { color: isDark ? '#CBD5E1' : '#334155' }]}>INTERLUDE ARRANGEMENT</Text>
-                      <TextInput
-                        style={[styles.studioInput, { marginBottom: 6 }]}
-                        placeholder="e.g. Keys + Elec"
-                        placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
-                        value={editInterlude}
-                        onChangeText={setEditInterlude}
-                      />
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 4 }}>
-                        {INTERLUDE_SUGGESTIONS.map(sug => {
-                          const isSelected = editInterlude === sug;
-                          return (
-                            <TouchableOpacity
-                              key={sug}
-                              style={{
-                                paddingHorizontal: 8,
-                                paddingVertical: 4,
-                                borderRadius: 8,
-                                backgroundColor: isSelected ? '#2563EB' : '#EFF6FF',
-                                borderWidth: 1,
-                                borderColor: isSelected ? '#2563EB' : '#DBEAFE'
-                              }}
-                              onPress={() => setEditInterlude(sug)}
-                            >
-                              <Text style={{ fontSize: 10, fontWeight: '700', color: isSelected ? '#fff' : '#1D4ED8' }}>{sug}</Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </ScrollView>
+                    <Text style={[styles.studioLabel, { color: isDark ? '#CBD5E1' : '#334155' }]}>INTERLUDE ARRANGEMENT</Text>
+                    <TextInput
+                      style={[styles.studioInput, { marginBottom: 6 }]}
+                      placeholder="e.g. Keys + Elec"
+                      placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+                      value={editInterlude}
+                      onChangeText={setEditInterlude}
+                    />
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 4 }}>
+                      {INTERLUDE_SUGGESTIONS.map(sug => {
+                        const isSelected = editInterlude === sug;
+                        return (
+                          <TouchableOpacity
+                            key={sug}
+                            style={{
+                              paddingHorizontal: 8,
+                              paddingVertical: 4,
+                              borderRadius: 8,
+                              backgroundColor: isSelected ? '#2563EB' : '#EFF6FF',
+                              borderWidth: 1,
+                              borderColor: isSelected ? '#2563EB' : '#DBEAFE'
+                            }}
+                            onPress={() => setEditInterlude(sug)}
+                          >
+                            <Text style={{ fontSize: 10, fontWeight: '700', color: isSelected ? '#fff' : '#1D4ED8' }}>{sug}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
                   </View>
                 </View>
 
@@ -6358,33 +6368,33 @@ export default function AdminSongEditor() {
         </Modal>
       )}
 
-          {/* Edit Category Picker removed – using inline chips above */}
-          {/* Edit Key Picker */}
-          {showEditKeyPicker && (
-            <Modal transparent animationType="fade" visible onRequestClose={() => setShowEditKeyPicker(false)}>
-              <TouchableOpacity style={styles.modalOverlay} activeOpacity={1}
-                onPress={() => setShowEditKeyPicker(false)}>
-                <View style={styles.pickerModalBox}>
-                  <Text style={styles.pickerModalTitle}>Select Key</Text>
-                  <ScrollView>
+      {/* Edit Category Picker removed – using inline chips above */}
+      {/* Edit Key Picker */}
+      {showEditKeyPicker && (
+        <Modal transparent animationType="fade" visible onRequestClose={() => setShowEditKeyPicker(false)}>
+          <TouchableOpacity style={styles.modalOverlay} activeOpacity={1}
+            onPress={() => setShowEditKeyPicker(false)}>
+            <View style={styles.pickerModalBox}>
+              <Text style={styles.pickerModalTitle}>Select Key</Text>
+              <ScrollView>
                 <TouchableOpacity style={styles.pickerModalItem}
                   onPress={() => { setEditKey(''); setShowEditKeyPicker(false); }}>
                   <Text style={[styles.pickerModalTxt, !editKey && { color: '#c0392b', fontWeight: '800' }]}>Select / None (Clear Key)</Text>
                   {!editKey && <CheckCircle size={16} color="#c0392b" />}
                 </TouchableOpacity>
 
-                    {KEYS.map(k => (
-                      <TouchableOpacity key={k} style={styles.pickerModalItem}
-                        onPress={() => { setEditKey(k); setShowEditKeyPicker(false); }}>
-                        <Text style={[styles.pickerModalTxt, editKey === k && { color: '#c0392b', fontWeight: '800' }]}>{k}</Text>
-                        {editKey === k && <CheckCircle size={16} color="#c0392b" />}
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              </TouchableOpacity>
-            </Modal>
-          )}
+                {KEYS.map(k => (
+                  <TouchableOpacity key={k} style={styles.pickerModalItem}
+                    onPress={() => { setEditKey(k); setShowEditKeyPicker(false); }}>
+                    <Text style={[styles.pickerModalTxt, editKey === k && { color: '#c0392b', fontWeight: '800' }]}>{k}</Text>
+                    {editKey === k && <CheckCircle size={16} color="#c0392b" />}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      )}
 
       {/* ── Success Modal ── */}
       {showSuccess && (
@@ -6763,7 +6773,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     alignItems: 'center',
   },
   container: { flex: 1, backgroundColor: '#EDE8DC' },
-  
+
   // Hero Section
   hero: {
     backgroundColor: 'transparent',
@@ -6774,14 +6784,14 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   },
   heroTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 0 },
   heroTitle: { color: '#0F172A', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '800', letterSpacing: -0.4 },
-  
-  newBtn: { 
-    backgroundColor: '#000000', 
+
+  newBtn: {
+    backgroundColor: '#000000',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 13, 
-    paddingVertical: 7.5, 
+    paddingHorizontal: 13,
+    paddingVertical: 7.5,
     borderRadius: 999,
     borderWidth: 1.5,
     borderColor: '#000000',
@@ -6815,9 +6825,9 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   screenTabTxtActive: { color: '#FFFFFF', fontWeight: '800' },
 
   scroll: { padding: 14 },
-  
+
   // Cards
-  card: { 
+  card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
     padding: 20,
