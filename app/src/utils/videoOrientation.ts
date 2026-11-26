@@ -1,6 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, useWindowDimensions } from 'react-native';
-import * as ScreenOrientation from 'expo-screen-orientation';
+import { requireOptionalNativeModule } from 'expo-modules-core';
+
+// Matches expo-screen-orientation's OrientationLock enum values without triggering
+// top-level requireNativeModule('ExpoScreenOrientation') on older dev clients.
+const ORIENTATION_LOCK = {
+  DEFAULT: 0,
+  PORTRAIT_UP: 3,
+  LANDSCAPE: 5,
+} as const;
+
+type ScreenOrientationNative = {
+  lockAsync?: (orientationLock: number) => Promise<void>;
+};
+
+function getScreenOrientationNative(): ScreenOrientationNative | null {
+  if (Platform.OS === 'web') return null;
+  try {
+    return requireOptionalNativeModule<ScreenOrientationNative>('ExpoScreenOrientation') ?? null;
+  } catch {
+    return null;
+  }
+}
 
 const activeVideoLeases = new Set<string>();
 let orientationRestoreTimer: ReturnType<typeof setTimeout> | null = null;
@@ -13,27 +34,30 @@ function clearRestoreTimer() {
 }
 
 export async function lockDefaultPortrait(): Promise<void> {
-  if (Platform.OS === 'web') return;
+  const mod = getScreenOrientationNative();
+  if (!mod?.lockAsync) return;
   try {
-    await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    await mod.lockAsync(ORIENTATION_LOCK.PORTRAIT_UP);
   } catch {
     // Non-fatal on unsupported devices/emulators
   }
 }
 
 export async function unlockForVideo(): Promise<void> {
-  if (Platform.OS === 'web') return;
+  const mod = getScreenOrientationNative();
+  if (!mod?.lockAsync) return;
   try {
-    await ScreenOrientation.unlockAsync();
+    await mod.lockAsync(ORIENTATION_LOCK.DEFAULT);
   } catch {
     // Non-fatal on unsupported devices/emulators
   }
 }
 
 export async function lockLandscapeForVideo(): Promise<void> {
-  if (Platform.OS === 'web') return;
+  const mod = getScreenOrientationNative();
+  if (!mod?.lockAsync) return;
   try {
-    await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+    await mod.lockAsync(ORIENTATION_LOCK.LANDSCAPE);
   } catch {
     // Non-fatal on unsupported devices/emulators
   }
