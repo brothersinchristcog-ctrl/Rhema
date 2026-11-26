@@ -15,6 +15,7 @@ import {
   Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useIsFocused } from '@react-navigation/native';
 import YoutubePlayer from 'react-native-youtube-iframe';
 import { WebView } from 'react-native-webview';
 import RhemaYouTubePlayer from '../components/RhemaYouTubePlayer';
@@ -29,7 +30,10 @@ import {
   ShieldCheck,
   Tv,
   CheckCircle2,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react-native';
+import { useVideoOrientationController } from '../utils/videoOrientation';
 import firestore from '@react-native-firebase/firestore';
 import { CachedImage } from '../components/CachedImage';
 import { useChurch } from '../context/ChurchContext';
@@ -44,9 +48,6 @@ import {
   RHEMA_YOUTUBE_CHANNEL_URL,
   RHEMA_YOUTUBE_CHANNEL_ID,
 } from '../services/YouTubeService';
-
-const { width } = Dimensions.get('window');
-const VIDEO_HEIGHT = Math.round(width * 0.5625); // Standard 16:9 ratio
 
 /**
  * Extracts 11-char YouTube video ID from various URL formats
@@ -103,6 +104,7 @@ function formatCleanStreamTitle(rawTitle?: string, isLive?: boolean): string {
 
 export default function YouTubeLiveScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
+  const isFocused = useIsFocused();
   const { activeChurch } = useChurch();
   const { t } = useLanguage();
   const {
@@ -148,6 +150,21 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
   // Pulse animation runs ONLY while stream is live and stops cleanly
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const expectedChannelIdRef = useRef<{ target: string; id: string } | null>(null);
+
+  const hasPlayableLiveStream = streamStatus === 'live' && Boolean(activeVideoId);
+  const {
+    windowWidth,
+    windowHeight,
+    isLandscape,
+    playerWidth: responsiveWidth,
+    playerHeight: responsiveHeight,
+    handleFullScreenChange,
+    toggleOrientation,
+  } = useVideoOrientationController(
+    isFocused && hasPlayableLiveStream,
+    'screen:YouTubeLive',
+    { theaterInLandscape: true, horizontalPadding: 24, maxPortraitWidth: 900 }
+  );
 
   useEffect(() => {
     if (!isLive) {
@@ -428,9 +445,55 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
     }
   };
 
+  if (isLandscape && hasPlayableLiveStream && activeVideoId) {
+    return (
+      <View style={styles.landscapeContainer}>
+        <StatusBar hidden={true} translucent backgroundColor="#000000" />
+        <RhemaYouTubePlayer
+          width={windowWidth}
+          height={windowHeight}
+          play={playing}
+          autoPlay={true}
+          isLive={true}
+          videoId={activeVideoId}
+          title={streamTitle}
+          onChangeState={onPlayerStateChange}
+          onFullScreenChange={handleFullScreenChange}
+        />
+        <View
+          pointerEvents="box-none"
+          style={[
+            styles.landscapeOverlayBar,
+            {
+              top: Math.max(insets.top, 12),
+              left: Math.max(insets.left, 16),
+              right: Math.max(insets.right, 16),
+            },
+          ]}
+        >
+          <TouchableOpacity
+            style={styles.landscapePillBtn}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.8}
+          >
+            <ArrowLeft size={18} color="#FFFFFF" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.landscapePillBtn}
+            onPress={toggleOrientation}
+            activeOpacity={0.8}
+          >
+            <Minimize2 size={18} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, { backgroundColor: screenBg }]}>
       <StatusBar
+        hidden={false}
         barStyle={isDark ? 'light-content' : 'dark-content'}
         backgroundColor={screenBg}
       />
@@ -463,7 +526,18 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
           YouTube Live
         </Text>
 
-        <View style={styles.headerRightSpacer} />
+        {hasPlayableLiveStream ? (
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={toggleOrientation}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            activeOpacity={0.8}
+          >
+            <Maximize2 size={18} color={primaryText} strokeWidth={2.2} />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.headerRightSpacer} />
+        )}
       </View>
 
       <ScrollView
@@ -484,6 +558,7 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
           style={[
             styles.playerContainer,
             {
+              minHeight: responsiveHeight,
               backgroundColor: cardSurface,
               borderColor: adminBorderColor,
               borderWidth: 1,
@@ -491,27 +566,29 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
           ]}
         >
           {loading ? (
-            <View style={[styles.playerPlaceholder, { backgroundColor: cardSurface }]}>
+            <View style={[styles.playerPlaceholder, { height: responsiveHeight, backgroundColor: cardSurface }]}>
               <ActivityIndicator size="large" color="#EF4444" />
               <Text style={[styles.placeholderTxt, { color: secondaryText }]}>
                 Connecting to Live Stream...
               </Text>
             </View>
           ) : streamStatus === 'live' && activeVideoId ? (
-            <View style={styles.playerFrame}>
+            <View style={[styles.playerFrame, { width: responsiveWidth, height: responsiveHeight }]}>
               <RhemaYouTubePlayer
-                height={VIDEO_HEIGHT}
+                width={responsiveWidth}
+                height={responsiveHeight}
                 play={playing}
                 autoPlay={true}
                 isLive={true}
                 videoId={activeVideoId}
                 title={streamTitle}
                 onChangeState={onPlayerStateChange}
+                onFullScreenChange={handleFullScreenChange}
               />
             </View>
           ) : streamStatus === 'completed' ? (
             // Live Stream Completed — Do not play recorded video per Quick Access rules
-            <View style={[styles.offlineBox, { backgroundColor: cardSurface }]}>
+            <View style={[styles.offlineBox, { minHeight: responsiveHeight + 20, backgroundColor: cardSurface }]}>
               <Text style={[styles.offlineTitle, { color: primaryText }]}>
                 Live Stream Completed
               </Text>
@@ -542,7 +619,7 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
             </View>
           ) : (
             // No Live Stream Available Placeholder
-            <View style={[styles.offlineBox, { backgroundColor: cardSurface }]}>
+            <View style={[styles.offlineBox, { minHeight: responsiveHeight + 20, backgroundColor: cardSurface }]}>
               <View
                 style={[
                   styles.offlineIconRing,
@@ -820,7 +897,6 @@ const styles = createAdminThemedStyles({
     marginTop: 12,
     borderRadius: 16,
     overflow: 'hidden',
-    minHeight: VIDEO_HEIGHT,
     elevation: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
@@ -828,14 +904,12 @@ const styles = createAdminThemedStyles({
     shadowRadius: 8,
   },
   playerFrame: {
-    width: width - 24,
-    height: VIDEO_HEIGHT,
+    width: '100%',
     backgroundColor: '#000000',
     borderRadius: 16,
     overflow: 'hidden',
   },
   playerPlaceholder: {
-    height: VIDEO_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -845,13 +919,35 @@ const styles = createAdminThemedStyles({
     marginTop: 12,
   },
   offlineBox: {
-    minHeight: VIDEO_HEIGHT + 20,
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
     paddingVertical: 24,
     borderRadius: 16,
+  },
+  landscapeContainer: {
+    flex: 1,
+    backgroundColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  landscapeOverlayBar: {
+    position: 'absolute',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    zIndex: 20,
+  },
+  landscapePillBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(0, 0, 0, 0.56)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   offlineIconRing: {
     width: 58,

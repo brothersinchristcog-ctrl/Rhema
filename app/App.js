@@ -12,6 +12,7 @@ import SpInAppUpdates, { IAUUpdateKind } from 'sp-react-native-in-app-updates';
 import { loadStartupFonts } from './src/utils/ThumbnailTypography';
 import './src/utils/FontSizeManager';
 import { perfMonitor } from './src/utils/perfMonitor';
+import { getActiveVideoLeaseCount, lockDefaultPortrait } from './src/utils/videoOrientation';
 
 // Import Firebase config to initialize it on app start
 import './src/services/firebaseConfig';
@@ -118,6 +119,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (getActiveVideoLeaseCount() === 0) {
+      lockDefaultPortrait();
+    }
     let cancelled = false;
     const handle = InteractionManager.runAfterInteractions(() => {
       if (cancelled) return;

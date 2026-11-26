@@ -48,6 +48,7 @@ import InAppDocumentViewerModal, {
 } from '../../../components/InAppDocumentViewerModal';
 import UnreadMessagesDivider from '../../../components/UnreadMessagesDivider';
 import { resolveRtdbUnreadAnchor } from '../../../utils/chatUnreadHelper';
+import { useVideoOrientationController } from '../../../utils/videoOrientation';
 import { useChatTheme } from '../constants/useChatTheme';
 import { rhemaChatService } from '../services/rhemaChatService';
 import { rhemaDirectoryService } from '../services/rhemaDirectoryService';
@@ -139,6 +140,17 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
     index: number;
   } | null>(null);
   const [videoModal, setVideoModal] = useState<ChatMediaAttachment | null>(null);
+  const {
+    windowWidth: chatWinWidth,
+    windowHeight: chatWinHeight,
+    isLandscape: isChatVideoLandscape,
+    handleNativeFullscreenUpdate: handleChatVideoFullscreenUpdate,
+    toggleOrientation: toggleChatVideoOrientation,
+  } = useVideoOrientationController(
+    Boolean(videoModal),
+    `modal:ChatVideo:${roomId || 'room'}`,
+    { theaterInLandscape: true }
+  );
   const [docModal, setDocModal] = useState<InAppDocumentViewerDoc | null>(null);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [reportReason, setReportReason] = useState('Inappropriate content');
@@ -1524,22 +1536,35 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
         visible={Boolean(videoModal)}
         transparent
         animationType="fade"
+        supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}
         onRequestClose={() => setVideoModal(null)}
       >
         <View style={styles.lightbox}>
           <TouchableOpacity
-            style={[styles.lightboxClose, { top: topPad }]}
+            style={[styles.lightboxClose, { top: isChatVideoLandscape ? 16 : topPad }]}
             onPress={() => setVideoModal(null)}
           >
             <X size={24} color="#FFFFFF" />
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.lightboxClose, { top: isChatVideoLandscape ? 16 : topPad, right: 72 }]}
+            onPress={toggleChatVideoOrientation}
+          >
+            <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '700' }}>
+              {isChatVideoLandscape ? '9:16' : '16:9'}
+            </Text>
+          </TouchableOpacity>
           {videoModal ? (
             <Video
               source={{ uri: videoModal.url }}
-              style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT * 0.72 }}
+              style={{
+                width: chatWinWidth,
+                height: isChatVideoLandscape ? chatWinHeight : chatWinHeight * 0.72,
+              }}
               useNativeControls
               resizeMode={ResizeMode.CONTAIN}
               shouldPlay
+              onFullscreenUpdate={handleChatVideoFullscreenUpdate}
             />
           ) : null}
         </View>

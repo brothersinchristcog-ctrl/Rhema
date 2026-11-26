@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useIsFocused } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   ArrowLeft,
@@ -34,6 +35,8 @@ import {
   User,
   RefreshCw,
   X,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react-native';
 import RhemaYouTubePlayer, { cleanVideoId } from '../components/RhemaYouTubePlayer';
 import { CachedImage } from '../components/CachedImage';
@@ -44,10 +47,7 @@ import { useAdminTheme } from '../utils/adminThemeHelper';
 import { formatSermonDuration, formatDateDisplay } from '../utils/DateUtils';
 import { resolveRhemaYoutubeUrl, RHEMA_YOUTUBE_CHANNEL_URL } from '../services/YouTubeService';
 import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../utils/instantCache';
-
-const { width } = Dimensions.get('window');
-const PLAYER_WIDTH = Math.min(width - 28, 600);
-const PLAYER_HEIGHT = Math.round(PLAYER_WIDTH * 0.5625);
+import { useVideoOrientationController } from '../utils/videoOrientation';
 
 interface DevotionalVideo {
   id: string;
@@ -143,6 +143,21 @@ export default function DailyVideoScreen({ navigation, route }: any) {
 
   const scrollRef = useRef<ScrollView>(null);
   const insets = useSafeAreaInsets();
+  const isFocused = useIsFocused();
+  const activeVidId = cleanVideoId(activeVideo?.youtubeId);
+  const {
+    windowWidth,
+    windowHeight,
+    isLandscape,
+    playerWidth: responsiveWidth,
+    playerHeight: responsiveHeight,
+    handleFullScreenChange,
+    toggleOrientation,
+  } = useVideoOrientationController(
+    isFocused && Boolean(activeVidId),
+    'screen:DailyVideo',
+    { theaterInLandscape: true, horizontalPadding: 28, maxPortraitWidth: 600 }
+  );
   const {
     isDark,
     screenBg,
@@ -365,7 +380,6 @@ export default function DailyVideoScreen({ navigation, route }: any) {
     }
   };
 
-  const activeVidId = cleanVideoId(activeVideo?.youtubeId);
   const pastVideos = videos.filter((v) => v.youtubeId !== activeVidId);
   const accentRed = '#DC2626';
 
@@ -389,9 +403,55 @@ export default function DailyVideoScreen({ navigation, route }: any) {
     );
   }
 
+  if (isLandscape && activeVidId) {
+    return (
+      <View style={styles.landscapeContainer}>
+        <StatusBar hidden={true} translucent backgroundColor="#000000" />
+        <RhemaYouTubePlayer
+          key={`dev_yt_${activeVidId}`}
+          width={windowWidth}
+          height={windowHeight}
+          play={playing}
+          autoPlay={true}
+          videoId={activeVidId}
+          title={activeVideo?.title}
+          onChangeState={onPlayerStateChange}
+          onFullScreenChange={handleFullScreenChange}
+        />
+        <View
+          pointerEvents="box-none"
+          style={[
+            styles.landscapeOverlayBar,
+            {
+              top: Math.max(insets.top, 12),
+              left: Math.max(insets.left, 16),
+              right: Math.max(insets.right, 16),
+            },
+          ]}
+        >
+          <TouchableOpacity
+            style={styles.landscapePillBtn}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.8}
+          >
+            <ArrowLeft size={18} color="#FFFFFF" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.landscapePillBtn}
+            onPress={toggleOrientation}
+            activeOpacity={0.8}
+          >
+            <Minimize2 size={18} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, { backgroundColor: screenBg }]}>
       <StatusBar
+        hidden={false}
         barStyle={isDark ? 'light-content' : 'dark-content'}
         backgroundColor={screenBg}
       />
@@ -445,17 +505,32 @@ export default function DailyVideoScreen({ navigation, route }: any) {
         </View>
 
         {activeVideo ? (
-          <TouchableOpacity
-            style={[
-              styles.circularBtn,
-              { backgroundColor: cardSurface, borderColor: adminBorderColor },
-            ]}
-            onPress={handleShare}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            activeOpacity={0.8}
-          >
-            <Share2 size={18} color={primaryText} strokeWidth={2.2} />
-          </TouchableOpacity>
+          <View style={styles.headerActionsGroup}>
+            {activeVidId ? (
+              <TouchableOpacity
+                style={[
+                  styles.circularBtn,
+                  { backgroundColor: cardSurface, borderColor: adminBorderColor },
+                ]}
+                onPress={toggleOrientation}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                activeOpacity={0.8}
+              >
+                <Maximize2 size={17} color={primaryText} strokeWidth={2.2} />
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity
+              style={[
+                styles.circularBtn,
+                { backgroundColor: cardSurface, borderColor: adminBorderColor },
+              ]}
+              onPress={handleShare}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              activeOpacity={0.8}
+            >
+              <Share2 size={18} color={primaryText} strokeWidth={2.2} />
+            </TouchableOpacity>
+          </View>
         ) : (
           <View style={styles.headerSpacer} />
         )}
@@ -479,26 +554,29 @@ export default function DailyVideoScreen({ navigation, route }: any) {
           style={[
             styles.playerCard,
             {
+              width: responsiveWidth,
+              minHeight: responsiveHeight,
               backgroundColor: cardSurface,
               borderColor: adminBorderColor,
             },
           ]}
         >
           {activeVidId ? (
-            <View style={styles.playerFrame}>
+            <View style={[styles.playerFrame, { width: responsiveWidth, height: responsiveHeight }]}>
               <RhemaYouTubePlayer
                 key={`dev_yt_${activeVidId}`}
-                width={PLAYER_WIDTH}
-                height={PLAYER_HEIGHT}
+                width={responsiveWidth}
+                height={responsiveHeight}
                 play={playing}
                 autoPlay={true}
                 videoId={activeVidId}
                 title={activeVideo?.title}
                 onChangeState={onPlayerStateChange}
+                onFullScreenChange={handleFullScreenChange}
               />
             </View>
           ) : (
-            <View style={[styles.emptyPlayerBox, { backgroundColor: cardSurface }]}>
+            <View style={[styles.emptyPlayerBox, { minHeight: responsiveHeight + 16, backgroundColor: cardSurface }]}>
               <View
                 style={[
                   styles.emptyIconRing,
@@ -984,6 +1062,11 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
   },
+  headerActionsGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
 
   scrollContent: { paddingBottom: 42 },
 
@@ -994,9 +1077,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     overflow: 'hidden',
     borderWidth: 1,
-    minHeight: PLAYER_HEIGHT,
     alignSelf: 'center',
-    width: PLAYER_WIDTH,
     elevation: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
@@ -1004,16 +1085,36 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
   },
   playerFrame: {
-    width: PLAYER_WIDTH,
-    height: PLAYER_HEIGHT,
     backgroundColor: '#000000',
   },
   emptyPlayerBox: {
-    minHeight: PLAYER_HEIGHT + 16,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
     paddingVertical: 24,
+  },
+  landscapeContainer: {
+    flex: 1,
+    backgroundColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  landscapeOverlayBar: {
+    position: 'absolute',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    zIndex: 20,
+  },
+  landscapePillBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(0, 0, 0, 0.56)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyIconRing: {
     width: 56,

@@ -33,7 +33,10 @@ import {
   User,
   Calendar,
   X,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react-native';
+import { useIsFocused } from '@react-navigation/native';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { RHEMA_CHURCH_ID } from '../constants/ChurchConfig';
@@ -43,6 +46,7 @@ import InAppDocumentViewerModal, {
   InAppDocumentViewerDoc,
 } from '../components/InAppDocumentViewerModal';
 import { Testimony, TestimonyAttachment, TestimonyStatus } from '../types/testimony';
+import { useVideoOrientationController } from '../utils/videoOrientation';
 
 const formatDuration = (ms?: number | null): string => {
   if (!ms || ms <= 0) return '0:00';
@@ -110,6 +114,17 @@ export default function TestimonyDetailScreen({ route, navigation }: any) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [positionMs, setPositionMs] = useState(0);
   const [durationMs, setDurationMs] = useState<number>(0);
+  const isFocused = useIsFocused();
+  const {
+    isLandscape: isVideoLandscape,
+    playerHeight: responsiveVideoHeight,
+    handleNativeFullscreenUpdate,
+    toggleOrientation: toggleVideoOrientation,
+  } = useVideoOrientationController(
+    isFocused && Boolean(videoUrl),
+    `screen:TestimonyDetail:${String(testimonyId || 'default')}`,
+    { theaterInLandscape: false, horizontalPadding: 64, maxPortraitWidth: 600, landscapeVerticalReserve: 96 }
+  );
 
   // Attachments state
   const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
@@ -579,7 +594,7 @@ export default function TestimonyDetailScreen({ route, navigation }: any) {
               )}
             </View>
 
-            <View style={styles.videoPlayerWrapper}>
+            <View style={[styles.videoPlayerWrapper, { height: Math.max(200, responsiveVideoHeight) }]}>
               {videoLoading ? (
                 <View style={styles.videoStateOverlay}>
                   <ActivityIndicator size="large" color="#FFFFFF" />
@@ -605,6 +620,7 @@ export default function TestimonyDetailScreen({ route, navigation }: any) {
                   useNativeControls
                   resizeMode={ResizeMode.CONTAIN}
                   shouldPlay={false}
+                  onFullscreenUpdate={handleNativeFullscreenUpdate}
                   onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
                   onError={() =>
                     setVideoError('Unable to play this video format on your device. Please tap Retry.')
@@ -633,11 +649,32 @@ export default function TestimonyDetailScreen({ route, navigation }: any) {
                   )}
                 </TouchableOpacity>
 
-                {testimony.videoSizeBytes ? (
-                  <Text style={[styles.videoMetaText, { color: secondaryTextColor }]}>
-                    {formatFileSize(testimony.videoSizeBytes)}
-                  </Text>
-                ) : null}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <TouchableOpacity
+                    style={[styles.durationPill, { backgroundColor: subtleBg, borderColor, paddingVertical: 7, paddingHorizontal: 10 }]}
+                    onPress={toggleVideoOrientation}
+                    activeOpacity={0.8}
+                  >
+                    {isVideoLandscape ? (
+                      <Minimize2 size={13} color={primaryTextColor} />
+                    ) : (
+                      <Maximize2 size={13} color={primaryTextColor} />
+                    )}
+                    <Text style={[styles.durationPillText, { color: primaryTextColor }]}>
+                      {isVideoLandscape ? 'Portrait' : 'Landscape'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.durationPill, { backgroundColor: subtleBg, borderColor, paddingVertical: 7, paddingHorizontal: 10 }]}
+                    onPress={() => {
+                      videoRef.current?.presentFullscreenPlayer?.().catch(() => {});
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Maximize2 size={13} color={accentColor} />
+                    <Text style={[styles.durationPillText, { color: accentColor }]}>Full Screen</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
           </View>

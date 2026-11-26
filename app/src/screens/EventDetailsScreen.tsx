@@ -40,10 +40,14 @@ import {
   HeartHandshake,
   Send,
   XCircle,
-  X
+  X,
+  Maximize2,
+  Minimize2
 } from 'lucide-react-native';
+import { useIsFocused } from '@react-navigation/native';
 import VolunteerService from '../services/VolunteerService';
 import { openZoomMeeting } from '../utils/ZoomLauncher';
+import { useVideoOrientationController } from '../utils/videoOrientation';
 import YoutubePlayer from 'react-native-youtube-iframe';
 import { WebView } from 'react-native-webview';
 import RhemaYouTubePlayer from '../components/RhemaYouTubePlayer';
@@ -384,6 +388,21 @@ export default function EventDetailsScreen({ route, navigation }: any) {
   const [isStreamLiveNow, setIsStreamLiveNow] = useState<boolean>(false);
   const [isStreamEnded, setIsStreamEnded] = useState<boolean>(false);
   const [liveStreamLoading, setLiveStreamLoading] = useState<boolean>(false);
+  const isFocused = useIsFocused();
+  const hasEventVideoStream = Boolean(liveStreamVideoId || manualYoutubeId || autoYoutubeId);
+  const {
+    windowWidth: evWinWidth,
+    windowHeight: evWinHeight,
+    isLandscape: evIsLandscape,
+    playerWidth: evPlayerWidth,
+    playerHeight: evPlayerHeight,
+    handleFullScreenChange: handleEventVideoFullscreenChange,
+    toggleOrientation: toggleEventVideoOrientation,
+  } = useVideoOrientationController(
+    isFocused && hasEventVideoStream,
+    `screen:EventDetails:${String(eventId || initialEvent.id || 'default')}`,
+    { theaterInLandscape: false, horizontalPadding: 36, maxPortraitWidth: 640, landscapeVerticalReserve: 72 }
+  );
 
   // Auto-search YouTube if event is completed (or live stream ended), no manual ID, and church has YouTube handle
   useEffect(() => {
@@ -1559,6 +1578,32 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                     ? 'Live Now · లైవ్ ఇప్పుడు'
                     : 'Event Recording · కార్యక్రమం వీడియో'}
               </Text>
+              {(isStreamLiveNow && liveStreamVideoId) || ((status === 'completed' || isStreamEnded) && recordingVideoId) ? (
+                <TouchableOpacity
+                  onPress={toggleEventVideoOrientation}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 4,
+                    paddingHorizontal: 10,
+                    paddingVertical: 5,
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    backgroundColor: colors.surface,
+                  }}
+                  activeOpacity={0.8}
+                >
+                  {evIsLandscape ? (
+                    <Minimize2 size={14} color={colors.text} />
+                  ) : (
+                    <Maximize2 size={14} color={colors.text} />
+                  )}
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text }}>
+                    {evIsLandscape ? 'Portrait' : 'Landscape'}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
 
             {/* ── 1. ACTIVE LIVE STREAM: Event is live & stream is actively broadcasting ── */}
@@ -1573,14 +1618,16 @@ export default function EventDetailsScreen({ route, navigation }: any) {
 
                 {/* ── EMBEDDED NATIVE YOUTUBE PLAYER ── */}
                 <View style={styles.liveStreamPlayerContainer}>
-                  <View style={styles.videoContainer}>
+                  <View style={[styles.videoContainer, { width: evPlayerWidth, height: evPlayerHeight, alignSelf: 'center' }]}>
                     <RhemaYouTubePlayer
-                      height={width * 0.56}
+                      width={evPlayerWidth}
+                      height={evPlayerHeight}
                       play={true}
                       autoPlay={true}
                       isLive={true}
                       videoId={liveStreamVideoId}
                       title={event.title || 'Live Service'}
+                      onFullScreenChange={handleEventVideoFullscreenChange}
                     />
                   </View>
                 </View>
@@ -1628,14 +1675,16 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                       </Text>
                     </View>
                   )}
-                  <View style={styles.videoContainer}>
+                  <View style={[styles.videoContainer, { width: evPlayerWidth, height: evPlayerHeight, alignSelf: 'center' }]}>
                     <RhemaYouTubePlayer
-                      height={width * 0.56}
+                      width={evPlayerWidth}
+                      height={evPlayerHeight}
                       play={false}
                       autoPlay={false}
                       isLive={false}
                       videoId={recordingVideoId}
                       title={event.title || 'Event Recording'}
+                      onFullScreenChange={handleEventVideoFullscreenChange}
                     />
                   </View>
                 </View>

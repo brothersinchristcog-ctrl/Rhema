@@ -9,15 +9,16 @@ const extractYoutubeId = (url: string) => {
 };
 import YoutubePlayer from 'react-native-youtube-iframe';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Platform, StatusBar, Linking, Alert, Dimensions, PanResponder, GestureResponderEvent } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Platform, StatusBar, Linking, Alert, PanResponder, GestureResponderEvent } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, ChevronLeft, Bookmark, Globe, Sliders, ExternalLink } from 'lucide-react-native';
+import { ArrowLeft, ChevronLeft, Bookmark, Globe, Sliders, ExternalLink, Maximize2, Minimize2 } from 'lucide-react-native';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
 import { SupportedLanguage } from '../locales';
 import { WorshipSong } from '../services/FirestoreService';
 import { SongLanguageHelper, SongLyricsResult } from '../services/SongLanguageHelper';
 import { TransliterationService } from '../services/TransliterationService';
+import { useVideoOrientationController } from '../utils/videoOrientation';
 
 interface SongDetailModalProps {
   visible: boolean;
@@ -35,8 +36,6 @@ interface SongDetailModalProps {
   onEdit?: (song: WorshipSong) => void;
   onDelete?: (song: WorshipSong) => void;
 }
-
-const { width } = Dimensions.get('window');
 
 export default function SongDetailModal({
   visible,
@@ -57,6 +56,19 @@ export default function SongDetailModal({
   const { language, t } = useLanguage();
   const { colors, currentThemeOption } = useTheme();
   const [selectedLangOverride, setSelectedLangOverride] = useState<SupportedLanguage | null>(null);
+  const rawYoutubeId = song?.youtubeId ? extractYoutubeId(song.youtubeId) : '';
+  const hasValidYoutube = Boolean(rawYoutubeId && rawYoutubeId.length === 11);
+  const {
+    isLandscape,
+    playerWidth,
+    playerHeight,
+    handleFullScreenChange,
+    toggleOrientation,
+  } = useVideoOrientationController(
+    visible && hasValidYoutube,
+    `modal:SongDetail:${song?.id || 'song'}`,
+    { theaterInLandscape: false, horizontalPadding: 40, maxPortraitWidth: 480, landscapeVerticalReserve: 72 }
+  );
 
   const scrollRef = useRef<ScrollView>(null);
   const onNextRef = useRef(onNext);
@@ -243,7 +255,13 @@ export default function SongDetailModal({
   const hasBandFlow = !!(song.prelude || song.interlude);
 
   return (
-    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent={false}
+      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}
+      onRequestClose={onClose}
+    >
       <View
         style={[styles.modalCard, { backgroundColor: colors.background }]}
         onTouchStart={handleTouchStart}
@@ -361,25 +379,53 @@ export default function SongDetailModal({
             {(() => {
               const yId = song.youtubeId ? extractYoutubeId(song.youtubeId) : '';
               if (!yId || yId.length !== 11) return null;
-              const playerWidth = Math.min(width - 40, 480);
-              const playerHeight = Math.round((playerWidth * 9) / 16);
               return (
-                <View style={{
-                  marginBottom: 16,
-                  borderRadius: 16,
-                  overflow: 'hidden',
-                  backgroundColor: '#000',
-                  borderWidth: 1,
-                  borderColor: isDark ? '#27272A' : '#E2E8F0',
-                  alignItems: 'center',
-                  height: playerHeight,
-                }}>
-                  <YoutubePlayer
-                    height={playerHeight}
-                    width={playerWidth}
-                    videoId={yId}
-                    play={false}
-                  />
+                <View style={{ marginBottom: 16 }}>
+                  <View style={{
+                    borderRadius: 16,
+                    overflow: 'hidden',
+                    backgroundColor: '#000',
+                    borderWidth: 1,
+                    borderColor: isDark ? '#27272A' : '#E2E8F0',
+                    alignItems: 'center',
+                    alignSelf: 'center',
+                    width: playerWidth,
+                    height: playerHeight,
+                  }}>
+                    <YoutubePlayer
+                      height={playerHeight}
+                      width={playerWidth}
+                      videoId={yId}
+                      play={false}
+                      onFullScreenChange={handleFullScreenChange}
+                    />
+                  </View>
+                  <TouchableOpacity
+                    onPress={toggleOrientation}
+                    activeOpacity={0.8}
+                    style={{
+                      alignSelf: 'flex-end',
+                      marginTop: 8,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 5,
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                      borderRadius: 10,
+                      borderWidth: 1,
+                      borderColor: isDark ? '#27272A' : '#E2E8F0',
+                      backgroundColor: isDark ? '#18181B' : '#F8FAFC',
+                    }}
+                  >
+                    {isLandscape ? (
+                      <Minimize2 size={13} color={colors.text} />
+                    ) : (
+                      <Maximize2 size={13} color={colors.text} />
+                    )}
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text }}>
+                      {isLandscape ? 'Portrait' : 'Landscape'}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               );
             })()}
