@@ -6,7 +6,6 @@ import {
   FlatList,
   TouchableOpacity,
   TextInput,
-  Image,
   Alert,
   Dimensions,
   Platform,
@@ -38,6 +37,7 @@ import {
 import CareCellService from '../../../../services/CareCellService';
 import { useAuth } from '../../../../context/AuthContext';
 import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
+import CachedImage from '../../../../components/CachedImage';
 import GrantAdminAccessModal from '../components/GrantAdminAccessModal';
 import { CareCell, CareCellStatus, formatCareCellCode, formatCareCellDisplayName } from '../../../../types/CareCellTypes';
 
@@ -245,7 +245,7 @@ export default function CareCellsManageTab({
         {/* Leader Info Row */}
         <View style={styles.leaderRow}>
           {item.leaderPhoto ? (
-            <Image source={{ uri: item.leaderPhoto }} style={styles.leaderAvatar} />
+            <CachedImage uri={item.leaderPhoto} style={styles.leaderAvatar} />
           ) : (
             <View style={[styles.leaderAvatarFallback, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder, borderWidth: 1 }]}>
               <User size={16} color={primaryText} />
@@ -467,6 +467,10 @@ export default function CareCellsManageTab({
         renderItem={renderCellCard}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Users size={44} color="#CBD5E1" />
@@ -479,17 +483,20 @@ export default function CareCellsManageTab({
           </View>
         }
       />
-      <GrantAdminAccessModal
-        visible={grantAccessModalVisible}
-        cell={grantAccessCell}
-        onClose={() => {
-          setGrantAccessModalVisible(false);
-          setGrantAccessCell(null);
-        }}
-        onSaved={onRefreshCells}
-      />
+      {grantAccessModalVisible && (
+        <GrantAdminAccessModal
+          visible={grantAccessModalVisible}
+          cell={grantAccessCell}
+          onClose={() => {
+            setGrantAccessModalVisible(false);
+            setGrantAccessCell(null);
+          }}
+          onSaved={onRefreshCells}
+        />
+      )}
 
-      {/* ── Custom Delete Confirmation Modal ── */}
+      {/* ── Custom Delete Confirmation Modal (lazy mounted) ── */}
+      {!!cellToDelete && (
       <Modal
         visible={!!cellToDelete}
         transparent
@@ -590,8 +597,10 @@ export default function CareCellsManageTab({
           </View>
         </View>
       </Modal>
+      )}
 
-      {/* ── Custom Delete Success Card Modal ── */}
+      {/* ── Custom Delete Success Card Modal (lazy mounted) ── */}
+      {deleteSuccessModalVisible && (
       <Modal
         visible={deleteSuccessModalVisible}
         transparent
@@ -689,6 +698,7 @@ export default function CareCellsManageTab({
           </View>
         </View>
       </Modal>
+      )}
     </View>
   );
 }

@@ -12,6 +12,11 @@ import {
 } from '../utils/phoneUtils';
 import MemberIdService from './MemberIdService';
 import { isSuperAdminMember } from '../utils/roleUtils';
+import { omitUndefinedFields } from '../utils/firestoreSanitizer';
+import {
+  isEmptyGhostRegistrationRequest,
+  normalizeRegistrationDocId,
+} from '../utils/registrationRequestHelper';
 
 // ─── Data Interfaces ─────────────────────────────────────────────────────────
 
@@ -514,14 +519,14 @@ class FirestoreService {
         .collection('memberPhoneIndex')
         .doc(last10)
         .set(
-          {
+          this.omitUndefinedFields({
             last10,
             canonicalPhone,
             memberDocId,
             churchId: targetChurchId,
             updatedAt: FieldValue.serverTimestamp(),
             ...extra,
-          },
+          }),
           { merge: true }
         );
     } catch (err) {
@@ -5510,14 +5515,19 @@ class FirestoreService {
       const rawDigits = phone.replace(/\D/g, '');
       const docId = rawDigits.slice(-10);
       if (!docId) return null;
-      const doc = await firestore()
+      const docRef = firestore()
         .collection('Rhema Church')
         .doc(churchId)
         .collection('registration_requests')
-        .doc(docId)
-        .get();
+        .doc(docId);
+      const doc = await docRef.get();
       if (doc.exists()) {
-        return { id: doc.id, ...doc.data() } as RegistrationRequest;
+        const reqObj = { id: doc.id, ...doc.data() } as RegistrationRequest;
+        if (isEmptyGhostRegistrationRequest(reqObj)) {
+          docRef.delete().catch(() => {});
+          return null;
+        }
+        return reqObj;
       }
       return null;
     } catch (e) {
@@ -5565,7 +5575,7 @@ class FirestoreService {
         .doc(churchId)
         .collection('registration_requests')
         .doc(docId)
-        .set(payload, { merge: true });
+        .set(this.omitUndefinedFields(payload), { merge: true });
 
       return { success: true, id: docId };
     } catch (e: any) {
@@ -5586,7 +5596,15 @@ class FirestoreService {
       }
 
       const snap = await query.get();
-      const list = snap.docs.map((d: any) => ({ id: d.id, ...d.data() } as RegistrationRequest));
+      const list: RegistrationRequest[] = [];
+      snap.docs.forEach((d: any) => {
+        const reqObj = { id: d.id, ...d.data() } as RegistrationRequest;
+        if (isEmptyGhostRegistrationRequest(reqObj)) {
+          d.ref.delete().catch(() => {});
+          return;
+        }
+        list.push(reqObj);
+      });
       return list.sort((a: any, b: any) => {
         const tA = new Date(a.createdAt || 0).getTime();
         const tB = new Date(b.createdAt || 0).getTime();
@@ -5619,7 +5637,15 @@ class FirestoreService {
             callback([]);
             return;
           }
-          const list = snap.docs.map((d: any) => ({ id: d.id, ...d.data() } as RegistrationRequest));
+          const list: RegistrationRequest[] = [];
+          snap.docs.forEach((d: any) => {
+            const reqObj = { id: d.id, ...d.data() } as RegistrationRequest;
+            if (isEmptyGhostRegistrationRequest(reqObj)) {
+              d.ref.delete().catch(() => {});
+              return;
+            }
+            list.push(reqObj);
+          });
           list.sort((a: any, b: any) => {
             const tA = new Date(a.createdAt || 0).getTime();
             const tB = new Date(b.createdAt || 0).getTime();
@@ -5680,7 +5706,13 @@ class FirestoreService {
         .onSnapshot(
           (snap: any) => {
             if (snap && snap.exists()) {
-              callback({ id: snap.id, ...snap.data() } as RegistrationRequest);
+              const reqObj = { id: snap.id, ...snap.data() } as RegistrationRequest;
+              if (isEmptyGhostRegistrationRequest(reqObj)) {
+                snap.ref.delete().catch(() => {});
+                callback(null);
+              } else {
+                callback(reqObj);
+              }
             } else {
               callback(null);
             }
@@ -5695,6 +5727,10 @@ class FirestoreService {
     }
   }
 
+  private omitUndefinedFields<T>(value: T): T {
+    return omitUndefinedFields(value);
+  }
+
   async approveRegistrationRequest(
     churchId: string, 
     requestId: string, 
@@ -5702,9 +5738,10 @@ class FirestoreService {
     adminName?: string
   ): Promise<{ success: boolean; memberId?: string; error?: string }> {
     try {
+      const effectiveChurchId = String(churchId || '').trim() || (await this.getChurchId()) || RHEMA_CHURCH_ID;
       const docRef = firestore()
         .collection('Rhema Church')
-        .doc(churchId)
+        .doc(effectiveChurchId)
         .collection('registration_requests')
         .doc(requestId);
 
@@ -5713,9 +5750,12 @@ class FirestoreService {
         return { success: false, error: 'Registration request not found' };
       }
 
-      const reqData = snap.data() as RegistrationRequest;
-      const targetMemberId = reqData.authUid || requestId;
-      const fullName = (reqData.fullName || `${reqData.firstName || ''} ${reqData.lastName || ''}`).trim();
+      const reqData = (snap.data() || {}) as RegistrationRequest;
+      const resolvedChurchId = String(effectiveChurchId || reqData.churchId || RHEMA_CHURCH_ID).trim() || RHEMA_CHURCH_ID;
+      const targetMemberId = String(reqData.authUid || requestId || '').trim() || requestId;
+      const fullName =
+        (reqData.fullName || `${reqData.firstName || ''} ${reqData.lastName || ''}`).trim() || 'Member';
+      const fallbackPhone = reqData.phone || (normalizePhone10(requestId) ? requestId : '') || '';
 
       // Create official member in members subcollection
       const newMemberDoc: any = {
@@ -5723,7 +5763,7 @@ class FirestoreService {
         firstName: reqData.firstName || '',
         lastName: reqData.lastName || '',
         name: fullName,
-        phone: reqData.phone,
+        phone: fallbackPhone,
         email: reqData.email || '',
         gender: reqData.gender || 'Male',
         dob: reqData.dob || '',
@@ -5747,8 +5787,8 @@ class FirestoreService {
         userType: 'Member',
         role: 'Member',
         status: 'Active',
-        churchId,
-        primaryChurchId: churchId,
+        churchId: resolvedChurchId,
+        primaryChurchId: resolvedChurchId,
         joinDate: new Date().toISOString(),
         approvedAt: new Date().toISOString(),
         approvedByUid: adminUid || '',
@@ -5759,16 +5799,20 @@ class FirestoreService {
 
       // Auto-generate Church Member ID (e.g. Rhema-001)
       try {
-        const { code, sequence } = await MemberIdService.getNextMemberCode(churchId);
-        newMemberDoc.memberCode = code;
-        newMemberDoc.memberSequence = sequence;
-        newMemberDoc.memberCodeAssignedAt = new Date().toISOString();
+        const idResult = await MemberIdService.getNextMemberCode(resolvedChurchId);
+        if (idResult?.code) {
+          newMemberDoc.memberCode = idResult.code;
+          newMemberDoc.memberCodeAssignedAt = new Date().toISOString();
+        }
+        if (typeof idResult?.sequence === 'number' && !isNaN(idResult.sequence)) {
+          newMemberDoc.memberSequence = idResult.sequence;
+        }
       } catch (idErr) {
         console.warn('⚠️ MemberIdService auto-generation notice (non-fatal):', idErr);
       }
 
-      const membersCol = firestore().collection('Rhema Church').doc(churchId).collection('members');
-      const last10 = normalizePhone10(reqData.phone || requestId);
+      const membersCol = firestore().collection('Rhema Church').doc(resolvedChurchId).collection('members');
+      const last10 = normalizePhone10(fallbackPhone || requestId);
       const duplicateIdsToRemove = new Set<string>();
       let preservedRole = 'Member';
       let preservedExtras: Record<string, any> = {};
@@ -5784,7 +5828,7 @@ class FirestoreService {
             if (dPhone === last10 || d.id === requestId || d.id === `guest_${requestId}`) {
               const roleStr = String(dData.userType || '').toLowerCase();
               if (roleStr.includes('super') || roleStr.includes('admin') || roleStr.includes('pastor')) {
-                preservedRole = dData.userType;
+                preservedRole = String(dData.userType || 'Member');
               }
               preservedExtras = {
                 ...(dData.primarySkill ? { primarySkill: dData.primarySkill } : {}),
@@ -5807,18 +5851,17 @@ class FirestoreService {
         duplicateIdsToRemove.add(`guest_${requestId}`);
       }
 
-      await membersCol.doc(targetMemberId).set(
-        {
-          ...preservedExtras,
-          ...newMemberDoc,
-          ...(last10 ? { normalizedPhone10: last10 } : {}),
-          uid: reqData.authUid || targetMemberId,
-          userType: preservedRole,
-          role: preservedRole,
-          isGuest: false,
-        },
-        { merge: true }
-      );
+      const memberPayload = this.omitUndefinedFields({
+        ...preservedExtras,
+        ...newMemberDoc,
+        ...(last10 ? { normalizedPhone10: last10 } : {}),
+        uid: reqData.authUid || targetMemberId,
+        userType: preservedRole || 'Member',
+        role: preservedRole || 'Member',
+        isGuest: false,
+      });
+
+      await membersCol.doc(targetMemberId).set(memberPayload, { merge: true });
 
       for (const dupId of duplicateIdsToRemove) {
         if (dupId && dupId !== targetMemberId) {
@@ -5826,19 +5869,21 @@ class FirestoreService {
         }
       }
       if (last10) {
-        await this.upsertPhoneIndex(churchId, reqData.phone || last10, targetMemberId, {
-          userType: preservedRole,
+        await this.upsertPhoneIndex(resolvedChurchId, fallbackPhone || last10, targetMemberId, {
+          userType: preservedRole || 'Member',
         }).catch(() => {});
       }
 
       // Update registration request status
-      await docRef.update({
-        status: 'approved',
-        reviewedByUid: adminUid || '',
-        reviewedByName: adminName || 'Admin',
-        reviewedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
+      await docRef.update(
+        this.omitUndefinedFields({
+          status: 'approved',
+          reviewedByUid: adminUid || '',
+          reviewedByName: adminName || 'Admin',
+          reviewedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        })
+      );
 
       return { success: true, memberId: targetMemberId };
     } catch (e: any) {
@@ -5875,14 +5920,16 @@ class FirestoreService {
         }
       }
 
-      await docRef.update({
-        status: 'rejected',
-        rejectionReason: reason || 'Application not approved at this time',
-        reviewedByUid: adminUid || '',
-        reviewedByName: adminName || 'Admin',
-        reviewedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
+      await docRef.update(
+        this.omitUndefinedFields({
+          status: 'rejected',
+          rejectionReason: reason || 'Application not approved at this time',
+          reviewedByUid: adminUid || '',
+          reviewedByName: adminName || 'Admin',
+          reviewedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        })
+      );
 
       return { success: true };
     } catch (e: any) {
@@ -5893,27 +5940,26 @@ class FirestoreService {
 
   async deleteRegistrationRequest(churchId: string, requestId: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const docRef = firestore()
-        .collection('Rhema Church')
-        .doc(churchId)
-        .collection('registration_requests')
-        .doc(requestId);
+      const normalizedDocId = normalizeRegistrationDocId(requestId);
+      const candidateReqIds = Array.from(new Set([String(requestId || '').trim(), normalizedDocId].filter(Boolean)));
+      const reqCol = firestore().collection('Rhema Church').doc(churchId).collection('registration_requests');
+      const membersCol = firestore().collection('Rhema Church').doc(churchId).collection('members');
 
-      const snap = await docRef.get();
-      if (snap.exists()) {
-        const reqData = snap.data() as RegistrationRequest;
-        const targetMemberId = reqData.authUid || requestId;
-        // Ensure any member doc is also permanently deleted
-        await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(targetMemberId).delete().catch(() => {});
-        if (reqData.authUid && reqData.authUid !== requestId) {
-          await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(reqData.authUid).delete().catch(() => {});
+      for (const reqDocId of candidateReqIds) {
+        const docRef = reqCol.doc(reqDocId);
+        const snap = await docRef.get().catch(() => null);
+        if (snap && snap.exists()) {
+          const reqData = (snap.data() || {}) as RegistrationRequest;
+          const memberCandidates = Array.from(
+            new Set([reqData.authUid, reqDocId, normalizedDocId].map((v) => String(v || '').trim()).filter(Boolean))
+          );
+          for (const memberId of memberCandidates) {
+            await membersCol.doc(memberId).delete().catch(() => {});
+          }
         }
-        if (requestId) {
-          await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(requestId).delete().catch(() => {});
-        }
+        await docRef.delete().catch(() => {});
       }
 
-      await docRef.delete();
       return { success: true };
     } catch (e: any) {
       console.error('deleteRegistrationRequest error:', e);

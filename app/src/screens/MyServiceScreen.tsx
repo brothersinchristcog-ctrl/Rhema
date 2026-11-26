@@ -44,6 +44,7 @@ import { useChurch } from '../context/ChurchContext';
 import { useAdminTheme } from '../utils/adminThemeHelper';
 import ServiceRosterService from '../services/ServiceRosterService';
 import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../utils/instantCache';
+import { tryAcquireInFlightFetch, releaseInFlightFetch } from '../utils/tabLoadingHelper';
 import {
   MemberServiceDuty,
   SetlistItem,
@@ -399,6 +400,7 @@ export default function MyServiceScreen({ navigation, route }: any) {
   const [newBlockoutReason, setNewBlockoutReason] = useState<string>('Traveling / Family commitment');
   const [savingBlockout, setSavingBlockout] = useState<boolean>(false);
   const lastListenerPlansFetchRef = useRef<number>(0);
+  const inFlightMapRef = useRef<Map<string, number>>(new Map());
 
   const applyServicePayload = useCallback((payload: {
     duties: MemberServiceDuty[];
@@ -436,6 +438,10 @@ export default function MyServiceScreen({ navigation, route }: any) {
   const fetchDuties = useCallback(async (forceRefresh = false) => {
     if (!churchId || !memberId) {
       setLoading(false);
+      return;
+    }
+    const fetchKey = `service_${serviceCacheKey}`;
+    if (!forceRefresh && !tryAcquireInFlightFetch(inFlightMapRef.current, fetchKey)) {
       return;
     }
     try {
@@ -485,6 +491,7 @@ export default function MyServiceScreen({ navigation, route }: any) {
     } catch (err) {
       console.error('[MyServiceScreen] fetchDuties error:', err);
     } finally {
+      releaseInFlightFetch(inFlightMapRef.current, fetchKey);
       setLoading(false);
       setRefreshing(false);
     }
@@ -525,7 +532,7 @@ export default function MyServiceScreen({ navigation, route }: any) {
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchDuties();
+    fetchDuties(true);
   };
 
   // ── 1-Tap Accept Responsibility ──

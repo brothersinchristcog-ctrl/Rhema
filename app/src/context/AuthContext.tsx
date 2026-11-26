@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { InteractionManager } from 'react-native';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -7,6 +7,9 @@ import firestore from '@react-native-firebase/firestore';
 
 import FirestoreService, { AppMember } from '../services/FirestoreService';
 import { RHEMA_CHURCH_ID } from '../constants/ChurchConfig';
+import { AdminModuleKey, canAdminAccessModule } from '../constants/AdminModules';
+import AdminPermissionService, { LiveAdminPermissionState } from '../services/AdminPermissionService';
+import { isSuperAdminMember } from '../utils/roleUtils';
 
 interface AuthContextType {
   user: FirebaseAuthTypes.User | null;
@@ -18,6 +21,11 @@ interface AuthContextType {
   viewMode: 'admin' | 'member';
   setViewMode: (mode: 'admin' | 'member') => void;
   isPlatformSuperAdmin: boolean;
+  isSuperAdminUser: boolean;
+  adminPermissions: Record<string, boolean> | null;
+  hasExplicitAdminPermissionDoc: boolean;
+  defaultAdminTemplateConfigured: boolean;
+  canAccessAdminModule: (key: AdminModuleKey | null | undefined, hasCareCellAccess?: boolean) => boolean;
   refreshSuperAdminStatus: () => Promise<boolean>;
   isPendingApproval: boolean;
   isRejected: boolean;
@@ -30,12 +38,21 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const EMPTY_ADMIN_PERM_STATE: LiveAdminPermissionState = {
+  modules: null,
+  hasExplicitPermissionDoc: false,
+  defaultTemplateConfigured: false,
+  updatedAtMs: null,
+  updatedByName: '',
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<FirebaseAuthTypes.User | null>(null);
   const [member, setMember] = useState<AppMember | null>(null);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'admin' | 'member'>('member');
   const [isPlatformSuperAdmin, setIsPlatformSuperAdmin] = useState(false);
+  const [adminPermState, setAdminPermState] = useState<LiveAdminPermissionState>(EMPTY_ADMIN_PERM_STATE);
   const [isPendingApproval, setIsPendingApproval] = useState(false);
   const [isRejected, setIsRejected] = useState(false);
   const [registrationRequest, setRegistrationRequest] = useState<any | null>(null);
@@ -632,6 +649,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(null);
       setMember(null);
       setIsPlatformSuperAdmin(false);
+      setAdminPermState(EMPTY_ADMIN_PERM_STATE);
+      AdminPermissionService.clearCache();
       setIsPendingApproval(false);
       setIsRejected(false);
       setRegistrationRequest(null);
@@ -716,6 +735,72 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setRegistrationRequest(req);
   };
 
+  const roleUpper = String(member?.userType || (member as any)?.role || '').toUpperCase();
+  const isSuperAdminUser = isSuperAdminMember(member, isPlatformSuperAdmin);
+  const isAdminUser = Boolean(
+    isSuperAdminUser ||
+    (member as any)?.isAdmin === true ||
+    roleUpper.includes('ADMIN') ||
+    roleUpper.includes('PASTOR') ||
+    roleUpper.includes('SUPER')
+  );
+  const activePermChurchId = member?.churchId || (member as any)?.primaryChurchId || RHEMA_CHURCH_ID;
+
+  useEffect(() => {
+    if (!user?.uid || user.isAnonymous || !isAdminUser) {
+      setAdminPermState(EMPTY_ADMIN_PERM_STATE);
+      return;
+    }
+    const unsub = AdminPermissionService.subscribeToMyAdminPermissions(
+      activePermChurchId,
+      user.uid,
+      (nextState) => {
+        setAdminPermState(nextState);
+      }
+    );
+    return () => {
+      unsub();
+    };
+  }, [user?.uid, user?.isAnonymous, isAdminUser, activePermChurchId]);
+
+  useEffect(() => {
+    AdminPermissionService.setCurrentAuthAccessSnapshot({
+      uid: user?.uid || null,
+      isAdmin: isAdminUser,
+      isSuperAdmin: isSuperAdminUser,
+      modules: adminPermState.modules,
+      hasExplicitPermissionDoc: adminPermState.hasExplicitPermissionDoc,
+      defaultTemplateConfigured: adminPermState.defaultTemplateConfigured,
+    });
+  }, [
+    user?.uid,
+    isAdminUser,
+    isSuperAdminUser,
+    adminPermState.modules,
+    adminPermState.hasExplicitPermissionDoc,
+    adminPermState.defaultTemplateConfigured,
+  ]);
+
+  const canAccessAdminModule = useCallback(
+    (key: AdminModuleKey | null | undefined, hasCareCellAccess = false) =>
+      canAdminAccessModule({
+        moduleKey: key,
+        isSuperAdmin: isSuperAdminUser,
+        isAdmin: isAdminUser,
+        modules: adminPermState.modules,
+        hasExplicitPermissionDoc: adminPermState.hasExplicitPermissionDoc,
+        defaultTemplateConfigured: adminPermState.defaultTemplateConfigured,
+        hasCareCellAccess,
+      }),
+    [
+      isSuperAdminUser,
+      isAdminUser,
+      adminPermState.modules,
+      adminPermState.hasExplicitPermissionDoc,
+      adminPermState.defaultTemplateConfigured,
+    ]
+  );
+
   return (
     <AuthContext.Provider value={{ 
       user, 
@@ -727,6 +812,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       viewMode, 
       setViewMode, 
       isPlatformSuperAdmin, 
+      isSuperAdminUser,
+      adminPermissions: adminPermState.modules,
+      hasExplicitAdminPermissionDoc: adminPermState.hasExplicitPermissionDoc,
+      defaultAdminTemplateConfigured: adminPermState.defaultTemplateConfigured,
+      canAccessAdminModule,
       refreshSuperAdminStatus,
       isPendingApproval,
       isRejected,

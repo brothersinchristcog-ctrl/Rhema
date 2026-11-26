@@ -1,9 +1,10 @@
 import React, { useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Image, ActivityIndicator, Alert } from 'react-native';
-import { Edit2, ChevronLeft , ArrowLeft } from 'lucide-react-native';
+import { Edit2, ChevronLeft, ArrowLeft, Share2 } from 'lucide-react-native';
 import Svg, { Defs, LinearGradient, Stop, Rect, Circle, G, Path } from 'react-native-svg';
 import ViewShot from 'react-native-view-shot';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
+import { getCelebrationCardTextColor, buildCelebrationWhatsAppMessage } from '../../utils/celebrationDateHelper';
 
 const ICONS = {
   whatsapp: (
@@ -41,68 +42,93 @@ export default function AdminCelebrationsWhatsAppPreview({
   verse: {ref: string, text: string},
   churchName: string,
   onEdit: () => void,
-  onSendWhatsApp: (imageUri?: string) => Promise<void>,
+  onSendWhatsApp: (imageUri?: string, sendMode?: 'deeplink' | 'share_card') => Promise<void>,
   onSendPush: (imageUri: string) => Promise<void>
 }) {
   const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const [isSendingWhatsApp, setIsSendingWhatsApp] = useState(false);
+  const [isSendingCard, setIsSendingCard] = useState(false);
   const [isSendingPush, setIsSendingPush] = useState(false);
   
   const colors = theme?.imageUrl 
     ? ['#000000', '#000000'] 
     : (theme?.color ? [theme.color, theme.color] : (theme?.c || ['#5A6BC4', '#1E2A63']));
+  const cardTextColor = getCelebrationCardTextColor(colors, Boolean(theme?.imageUrl));
+  const accentStrokeColor = cardTextColor === '#FFFFFF' ? '#FFFFFF' : '#64748B';
   
   const categoryLabel = category.charAt(0).toUpperCase() + category.slice(1);
   
-  // Create initials
-  const parts = member.name.split(' ');
-  const initials = (parts[0][0] + (parts[1]?parts[1][0]:'')).toUpperCase();
+  const nameWords = String(member?.name || 'Member').trim().split(/\s+/).filter(Boolean);
+  const initials = ((nameWords[0]?.[0] || 'M') + (nameWords[1]?.[0] || '')).toUpperCase();
+  const recipientPhone = member?.phone || member?.referencePhone || '';
+  const previewWhatsAppText = buildCelebrationWhatsAppMessage({
+    memberName: member?.name,
+    nameOverlay,
+    celebrationType: category,
+    titleOverlay,
+    dateStr: member?.dateStr,
+    age: member?.age,
+    greetingMessage: message,
+    verse,
+    churchName,
+  });
 
   const viewShotRef = useRef<ViewShot>(null);
 
-  const handleCaptureAndSend = async (type: 'whatsapp' | 'push') => {
+  const handleCaptureAndSend = async (type: 'whatsapp' | 'whatsapp_card' | 'push') => {
     if (type === 'whatsapp') setIsSendingWhatsApp(true);
+    if (type === 'whatsapp_card') setIsSendingCard(true);
     if (type === 'push') setIsSendingPush(true);
     
     try {
-      // Allow layout and image rendering to fully complete
-      await new Promise(resolve => setTimeout(resolve, 400));
+      // Allow layout and image rendering to complete before capturing
+      await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 260)));
 
       let uri: string | undefined;
-      if (viewShotRef.current && typeof viewShotRef.current.capture === 'function') {
-        uri = await viewShotRef.current.capture();
+      try {
+        if (viewShotRef.current && typeof viewShotRef.current.capture === 'function') {
+          uri = await viewShotRef.current.capture();
+        }
+      } catch (snapErr) {
+        if (type !== 'whatsapp') throw snapErr;
+        console.warn('[Celebrations] Non-blocking snapshot capture warning for deep link:', snapErr);
       }
 
-      if (!uri) {
+      if (!uri && type !== 'whatsapp') {
         throw new Error('ViewShot capture returned empty URI');
       }
 
-      console.log(`[Celebrations] Successfully captured greeting card URI for ${type}:`, uri);
+      console.log(`[Celebrations] Prepared greeting card action for ${type}:`, uri ? 'captured' : 'text-only');
 
       if (type === 'whatsapp') {
-        await onSendWhatsApp(uri);
+        await onSendWhatsApp(uri, 'deeplink');
+      } else if (type === 'whatsapp_card') {
+        await onSendWhatsApp(uri, 'share_card');
       } else {
-        await onSendPush(uri);
+        await onSendPush(uri!);
       }
     } catch (err: any) {
       console.error(`Capture for ${type} failed:`, err);
-      if (type === 'whatsapp') {
+      if (type === 'whatsapp_card') {
         Alert.alert(
           'Image Snapshot Failed',
-          'Could not capture the card image snapshot. Would you like to send text only to WhatsApp instead?',
+          'Could not capture the card image snapshot. Would you like to send the prepared wish via WhatsApp chat instead?',
           [
             { text: 'Cancel', style: 'cancel' },
             { 
-              text: 'Send Text Only', 
-              onPress: () => onSendWhatsApp() 
+              text: 'Open WhatsApp Chat', 
+              onPress: () => onSendWhatsApp(undefined, 'deeplink') 
             }
           ]
         );
+      } else if (type === 'whatsapp') {
+        await onSendWhatsApp(undefined, 'deeplink');
       } else {
         Alert.alert('Error', 'Failed to snapshot celebration card image for push notification.');
       }
     } finally {
       setIsSendingWhatsApp(false);
+      setIsSendingCard(false);
       setIsSendingPush(false);
     }
   };
@@ -157,9 +183,13 @@ export default function AdminCelebrationsWhatsAppPreview({
               return <Text style={styles.avatarText}>{initials}</Text>;
             })()}
           </View>
-          <View>
-            <Text style={styles.waName}>{member.name}</Text>
-            <Text style={styles.waStatus}>{member.phone}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.waName}>{member?.name || 'Member'}</Text>
+            <Text style={styles.waStatus}>
+              {recipientPhone
+                ? `${recipientPhone}${member?.isReferencePhone ? ' (Parent Ref)' : ''}`
+                : 'No WhatsApp number on record'}
+            </Text>
           </View>
         </View>
 
@@ -167,29 +197,29 @@ export default function AdminCelebrationsWhatsAppPreview({
           <View style={styles.waBubble}>
             <ViewShot 
               ref={viewShotRef} 
-              options={{ format: 'png', quality: 1 }} 
-              style={styles.greetingFrame}
+              options={{ format: 'png', quality: 1, result: 'tmpfile' }} 
+              style={[styles.greetingFrame, { backgroundColor: colors[1] }]}
             >
-              <View collapsable={false} style={[StyleSheet.absoluteFillObject, { borderRadius: 6, overflow: 'hidden' }]}>
+              <View collapsable={false} style={styles.greetingCaptureInner}>
                 {theme?.imageUrl && (
                   <Image source={{ uri: theme.imageUrl }} style={[StyleSheet.absoluteFillObject, { resizeMode: 'cover' }]} />
                 )}
-                <Svg width="100%" height={350} viewBox="0 0 400 500" preserveAspectRatio="xMidYMid slice">
+                <Svg style={StyleSheet.absoluteFillObject} width="100%" height="100%" viewBox="0 0 400 500" preserveAspectRatio="xMidYMid slice">
                   <Defs>
                     <LinearGradient id="pg" x1="0" y1="0" x2="1" y2="1">
-                      <Stop offset="0%" stopColor={colors[0]} stopOpacity={theme?.imageUrl ? 0.2 : 1} />
-                      <Stop offset="100%" stopColor={colors[1]} stopOpacity={theme?.imageUrl ? 0.7 : 1} />
+                      <Stop offset="0%" stopColor={colors[0]} stopOpacity={theme?.imageUrl ? 0.25 : 1} />
+                      <Stop offset="100%" stopColor={colors[1]} stopOpacity={theme?.imageUrl ? 0.72 : 1} />
                     </LinearGradient>
                   </Defs>
                   <Rect width="400" height="500" fill="url(#pg)" />
                   {!theme?.imageUrl && (
                     <>
-                      <G fill="#ffffff" opacity="0.10">
+                      <G fill={accentStrokeColor} opacity="0.10">
                         <Circle cx="60" cy="60" r="70" />
                         <Circle cx="360" cy="440" r="90" />
                         <Circle cx="370" cy="60" r="40" />
                       </G>
-                      <G fill="none" stroke="#ffffff" strokeOpacity="0.25" strokeWidth="1.5">
+                      <G fill="none" stroke={accentStrokeColor} strokeOpacity="0.22" strokeWidth="1.5">
                         <Circle cx="200" cy="250" r="150" />
                         <Circle cx="200" cy="250" r="110" />
                       </G>
@@ -198,44 +228,44 @@ export default function AdminCelebrationsWhatsAppPreview({
                 </Svg>
 
                 <View style={styles.greetingOverlay}>
-                  <Text style={styles.gCrest}>{churchName || 'Grace Community Church'}</Text>
+                  {!!churchName && (
+                    <Text style={[styles.gCrest, { color: cardTextColor }]}>{churchName}</Text>
+                  )}
                   
                   {layout === 'theme' && photoUri && (
-                    <View style={{alignItems: 'center', marginVertical: 8}}>
-                      <Image source={{uri: photoUri}} style={{width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: '#fff'}} />
+                    <View style={{ alignItems: 'center', marginVertical: 10 }}>
+                      <Image source={{ uri: photoUri }} style={{ width: 84, height: 84, borderRadius: 42, borderWidth: 3, borderColor: '#FFFFFF' }} />
                     </View>
                   )}
 
-                  <Text style={styles.gTitle}>{titleOverlay || categoryLabel}</Text>
-                  <Text style={styles.gName}>{nameOverlay || member.name}</Text>
-                  <Text style={styles.gMsg}>{message}</Text>
+                  <Text style={[styles.gTitle, { color: cardTextColor }]}>{titleOverlay || categoryLabel}</Text>
+                  <Text style={[styles.gName, { color: cardTextColor }]}>{nameOverlay || member?.name}</Text>
+                  <Text style={[styles.gMsg, { color: cardTextColor }]}>{message}</Text>
                   {verse?.text ? (
-                    <Text style={[styles.gVerse, /[\u0C00-\u0C7F]/.test(verse.text) && { fontFamily: undefined }]}>
+                    <Text style={[styles.gVerse, { color: cardTextColor }, /[\u0C00-\u0C7F]/.test(verse.text) && { fontFamily: undefined }]}>
                       "{verse.text.length > 100 ? verse.text.substring(0, 100) + '...' : verse.text}"
                       {'\n'}— {verse.ref}
                     </Text>
                   ) : null}
-                  <Text style={styles.gSender}>Sent with love</Text>
+                  <Text style={[styles.gSender, { color: cardTextColor }]}>Sent with love</Text>
                 </View>
               </View>
             </ViewShot>
 
-            <Text style={styles.waCaption}>Praise the Lord!{'\n\n'}{message}</Text>
-            {verse?.text && <Text style={styles.waVerse}>{'\n\n'}"{verse.text}"{'\n'}— {verse.ref}</Text>}
-            <Text style={styles.waCaption}>{'\n\n'}With Love ❤️{'\n'}{churchName || 'Your Church'}</Text>
-            <Text style={styles.waTime}>9:41 AM ✓✓</Text>
+            <Text style={styles.waCaption}>{previewWhatsAppText}</Text>
+            <Text style={styles.waTime}>Today ✓✓</Text>
           </View>
         </View>
 
         <View style={styles.buttonRow}>
-          <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: '#37469B' }]} onPress={() => handleCaptureAndSend('push')} disabled={isSendingWhatsApp || isSendingPush}>
+          <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: '#37469B' }]} onPress={() => handleCaptureAndSend('push')} disabled={isSendingWhatsApp || isSendingCard || isSendingPush}>
             {isSendingPush ? (
               <ActivityIndicator color="#fff" size="small" />
             ) : (
-              <Text style={styles.btnPrimaryText}>Send</Text>
+              <Text style={styles.btnPrimaryText}>Send Push</Text>
             )}
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: '#128C7E' }]} onPress={() => handleCaptureAndSend('whatsapp')} disabled={isSendingWhatsApp || isSendingPush}>
+          <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: '#128C7E' }]} onPress={() => handleCaptureAndSend('whatsapp')} disabled={isSendingWhatsApp || isSendingCard || isSendingPush}>
             {isSendingWhatsApp ? (
               <ActivityIndicator color="#fff" size="small" />
             ) : (
@@ -246,6 +276,34 @@ export default function AdminCelebrationsWhatsAppPreview({
             )}
           </TouchableOpacity>
         </View>
+
+        <TouchableOpacity
+          style={[
+            styles.shareCardBtn,
+            {
+              backgroundColor: isDark ? '#0B2F2B' : '#ECFDF5',
+              borderColor: isDark ? '#14B8A6' : '#0F766E',
+            },
+          ]}
+          onPress={() => handleCaptureAndSend('whatsapp_card')}
+          disabled={isSendingWhatsApp || isSendingCard || isSendingPush}
+          activeOpacity={0.8}
+        >
+          {isSendingCard ? (
+            <ActivityIndicator color={isDark ? '#5EEAD4' : '#0F766E'} size="small" />
+          ) : (
+            <>
+              <Share2 size={17} color={isDark ? '#5EEAD4' : '#0F766E'} strokeWidth={2.2} />
+              <Text style={[styles.shareCardBtnText, { color: isDark ? '#CCFBF1' : '#0F766E' }]}>
+                Share Wish Card Image + Message
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        <Text style={[styles.actionHintText, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+          WhatsApp opens {member?.name ? `${member.name}'s` : "recipient's"} chat directly with the full wish & saves the card to Gallery. Share Wish Card attaches the card image + wish.
+        </Text>
       </ScrollView>
     </View>
   );
@@ -401,17 +459,23 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   },
   greetingFrame: {
     width: '100%',
-    height: 350,
+    minHeight: 370,
     borderRadius: 6,
     overflow: 'hidden',
     backgroundColor: '#1E2A63',
   },
+  greetingCaptureInner: {
+    width: '100%',
+    minHeight: 370,
+    position: 'relative',
+    justifyContent: 'center',
+  },
   greetingOverlay: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    padding: 16,
+    paddingVertical: 22,
+    paddingHorizontal: 18,
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 2,
   },
   gCrest: {
     fontFamily: 'Inter-Bold',
@@ -504,5 +568,28 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     fontFamily: 'Inter-Bold',
     fontSize: 14,
     color: '#FFFFFF',
+  },
+  shareCardBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 50,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    marginTop: 12,
+    paddingHorizontal: 14,
+  },
+  shareCardBtnText: {
+    fontFamily: 'Inter-Bold',
+    fontSize: 13.5,
+  },
+  actionHintText: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 11.5,
+    lineHeight: 16,
+    textAlign: 'center',
+    marginTop: 10,
+    paddingHorizontal: 8,
   }
 }));

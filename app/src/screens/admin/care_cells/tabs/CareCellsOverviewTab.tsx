@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -32,7 +32,13 @@ import {
 import CareCellService from '../../../../services/CareCellService';
 import { useAuth } from '../../../../context/AuthContext';
 import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
-import { CareCell, CareCellOverviewStats } from '../../../../types/CareCellTypes';
+import { RHEMA_CHURCH_ID } from '../../../../constants/ChurchConfig';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  loadWithInstantCache,
+} from '../../../../utils/instantCache';
+import { CareCell, CareCellMembership, CareCellMeeting, CareCellOverviewStats } from '../../../../types/CareCellTypes';
 
 const { width } = Dimensions.get('window');
 
@@ -65,13 +71,23 @@ const MONTH_QUARTERS = [
 ];
 
 interface CareCellsOverviewTabProps {
+  churchId?: string;
   cells: CareCell[];
   onNavigateTab: (tabIndex: number) => void;
   onOpenCreateCell: () => void;
   onOpenCreateMeeting: () => void;
 }
 
+type OverviewDataset = {
+  cells: CareCell[];
+  memberships: CareCellMembership[];
+  meetings: CareCellMeeting[];
+  attendance: Array<{ cellId?: string; meetingId?: string; attendanceStatus?: string }>;
+  pendingFollowupsCount: number;
+};
+
 export default function CareCellsOverviewTab({
+  churchId,
   cells,
   onNavigateTab,
   onOpenCreateCell,
@@ -84,7 +100,17 @@ export default function CareCellsOverviewTab({
   const secondaryBtnBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
   const secondaryBtnText = isDark ? '#E4E4E7' : '#0F172A';
 
-  const { isPlatformSuperAdmin } = useAuth();
+  const { user, member, isPlatformSuperAdmin } = useAuth();
+  const activeChurchId = churchId || RHEMA_CHURCH_ID;
+  const overviewCacheKey = useMemo(
+    () => makeScopedCacheKey('admin_care_cell_overview_ds_v1', activeChurchId, 'shared'),
+    [activeChurchId]
+  );
+  const initialDataset = useMemo(
+    () => getInstantMemory<OverviewDataset>(overviewCacheKey),
+    [overviewCacheKey]
+  );
+
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
@@ -94,46 +120,73 @@ export default function CareCellsOverviewTab({
   const [selectedCellId, setSelectedCellId] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('All');
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialDataset);
   const [refreshing, setRefreshing] = useState(false);
-  const [stats, setStats] = useState<CareCellOverviewStats>({
-    totalCareCells: 0,
-    activeCareCells: 0,
-    inactiveCareCells: 0,
-    totalCellLeaders: 0,
-    totalAssignedMembers: 0,
-    totalMeetingsThisMonth: 0,
-    averageAttendanceRate: 0,
-    membersRequiringFollowup: 0,
-  });
+  const [dataset, setDataset] = useState<OverviewDataset | null>(initialDataset);
 
-  const loadStats = useCallback(async () => {
-    try {
-      const churchId = await CareCellService.getChurchId();
-      const res = await CareCellService.getOverviewStats(churchId, {
+  const loadDataset = useCallback(
+    async (forceRefresh = false) => {
+      try {
+        const resolvedChurchId = churchId || (await CareCellService.getChurchId());
+        await loadWithInstantCache<OverviewDataset>({
+          key: overviewCacheKey,
+          freshSkipMs: 60_000,
+          forceRefresh,
+          screenName: 'CareCellsOverviewTab',
+          fetcher: () => CareCellService.getOverviewDataset(resolvedChurchId, cells),
+          onCached: (cached) => {
+            setDataset(cached);
+            setLoading(false);
+          },
+          onFresh: (fresh) => {
+            setDataset(fresh);
+            setLoading(false);
+          },
+        });
+      } catch (e) {
+        console.error('Error loading Care Cell stats:', e);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [churchId, overviewCacheKey]
+  );
+
+  useEffect(() => {
+    loadDataset(false);
+  }, [loadDataset]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadDataset(true);
+  };
+
+  const stats: CareCellOverviewStats = useMemo(() => {
+    if (!dataset) {
+      return {
+        totalCareCells: cells.length,
+        activeCareCells: cells.filter((c) => c.status === 'Active').length,
+        inactiveCareCells: cells.filter((c) => c.status === 'Inactive').length,
+        totalCellLeaders: 0,
+        totalAssignedMembers: 0,
+        totalMeetingsThisMonth: 0,
+        averageAttendanceRate: 0,
+        membersRequiringFollowup: 0,
+      };
+    }
+    const scopedCells = !isPlatformSuperAdmin && cells.length > 0 ? cells : cells.length > 0 ? cells : undefined;
+    return CareCellService.computeOverviewStatsFromDataset(
+      dataset,
+      {
         month: selectedMonth,
         year: selectedYear,
         cellId: selectedCellId,
         status: selectedStatus,
-      });
-      setStats(res);
-    } catch (e) {
-      console.error('Error loading Care Cell stats:', e);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [selectedMonth, selectedYear, selectedCellId, selectedStatus]);
-
-  useEffect(() => {
-    setLoading(true);
-    loadStats();
-  }, [loadStats]);
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    loadStats();
-  };
+      },
+      scopedCells
+    );
+  }, [dataset, cells, isPlatformSuperAdmin, selectedMonth, selectedYear, selectedCellId, selectedStatus]);
 
   const OVERVIEW_CARDS = [
     {
@@ -178,7 +231,7 @@ export default function CareCellsOverviewTab({
       color: '#D97706',
       bgColor: '#FFFBEB',
       borderColor: '#FEF3C7',
-      tabIndex: 4, // Attendance
+      tabIndex: 5, // Attendance
     },
     {
       id: 'meetings',
@@ -189,7 +242,7 @@ export default function CareCellsOverviewTab({
       color: '#0D9488',
       bgColor: '#F0FDFA',
       borderColor: '#CCFBF1',
-      tabIndex: 3, // Meetings
+      tabIndex: 4, // Meetings
     },
     {
       id: 'followups',
@@ -200,7 +253,7 @@ export default function CareCellsOverviewTab({
       color: stats.membersRequiringFollowup > 0 ? '#E11D48' : '#64748B',
       bgColor: stats.membersRequiringFollowup > 0 ? '#FFF1F2' : '#F8FAFC',
       borderColor: stats.membersRequiringFollowup > 0 ? '#FFE4E6' : '#E2E8F0',
-      tabIndex: 5, // Follow-ups
+      tabIndex: 7, // Follow-ups
       valueColor: stats.membersRequiringFollowup > 0 ? '#E11D48' : '#0F172A',
     },
   ];
@@ -414,7 +467,7 @@ export default function CareCellsOverviewTab({
                     borderColor: 'rgba(16, 185, 129, 0.35)',
                   },
                 ]}
-                onPress={() => onNavigateTab(4)}
+                onPress={() => onNavigateTab(5)}
                 activeOpacity={0.85}
               >
                 <ClipboardCheck size={17} color={isDark ? '#34D399' : '#059669'} strokeWidth={2.2} style={{ marginRight: 7 }} />
@@ -441,7 +494,8 @@ export default function CareCellsOverviewTab({
         </>
       )}
 
-      {/* ── Clean User-Friendly Month & Year Selection Modal ── */}
+      {/* ── Clean User-Friendly Month & Year Selection Modal (lazy mounted) ── */}
+      {showDatePickerModal && (
       <Modal
         visible={showDatePickerModal}
         transparent
@@ -567,6 +621,7 @@ export default function CareCellsOverviewTab({
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
+      )}
     </ScrollView>
   );
 }

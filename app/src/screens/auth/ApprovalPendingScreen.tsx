@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -46,6 +46,7 @@ export default function ApprovalPendingScreen({ route, navigation }: any) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
+  const isLeavingRef = useRef(false);
 
   // Cached fallback details from AsyncStorage to display instantly without waiting
   const [storedData, setStoredData] = useState<{
@@ -57,6 +58,7 @@ export default function ApprovalPendingScreen({ route, navigation }: any) {
 
   // Back to Sign In handler
   const handleBackToSignIn = async () => {
+    isLeavingRef.current = true;
     try {
       await AsyncStorage.multiRemove([
         '@is_pending_approval',
@@ -159,32 +161,47 @@ export default function ApprovalPendingScreen({ route, navigation }: any) {
     };
   }, [phoneNumber, storedData.phone, targetChurchId]);
 
-  // 4. Keep applicant FCM token synced on registration_requests while awaiting approval
+  // 4. Keep applicant FCM token synced ONLY on existing pending registration_requests (never recreate deleted/empty docs)
   useEffect(() => {
     const rawPhone = phoneNumber || storedData.phone || user?.phoneNumber || '';
     const docId = rawPhone.replace(/\D/g, '').slice(-10);
-    if (!docId || request?.status === 'approved') return;
+    if (
+      !docId ||
+      isLeavingRef.current ||
+      !request ||
+      request.status === 'approved' ||
+      request.status === 'rejected'
+    ) {
+      return;
+    }
 
     let active = true;
+    const reqDocRef = firestore()
+      .collection('Rhema Church')
+      .doc(targetChurchId)
+      .collection('registration_requests')
+      .doc(docId);
+
     const syncApplicantFcmToken = async (explicitToken?: string) => {
       try {
+        if (!active || isLeavingRef.current) return;
         if (!explicitToken) {
           await NotificationService.requestUserPermission().catch(() => false);
         }
         const token = explicitToken || (await messaging().getToken().catch(() => null));
-        if (!active || !token) return;
-        await firestore()
-          .collection('Rhema Church')
-          .doc(targetChurchId)
-          .collection('registration_requests')
-          .doc(docId)
-          .set(
-            {
-              fcmToken: token,
-              ...(user?.uid ? { authUid: user.uid } : {}),
-            },
-            { merge: true }
-          );
+        if (!active || isLeavingRef.current || !token) return;
+
+        // Only update an existing pending request doc — NEVER use set(..., { merge: true }),
+        // which would resurrect a blank ghost doc after deletion/rejection.
+        const snap = await reqDocRef.get();
+        if (!snap.exists()) return;
+        const snapData = snap.data() || {};
+        if (snapData.status && snapData.status !== 'pending') return;
+
+        await reqDocRef.update({
+          fcmToken: token,
+          ...(user?.uid ? { authUid: user.uid } : {}),
+        });
       } catch (_) {}
     };
 
@@ -197,7 +214,7 @@ export default function ApprovalPendingScreen({ route, navigation }: any) {
       active = false;
       unsubTokenRefresh();
     };
-  }, [phoneNumber, storedData.phone, targetChurchId, user?.phoneNumber, user?.uid, request?.status]);
+  }, [phoneNumber, storedData.phone, targetChurchId, user?.phoneNumber, user?.uid, request?.id, request?.status]);
 
   const handleManualCheck = async () => {
     const targetPhone = phoneNumber || storedData.phone;
@@ -257,12 +274,17 @@ export default function ApprovalPendingScreen({ route, navigation }: any) {
 
   // When rejected: permanently delete applicant data from Firebase and sign out
   const handleAcknowledgeRejection = async () => {
+    isLeavingRef.current = true;
     setActionBusy(true);
     try {
-      const phoneToDelete = phoneNumber || storedData.phone;
-      if (phoneToDelete) {
-        // Permanently delete registration data from Firebase
-        await FirestoreService.deleteRegistrationRequest(targetChurchId, phoneToDelete).catch(() => {});
+      const phoneToDelete = phoneNumber || storedData.phone || request?.phone || request?.id;
+      const normalizedDocId = phoneToDelete ? phoneToDelete.replace(/\D/g, '').slice(-10) : '';
+      if (normalizedDocId || phoneToDelete) {
+        // Permanently delete registration data from Firebase using canonical 10-digit doc ID
+        await FirestoreService.deleteRegistrationRequest(
+          targetChurchId,
+          normalizedDocId || String(phoneToDelete)
+        ).catch(() => {});
       }
       await AsyncStorage.multiRemove([
         '@is_pending_approval',

@@ -233,7 +233,7 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
           ])
         );
         setReadJobNotifIds(merged);
-      }).catch(() => {});
+      }).catch(() => { });
       loadAppliedStatus();
     }, [user?.uid, member?.id, churchId])
   );
@@ -279,8 +279,8 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
                 const idMatch = Boolean(targetIdVal && ((uId && targetIdVal === uId) || (mId && targetIdVal === mId)));
                 const phoneMatch = Boolean(
                   targetPhoneVal.length > 5 &&
-                    uPhone.length > 5 &&
-                    (uPhone.endsWith(targetPhoneVal) || targetPhoneVal.endsWith(uPhone))
+                  uPhone.length > 5 &&
+                  (uPhone.endsWith(targetPhoneVal) || targetPhoneVal.endsWith(uPhone))
                 );
                 if (!idMatch && !phoneMatch) return false;
               }
@@ -447,7 +447,7 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
         opportunities: opps,
         creatorProfiles: creatorUids.length > 0 ? profileEntries : creatorProfiles,
         appliedOppIds,
-      }).catch(() => {});
+      }).catch(() => { });
     } catch (err) {
       console.error('Error loading Job Circle opportunities:', err);
     } finally {

@@ -49,6 +49,12 @@ import MemberIdService from '../../../../services/MemberIdService';
 import LocationService from '../../../../services/LocationService';
 import CareCellVisitModal from '../components/CareCellVisitModal';
 import { useAuth } from '../../../../context/AuthContext';
+import { RHEMA_CHURCH_ID } from '../../../../constants/ChurchConfig';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  loadWithInstantCache,
+} from '../../../../utils/instantCache';
 
 const { width, height } = Dimensions.get('window');
 
@@ -81,10 +87,19 @@ export default function CareCellMemberLocationsTab({
   const secondaryBtnText = isDark ? '#E4E4E7' : '#334155';
   const { user, member } = useAuth();
   const mapRef = useRef<MapView | null>(null);
+  const activeChurchId = churchId || RHEMA_CHURCH_ID;
+  const locationsCacheKey = useMemo(
+    () => makeScopedCacheKey('admin_care_cell_locations_v1', activeChurchId, 'shared'),
+    [activeChurchId]
+  );
+  const initialLocationsCache = useMemo(
+    () => getInstantMemory<MemberLocationRecord[]>(locationsCacheKey),
+    [locationsCacheKey]
+  );
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialLocationsCache);
   const [refreshing, setRefreshing] = useState(false);
-  const [records, setRecords] = useState<MemberLocationRecord[]>([]);
+  const [records, setRecords] = useState<MemberLocationRecord[]>(initialLocationsCache || []);
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState('');
@@ -122,35 +137,62 @@ export default function CareCellMemberLocationsTab({
   } | null>(null);
   const [calculatingRoute, setCalculatingRoute] = useState(false);
 
-  // Marker view refresh timers to snapshot lollipop pins cleanly
+  // Marker view refresh timer (single deferred snapshot pass when records load)
   const [loadedMarkerPhotos, setLoadedMarkerPhotos] = useState<Record<string, boolean>>({});
   const [refreshMarkersCount, setRefreshMarkersCount] = useState<number>(0);
 
   useEffect(() => {
-    const t1 = setTimeout(() => setRefreshMarkersCount((c) => c + 1), 500);
-    const t2 = setTimeout(() => setRefreshMarkersCount((c) => c + 1), 2000);
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-    };
-  }, [loading]);
+    if (loading || records.length === 0) return;
+    const t = setTimeout(() => setRefreshMarkersCount((c) => c + 1), 450);
+    return () => clearTimeout(t);
+  }, [loading, records.length]);
 
-  const loadMemberLocations = useCallback(async () => {
-    try {
-      const activeChurchId = churchId || 'rhema';
-      const list = await MemberLocationService.getMemberLocationsForMap(activeChurchId);
-      setRecords(list);
-    } catch (e) {
-      console.error('Error loading member locations for map:', e);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [churchId]);
+  const loadMemberLocations = useCallback(
+    async (forceRefresh = false) => {
+      try {
+        await loadWithInstantCache<MemberLocationRecord[]>({
+          key: locationsCacheKey,
+          freshSkipMs: 45_000,
+          forceRefresh,
+          screenName: 'CareCellMemberLocationsTab',
+          fetcher: () =>
+            MemberLocationService.getMemberLocationsForMap(activeChurchId, {
+              maxLiveGeocode: 10,
+              onBackgroundGeocodeComplete: (updated) => setRecords(updated),
+            }),
+          onCached: (cached) => {
+            setRecords(cached);
+            setLoading(false);
+          },
+          onFresh: (fresh) => {
+            setRecords(fresh);
+            setLoading(false);
+          },
+        });
+      } catch (e) {
+        console.error('Error loading member locations for map:', e);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [activeChurchId, locationsCacheKey]
+  );
 
   useEffect(() => {
-    loadMemberLocations();
+    loadMemberLocations(false);
   }, [loadMemberLocations]);
+
+  // Precomputed per-cell member counts (`O(N)` once instead of `O(C*N)` per render)
+  const cellRecordCountsMap = useMemo(() => {
+    const map = new Map<string, number>();
+    records.forEach((r) => {
+      if (r.careCellId) {
+        map.set(r.careCellId, (map.get(r.careCellId) || 0) + 1);
+      }
+    });
+    return map;
+  }, [records]);
 
   // ── Filter Records ──
   const filteredRecords = useMemo(() => {
@@ -394,7 +436,7 @@ export default function CareCellMemberLocationsTab({
         'Member IDs Synchronized',
         `Processed ${res.totalMembers} members.\n• Newly Assigned: ${res.newlyAssigned}\n• Already Configured: ${res.alreadyAssigned}\n\nSample IDs: ${res.sampleCodes.join(', ') || 'Rhema-001...'}`
       );
-      loadMemberLocations();
+      loadMemberLocations(true);
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Could not backfill member IDs.');
     } finally {
@@ -506,7 +548,7 @@ export default function CareCellMemberLocationsTab({
 
           {cells.map((c) => {
             const isSel = activeCellId === c.id;
-            const count = records.filter((r) => r.careCellId === c.id).length;
+            const count = cellRecordCountsMap.get(c.id) || 0;
             return (
               <TouchableOpacity
                 key={c.id}
@@ -1170,19 +1212,21 @@ export default function CareCellMemberLocationsTab({
         </View>
       )}
 
-      {/* ── CARE CELL VISIT SCHEDULER MODAL ── */}
-      <CareCellVisitModal
-        visible={scheduleModalVisible}
-        onClose={() => setScheduleModalVisible(false)}
-        cells={cells}
-        initialCellId={targetCellIdForVisit}
-        createdBy={user?.uid || 'admin'}
-        createdByName={member?.name || user?.displayName || 'Pastor'}
-        onSuccess={() => {
-          setScheduleModalVisible(false);
-          loadMemberLocations();
-        }}
-      />
+      {/* ── CARE CELL VISIT SCHEDULER MODAL (lazy mounted only when visible) ── */}
+      {scheduleModalVisible && (
+        <CareCellVisitModal
+          visible={scheduleModalVisible}
+          onClose={() => setScheduleModalVisible(false)}
+          cells={cells}
+          initialCellId={targetCellIdForVisit}
+          createdBy={user?.uid || 'admin'}
+          createdByName={member?.name || user?.displayName || 'Pastor'}
+          onSuccess={() => {
+            setScheduleModalVisible(false);
+            loadMemberLocations(true);
+          }}
+        />
+      )}
     </View>
   );
 }

@@ -2,6 +2,11 @@ import firestore from '@react-native-firebase/firestore';
 import FirestoreService from './FirestoreService';
 import { RHEMA_CHURCH_ID, RHEMA_ROOT_COLLECTION } from '../constants/ChurchConfig';
 import {
+  computeCareCellOverviewStats,
+  CareCellOverviewDataset,
+  CareCellOverviewFilters,
+} from '../utils/careCellStatsHelper';
+import {
   CareCell,
   CareCellMembership,
   CareCellMeeting,
@@ -523,6 +528,58 @@ class CareCellService {
   // ── Membership & Deduplication Engine ───────────────────────────────────────
 
   /**
+   * Enriches memberships missing `memberCode` by fetching only those specific member documents
+   * in chunked `documentId` batches (avoids scanning the entire church `members` collection).
+   */
+  async enrichMissingMemberCodes(
+    churchId: string | undefined,
+    memberships: CareCellMembership[]
+  ): Promise<CareCellMembership[]> {
+    const missingIds = Array.from(
+      new Set(
+        memberships
+          .filter((m) => !m.memberCode && m.memberId)
+          .map((m) => m.memberId)
+      )
+    );
+    if (missingIds.length === 0) return memberships;
+
+    try {
+      const id = churchId || (await this.getChurchId());
+      const membersCol = firestore().collection(RHEMA_ROOT_COLLECTION).doc(id).collection('members');
+      const chunkSize = 10;
+      const chunks: string[][] = [];
+      for (let i = 0; i < missingIds.length; i += chunkSize) {
+        chunks.push(missingIds.slice(i, i + chunkSize));
+      }
+
+      const snaps = await Promise.all(
+        chunks.map((ids) =>
+          membersCol.where(firestore.FieldPath.documentId(), 'in', ids).get()
+        )
+      );
+
+      const codeMap = new Map<string, string>();
+      snaps.forEach((snap) => {
+        snap.docs.forEach((d: any) => {
+          const code = d.data()?.memberCode;
+          if (code) codeMap.set(d.id, code);
+        });
+      });
+
+      if (codeMap.size === 0) return memberships;
+      return memberships.map((m) =>
+        !m.memberCode && codeMap.has(m.memberId)
+          ? { ...m, memberCode: codeMap.get(m.memberId) }
+          : m
+      );
+    } catch (error) {
+      console.warn('Non-fatal error enriching missing memberCodes:', error);
+      return memberships;
+    }
+  }
+
+  /**
    * Fetches all active memberships belonging to a specific Care Cell.
    */
   async getActiveCellMemberships(churchId: string | undefined, cellId: string): Promise<CareCellMembership[]> {
@@ -927,88 +984,97 @@ class CareCellService {
 
   // ── Overview Statistics Aggregator ──────────────────────────────────────────
 
+  /**
+   * Fetches the raw Care Cell overview dataset in a single parallel batch
+   * so Overview filter changes (month, year, cellId) recompute purely in memory.
+   */
+  async getOverviewDataset(
+    churchId?: string,
+    providedCells?: CareCell[]
+  ): Promise<{
+    cells: CareCell[];
+    memberships: CareCellMembership[];
+    meetings: CareCellMeeting[];
+    attendance: Array<{ cellId?: string; meetingId?: string; attendanceStatus?: string }>;
+    pendingFollowupsCount: number;
+  }> {
+    const hasProvidedCells = Array.isArray(providedCells) && providedCells.length > 0;
+    const [
+      cellsCol,
+      membershipsCol,
+      meetingsCol,
+      followupsCol,
+      attendanceCol,
+    ] = await Promise.all([
+      hasProvidedCells ? Promise.resolve(null) : this.getCareCellsRef(churchId),
+      this.getMembershipsRef(churchId),
+      this.getMeetingsRef(churchId),
+      this.getFollowupsRef(churchId),
+      this.getAttendanceRef(churchId),
+    ]);
+
+    const [cellsSnap, membershipsSnap, meetingsSnap, followupsSnap, attendanceSnap] = await Promise.all([
+      cellsCol ? cellsCol.get() : Promise.resolve(null),
+      membershipsCol.where('membershipStatus', '==', 'Active').get(),
+      meetingsCol.get(),
+      followupsCol.where('status', 'in', ['Pending', 'Needs Further Follow-up']).get(),
+      attendanceCol.limit(1000).get().catch((attErr: any) => {
+        console.warn('Attendance dataset fetch error:', attErr);
+        return null;
+      }),
+    ]);
+
+    const cells: CareCell[] = hasProvidedCells
+      ? providedCells!
+      : ((cellsSnap?.docs || []).map((d: any) => ({ id: d.id, ...d.data() })) as CareCell[]);
+
+    const memberships = membershipsSnap.docs.map((d: any) => ({
+      id: d.id,
+      ...d.data(),
+    })) as CareCellMembership[];
+
+    const meetings = meetingsSnap.docs.map((d: any) => ({
+      id: d.id,
+      ...d.data(),
+    })) as CareCellMeeting[];
+
+    const attendance = (attendanceSnap?.docs || []).map((d: any) => {
+      const data = d.data() || {};
+      return {
+        cellId: data.cellId,
+        meetingId: data.meetingId,
+        attendanceStatus: data.attendanceStatus,
+      };
+    });
+
+    return {
+      cells,
+      memberships,
+      meetings,
+      attendance,
+      pendingFollowupsCount: followupsSnap.docs.length,
+    };
+  }
+
+  /**
+   * Computes filtered KPI stats synchronously from an already-loaded dataset.
+   */
+  computeOverviewStatsFromDataset(
+    dataset: CareCellOverviewDataset,
+    filters?: CareCellOverviewFilters,
+    scopedCellsOverride?: CareCell[]
+  ): CareCellOverviewStats {
+    return computeCareCellOverviewStats(dataset, filters, scopedCellsOverride);
+  }
+
   async getOverviewStats(
     churchId?: string,
-    filters?: { month?: number; year?: number; cellId?: string; status?: string }
+    filters?: { month?: number; year?: number; cellId?: string; status?: string },
+    providedCells?: CareCell[]
   ): Promise<CareCellOverviewStats> {
     try {
-      const [cellsSnap, membershipsSnap, meetingsSnap, followupsSnap] = await Promise.all([
-        (await this.getCareCellsRef(churchId)).get(),
-        (await this.getMembershipsRef(churchId)).where('membershipStatus', '==', 'Active').get(),
-        (await this.getMeetingsRef(churchId)).get(),
-        (await this.getFollowupsRef(churchId)).where('status', 'in', ['Pending', 'Needs Further Follow-up']).get(),
-      ]);
-
-      const cells = cellsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })) as CareCell[];
-      const totalCareCells = cells.length;
-      const activeCareCells = cells.filter((c) => c.status === 'Active').length;
-      const inactiveCareCells = cells.filter((c) => c.status === 'Inactive').length;
-
-      // Unique leaders count
-      const leaderIds = new Set<string>();
-      cells.forEach((c) => {
-        if (c.leaderId) leaderIds.add(c.leaderId);
-        if (c.assistantLeaderId) leaderIds.add(c.assistantLeaderId);
-      });
-      const totalCellLeaders = leaderIds.size;
-
-      // Assigned active members count
-      let memberships = membershipsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })) as CareCellMembership[];
-      if (filters?.cellId && filters.cellId !== 'ALL') {
-        memberships = memberships.filter((m) => m.cellId === filters.cellId);
-      }
-      const totalAssignedMembers = memberships.length;
-
-      // Monthly meetings count
-      const now = new Date();
-      const currentYear = filters?.year || now.getFullYear();
-      const currentMonth = filters?.month || now.getMonth() + 1;
-
-      let meetings = meetingsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })) as CareCellMeeting[];
-      if (filters?.cellId && filters.cellId !== 'ALL') {
-        meetings = meetings.filter((m) => m.cellId === filters.cellId);
-      }
-
-      const meetingsThisMonth = meetings.filter((m) => {
-        const parts = (m.date || '').split('-');
-        if (parts.length < 2) return false;
-        const y = parseInt(parts[0], 10);
-        const mo = parseInt(parts[1], 10);
-        return y === currentYear && mo === currentMonth;
-      });
-
-      // Attendance Rate Calculation
-      // Average Attendance % = (Present + Late) / Total Expected * 100
-      let attendanceRate = 0;
-      try {
-        const attendanceCol = await this.getAttendanceRef(churchId);
-        let attQuery: any = attendanceCol;
-        if (filters?.cellId && filters.cellId !== 'ALL') {
-          attQuery = attQuery.where('cellId', '==', filters.cellId);
-        }
-        const attSnap = await attQuery.get();
-        const attDocs = attSnap.docs.map((d: any) => d.data());
-        if (attDocs.length > 0) {
-          const presentOrLate = attDocs.filter((a: any) => a.attendanceStatus === 'Present' || a.attendanceStatus === 'Late').length;
-          attendanceRate = Math.round((presentOrLate / attDocs.length) * 100);
-        }
-      } catch (attErr) {
-        console.warn('Attendance rate calculation error:', attErr);
-      }
-
-      // Pending/overdue followups
-      const membersRequiringFollowup = followupsSnap.docs.length;
-
-      return {
-        totalCareCells,
-        activeCareCells,
-        inactiveCareCells,
-        totalCellLeaders,
-        totalAssignedMembers,
-        totalMeetingsThisMonth: meetingsThisMonth.length,
-        averageAttendanceRate: attendanceRate,
-        membersRequiringFollowup,
-      };
+      const dataset = await this.getOverviewDataset(churchId, providedCells);
+      return this.computeOverviewStatsFromDataset(dataset, filters, providedCells);
     } catch (error) {
       console.error('Error fetching Care Cell overview stats:', error);
       return {
@@ -1193,16 +1259,18 @@ class CareCellService {
 
       const inactiveList: { memberId: string; memberName: string; memberPhone?: string; missedCount: number; lastPresentDate?: string }[] = [];
 
-      // Query attendance for each meeting
+      // Query attendance for recent meetings in parallel (avoids N+1 sequential round-trips)
       const meetingAttendanceMaps: Record<string, Record<string, string>> = {};
-      for (const m of completedMeetings) {
-        const attDocs = await this.getMeetingAttendance(churchId, m.id);
+      const attendanceLists = await Promise.all(
+        completedMeetings.map((m) => this.getMeetingAttendance(churchId, m.id))
+      );
+      completedMeetings.forEach((m, idx) => {
         const map: Record<string, string> = {};
-        attDocs.forEach((a) => {
+        attendanceLists[idx].forEach((a) => {
           map[a.memberId] = a.attendanceStatus;
         });
         meetingAttendanceMaps[m.id] = map;
-      }
+      });
 
       memberships.forEach((mem) => {
         let consecutiveMissed = 0;

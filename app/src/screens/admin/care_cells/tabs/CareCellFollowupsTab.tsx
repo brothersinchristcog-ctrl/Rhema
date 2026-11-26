@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   RefreshControl,
   Linking,
   Alert,
+  Platform,
 } from 'react-native';
 import {
   Heart,
@@ -27,17 +28,31 @@ import {
 } from 'lucide-react-native';
 import CareCellService from '../../../../services/CareCellService';
 import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
+import { RHEMA_CHURCH_ID } from '../../../../constants/ChurchConfig';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  loadWithInstantCache,
+} from '../../../../utils/instantCache';
 import { CareCell, CareCellFollowup, FollowupStatus } from '../../../../types/CareCellTypes';
 import CareCellFollowupModal from '../components/CareCellFollowupModal';
 
 interface CareCellFollowupsTabProps {
   churchId?: string;
+  cells?: CareCell[];
   selectedCellId?: string;
   onSelectCell?: (cellId: string) => void;
 }
 
+type FollowupsTabPayload = {
+  cells: CareCell[];
+  followups: CareCellFollowup[];
+  inactiveMembers: any[];
+};
+
 export default function CareCellFollowupsTab({
   churchId,
+  cells: cellsProp,
   selectedCellId,
   onSelectCell,
 }: CareCellFollowupsTabProps) {
@@ -48,48 +63,110 @@ export default function CareCellFollowupsTab({
   const secondaryBtnBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
   const secondaryBtnText = isDark ? '#E4E4E7' : '#334155';
 
-  const [cells, setCells] = useState<CareCell[]>([]);
   const [selectedCell, setSelectedCell] = useState<string>(selectedCellId || 'ALL');
-  const [followups, setFollowups] = useState<CareCellFollowup[]>([]);
-  const [inactiveMembers, setInactiveMembers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+
+  const resolvedChurchScope = churchId || RHEMA_CHURCH_ID;
+  const followupsCacheKey = useMemo(
+    () =>
+      makeScopedCacheKey(
+        'admin_care_cell_followups_v1',
+        resolvedChurchScope,
+        `${selectedCell}_${statusFilter}`
+      ),
+    [resolvedChurchScope, selectedCell, statusFilter]
+  );
+  const initialFollowupsCache = useMemo(
+    () => getInstantMemory<FollowupsTabPayload>(followupsCacheKey),
+    [followupsCacheKey]
+  );
+
+  const [fetchedCells, setFetchedCells] = useState<CareCell[]>(initialFollowupsCache?.cells || []);
+  const cells = cellsProp && cellsProp.length > 0 ? cellsProp : fetchedCells;
+  const [followups, setFollowups] = useState<CareCellFollowup[]>(initialFollowupsCache?.followups || []);
+  const [inactiveMembers, setInactiveMembers] = useState<any[]>(initialFollowupsCache?.inactiveMembers || []);
+  const [loading, setLoading] = useState(!initialFollowupsCache);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Modal State
   const [modalVisible, setModalVisible] = useState(false);
   const [targetMember, setTargetMember] = useState<any | null>(null);
 
-  const loadData = useCallback(async () => {
-    try {
-      const activeChurchId = churchId || (await CareCellService.getChurchId());
-      const [cellsList, followupsList] = await Promise.all([
-        CareCellService.getCareCells(activeChurchId),
-        CareCellService.getCellFollowups(activeChurchId, selectedCell === 'ALL' ? undefined : selectedCell, statusFilter),
-      ]);
-
-      setCells(cellsList);
-      setFollowups(followupsList);
-
-      // Automated Detection for inactive members across selected cell (or first active cell)
-      const targetCellId = selectedCell !== 'ALL' ? selectedCell : cellsList[0]?.id;
-      if (targetCellId) {
-        const inactives = await CareCellService.detectInactiveMembers(activeChurchId, targetCellId);
-        setInactiveMembers(inactives);
-      } else {
-        setInactiveMembers([]);
+  const loadData = useCallback(
+    async (forceRefresh = false) => {
+      const mem = forceRefresh ? null : getInstantMemory<FollowupsTabPayload>(followupsCacheKey);
+      if (mem) {
+        if (!cellsProp || cellsProp.length === 0) setFetchedCells(mem.cells);
+        setFollowups(mem.followups);
+        setInactiveMembers(mem.inactiveMembers);
+        setLoading(false);
       }
-    } catch (e) {
-      console.error('Error loading Care Cell follow-ups tab:', e);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [churchId, selectedCell, statusFilter]);
+
+      try {
+        const activeChurchId = churchId || (await CareCellService.getChurchId());
+        await loadWithInstantCache<FollowupsTabPayload>({
+          key: followupsCacheKey,
+          freshSkipMs: 30_000,
+          forceRefresh,
+          screenName: 'CareCellFollowupsTab',
+          fetcher: async () => {
+            const hasParentCells = Array.isArray(cellsProp) && cellsProp.length > 0;
+            const cellsListPromise = hasParentCells
+              ? Promise.resolve(cellsProp!)
+              : CareCellService.getCareCells(activeChurchId);
+
+            const targetCellIdForInactives =
+              selectedCell !== 'ALL' ? selectedCell : hasParentCells ? cellsProp![0]?.id : undefined;
+
+            const [cellsList, followupsList, preInactives] = await Promise.all([
+              cellsListPromise,
+              CareCellService.getCellFollowups(
+                activeChurchId,
+                selectedCell === 'ALL' ? undefined : selectedCell,
+                statusFilter
+              ),
+              targetCellIdForInactives
+                ? CareCellService.detectInactiveMembers(activeChurchId, targetCellIdForInactives)
+                : Promise.resolve<any[] | null>(null),
+            ]);
+
+            let inactives = preInactives || [];
+            if (preInactives === null && cellsList[0]?.id) {
+              inactives = await CareCellService.detectInactiveMembers(activeChurchId, cellsList[0].id);
+            }
+
+            return {
+              cells: cellsList,
+              followups: followupsList,
+              inactiveMembers: inactives,
+            };
+          },
+          onCached: (cached) => {
+            if (!cellsProp || cellsProp.length === 0) setFetchedCells(cached.cells);
+            setFollowups(cached.followups);
+            setInactiveMembers(cached.inactiveMembers);
+            setLoading(false);
+          },
+          onFresh: (fresh) => {
+            if (!cellsProp || cellsProp.length === 0) setFetchedCells(fresh.cells);
+            setFollowups(fresh.followups);
+            setInactiveMembers(fresh.inactiveMembers);
+            setLoading(false);
+          },
+        });
+      } catch (e) {
+        console.error('Error loading Care Cell follow-ups tab:', e);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [churchId, cellsProp, selectedCell, statusFilter, followupsCacheKey]
+  );
 
   useEffect(() => {
-    loadData();
+    loadData(false);
   }, [loadData]);
 
   useEffect(() => {
@@ -100,7 +177,7 @@ export default function CareCellFollowupsTab({
 
   const onRefresh = () => {
     setRefreshing(true);
-    loadData();
+    loadData(true);
   };
 
   const handleOpenWhatsApp = (phone?: string, name?: string) => {
@@ -331,6 +408,10 @@ export default function CareCellFollowupsTab({
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[primaryBtnBg]} />}
+          initialNumToRender={12}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Heart size={44} color="#CBD5E1" />
@@ -427,7 +508,7 @@ export default function CareCellFollowupsTab({
           assignedLeaderId={activeCellObj?.leaderId || ''}
           assignedLeaderName={activeCellObj?.leaderName || 'Admin'}
           initialReason={targetMember?.reason}
-          onSuccess={loadData}
+          onSuccess={() => loadData(true)}
         />
       )}
     </View>

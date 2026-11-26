@@ -34,6 +34,11 @@ import { useLanguage } from '../context/LanguageContext';
 import FirestoreService, { AppMember } from '../services/FirestoreService';
 import { PrayerRequest } from '../types/schema';
 import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../utils/instantCache';
+import {
+  shouldShowTabSpinner,
+  tryAcquireInFlightFetch,
+  releaseInFlightFetch,
+} from '../utils/tabLoadingHelper';
 
 interface PrayerFormProps {
   prayerInput: string;
@@ -186,8 +191,10 @@ export default function PrayerWallScreen({ navigation, route }: any) {
   const initialPrayers = getInstantMemory<PrayerRequest[]>(prayerCacheKey);
   const [member, setMember] = useState<AppMember | null>(authMember as AppMember | null);
   const [prayers, setPrayers] = useState<PrayerRequest[]>(() => initialPrayers || []);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => !initialPrayers?.length);
   const [refreshing, setRefreshing] = useState(false);
+  const hasPrayersRef = React.useRef<boolean>(Boolean(initialPrayers?.length));
+  const inFlightMapRef = React.useRef<Map<string, number>>(new Map());
   const [prayedSet, setPrayedSet] = useState(new Set<string>());
   const [replyInputs, setReplyInputs] = useState<{ [key: string]: string }>({});
   const [submittingReplyId, setSubmittingReplyId] = useState<string | null>(null);
@@ -232,6 +239,21 @@ export default function PrayerWallScreen({ navigation, route }: any) {
   };
 
   const fetchPrayers = async (contactId?: string, isRefreshing = false) => {
+    const fetchKey = `prayers_${prayerCacheKey}_${contactId || 'public'}`;
+    if (!isRefreshing && !tryAcquireInFlightFetch(inFlightMapRef.current, fetchKey)) {
+      return;
+    }
+
+    const memHit = getInstantMemory<PrayerRequest[]>(prayerCacheKey);
+    if (memHit?.length) {
+      hasPrayersRef.current = true;
+      setPrayers(memHit);
+      syncPrayedSetFromList(memHit);
+      setLoading(false);
+    } else if (!hasPrayersRef.current && !isRefreshing) {
+      setLoading(true);
+    }
+
     try {
       await loadWithInstantCache<PrayerRequest[]>({
         key: prayerCacheKey,
@@ -240,11 +262,13 @@ export default function PrayerWallScreen({ navigation, route }: any) {
         forceRefresh: isRefreshing,
         fetcher: () => FirestoreService.getPrayerRequests({ contactId }),
         onCached: (cached) => {
+          hasPrayersRef.current = (cached || []).length > 0;
           setPrayers(cached);
           syncPrayedSetFromList(cached);
           setLoading(false);
         },
         onFresh: (data) => {
+          hasPrayersRef.current = (data || []).length > 0;
           setPrayers(data);
           syncPrayedSetFromList(data);
           setLoading(false);
@@ -253,6 +277,7 @@ export default function PrayerWallScreen({ navigation, route }: any) {
     } catch (error) {
       console.error('Error fetching prayers:', error);
     } finally {
+      releaseInFlightFetch(inFlightMapRef.current, fetchKey);
       setLoading(false);
       setRefreshing(false);
     }
@@ -654,15 +679,6 @@ export default function PrayerWallScreen({ navigation, route }: any) {
     );
   };
 
-  if (loading && !refreshing) {
-    return (
-      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.accent || colors.primary} />
-        <Text style={[styles.loadingText, { color: colors.text }]}>{t('prayer.connecting')}</Text>
-      </View>
-    );
-  }
-
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar barStyle={colors.barStyle} backgroundColor={colors.background} />
@@ -795,10 +811,17 @@ export default function PrayerWallScreen({ navigation, route }: any) {
           </View>
         }
         ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <MessageCircle size={50} color={colors.textSecondary} />
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>{t('prayer.noPrayers')}</Text>
-          </View>
+          shouldShowTabSpinner({ loading, hasData: prayers.length > 0, refreshing }) ? (
+            <View style={styles.emptyState}>
+              <ActivityIndicator size="large" color={colors.accent || colors.primary} />
+              <Text style={[styles.loadingText, { color: colors.text }]}>{t('prayer.connecting')}</Text>
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <MessageCircle size={50} color={colors.textSecondary} />
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>{t('prayer.noPrayers')}</Text>
+            </View>
+          )
         }
       />
 

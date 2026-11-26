@@ -6,11 +6,11 @@ import {
   FlatList,
   TouchableOpacity,
   TextInput,
-  Image,
   ActivityIndicator,
   Alert,
   Modal,
   ScrollView,
+  Platform,
 } from 'react-native';
 import {
   Search,
@@ -29,21 +29,29 @@ import {
 } from 'lucide-react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import firestore from '@react-native-firebase/firestore';
 import CareCellService from '../../../../services/CareCellService';
 import MemberLookupModal from '../components/MemberLookupModal';
 import CareCellMapModal from '../components/CareCellMapModal';
+import CachedImage from '../../../../components/CachedImage';
 import { formatDateDisplay } from '../../../../utils/DateUtils';
 import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
+import { RHEMA_CHURCH_ID } from '../../../../constants/ChurchConfig';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  loadWithInstantCache,
+} from '../../../../utils/instantCache';
 import { CareCell, CareCellMembership, formatCareCellCode, formatCareCellDisplayName } from '../../../../types/CareCellTypes';
 
 interface CareCellMembersTabProps {
+  churchId?: string;
   cells: CareCell[];
   selectedCellId?: string;
   onSelectCellId: (id: string) => void;
 }
 
 export default function CareCellMembersTab({
+  churchId,
   cells,
   selectedCellId,
   onSelectCellId,
@@ -60,9 +68,18 @@ export default function CareCellMembersTab({
 
   const activeCellId = selectedCellId || (cells[0]?.id || '');
   const activeCell = cells.find((c) => c.id === activeCellId) || cells[0];
+  const resolvedChurchScope = churchId || RHEMA_CHURCH_ID;
+  const membersCacheKey = useMemo(
+    () => makeScopedCacheKey('admin_care_cell_members_v1', resolvedChurchScope, 'cell', activeCellId || 'none'),
+    [resolvedChurchScope, activeCellId]
+  );
+  const initialMembersCache = useMemo(
+    () => (activeCellId ? getInstantMemory<CareCellMembership[]>(membersCacheKey) : null),
+    [activeCellId, membersCacheKey]
+  );
 
-  const [loading, setLoading] = useState(true);
-  const [memberships, setMemberships] = useState<CareCellMembership[]>([]);
+  const [loading, setLoading] = useState(!initialMembersCache && Boolean(activeCellId));
+  const [memberships, setMemberships] = useState<CareCellMembership[]>(initialMembersCache || []);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Modals
@@ -71,47 +88,51 @@ export default function CareCellMembersTab({
   const [membershipToTransfer, setMembershipToTransfer] = useState<CareCellMembership | null>(null);
   const [mapModalVisible, setMapModalVisible] = useState(false);
 
-  const loadMemberships = useCallback(async () => {
-    if (!activeCellId) return;
-    setLoading(true);
-    try {
-      const churchId = await CareCellService.getChurchId();
-      const list = await CareCellService.getActiveCellMemberships(churchId, activeCellId);
-      
-      // Enrich with memberCode from member collection if missing on membership record
-      const missingCodeMemberIds = list.filter((m) => !m.memberCode).map((m) => m.memberId);
-      if (missingCodeMemberIds.length > 0) {
-        try {
-          const membersSnap = await firestore()
-            .collection('Rhema Church')
-            .doc(churchId || 'rhema')
-            .collection('members')
-            .get();
-          const codeMap = new Map<string, string>();
-          membersSnap.docs.forEach((d) => {
-            const data = d.data();
-            if (data?.memberCode) {
-              codeMap.set(d.id, data.memberCode);
-            }
-          });
-          list.forEach((m) => {
-            if (!m.memberCode && codeMap.has(m.memberId)) {
-              m.memberCode = codeMap.get(m.memberId);
-            }
-          });
-        } catch (_) {}
+  const loadMemberships = useCallback(
+    async (forceRefresh = false) => {
+      if (!activeCellId) {
+        setMemberships([]);
+        setLoading(false);
+        return;
       }
-
-      setMemberships(list);
-    } catch (e) {
-      console.error('Error loading cell memberships:', e);
-    } finally {
-      setLoading(false);
-    }
-  }, [activeCellId]);
+      const memCached = forceRefresh ? null : getInstantMemory<CareCellMembership[]>(membersCacheKey);
+      if (memCached) {
+        setMemberships(memCached);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+      try {
+        const activeChurchId = churchId || (await CareCellService.getChurchId());
+        await loadWithInstantCache<CareCellMembership[]>({
+          key: membersCacheKey,
+          freshSkipMs: 30_000,
+          forceRefresh,
+          screenName: 'CareCellMembersTab',
+          fetcher: async () => {
+            const list = await CareCellService.getActiveCellMemberships(activeChurchId, activeCellId);
+            return CareCellService.enrichMissingMemberCodes(activeChurchId, list);
+          },
+          onCached: (cached) => {
+            setMemberships(cached);
+            setLoading(false);
+          },
+          onFresh: (fresh) => {
+            setMemberships(fresh);
+            setLoading(false);
+          },
+        });
+      } catch (e) {
+        console.error('Error loading cell memberships:', e);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [activeCellId, churchId, membersCacheKey]
+  );
 
   useEffect(() => {
-    loadMemberships();
+    loadMemberships(false);
   }, [loadMemberships]);
 
   // Filtered members list
@@ -152,7 +173,7 @@ export default function CareCellMembersTab({
       }
 
       Alert.alert('Roster Updated', msg);
-      loadMemberships();
+      loadMemberships(true);
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to assign members.');
     }
@@ -171,7 +192,7 @@ export default function CareCellMembersTab({
             try {
               const churchId = await CareCellService.getChurchId();
               await CareCellService.removeMemberFromCell(churchId, m.id);
-              loadMemberships();
+              loadMemberships(true);
             } catch (err: any) {
               Alert.alert('Error', err.message || 'Failed to remove member.');
             }
@@ -206,7 +227,7 @@ export default function CareCellMembersTab({
       );
       setTransferModalVisible(false);
       setMembershipToTransfer(null);
-      loadMemberships();
+      loadMemberships(true);
     } catch (err: any) {
       Alert.alert('Transfer Error', err.message || 'Failed to transfer member.');
     }
@@ -223,7 +244,7 @@ export default function CareCellMembersTab({
     return (
       <View style={styles.memberCard}>
         {item.memberPhoto ? (
-          <Image source={{ uri: item.memberPhoto }} style={styles.avatarImg} />
+          <CachedImage uri={item.memberPhoto} style={styles.avatarImg} />
         ) : (
           <View style={styles.avatarFallback}>
             <Text style={styles.avatarInitials}>{initials}</Text>
@@ -415,6 +436,10 @@ export default function CareCellMembersTab({
           renderItem={renderMemberRow}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          initialNumToRender={15}
+          maxToRenderPerBatch={12}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Users size={44} color="#CBD5E1" />
@@ -429,21 +454,24 @@ export default function CareCellMembersTab({
         />
       )}
 
-      {/* Member Lookup Modal for Adding Members (Multi-select) */}
-      <MemberLookupModal
-        visible={addMembersModalVisible}
-        title={`Add Members to ${formatCareCellDisplayName(activeCell?.name, activeCell?.cellCode)}`}
-        mode="multiple"
-        currentCellId={activeCell?.id}
-        currentCellName={activeCell?.cellCode}
-        targetLocation={activeCell?.location || activeCell?.locality || activeCell?.meetingLocation}
-        cellLatitude={activeCell?.meetingLatitude}
-        cellLongitude={activeCell?.meetingLongitude}
-        onClose={() => setAddMembersModalVisible(false)}
-        onConfirmMultiple={handleAddMembersConfirm}
-      />
+      {/* Member Lookup Modal for Adding Members (lazy mounted) */}
+      {addMembersModalVisible && (
+        <MemberLookupModal
+          visible={addMembersModalVisible}
+          title={`Add Members to ${formatCareCellDisplayName(activeCell?.name, activeCell?.cellCode)}`}
+          mode="multiple"
+          currentCellId={activeCell?.id}
+          currentCellName={activeCell?.cellCode}
+          targetLocation={activeCell?.location || activeCell?.locality || activeCell?.meetingLocation}
+          cellLatitude={activeCell?.meetingLatitude}
+          cellLongitude={activeCell?.meetingLongitude}
+          onClose={() => setAddMembersModalVisible(false)}
+          onConfirmMultiple={handleAddMembersConfirm}
+        />
+      )}
 
-      {/* Transfer Cell Selection Modal */}
+      {/* Transfer Cell Selection Modal (lazy mounted) */}
+      {transferModalVisible && (
       <Modal visible={transferModalVisible} transparent animationType="fade" onRequestClose={() => setTransferModalVisible(false)}>
         <TouchableOpacity style={styles.transferOverlay} activeOpacity={1} onPress={() => setTransferModalVisible(false)}>
           <View style={styles.transferContainer}>
@@ -471,9 +499,10 @@ export default function CareCellMembersTab({
           </View>
         </TouchableOpacity>
       </Modal>
+      )}
 
-      {/* ── Care Cell Google Maps Modal ── */}
-      {activeCell && (
+      {/* ── Care Cell Google Maps Modal (lazy mounted only when visible) ── */}
+      {mapModalVisible && activeCell && (
         <CareCellMapModal
           visible={mapModalVisible}
           onClose={() => setMapModalVisible(false)}

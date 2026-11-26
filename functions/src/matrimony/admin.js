@@ -116,38 +116,9 @@ function isAdminRoleRecord(record) {
         userTypeStr.includes('super'));
 }
 export async function requireMatrimonyAdmin(request) {
-    const uid = request.auth?.uid;
-    if (!uid) {
-        throw new HttpsError('unauthenticated', 'Authentication is required.');
-    }
-    const token = request.auth?.token || {};
-    if (token.matrimonyAdmin === true || token.superadmin === true) {
-        return uid;
-    }
-    const db = getFirestore();
-    const [platformSnap, memberSnap, userSnap, churchSnap] = await Promise.all([
-        db.collection('platform_admins').doc(uid).get(),
-        db.collection('Rhema Church').doc(DEFAULT_CHURCH_ID).collection('members').doc(uid).get(),
-        db.collection('users').doc(uid).get(),
-        db.collection('Rhema Church').doc(DEFAULT_CHURCH_ID).get(),
-    ]);
-    if (platformSnap.exists && platformSnap.data()?.superadmin === true) {
-        return uid;
-    }
-    if (memberSnap.exists && isAdminRoleRecord(memberSnap.data())) {
-        return uid;
-    }
-    if (userSnap.exists && isAdminRoleRecord(userSnap.data())) {
-        return uid;
-    }
-    if (churchSnap.exists) {
-        const cData = churchSnap.data() || {};
-        const adminUids = [cData.adminUid, cData.createdBy, cData.pastorUid, cData.ownerUid].filter(Boolean);
-        if (adminUids.includes(uid)) {
-            return uid;
-        }
-    }
-    throw new HttpsError('permission-denied', 'Matrimony admin privileges are required.');
+    const { assertAdminModulePermission } = await import('../adminPermissions.js');
+    const result = await assertAdminModulePermission(getFirestore(), request.auth, DEFAULT_CHURCH_ID, 'matrimony');
+    return result.uid;
 }
 async function sendMatrimonyPush(targetUid, title, body, type) {
     await sendMatrimonyNotification({

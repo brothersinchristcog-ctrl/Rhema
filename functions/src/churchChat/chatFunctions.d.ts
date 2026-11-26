@@ -12,7 +12,7 @@ export declare const createRhemaChatGroup: import("firebase-functions/v2/https")
  */
 export declare const onRhemaChatMessageCreated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/database").DatabaseEvent<import("firebase-functions/v2/database").DataSnapshot, {
     churchId: string;
-    msgId: string;
     roomId: string;
+    msgId: string;
 }>>;
 //# sourceMappingURL=chatFunctions.d.ts.map

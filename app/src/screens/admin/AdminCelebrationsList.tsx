@@ -290,16 +290,23 @@ export default function AdminCelebrationsList({
     try {
       for (const member of filteredMembers) {
         const memberCelebrationType = member.celebrationType || category;
-        const title = `${memberCelebrationType === 'Birthday' ? '🎂 Happy Birthday' : memberCelebrationType === 'Wedding Anniversary' ? '💒 Happy Anniversary' : '🎉 Happy Baptism Anniversary'}, ${member.name}!`;
-        let content = `Praise the Lord!\n\nDear ${member.name}, wishing you a very Happy ${memberCelebrationType}! May God bless you abundantly.\n\nWith Love ❤️\n${activeChurch?.name || 'Your Church'}`;
-        
+        const lowerType = String(memberCelebrationType).toLowerCase();
+        const isBirthday = lowerType.includes('birthday');
+        const isWeddingAnniv = lowerType.includes('anniversary') && !lowerType.includes('baptism');
+        const title = `${isBirthday ? '🎂 Happy Birthday' : isWeddingAnniv ? '💐 Happy Anniversary' : '🕊️ Happy Baptism Anniversary'}, ${member.name}!`;
+        const content = `Praise the Lord!\n\nDear ${member.name}, wishing you a very Happy ${memberCelebrationType}! May God bless you abundantly.\n\nWith Love ❤️\n${activeChurch?.name || 'Your Church'}`;
+        const pushType = isBirthday ? 'birthday' : isWeddingAnniv ? 'anniversary' : 'baptism_anniversary';
+
         await FirestoreService.createNotificationBroadcast({
           title,
           content,
           date: new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' }),
-          type: 'celebration',
-          targetChurchId: activeChurch?.id || 'KhmBeNWxlrxwS1hGhuw',
-          targetPhone: member.phone,
+          type: pushType,
+          celebrationCategory: memberCelebrationType,
+          isCelebration: true,
+          targetChurchId: activeChurch?.id || 'rhema',
+          targetMemberId: member.originalId || member.Id || member.id || '',
+          targetPhone: member.phone || '',
           silent: false,
         });
       }

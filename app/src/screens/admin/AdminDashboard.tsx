@@ -155,7 +155,8 @@ const EXCLUDED_TAB_NAMES = [
 
 export default function AdminDashboard({ navigation, allTabs = [] }: any) {
   const { setActiveTab, dashboardScrollY, getDashboardScrollY, setDashboardScrollY } = useContext(AdminTabContext);
-  const { member, user, signOut, setViewMode } = useAuth();
+  const { member, user, signOut, setViewMode, isSuperAdminUser, canAccessAdminModule } = useAuth();
+  const canAccessMatrimony = canAccessAdminModule('matrimony');
   const { activeChurch } = useChurch();
   const { isDark, colors, fontStyle, scaleFont } = useTheme();
   const countsCacheKey = useMemo(
@@ -317,10 +318,10 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
   }, [countsCacheKey]);
 
   useEffect(() => {
-    if (isFocused) {
+    if (isFocused && canAccessMatrimony) {
       loadMatrimonyCounts(false);
     }
-  }, [isFocused, loadMatrimonyCounts]);
+  }, [isFocused, canAccessMatrimony, loadMatrimonyCounts]);
 
   const matrimonyTabIndex = useMemo(
     () => allTabs.findIndex((t: any) => t.name === 'Rhema Matrimony'),
@@ -578,60 +579,62 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
                 </View>
               </TouchableOpacity>
 
-              <View
-                style={[
-                  styles.matrimonyTestActionsRow,
-                  { borderTopColor: isDark ? '#27272A' : '#F1F5F9' },
-                ]}
-              >
-                <TouchableOpacity
+              {isSuperAdminUser && (
+                <View
                   style={[
-                    styles.matrimonyTestBtn,
-                    styles.matrimonyAddTestBtn,
-                    (seedingTestUsers || deletingTestUsers) && { opacity: 0.65 },
+                    styles.matrimonyTestActionsRow,
+                    { borderTopColor: isDark ? '#27272A' : '#F1F5F9' },
                   ]}
-                  onPress={handleAdd30TestUsers}
-                  disabled={seedingTestUsers || deletingTestUsers}
-                  activeOpacity={0.8}
                 >
-                  {seedingTestUsers ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <>
-                      <UserPlus size={14} color="#FFFFFF" />
-                      <Text style={[styles.matrimonyAddTestBtnTxt, { fontFamily: appFontFamily }]}>
-                        Add 30 Test Users
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.matrimonyTestBtn,
+                      styles.matrimonyAddTestBtn,
+                      (seedingTestUsers || deletingTestUsers) && { opacity: 0.65 },
+                    ]}
+                    onPress={handleAdd30TestUsers}
+                    disabled={seedingTestUsers || deletingTestUsers}
+                    activeOpacity={0.8}
+                  >
+                    {seedingTestUsers ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <UserPlus size={14} color="#FFFFFF" />
+                        <Text style={[styles.matrimonyAddTestBtnTxt, { fontFamily: appFontFamily }]}>
+                          Add 30 Test Users
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={[
-                    styles.matrimonyTestBtn,
-                    styles.matrimonyDeleteTestBtn,
-                    {
-                      backgroundColor: isDark ? 'rgba(220, 38, 38, 0.16)' : '#FEF2F2',
-                      borderColor: isDark ? 'rgba(220, 38, 38, 0.45)' : '#FECACA',
-                    },
-                    (seedingTestUsers || deletingTestUsers) && { opacity: 0.65 },
-                  ]}
-                  onPress={handleDeleteTestUsers}
-                  disabled={seedingTestUsers || deletingTestUsers}
-                  activeOpacity={0.8}
-                >
-                  {deletingTestUsers ? (
-                    <ActivityIndicator size="small" color="#DC2626" />
-                  ) : (
-                    <>
-                      <Trash2 size={14} color="#DC2626" />
-                      <Text style={[styles.matrimonyDeleteTestBtnTxt, { fontFamily: appFontFamily }]}>
-                        Delete Test Users
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </View>
+                  <TouchableOpacity
+                    style={[
+                      styles.matrimonyTestBtn,
+                      styles.matrimonyDeleteTestBtn,
+                      {
+                        backgroundColor: isDark ? 'rgba(220, 38, 38, 0.16)' : '#FEF2F2',
+                        borderColor: isDark ? 'rgba(220, 38, 38, 0.45)' : '#FECACA',
+                      },
+                      (seedingTestUsers || deletingTestUsers) && { opacity: 0.65 },
+                    ]}
+                    onPress={handleDeleteTestUsers}
+                    disabled={seedingTestUsers || deletingTestUsers}
+                    activeOpacity={0.8}
+                  >
+                    {deletingTestUsers ? (
+                      <ActivityIndicator size="small" color="#DC2626" />
+                    ) : (
+                      <>
+                        <Trash2 size={14} color="#DC2626" />
+                        <Text style={[styles.matrimonyDeleteTestBtnTxt, { fontFamily: appFontFamily }]}>
+                          Delete Test Users
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           )}
 

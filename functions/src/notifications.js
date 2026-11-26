@@ -6,6 +6,7 @@ import { getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { buildOnlineMeetingTopicMessage } from './meetings.js';
+import { filterAuthorizedAdminRecipientsForModule } from './adminPermissions.js';
 /**
  * 🙏 HELPER: DISPATCH PRAYER REQUEST PUSH TO ADMINS ONLY
  * Guarantees that only users with role admin, pastor, or super receive prayer alerts.
@@ -58,27 +59,34 @@ async function handlePrayerRequestAdminPush(prayer, churchId, prayerId, snapRef)
     const body = excerpt
         ? `${memberName} submitted a prayer request: "${excerpt}". Tap to review.`
         : `${memberName} has submitted a new prayer request. Tap to review in Admin Dashboard.`;
-    // 4. Query all admins strictly for this church to collect direct device tokens
-    const adminTokens = [];
-    const adminUids = [];
+    // 4. Query all admins strictly for this church to collect direct device tokens, filtered by 'prayer_wall' permission
+    let adminTokens = [];
+    let adminUids = [];
     try {
+        const candidateMap = new Map();
         // A. Check Rhema Church members
         const membersSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
         membersSnap.forEach(doc => {
             const m = doc.data();
             const role = String(m.userType || m.role || '').toLowerCase();
-            const isAdmin = role.includes('admin') || role.includes('pastor') || role.includes('super');
+            const isAdmin = role.includes('admin') ||
+                role.includes('pastor') ||
+                role.includes('super') ||
+                Boolean(m.isAdmin) ||
+                Boolean(m.isSuperAdmin) ||
+                Boolean(m.superadmin);
             if (isAdmin) {
-                adminUids.push(doc.id);
+                const tokens = [];
                 if (m.fcmToken && typeof m.fcmToken === 'string' && m.fcmToken.trim().length > 10) {
-                    adminTokens.push(m.fcmToken.trim());
+                    tokens.push(m.fcmToken.trim());
                 }
                 if (Array.isArray(m.fcmTokens)) {
                     m.fcmTokens.forEach((t) => {
                         if (t && typeof t === 'string' && t.trim().length > 10)
-                            adminTokens.push(t.trim());
+                            tokens.push(t.trim());
                     });
                 }
+                candidateMap.set(doc.id, tokens);
             }
         });
         // B. Check church document for admin UIDs
@@ -87,11 +95,14 @@ async function handlePrayerRequestAdminPush(prayer, churchId, prayerId, snapRef)
             const cData = churchDoc.data();
             const ownerUids = [cData?.adminUid, cData?.createdBy, cData?.pastorUid].filter(Boolean);
             for (const uid of ownerUids) {
-                if (!adminUids.includes(uid)) {
-                    adminUids.push(uid);
+                if (!candidateMap.has(uid)) {
+                    candidateMap.set(uid, []);
                 }
             }
         }
+        const filtered = await filterAuthorizedAdminRecipientsForModule(db, churchId, 'prayer_wall', Array.from(candidateMap.entries()).map(([uid, tokens]) => ({ uid, tokens })));
+        adminTokens = filtered.tokens;
+        adminUids = filtered.adminUids;
     }
     catch (lookupErr) {
         console.error('Error fetching admin tokens for prayer request notification:', lookupErr);
@@ -259,27 +270,34 @@ async function handleBaptismRequestAdminPush(baptism, churchId, requestId, snapR
     const body = prefDate
         ? `${memberName} has requested baptism for ${prefDate}. Tap to review in Admin Dashboard.`
         : `${memberName} has submitted a new baptism request. Tap to review in Admin Dashboard.`;
-    // 2. Query all admins strictly for this church
-    const adminTokens = [];
-    const adminUids = [];
+    // 2. Query all admins strictly for this church, filtered by 'baptism' module permission
+    let adminTokens = [];
+    let adminUids = [];
     try {
+        const candidateMap = new Map();
         // A. Check Rhema Church members
         const membersSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
         membersSnap.forEach(doc => {
             const m = doc.data();
             const role = String(m.userType || m.role || '').toLowerCase();
-            const isAdmin = role.includes('admin') || role.includes('pastor') || role.includes('super');
+            const isAdmin = role.includes('admin') ||
+                role.includes('pastor') ||
+                role.includes('super') ||
+                Boolean(m.isAdmin) ||
+                Boolean(m.isSuperAdmin) ||
+                Boolean(m.superadmin);
             if (isAdmin) {
-                adminUids.push(doc.id);
+                const tokens = [];
                 if (m.fcmToken && typeof m.fcmToken === 'string' && m.fcmToken.trim().length > 10) {
-                    adminTokens.push(m.fcmToken.trim());
+                    tokens.push(m.fcmToken.trim());
                 }
                 if (Array.isArray(m.fcmTokens)) {
                     m.fcmTokens.forEach((t) => {
                         if (t && typeof t === 'string' && t.trim().length > 10)
-                            adminTokens.push(t.trim());
+                            tokens.push(t.trim());
                     });
                 }
+                candidateMap.set(doc.id, tokens);
             }
         });
         // B. Check church document for admin UIDs
@@ -288,11 +306,14 @@ async function handleBaptismRequestAdminPush(baptism, churchId, requestId, snapR
             const cData = churchDoc.data();
             const ownerUids = [cData?.adminUid, cData?.createdBy, cData?.pastorUid].filter(Boolean);
             for (const uid of ownerUids) {
-                if (!adminUids.includes(uid)) {
-                    adminUids.push(uid);
+                if (!candidateMap.has(uid)) {
+                    candidateMap.set(uid, []);
                 }
             }
         }
+        const filtered = await filterAuthorizedAdminRecipientsForModule(db, churchId, 'baptism', Array.from(candidateMap.entries()).map(([uid, tokens]) => ({ uid, tokens })));
+        adminTokens = filtered.tokens;
+        adminUids = filtered.adminUids;
     }
     catch (lookupErr) {
         console.error('Error fetching admin tokens for baptism notification:', lookupErr);
@@ -1170,12 +1191,13 @@ async function cleanupInvalidFcmTokens(invalidTokens, tokenDocRefs) {
 /**
  * Shared YouTube Live FCM dispatcher:
  * Sends BOTH direct token multicast (to every active member device registered in Firestore)
- * and topic broadcast (`church_{churchId}`), with full Android `notification` + `android.notification`
- * (`channelId: 'church_alerts'`, shared `tag` & `collapseKey`) so killed/background Android devices
- * always display the alert natively without duplicates.
+ * and topic broadcast (`church_{churchId}`).
+ * Uses high-priority data payload on Android (so `app/index.js` renders via `expo-notifications`
+ * with the "📺 Join Live" action button and dedupe identifier even when killed/backgrounded)
+ * and full APNs alert + `youtube_live` category on iOS.
  */
-export async function dispatchYouTubeLivePush(db, params) {
-    const messaging = getMessaging();
+export async function dispatchYouTubeLivePush(db, params, messagingOverride) {
+    const messaging = messagingOverride ?? getMessaging();
     const { churchId, videoId = '', liveUrl, pushTitle, pushBody, streamTitle = '', docId } = params;
     const collapseTag = videoId ? `youtube_live_${videoId}` : `youtube_live_${churchId}`;
     const dataPayload = {
@@ -1189,21 +1211,17 @@ export async function dispatchYouTubeLivePush(db, params) {
         pushBody,
         streamTitle: String(streamTitle || pushTitle),
         screen: 'YouTubeLive',
+        categoryIdentifier: 'youtube_live',
+        actionButtonTitle: '📺 Join Live',
         ...(docId ? { id: String(docId) } : {}),
     };
+    // High-priority data-only delivery on Android ensures `messaging().setBackgroundMessageHandler`
+    // invokes `NotificationService.displayLiveNotification(...)` so the "📺 Join Live" action button
+    // renders on Android lock/tray notifications.
     const sharedAndroid = {
         priority: 'high',
         collapseKey: collapseTag,
-        notification: {
-            title: pushTitle,
-            body: pushBody,
-            sound: 'default',
-            priority: 'max',
-            channelId: 'church_alerts',
-            tag: collapseTag,
-            defaultSound: true,
-            defaultVibrateTimings: true,
-        },
+        ttl: 3600 * 1000,
     };
     const sharedApns = {
         headers: {
@@ -1231,7 +1249,6 @@ export async function dispatchYouTubeLivePush(db, params) {
         const batch = tokens.slice(i, i + 500);
         try {
             const response = await messaging.sendEachForMulticast({
-                notification: { title: pushTitle, body: pushBody },
                 data: dataPayload,
                 android: sharedAndroid,
                 apns: sharedApns,
@@ -1267,7 +1284,6 @@ export async function dispatchYouTubeLivePush(db, params) {
     let topicSent = false;
     try {
         await messaging.send({
-            notification: { title: pushTitle, body: pushBody },
             data: dataPayload,
             topic: `church_${churchId}`,
             android: sharedAndroid,
@@ -3285,27 +3301,37 @@ async function handleTestimonyAdminCreatedPush(testimony, churchId, testimonyId,
     const title = 'New Testimony Submitted!';
     const body = 'A Member has submitted a new testimony. Please review it.';
     const memberName = (testimony.memberName || 'Church Member').trim();
-    const adminTokens = [];
+    let adminTokens = [];
     try {
+        const candidateMap = new Map();
         // Look up authorized church admins strictly from the corresponding church's members collection
         const membersSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
         membersSnap.forEach((doc) => {
             const m = doc.data();
             const role = String(m.userType || m.role || '').toLowerCase();
-            const isAdmin = role.includes('admin') || role.includes('pastor') || role.includes('super');
+            const isAdmin = role.includes('admin') ||
+                role.includes('pastor') ||
+                role.includes('super') ||
+                Boolean(m.isAdmin) ||
+                Boolean(m.isSuperAdmin) ||
+                Boolean(m.superadmin);
             if (isAdmin) {
+                const tokens = [];
                 if (m.fcmToken && typeof m.fcmToken === 'string' && m.fcmToken.trim().length > 10) {
-                    adminTokens.push(m.fcmToken.trim());
+                    tokens.push(m.fcmToken.trim());
                 }
                 if (Array.isArray(m.fcmTokens)) {
                     m.fcmTokens.forEach((tk) => {
                         if (typeof tk === 'string' && tk.trim().length > 10) {
-                            adminTokens.push(tk.trim());
+                            tokens.push(tk.trim());
                         }
                     });
                 }
+                candidateMap.set(doc.id, tokens);
             }
         });
+        const filtered = await filterAuthorizedAdminRecipientsForModule(db, churchId, 'testimonies', Array.from(candidateMap.entries()).map(([uid, tokens]) => ({ uid, tokens })));
+        adminTokens = filtered.tokens;
     }
     catch (lookupErr) {
         console.error('Error fetching admin tokens for testimony notification:', lookupErr);
@@ -3783,17 +3809,21 @@ async function resolveVolunteerMemberTokens(db, churchId, memberId, memberPhone,
  * 4. Resolves tokens for all discovered admin UIDs in users/{uid} and members/{uid}
  * 5. Direct users collection scan for global admin/superadmin accounts
  */
-async function resolveVolunteerAdminTokens(db, churchId) {
-    const tokenSet = new Set();
+async function resolveVolunteerAdminTokens(db, churchId, moduleKey = 'volunteers') {
+    const uidToTokens = new Map();
     const adminUidSet = new Set();
-    const addToken = (t) => {
+    const addTokenForUid = (uid, t) => {
+        if (!uid)
+            return;
+        if (!uidToTokens.has(uid))
+            uidToTokens.set(uid, new Set());
         if (typeof t === 'string' && t.trim().length > 10) {
-            tokenSet.add(t.trim());
+            uidToTokens.get(uid).add(t.trim());
         }
     };
-    const addTokensFromArray = (arr) => {
+    const addTokensFromArrayForUid = (uid, arr) => {
         if (Array.isArray(arr)) {
-            arr.forEach((t) => addToken(t));
+            arr.forEach((t) => addTokenForUid(uid, t));
         }
     };
     const checkMemberDoc = (doc) => {
@@ -3808,8 +3838,8 @@ async function resolveVolunteerAdminTokens(db, churchId) {
             Boolean(m.isSuperAdmin);
         if (isAdmin) {
             adminUidSet.add(doc.id);
-            addToken(m.fcmToken);
-            addTokensFromArray(m.fcmTokens);
+            addTokenForUid(doc.id, m.fcmToken);
+            addTokensFromArrayForUid(doc.id, m.fcmTokens);
         }
     };
     const cid = churchId || 'rhema';
@@ -3853,8 +3883,8 @@ async function resolveVolunteerAdminTokens(db, churchId) {
             const uSnap = await db.collection('users').doc(uid).get();
             if (uSnap.exists) {
                 const uData = uSnap.data() || {};
-                addToken(uData.fcmToken);
-                addTokensFromArray(uData.fcmTokens);
+                addTokenForUid(uid, uData.fcmToken);
+                addTokensFromArrayForUid(uid, uData.fcmTokens);
             }
         }
         catch (_) { }
@@ -3862,8 +3892,8 @@ async function resolveVolunteerAdminTokens(db, churchId) {
             const mSnap = await db.collection('Rhema Church').doc(cid).collection('members').doc(uid).get();
             if (mSnap.exists) {
                 const mData = mSnap.data() || {};
-                addToken(mData.fcmToken);
-                addTokensFromArray(mData.fcmTokens);
+                addTokenForUid(uid, mData.fcmToken);
+                addTokensFromArrayForUid(uid, mData.fcmTokens);
             }
         }
         catch (_) { }
@@ -3881,16 +3911,17 @@ async function resolveVolunteerAdminTokens(db, churchId) {
                 Boolean(uData.isSuperAdmin);
             if (isAdmin) {
                 adminUidSet.add(doc.id);
-                addToken(uData.fcmToken);
-                addTokensFromArray(uData.fcmTokens);
+                addTokenForUid(doc.id, uData.fcmToken);
+                addTokensFromArrayForUid(doc.id, uData.fcmTokens);
             }
         });
     }
     catch (_) { }
-    return {
-        tokens: Array.from(tokenSet),
-        adminUids: Array.from(adminUidSet),
-    };
+    const candidates = Array.from(adminUidSet).map((uid) => ({
+        uid,
+        tokens: Array.from(uidToTokens.get(uid) || []),
+    }));
+    return filterAuthorizedAdminRecipientsForModule(db, cid, moduleKey, candidates);
 }
 /**
  * 📲 HIGH PRIORITY FCM MULTICAST DISPATCHER
@@ -4873,7 +4904,7 @@ export const onJobApplicationCreated = onDocumentCreated({ document: 'Rhema Chur
         const roleTitle = data.opportunityTitle || 'Ministry Position';
         const title = '💼 New Ministry Application!';
         const body = `${applicantName} has applied for "${roleTitle}". Please review their calling and attached CV.`;
-        const { tokens: adminTokens, adminUids } = await resolveVolunteerAdminTokens(db, churchId);
+        const { tokens: adminTokens, adminUids } = await resolveVolunteerAdminTokens(db, churchId, 'job_circle');
         const pushData = {
             type: 'job_application_admin',
             churchId,
@@ -5275,7 +5306,8 @@ async function handleRegistrationAdminPendingPush(data, churchId, requestId, sna
         const locationSuffix = city ? ` from ${city}` : '';
         const title = '🆕 New Member Registration Request';
         const body = `${applicantName}${locationSuffix} has registered and is requesting admin approval.`;
-        const { tokens: adminTokens, adminUids } = await resolveChurchRegistrationAdminTokens(db, cid);
+        const { tokens: adminTokens, adminUids: rawAdminUids } = await resolveChurchRegistrationAdminTokens(db, cid);
+        const { adminUids } = await filterAuthorizedAdminRecipientsForModule(db, cid, 'approvals', rawAdminUids.map((uid) => ({ uid })));
         const pushData = {
             type: 'registration_request_admin',
             churchId: cid,

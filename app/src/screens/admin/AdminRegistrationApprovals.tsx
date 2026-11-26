@@ -42,6 +42,10 @@ import { useChurch } from '../../context/ChurchContext';
 import { RHEMA_CHURCH_ID } from '../../constants/ChurchConfig';
 import { useAdminTheme } from '../../utils/adminThemeHelper';
 import {
+  isEmptyGhostRegistrationRequest,
+  resolveRegistrationDisplayStatus,
+} from '../../utils/registrationRequestHelper';
+import {
   makeScopedCacheKey,
   getInstantMemory,
   readInstantCache,
@@ -143,18 +147,22 @@ export default function AdminRegistrationApprovals({ navigation }: any) {
     };
   }, [churchId, approvalsCacheKey]);
 
-  // Tab counts: strictly divided into Pending, Approved, and Rejected lists
-  const pendingRequests = useMemo(
-    () => requests.filter((r) => !r.status || r.status === 'pending'),
+  // Filter out empty token-only ghost stubs and split strictly into Pending, Approved, Rejected
+  const validRequests = useMemo(
+    () => requests.filter((r) => !isEmptyGhostRegistrationRequest(r)),
     [requests]
+  );
+  const pendingRequests = useMemo(
+    () => validRequests.filter((r) => resolveRegistrationDisplayStatus(r.status) === 'pending'),
+    [validRequests]
   );
   const approvedRequests = useMemo(
-    () => requests.filter((r) => r.status === 'approved'),
-    [requests]
+    () => validRequests.filter((r) => resolveRegistrationDisplayStatus(r.status) === 'approved'),
+    [validRequests]
   );
   const rejectedRequests = useMemo(
-    () => requests.filter((r) => r.status === 'rejected'),
-    [requests]
+    () => validRequests.filter((r) => resolveRegistrationDisplayStatus(r.status) === 'rejected'),
+    [validRequests]
   );
 
   // Filtered requests based on active tab & search query
@@ -182,7 +190,7 @@ export default function AdminRegistrationApprovals({ navigation }: any) {
 
   // Handle Approve
   const handleApprove = (req: RegistrationRequest) => {
-    const name = req.fullName || `${req.firstName || ''} ${req.lastName || ''}`.trim();
+    const name = (req.fullName || `${req.firstName || ''} ${req.lastName || ''}`).trim() || req.phone || 'this applicant';
     Alert.alert(
       'Approve Registration',
       `Are you sure you want to approve ${name} as an official member of ${activeChurch?.name || 'Rhema Church'}?`,
@@ -323,7 +331,7 @@ export default function AdminRegistrationApprovals({ navigation }: any) {
 
   // Reconsider & Approve from Rejections tab
   const handleReconsider = (req: RegistrationRequest) => {
-    const name = req.fullName || `${req.firstName || ''} ${req.lastName || ''}`.trim();
+    const name = (req.fullName || `${req.firstName || ''} ${req.lastName || ''}`).trim() || req.phone || 'this applicant';
     Alert.alert(
       'Reconsider & Approve',
       `Overturn previous rejection and approve ${name} as a member?`,
@@ -371,9 +379,11 @@ export default function AdminRegistrationApprovals({ navigation }: any) {
 
   const renderCard = ({ item }: { item: RegistrationRequest }) => {
     const name = (item.fullName || `${item.firstName || ''} ${item.lastName || ''}`).trim();
-    const isPending = item.status === 'pending';
-    const isApproved = item.status === 'approved';
-    const isRejected = item.status === 'rejected';
+    const displayName = name || item.phone || 'Applicant';
+    const resolvedStatus = resolveRegistrationDisplayStatus(item.status);
+    const isPending = resolvedStatus === 'pending';
+    const isApproved = resolvedStatus === 'approved';
+    const isRejected = resolvedStatus === 'rejected';
     const isBusy = actionLoadingId === item.id;
 
     const formattedDate = item.createdAt
@@ -391,10 +401,10 @@ export default function AdminRegistrationApprovals({ navigation }: any) {
         {/* Card Header */}
         <View style={styles.cardHeaderRow}>
           <View style={[styles.avatar, { backgroundColor: isDark ? '#374151' : '#1A2D5A' }]}>
-            <Text style={styles.avatarTxt}>{(name[0] || 'U').toUpperCase()}</Text>
+            <Text style={styles.avatarTxt}>{(displayName[0] || 'A').toUpperCase()}</Text>
           </View>
           <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={[styles.cardName, { color: primaryText }]}>{name}</Text>
+            <Text style={[styles.cardName, { color: primaryText }]}>{displayName}</Text>
             <View style={styles.cardMetaRow}>
               <Clock size={12} color={secondaryText} />
               <Text style={[styles.cardMetaTxt, { color: secondaryText }]}>Submitted: {formattedDate}</Text>
@@ -419,8 +429,8 @@ export default function AdminRegistrationApprovals({ navigation }: any) {
           )}
         </View>
 
-        {/* Rejection Note if already rejected */}
-        {!isPending && item.rejectionReason && (
+        {/* Rejection Note if rejected */}
+        {isRejected && item.rejectionReason && (
           <View style={styles.rejectedBanner}>
             <AlertCircle size={15} color="#DC2626" style={{ marginTop: 2 }} />
             <View style={{ flex: 1 }}>
@@ -439,7 +449,7 @@ export default function AdminRegistrationApprovals({ navigation }: any) {
         <View style={[styles.detailsGrid, { backgroundColor: isDark ? '#1F2937' : '#F8FAFC', borderColor }]}>
           {/* Applicant Name */}
           <View style={styles.detailItem}>
-            <User size={14} color="#1A2D5A" />
+            <User size={14} color={isDark ? '#93C5FD' : '#1A2D5A'} />
             <Text style={[styles.detailLabel, { color: secondaryText }]}>Applicant Name:</Text>
             <Text style={[styles.detailVal, { color: primaryText }]} numberOfLines={1}>
               {name || '—'}
@@ -979,23 +989,24 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   tabScrollContent: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
     alignItems: 'center',
+    minWidth: '100%',
   },
   roundBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 9,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
     borderRadius: 9999,
     borderWidth: 1.5,
-    gap: 7,
+    gap: 5,
   },
   roundBadgeTxt: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
   },
   searchBar: {

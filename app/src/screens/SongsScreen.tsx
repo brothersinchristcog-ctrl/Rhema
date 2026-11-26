@@ -52,6 +52,11 @@ import { SongLanguageHelper, CANONICAL_SONG_CATEGORIES } from '../services/SongL
 import { CustomAlert } from '../components/CustomAlert';
 import SongDetailModal from '../components/SongDetailModal';
 import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../utils/instantCache';
+import {
+  shouldShowTabSpinner,
+  tryAcquireInFlightFetch,
+  releaseInFlightFetch,
+} from '../utils/tabLoadingHelper';
 
 
 const { width, height } = Dimensions.get('window');
@@ -327,6 +332,7 @@ export default function SongsScreen({ navigation, route }: any) {
     [effectiveChurchId, user?.uid]
   );
   const initialSongsCache = getInstantMemory<WorshipSong[]>(songsCacheKey);
+  const initialSetlistsCache = getInstantMemory<any[]>(setlistsCacheKey);
 
   // ── Tabs ──────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<'browse' | 'eventSongs' | 'theme' | 'songbook'>('browse');
@@ -336,6 +342,10 @@ export default function SongsScreen({ navigation, route }: any) {
   const [activeServiceId, setActiveServiceId] = useState<string>('');
   const [activeEvent, setActiveEvent] = useState<any | null>(null);
   const [hasActiveEventSongs, setHasActiveEventSongs] = useState<boolean>(false);
+  const [setlistsLoading, setSetlistsLoading] = useState<boolean>(() => !initialSetlistsCache);
+  const inFlightMapRef = useRef<Map<string, number>>(new Map());
+  const hasActiveEventRef = useRef<boolean>(false);
+  const hasSongsRef = useRef<boolean>(Boolean(initialSongsCache?.length));
 
   // ── All Songs ─────────────────────────────────────
   const [songs, setSongs] = useState<WorshipSong[]>(() => initialSongsCache || []);
@@ -369,11 +379,17 @@ export default function SongsScreen({ navigation, route }: any) {
 
   // ── Load songs (Cache-First SWR scoped per church + user) ───
   const fetchSongs = useCallback(async (forceRefresh = false) => {
+    const fetchKey = `songs_${songsCacheKey}`;
+    if (!forceRefresh && !tryAcquireInFlightFetch(inFlightMapRef.current, fetchKey)) {
+      return;
+    }
+
     const memHit = getInstantMemory<WorshipSong[]>(songsCacheKey);
     if (memHit?.length) {
+      hasSongsRef.current = true;
       setSongs(memHit);
       setLoading(false);
-    } else if (!forceRefresh) {
+    } else if (!forceRefresh && !hasSongsRef.current) {
       setLoading(true);
     }
 
@@ -386,11 +402,13 @@ export default function SongsScreen({ navigation, route }: any) {
         fetcher: () => FirestoreService.getWorshipSongs({ forceRefresh }),
         onCached: (cached) => {
           if (cached?.length) {
+            hasSongsRef.current = true;
             setSongs(cached);
             setLoading(false);
           }
         },
         onFresh: (fresh) => {
+          hasSongsRef.current = (fresh || []).length > 0;
           setSongs(fresh);
           setLoading(false);
         },
@@ -401,6 +419,7 @@ export default function SongsScreen({ navigation, route }: any) {
         Alert.alert('Error', 'Failed to load songs. Please try again.');
       }
     } finally {
+      releaseInFlightFetch(inFlightMapRef.current, fetchKey);
       setLoading(false);
       setRefreshing(false);
     }
@@ -498,6 +517,18 @@ export default function SongsScreen({ navigation, route }: any) {
 
   // ── Load Setlists / Worship Services (uses single indexed getUpcomingEvents query + SWR cache) ───
   const loadSetlists = useCallback(async (forceRefresh = false) => {
+    const fetchKey = `setlists_${setlistsCacheKey}`;
+    if (!forceRefresh && !tryAcquireInFlightFetch(inFlightMapRef.current, fetchKey)) {
+      return;
+    }
+
+    const memSetlists = getInstantMemory<any[]>(setlistsCacheKey);
+    if (memSetlists) {
+      setSetlistsLoading(false);
+    } else if (!hasActiveEventRef.current && !forceRefresh) {
+      setSetlistsLoading(true);
+    }
+
     try {
       await loadWithInstantCache<any[]>({
         key: setlistsCacheKey,
@@ -506,6 +537,7 @@ export default function SongsScreen({ navigation, route }: any) {
         forceRefresh,
         fetcher: () => FirestoreService.getUpcomingEvents(40).catch(() => []),
         onCached: (cachedEvents) => {
+          setSetlistsLoading(false);
           const activeUpcomingEvents = (cachedEvents || []).filter(isEventActiveOrUpcoming);
           activeUpcomingEvents.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
           const eventsWithSongs = activeUpcomingEvents.filter(
@@ -513,6 +545,7 @@ export default function SongsScreen({ navigation, route }: any) {
           );
           if (eventsWithSongs.length > 0) {
             const primaryEvent = eventsWithSongs[0];
+            hasActiveEventRef.current = true;
             setActiveEvent(primaryEvent);
             const srvs = primaryEvent.services || [];
             setWorshipServices(srvs);
@@ -521,6 +554,7 @@ export default function SongsScreen({ navigation, route }: any) {
           }
         },
         onFresh: (upcomingRes) => {
+          setSetlistsLoading(false);
           const uniqueEvents = Array.from(new Map((upcomingRes || []).map((e: any) => [e.id, e])).values());
           const activeUpcomingEvents = uniqueEvents.filter(isEventActiveOrUpcoming);
           activeUpcomingEvents.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
@@ -529,12 +563,14 @@ export default function SongsScreen({ navigation, route }: any) {
           );
           if (eventsWithSongs.length > 0) {
             const primaryEvent = eventsWithSongs[0];
+            hasActiveEventRef.current = true;
             setActiveEvent(primaryEvent);
             const srvs = primaryEvent.services || [];
             setWorshipServices(srvs);
             setHasActiveEventSongs(true);
             setActiveServiceId((prev) => (prev && srvs.some((s: any) => s.id === prev) ? prev : srvs[0]?.id || ''));
           } else {
+            hasActiveEventRef.current = false;
             setActiveEvent(null);
             setWorshipServices([]);
             setHasActiveEventSongs(false);
@@ -544,10 +580,14 @@ export default function SongsScreen({ navigation, route }: any) {
       });
     } catch (e) {
       console.warn('Failed to load event songs:', e);
+      hasActiveEventRef.current = false;
       setActiveEvent(null);
       setWorshipServices([]);
       setHasActiveEventSongs(false);
       setActiveServiceId('');
+    } finally {
+      releaseInFlightFetch(inFlightMapRef.current, fetchKey);
+      setSetlistsLoading(false);
     }
   }, [setlistsCacheKey]);
 
@@ -1658,7 +1698,16 @@ export default function SongsScreen({ navigation, route }: any) {
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? '#FFFFFF' : '#0F172A'} />}
             ListHeaderComponent={renderEventCardHeader()}
             ListEmptyComponent={
-              (!activeEvent || validServices.length === 0) ? null : (
+              shouldShowTabSpinner({
+                loading: setlistsLoading,
+                hasData: Boolean(activeEvent),
+                refreshing,
+              }) ? (
+                <View style={styles.emptyState}>
+                  <ActivityIndicator size="large" color="#F97316" />
+                  <Text style={[styles.emptySub, { marginTop: 12 }]}>Loading worship setlist...</Text>
+                </View>
+              ) : (!activeEvent || validServices.length === 0) ? null : (
                 <View style={styles.emptyState}>
                   <Music size={44} color="#cbd5e1" />
                   <Text style={[styles.emptyTitle, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>

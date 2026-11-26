@@ -373,9 +373,16 @@ class MemberLocationService {
 
   /**
    * Load and resolve all member locations for the interactive map.
-   * Pulls existing profile data, applies cache, and attaches Care Cell metadata.
+   * Returns saved/local-region coordinates immediately without blocking UI on Google Geocoding HTTP calls,
+   * and optionally resolves uncached addresses in a bounded background pass.
    */
-  async getMemberLocationsForMap(churchId?: string): Promise<MemberLocationRecord[]> {
+  async getMemberLocationsForMap(
+    churchId?: string,
+    options?: {
+      maxLiveGeocode?: number;
+      onBackgroundGeocodeComplete?: (updatedRecords: MemberLocationRecord[]) => void;
+    }
+  ): Promise<MemberLocationRecord[]> {
     const activeChurchId = churchId || 'rhema';
     const db = firestore();
     const churchDoc = db.collection('Rhema Church').doc(activeChurchId);
@@ -421,7 +428,18 @@ class MemberLocationService {
     });
 
     const records: MemberLocationRecord[] = [];
-    const geocodingPromises: Array<Promise<void>> = [];
+    const pendingBgGeocodes: Array<{
+      index: number;
+      memberId: string;
+      params: {
+        street: string;
+        village: string;
+        mandal: any;
+        city: string;
+        district: string;
+        state: string;
+      };
+    }> = [];
 
     for (const doc of membersSnap.docs) {
       const m = doc.data() || {};
@@ -466,10 +484,14 @@ class MemberLocationService {
 
       // Check existing coordinates on member document
       const locData = m.locationData as MemberLocationData | undefined;
+      const rootLat = typeof m.latitude === 'number' ? m.latitude : (m.lat ? Number(m.lat) : undefined);
+      const rootLng = typeof m.longitude === 'number' ? m.longitude : (m.lng ? Number(m.lng) : undefined);
+      const existingLat = locData?.latitude ?? (rootLat && !isNaN(rootLat) ? rootLat : undefined);
+      const existingLng = locData?.longitude ?? (rootLng && !isNaN(rootLng) ? rootLng : undefined);
       const hasVerifiedHome =
         locData?.locationAccuracy === 'verified_home' && locData?.locationSharingConsent === true;
 
-      if (locData?.latitude && locData?.longitude) {
+      if (existingLat && existingLng) {
         records.push({
           memberId,
           memberName,
@@ -480,80 +502,109 @@ class MemberLocationService {
           city,
           district,
           state,
-          residentialAddress: locData.formattedAddress || street,
+          residentialAddress: locData?.formattedAddress || street,
           careCellId: cellId || undefined,
           careCellCode,
           careCellName,
           careCellLeaderName,
           careCellLeaderPhone,
-          latitude: locData.latitude,
-          longitude: locData.longitude,
-          formattedAddress: locData.formattedAddress,
-          locationAccuracy: locData.locationAccuracy || 'village_approximate',
-          locationSource: locData.locationSource || 'profile_geocoding',
-          geocodingStatus: locData.geocodingStatus || 'completed',
-          locationSharingConsent: locData.locationSharingConsent,
-          landmark: locData.landmark,
+          latitude: existingLat,
+          longitude: existingLng,
+          formattedAddress: locData?.formattedAddress,
+          locationAccuracy: locData?.locationAccuracy || 'village_approximate',
+          locationSource: locData?.locationSource || 'profile_geocoding',
+          geocodingStatus: locData?.geocodingStatus || 'completed',
+          locationSharingConsent: locData?.locationSharingConsent,
+          landmark: locData?.landmark,
           upcomingVisitDate,
           visitStatus,
           hasVerifiedHome,
         });
       } else if (village || city || district) {
-        // Asynchronously resolve coordinates from profile address
-        const geocodeTask = this.geocodeAddress(activeChurchId, {
-          street,
-          village,
-          mandal: m.mandal,
+        // Check fast static local-region lookup first so map paints instantaneously
+        const regionToken = (village || city || district).toLowerCase().trim();
+        const knownRegion = KNOWN_REGION_COORDS[regionToken];
+        const recordIndex = records.length;
+
+        records.push({
+          memberId,
+          memberName,
+          memberCode,
+          phone,
+          profilePhoto: photo,
+          village: village || 'Local Area',
           city,
           district,
           state,
-        }).then(async (resolved) => {
-          if (resolved.latitude && resolved.longitude) {
-            // Save resolved coordinates back to member profile to avoid repeating geocode
-            await this.getMembersCol(activeChurchId).doc(memberId).set(
-              {
-                locationData: resolved,
-                latitude: resolved.latitude,
-                longitude: resolved.longitude,
-              },
-              { merge: true }
-            );
-          }
+          residentialAddress: street || [village, city, district].filter(Boolean).join(', '),
+          careCellId: cellId || undefined,
+          careCellCode,
+          careCellName,
+          careCellLeaderName,
+          careCellLeaderPhone,
+          latitude: knownRegion ? knownRegion.lat : null,
+          longitude: knownRegion ? knownRegion.lng : null,
+          formattedAddress: [village, city, district].filter(Boolean).join(', '),
+          locationAccuracy: knownRegion ? 'village_approximate' : 'unverified',
+          locationSource: 'profile_geocoding',
+          geocodingStatus: knownRegion ? 'completed' : 'pending',
+          upcomingVisitDate,
+          visitStatus,
+          hasVerifiedHome: false,
+        });
 
-          records.push({
-            memberId,
-            memberName,
-            memberCode,
-            phone,
-            profilePhoto: photo,
-            village: village || 'Local Area',
+        pendingBgGeocodes.push({
+          index: recordIndex,
+          memberId,
+          params: {
+            street,
+            village,
+            mandal: m.mandal,
             city,
             district,
             state,
-            residentialAddress: resolved.formattedAddress || street,
-            careCellId: cellId || undefined,
-            careCellCode,
-            careCellName,
-            careCellLeaderName,
-            careCellLeaderPhone,
-            latitude: resolved.latitude,
-            longitude: resolved.longitude,
-            formattedAddress: resolved.formattedAddress,
-            locationAccuracy: resolved.locationAccuracy,
-            locationSource: resolved.locationSource,
-            geocodingStatus: resolved.geocodingStatus,
-            upcomingVisitDate,
-            visitStatus,
-            hasVerifiedHome: false,
-          });
+          },
         });
-
-        geocodingPromises.push(geocodeTask);
       }
     }
 
-    if (geocodingPromises.length > 0) {
-      await Promise.all(geocodingPromises);
+    // Resolve uncached addresses in a non-blocking bounded background batch after returning initial pins
+    if (pendingBgGeocodes.length > 0 && (options?.maxLiveGeocode ?? 10) > 0) {
+      const cap = options?.maxLiveGeocode ?? 10;
+      const batchToGeocode = pendingBgGeocodes.slice(0, cap);
+      Promise.all(
+        batchToGeocode.map(async (item) => {
+          try {
+            const resolved = await this.geocodeAddress(activeChurchId, item.params);
+            if (resolved.latitude && resolved.longitude) {
+              await this.getMembersCol(activeChurchId).doc(item.memberId).set(
+                {
+                  locationData: resolved,
+                  latitude: resolved.latitude,
+                  longitude: resolved.longitude,
+                },
+                { merge: true }
+              );
+              records[item.index] = {
+                ...records[item.index],
+                residentialAddress: resolved.formattedAddress || records[item.index].residentialAddress,
+                latitude: resolved.latitude,
+                longitude: resolved.longitude,
+                formattedAddress: resolved.formattedAddress,
+                locationAccuracy: resolved.locationAccuracy,
+                locationSource: resolved.locationSource,
+                geocodingStatus: resolved.geocodingStatus,
+              };
+              return true;
+            }
+          } catch (_) {}
+          return false;
+        })
+      ).then((results) => {
+        if (results.some(Boolean)) {
+          options?.onBackgroundGeocodeComplete?.([...records]);
+        }
+      });
     }
 
     return records;

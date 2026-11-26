@@ -72,7 +72,7 @@ export default function AdminDonationsGive({ onNavigate, initialDonations }: any
             if (isMounted && fallback && fallback.length > 0) {
               setDonations(fallback);
             }
-          } catch (fErr) {}
+          } catch (fErr) { }
           setLoading(false);
         });
     } catch (e: any) {
@@ -131,8 +131,8 @@ export default function AdminDonationsGive({ onNavigate, initialDonations }: any
   const isSelectionMode = selectedIds.size > 0;
   const receiptList = isSelectionMode ? filteredDonations.filter(d => selectedIds.has(d.id)) : filteredDonations;
   const canGenerateReceipt = isSelectionMode || (activeCategory !== 'All' && filteredDonations.length > 0);
-  const displayType = isSelectionMode 
-    ? (Array.from(new Set(receiptList.map(d => d.category))).length === 1 ? receiptList[0].category : 'CUSTOM') 
+  const displayType = isSelectionMode
+    ? (Array.from(new Set(receiptList.map(d => d.category))).length === 1 ? receiptList[0].category : 'CUSTOM')
     : activeCategory;
 
   return (
@@ -154,8 +154,8 @@ export default function AdminDonationsGive({ onNavigate, initialDonations }: any
         ]}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <TouchableOpacity 
-            style={styles.backBtn} 
+          <TouchableOpacity
+            style={styles.backBtn}
             onPress={() => onNavigate('dashboard')}
             activeOpacity={0.7}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -245,11 +245,11 @@ export default function AdminDonationsGive({ onNavigate, initialDonations }: any
                 style={[
                   styles.badge,
                   {
-                    backgroundColor: isActive 
-                      ? (isDark ? '#FFFFFF' : '#000000') 
+                    backgroundColor: isActive
+                      ? (isDark ? '#FFFFFF' : '#000000')
                       : (isDark ? '#18181B' : '#FFFFFF'),
-                    borderColor: isActive 
-                      ? (isDark ? '#FFFFFF' : '#000000') 
+                    borderColor: isActive
+                      ? (isDark ? '#FFFFFF' : '#000000')
                       : (isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1'),
                     borderWidth: 1.5,
                   },
@@ -257,12 +257,12 @@ export default function AdminDonationsGive({ onNavigate, initialDonations }: any
                 onPress={() => setActiveCategory(cat.id)}
               >
                 <Text style={styles.badgeIcon}>{cat.icon}</Text>
-                <Text 
+                <Text
                   style={[
                     styles.badgeText,
                     {
-                      color: isActive 
-                        ? (isDark ? '#000000' : '#FFFFFF') 
+                      color: isActive
+                        ? (isDark ? '#000000' : '#FFFFFF')
                         : (isDark ? '#94A3B8' : '#64748B'),
                       fontWeight: isActive ? '700' : '600',
                     },
@@ -280,7 +280,7 @@ export default function AdminDonationsGive({ onNavigate, initialDonations }: any
       <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
         <View style={styles.searchWrap}>
           <Search color={isDark ? '#94A3B8' : '#64748B'} size={18} style={styles.searchIcon} />
-          <TextInput 
+          <TextInput
             style={[
               styles.searchInput,
               {
@@ -301,7 +301,7 @@ export default function AdminDonationsGive({ onNavigate, initialDonations }: any
       {/* Monochrome Bulk Action Button */}
       {canGenerateReceipt && receiptList.length > 0 && (
         <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[
               styles.bulkBtn,
               {
@@ -309,7 +309,7 @@ export default function AdminDonationsGive({ onNavigate, initialDonations }: any
                 borderColor: isDark ? '#FFFFFF' : '#000000',
                 borderWidth: 1.5,
               },
-            ]} 
+            ]}
             onPress={() => setShowPdfModal(true)}
             activeOpacity={0.8}
           >
@@ -335,14 +335,14 @@ export default function AdminDonationsGive({ onNavigate, initialDonations }: any
           filteredDonations.map(donation => {
             const isSelected = selectedIds.has(donation.id);
             return (
-              <TouchableOpacity 
-                key={donation.id} 
+              <TouchableOpacity
+                key={donation.id}
                 style={[
                   styles.historyCard,
                   {
                     backgroundColor: isDark ? '#18181B' : '#FFFFFF',
-                    borderColor: isSelected 
-                      ? (isDark ? '#FFFFFF' : '#000000') 
+                    borderColor: isSelected
+                      ? (isDark ? '#FFFFFF' : '#000000')
                       : (isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1'),
                     borderWidth: 1.5,
                   },
@@ -352,10 +352,10 @@ export default function AdminDonationsGive({ onNavigate, initialDonations }: any
                 delayLongPress={300}
               >
                 <View style={styles.historyCardLeft}>
-                  <View 
+                  <View
                     style={[
-                      styles.historyIconBox, 
-                      { 
+                      styles.historyIconBox,
+                      {
                         backgroundColor: isDark ? '#27272A' : '#F1F5F9',
                       },
                     ]}
@@ -395,23 +395,23 @@ export default function AdminDonationsGive({ onNavigate, initialDonations }: any
       </ScrollView>
 
       {/* Receipt Modal for Online Donations */}
-      <ReceiptModal 
-        visible={showReceipt} 
-        onClose={() => setShowReceipt(false)} 
-        donation={selectedDonation} 
+      <ReceiptModal
+        visible={showReceipt}
+        onClose={() => setShowReceipt(false)}
+        donation={selectedDonation}
       />
 
       {/* Bulk Receipt Modal */}
       <Modal visible={showPdfModal} animationType="slide" presentationStyle="pageSheet">
         <View style={{ flex: 1, backgroundColor: isDark ? '#000000' : '#F8FAFC' }}>
           <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#000000' : '#FFFFFF'} />
-          <View 
-            style={{ 
-              flexDirection: 'row', 
-              alignItems: 'center', 
-              justifyContent: 'space-between', 
-              padding: 16, 
-              paddingTop: Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight || 28) : 44) + 12, 
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: 16,
+              paddingTop: Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight || 28) : 44) + 12,
               backgroundColor: isDark ? '#000000' : '#FFFFFF',
               borderBottomWidth: 1.5,
               borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#CBD5E1',
@@ -422,15 +422,15 @@ export default function AdminDonationsGive({ onNavigate, initialDonations }: any
               <Text style={{ color: isDark ? '#FFFFFF' : '#0F172A', fontSize: 15, fontWeight: '700' }}>Close</Text>
             </TouchableOpacity>
           </View>
-          
-          <View 
-            style={{ 
-              flex: 1, 
-              margin: 16, 
-              borderRadius: 12, 
-              overflow: 'hidden', 
-              borderWidth: 1.5, 
-              borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1', 
+
+          <View
+            style={{
+              flex: 1,
+              margin: 16,
+              borderRadius: 12,
+              overflow: 'hidden',
+              borderWidth: 1.5,
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1',
               backgroundColor: '#FFFFFF',
             }}
           >
@@ -438,36 +438,36 @@ export default function AdminDonationsGive({ onNavigate, initialDonations }: any
           </View>
 
           <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 10, padding: 20, paddingBottom: 40 }}>
-            <TouchableOpacity 
-              style={{ 
-                backgroundColor: isDark ? '#FFFFFF' : '#000000', 
+            <TouchableOpacity
+              style={{
+                backgroundColor: isDark ? '#FFFFFF' : '#000000',
                 borderColor: isDark ? '#FFFFFF' : '#000000',
                 borderWidth: 1.5,
-                paddingHorizontal: 20, 
-                paddingVertical: 12, 
-                borderRadius: 24, 
-                alignItems: 'center', 
-                flexDirection: 'row', 
+                paddingHorizontal: 20,
+                paddingVertical: 12,
+                borderRadius: 24,
+                alignItems: 'center',
+                flexDirection: 'row',
                 gap: 8,
-              }} 
+              }}
               onPress={() => generateBulkDonationReceipt(receiptList, displayType, false, authorizerName)}
             >
               <Download size={16} color={isDark ? '#000000' : '#FFFFFF'} />
               <Text style={{ color: isDark ? '#000000' : '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Download</Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={{ 
-                backgroundColor: isDark ? '#FFFFFF' : '#000000', 
+
+            <TouchableOpacity
+              style={{
+                backgroundColor: isDark ? '#FFFFFF' : '#000000',
                 borderColor: isDark ? '#FFFFFF' : '#000000',
                 borderWidth: 1.5,
-                paddingHorizontal: 20, 
-                paddingVertical: 12, 
-                borderRadius: 24, 
-                alignItems: 'center', 
-                flexDirection: 'row', 
+                paddingHorizontal: 20,
+                paddingVertical: 12,
+                borderRadius: 24,
+                alignItems: 'center',
+                flexDirection: 'row',
                 gap: 8,
-              }} 
+              }}
               onPress={() => generateBulkDonationReceipt(receiptList, displayType, true, authorizerName)}
             >
               <Share2 size={16} color={isDark ? '#000000' : '#FFFFFF'} />

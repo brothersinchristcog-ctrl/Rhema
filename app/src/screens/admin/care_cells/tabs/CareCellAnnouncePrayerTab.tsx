@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   RefreshControl,
   Linking,
   Alert,
+  Platform,
 } from 'react-native';
 import {
   Megaphone,
@@ -26,6 +27,12 @@ import {
 } from 'lucide-react-native';
 import CareCellService from '../../../../services/CareCellService';
 import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
+import { RHEMA_CHURCH_ID } from '../../../../constants/ChurchConfig';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  loadWithInstantCache,
+} from '../../../../utils/instantCache';
 import {
   CareCell,
   CareCellPrayerRequest,
@@ -37,9 +44,16 @@ import CareCellPrayerModal from '../components/CareCellPrayerModal';
 
 interface CareCellAnnouncePrayerTabProps {
   churchId?: string;
+  cells?: CareCell[];
 }
 
-export default function CareCellAnnouncePrayerTab({ churchId }: CareCellAnnouncePrayerTabProps) {
+type AnnouncePrayerPayload = {
+  cells: CareCell[];
+  prayers: CareCellPrayerRequest[];
+  announcements: CareCellAnnouncement[];
+};
+
+export default function CareCellAnnouncePrayerTab({ churchId, cells: cellsProp }: CareCellAnnouncePrayerTabProps) {
   const { isDark, primaryText, secondaryText, cardSurface, secondarySurface, borderColor } = useAdminTheme();
   const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
   const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
@@ -48,51 +62,91 @@ export default function CareCellAnnouncePrayerTab({ churchId }: CareCellAnnounce
   const secondaryBtnText = isDark ? '#E4E4E7' : '#334155';
 
   const [section, setSection] = useState<'prayers' | 'announcements'>('prayers');
-  const [cells, setCells] = useState<CareCell[]>([]);
   const [selectedCell, setSelectedCell] = useState<string>('ALL');
+  const resolvedChurchScope = churchId || RHEMA_CHURCH_ID;
+  const apCacheKey = useMemo(
+    () => makeScopedCacheKey('admin_care_cell_announce_prayer_v1', resolvedChurchScope, selectedCell),
+    [resolvedChurchScope, selectedCell]
+  );
+  const initialApCache = useMemo(
+    () => getInstantMemory<AnnouncePrayerPayload>(apCacheKey),
+    [apCacheKey]
+  );
+
+  const [fetchedCells, setFetchedCells] = useState<CareCell[]>(initialApCache?.cells || []);
+  const cells = cellsProp && cellsProp.length > 0 ? cellsProp : fetchedCells;
 
   // Prayers Data
-  const [prayers, setPrayers] = useState<CareCellPrayerRequest[]>([]);
+  const [prayers, setPrayers] = useState<CareCellPrayerRequest[]>(initialApCache?.prayers || []);
   const [editingPrayerId, setEditingPrayerId] = useState<string | null>(null);
   const [pastoralResponseText, setPastoralResponseText] = useState('');
 
   // Announcements Data
-  const [announcements, setAnnouncements] = useState<CareCellAnnouncement[]>([]);
+  const [announcements, setAnnouncements] = useState<CareCellAnnouncement[]>(initialApCache?.announcements || []);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialApCache);
   const [refreshing, setRefreshing] = useState(false);
 
   // Modals
   const [announceModalVisible, setAnnounceModalVisible] = useState(false);
   const [prayerModalVisible, setPrayerModalVisible] = useState(false);
 
-  const loadData = useCallback(async () => {
-    try {
-      const activeChurchId = churchId || (await CareCellService.getChurchId());
-      const [cellsList, prayerList, announceList] = await Promise.all([
-        CareCellService.getCareCells(activeChurchId),
-        CareCellService.getCellPrayerRequests(activeChurchId, selectedCell),
-        CareCellService.getCellAnnouncements(activeChurchId, selectedCell),
-      ]);
+  const loadData = useCallback(
+    async (forceRefresh = false) => {
+      const mem = forceRefresh ? null : getInstantMemory<AnnouncePrayerPayload>(apCacheKey);
+      if (mem) {
+        if (!cellsProp || cellsProp.length === 0) setFetchedCells(mem.cells);
+        setPrayers(mem.prayers);
+        setAnnouncements(mem.announcements);
+        setLoading(false);
+      }
 
-      setCells(cellsList);
-      setPrayers(prayerList);
-      setAnnouncements(announceList);
-    } catch (e) {
-      console.error('Error loading announce/prayer tab:', e);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [churchId, selectedCell]);
+      try {
+        const activeChurchId = churchId || (await CareCellService.getChurchId());
+        await loadWithInstantCache<AnnouncePrayerPayload>({
+          key: apCacheKey,
+          freshSkipMs: 30_000,
+          forceRefresh,
+          screenName: 'CareCellAnnouncePrayerTab',
+          fetcher: async () => {
+            const hasParentCells = Array.isArray(cellsProp) && cellsProp.length > 0;
+            const [cellsList, prayerList, announceList] = await Promise.all([
+              hasParentCells ? Promise.resolve(cellsProp!) : CareCellService.getCareCells(activeChurchId),
+              CareCellService.getCellPrayerRequests(activeChurchId, selectedCell),
+              CareCellService.getCellAnnouncements(activeChurchId, selectedCell),
+            ]);
+            return { cells: cellsList, prayers: prayerList, announcements: announceList };
+          },
+          onCached: (cached) => {
+            if (!cellsProp || cellsProp.length === 0) setFetchedCells(cached.cells);
+            setPrayers(cached.prayers);
+            setAnnouncements(cached.announcements);
+            setLoading(false);
+          },
+          onFresh: (fresh) => {
+            if (!cellsProp || cellsProp.length === 0) setFetchedCells(fresh.cells);
+            setPrayers(fresh.prayers);
+            setAnnouncements(fresh.announcements);
+            setLoading(false);
+          },
+        });
+      } catch (e) {
+        console.error('Error loading announce/prayer tab:', e);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [churchId, cellsProp, selectedCell, apCacheKey]
+  );
 
   useEffect(() => {
-    loadData();
+    loadData(false);
   }, [loadData]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    loadData();
+    loadData(true);
   };
 
   const handleUpdatePrayerStatus = async (prayerId: string, status: PrayerRequestStatus) => {
@@ -264,6 +318,10 @@ export default function CareCellAnnouncePrayerTab({ churchId }: CareCellAnnounce
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[primaryBtnBg]} />}
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <HeartHandshake size={44} color="#CBD5E1" />
@@ -388,6 +446,10 @@ export default function CareCellAnnouncePrayerTab({ churchId }: CareCellAnnounce
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[primaryBtnBg]} />}
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
           ListHeaderComponent={
             <View style={{ marginBottom: 12 }}>
               <TouchableOpacity
@@ -453,7 +515,7 @@ export default function CareCellAnnouncePrayerTab({ churchId }: CareCellAnnounce
           cellName={activeCellObj?.name}
           createdBy="admin"
           createdByName="Admin"
-          onSuccess={loadData}
+          onSuccess={() => loadData(true)}
         />
       )}
 
@@ -467,7 +529,7 @@ export default function CareCellAnnouncePrayerTab({ churchId }: CareCellAnnounce
           cellName={activeCellObj?.name}
           memberId="admin"
           memberName="Church Admin"
-          onSuccess={loadData}
+          onSuccess={() => loadData(true)}
         />
       )}
     </View>

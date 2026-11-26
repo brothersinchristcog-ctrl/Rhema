@@ -24,6 +24,7 @@ const ICONS = {
 // Extracted from original stitch code
 import { Path } from 'react-native-svg';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
+import { getCelebrationCardTextColor } from '../../utils/celebrationDateHelper';
 
 export default function AdminCelebrationsPreview({ 
   member, 
@@ -59,6 +60,8 @@ export default function AdminCelebrationsPreview({
   const colors = theme?.imageUrl 
     ? ['#000000', '#000000'] 
     : (theme?.color ? [theme.color, theme.color] : (theme?.c || ['#5A6BC4', '#1E2A63']));
+  const cardTextColor = getCelebrationCardTextColor(colors, Boolean(theme?.imageUrl));
+  const accentStrokeColor = cardTextColor === '#FFFFFF' ? '#FFFFFF' : '#64748B';
 
   return (
     <View style={styles.container}>
@@ -104,22 +107,22 @@ export default function AdminCelebrationsPreview({
           {theme?.imageUrl && (
             <Image source={{ uri: theme.imageUrl }} style={[StyleSheet.absoluteFillObject, { resizeMode: 'cover' }]} />
           )}
-          <Svg width="100%" height={450} viewBox="0 0 400 500" preserveAspectRatio="xMidYMid slice">
+          <Svg style={StyleSheet.absoluteFillObject} width="100%" height="100%" viewBox="0 0 400 500" preserveAspectRatio="xMidYMid slice">
             <Defs>
               <LinearGradient id="pg" x1="0" y1="0" x2="1" y2="1">
-                <Stop offset="0%" stopColor={colors[0]} stopOpacity={theme?.imageUrl ? 0.2 : 1} />
-                <Stop offset="100%" stopColor={colors[1]} stopOpacity={theme?.imageUrl ? 0.7 : 1} />
+                <Stop offset="0%" stopColor={colors[0]} stopOpacity={theme?.imageUrl ? 0.25 : 1} />
+                <Stop offset="100%" stopColor={colors[1]} stopOpacity={theme?.imageUrl ? 0.72 : 1} />
               </LinearGradient>
             </Defs>
             <Rect width="400" height="500" fill="url(#pg)" />
             {!theme?.imageUrl && (
               <>
-                <G fill="#ffffff" opacity="0.10">
+                <G fill={accentStrokeColor} opacity="0.10">
                   <Circle cx="60" cy="60" r="70" />
                   <Circle cx="360" cy="440" r="90" />
                   <Circle cx="370" cy="60" r="40" />
                 </G>
-                <G fill="none" stroke="#ffffff" strokeOpacity="0.25" strokeWidth="1.5">
+                <G fill="none" stroke={accentStrokeColor} strokeOpacity="0.22" strokeWidth="1.5">
                   <Circle cx="200" cy="250" r="150" />
                   <Circle cx="200" cy="250" r="110" />
                 </G>
@@ -128,24 +131,26 @@ export default function AdminCelebrationsPreview({
           </Svg>
 
           <View style={styles.greetingOverlay}>
-            <Text style={styles.gCrest}>{churchName || 'Grace Community Church'}</Text>
+            {!!churchName && (
+              <Text style={[styles.gCrest, { color: cardTextColor }]}>{churchName}</Text>
+            )}
             
             {layout === 'theme' && photoUri && (
-              <View style={{alignItems: 'center', marginVertical: 12}}>
-                <Image source={{uri: photoUri}} style={{width: 100, height: 100, borderRadius: 50, borderWidth: 3, borderColor: '#fff'}} />
+              <View style={{ alignItems: 'center', marginVertical: 10 }}>
+                <Image source={{ uri: photoUri }} style={{ width: 96, height: 96, borderRadius: 48, borderWidth: 3, borderColor: '#FFFFFF' }} />
               </View>
             )}
 
-            <Text style={styles.gTitle}>{titleOverlay || categoryLabel}</Text>
-            <Text style={styles.gName}>{nameOverlay || member.name}</Text>
-            <Text style={styles.gMsg}>{message}</Text>
+            <Text style={[styles.gTitle, { color: cardTextColor }]}>{titleOverlay || categoryLabel}</Text>
+            <Text style={[styles.gName, { color: cardTextColor }]}>{nameOverlay || member?.name}</Text>
+            <Text style={[styles.gMsg, { color: cardTextColor }]}>{message}</Text>
             {verse?.text ? (
-              <Text style={styles.gVerse}>
+              <Text style={[styles.gVerse, { color: cardTextColor }, /[\u0C00-\u0C7F]/.test(verse.text) && { fontFamily: undefined }]}>
                 "{verse.text.length > 100 ? verse.text.substring(0, 100) + '...' : verse.text}"
                 {'\n'}— {verse.ref}
               </Text>
             ) : null}
-            <Text style={styles.gSender}>Sent with love</Text>
+            <Text style={[styles.gSender, { color: cardTextColor }]}>Sent with love</Text>
           </View>
         </View>
 
@@ -264,6 +269,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   },
   greetingFrame: {
     borderRadius: 30,
+    minHeight: 420,
     overflow: 'hidden',
     shadowColor: '#1E2A63',
     shadowOffset: { width: 0, height: 18 },
@@ -272,13 +278,14 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     elevation: 10,
     position: 'relative',
     backgroundColor: '#37469B',
+    justifyContent: 'center',
   },
   greetingOverlay: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    padding: 26,
+    paddingVertical: 28,
+    paddingHorizontal: 24,
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 2,
   },
   gCrest: {
     fontFamily: 'Inter-Bold',

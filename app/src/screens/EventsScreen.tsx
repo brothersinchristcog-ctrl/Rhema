@@ -33,6 +33,11 @@ import { useChurch } from '../context/ChurchContext';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../utils/instantCache';
+import {
+  shouldShowTabSpinner,
+  tryAcquireInFlightFetch,
+  releaseInFlightFetch,
+} from '../utils/tabLoadingHelper';
 
 const { width } = Dimensions.get('window');
 const PAST_EVENTS_PAGE_SIZE = 5;
@@ -63,7 +68,9 @@ export default function EventsScreen({ navigation }: any) {
 
   const pastCursorRef = useRef<any>(null);
   const pastLoadedRef = useRef<boolean>(false);
+  const hasPastEventsRef = useRef<boolean>(Boolean(getInstantMemory<any>(pastCacheKey)?.events?.length));
   const loadingMorePastRef = useRef<boolean>(false);
+  const inFlightMapRef = useRef<Map<string, number>>(new Map());
 
   const parseEventDateObj = (dateStr?: string | any): Date | null => {
     if (!dateStr) return null;
@@ -174,6 +181,10 @@ export default function EventsScreen({ navigation }: any) {
   };
 
   const fetchUpcomingEvents = useCallback(async (isRefresh: boolean = false) => {
+    const fetchKey = `events_upcoming_${upcomingCacheKey}`;
+    if (!isRefresh && !tryAcquireInFlightFetch(inFlightMapRef.current, fetchKey)) {
+      return;
+    }
     try {
       await loadWithInstantCache<ScheduleEvent[]>({
         key: upcomingCacheKey,
@@ -214,11 +225,12 @@ export default function EventsScreen({ navigation }: any) {
     } catch (error) {
       console.error('Error fetching upcoming events:', error);
     } finally {
+      releaseInFlightFetch(inFlightMapRef.current, fetchKey);
       setLoading(false);
     }
   }, [upcomingCacheKey]);
 
-  const fetchPastEventsPage = useCallback(async (reset: boolean = false) => {
+  const fetchPastEventsPage = useCallback(async (reset: boolean = false, forceRefresh: boolean = false) => {
     if (!reset) {
       if (loadingMorePastRef.current || !pastCursorRef.current) return;
       loadingMorePastRef.current = true;
@@ -242,8 +254,13 @@ export default function EventsScreen({ navigation }: any) {
       return;
     }
 
+    const fetchKey = `events_past_${pastCacheKey}`;
+    if (!forceRefresh && !tryAcquireInFlightFetch(inFlightMapRef.current, fetchKey)) {
+      return;
+    }
+
     pastCursorRef.current = null;
-    if (!getInstantMemory<ScheduleEvent[]>(pastCacheKey)?.length) {
+    if (!getInstantMemory<{ events: ScheduleEvent[] }>(pastCacheKey)?.events?.length && !hasPastEventsRef.current) {
       setPastLoading(true);
     }
 
@@ -252,7 +269,7 @@ export default function EventsScreen({ navigation }: any) {
         key: pastCacheKey,
         screenName: 'EventsPast',
         freshSkipMs: 3 * 60 * 1000,
-        forceRefresh: true,
+        forceRefresh,
         fetcher: async () => {
           const result = await FirestoreService.getPastEventsPaginated(PAST_EVENTS_PAGE_SIZE, null);
           pastCursorRef.current = result.lastDoc;
@@ -261,12 +278,16 @@ export default function EventsScreen({ navigation }: any) {
         },
         onCached: (cached) => {
           if (cached?.events) {
+            pastLoadedRef.current = true;
+            hasPastEventsRef.current = cached.events.length > 0;
             setPastEvents(cached.events);
             setHasMorePast(Boolean(cached.hasMore));
             setPastLoading(false);
           }
         },
         onFresh: (fresh) => {
+          pastLoadedRef.current = true;
+          hasPastEventsRef.current = (fresh.events || []).length > 0;
           setPastEvents(fresh.events);
           setHasMorePast(Boolean(fresh.hasMore));
           setPastLoading(false);
@@ -275,6 +296,7 @@ export default function EventsScreen({ navigation }: any) {
     } catch (error) {
       console.error('Error fetching paginated past events:', error);
     } finally {
+      releaseInFlightFetch(inFlightMapRef.current, fetchKey);
       setPastLoading(false);
     }
   }, [pastCacheKey]);
@@ -288,7 +310,7 @@ export default function EventsScreen({ navigation }: any) {
     setRefreshing(true);
     const refreshTask =
       activeTab === 'past'
-        ? fetchPastEventsPage(true)
+        ? fetchPastEventsPage(true, true)
         : fetchUpcomingEvents(true).then(() => {
             if (pastLoadedRef.current) {
               pastLoadedRef.current = false;
@@ -313,7 +335,7 @@ export default function EventsScreen({ navigation }: any) {
   // Lazy load: fetch ONLY the first 5 past events when the user opens the Past Events tab
   useEffect(() => {
     if (activeTab === 'past' && !pastLoadedRef.current) {
-      fetchPastEventsPage(true);
+      fetchPastEventsPage(true, false);
     }
   }, [activeTab, fetchPastEventsPage]);
 
@@ -650,14 +672,18 @@ export default function EventsScreen({ navigation }: any) {
           />
         }
         ListEmptyComponent={
-          activeTab === 'past' && pastLoading && !refreshing ? (
+          shouldShowTabSpinner({
+            loading: activeTab === 'past' ? pastLoading : loading,
+            hasData: activeTab === 'past' ? pastEvents.length > 0 : upcomingEvents.length > 0,
+            refreshing,
+          }) ? (
             <View style={styles.emptyState}>
               <ActivityIndicator size="large" color="#227FFF" />
               <Text style={[styles.emptySub, { color: isDark ? '#94A3B8' : '#64748B', marginTop: 12 }]}>
                 {t('events.loading') || 'Loading events...'}
               </Text>
             </View>
-          ) : !loading ? (
+          ) : (
             <View style={styles.emptyState}>
               <CalendarCheck size={56} color={isDark ? '#475569' : '#CBD5E1'} strokeWidth={1.5} />
               <Text style={[styles.emptyTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
@@ -669,7 +695,7 @@ export default function EventsScreen({ navigation }: any) {
                   : (t('events.noUpcomingSub') || 'Check back later for newly scheduled church services and events.')}
               </Text>
             </View>
-          ) : null
+          )
         }
         ListFooterComponent={
           activeTab === 'past' && pastEvents.length > 0 && hasMorePast ? (

@@ -6,10 +6,12 @@ import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHe
 export default function AdminCelebrationsConfirm({ 
   member,
   category,
+  channel = 'whatsapp',
   onDone 
 }: { 
   member: any, 
   category: string,
+  channel?: 'push' | 'whatsapp',
   onDone: () => void 
 }) {
   const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
@@ -82,12 +84,22 @@ export default function AdminCelebrationsConfirm({
       <Text style={styles.title}>Greeting Sent!</Text>
       
       <Text style={styles.message}>
-        Your {categoryLabel.toLowerCase()} wish for <Text style={styles.bold}>{member?.name}</Text> has been prepared & sent via WhatsApp.
+        {channel === 'push' ? (
+          <>
+            Your {categoryLabel.toLowerCase()} wish for <Text style={styles.bold}>{member?.name}</Text> has been sent as a push notification.
+          </>
+        ) : (
+          <>
+            Your {categoryLabel.toLowerCase()} wish for <Text style={styles.bold}>{member?.name}</Text> has been prepared & sent via WhatsApp.
+          </>
+        )}
       </Text>
 
       <View style={styles.infoBanner}>
         <Text style={styles.infoBannerText}>
-          📸 Card saved to Gallery &nbsp;|&nbsp; 📋 Message copied to clipboard
+          {channel === 'push'
+            ? '🔔 Delivered to member Updates & device notification tray'
+            : '📸 Card saved to Gallery  |  📋 Message copied to clipboard'}
         </Text>
       </View>
 

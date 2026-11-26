@@ -8,9 +8,9 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
-  Image,
   TextInput,
   Modal,
+  Platform,
 } from 'react-native';
 import {
   ClipboardCheck,
@@ -29,8 +29,15 @@ import {
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import CareCellService from '../../../../services/CareCellService';
+import CachedImage from '../../../../components/CachedImage';
 import { formatDateDisplay } from '../../../../utils/DateUtils';
 import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
+import { RHEMA_CHURCH_ID } from '../../../../constants/ChurchConfig';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  loadWithInstantCache,
+} from '../../../../utils/instantCache';
 import {
   CareCell,
   CareCellMeeting,
@@ -49,12 +56,14 @@ interface MemberAttendanceRowState {
 }
 
 interface CareCellAttendanceTabProps {
+  churchId?: string;
   cells: CareCell[];
   selectedMeeting?: CareCellMeeting | null;
   onClearSelectedMeeting: () => void;
 }
 
 export default function CareCellAttendanceTab({
+  churchId,
   cells,
   selectedMeeting,
   onClearSelectedMeeting,
@@ -69,32 +78,60 @@ export default function CareCellAttendanceTab({
   const [selectedCellId, setSelectedCellId] = useState<string>(
     selectedMeeting?.cellId || cells[0]?.id || ''
   );
-  const [meetings, setMeetings] = useState<CareCellMeeting[]>([]);
-  const [currentMeeting, setCurrentMeeting] = useState<CareCellMeeting | null>(selectedMeeting || null);
+  const resolvedChurchScope = churchId || RHEMA_CHURCH_ID;
+  const cellMeetingsCacheKey = useMemo(
+    () => makeScopedCacheKey('admin_care_cell_att_meetings_v1', resolvedChurchScope, selectedCellId || 'none'),
+    [resolvedChurchScope, selectedCellId]
+  );
+  const initialMeetingsCache = useMemo(
+    () => (selectedCellId ? getInstantMemory<CareCellMeeting[]>(cellMeetingsCacheKey) : null),
+    [selectedCellId, cellMeetingsCacheKey]
+  );
+
+  const [meetings, setMeetings] = useState<CareCellMeeting[]>(initialMeetingsCache || []);
+  const [currentMeeting, setCurrentMeeting] = useState<CareCellMeeting | null>(
+    selectedMeeting || (initialMeetingsCache && initialMeetingsCache[0]) || null
+  );
+
+  const rosterCacheKey = useMemo(
+    () => makeScopedCacheKey('admin_care_cell_att_roster_v1', resolvedChurchScope, currentMeeting?.id || 'none'),
+    [resolvedChurchScope, currentMeeting?.id]
+  );
+  const initialRosterCache = useMemo(
+    () => (currentMeeting?.id ? getInstantMemory<MemberAttendanceRowState[]>(rosterCacheKey) : null),
+    [currentMeeting?.id, rosterCacheKey]
+  );
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [rosterRows, setRosterRows] = useState<MemberAttendanceRowState[]>([]);
+  const [rosterRows, setRosterRows] = useState<MemberAttendanceRowState[]>(initialRosterCache || []);
 
   // Meeting Picker Modal
   const [showMeetingPicker, setShowMeetingPicker] = useState(false);
 
-  // Load meetings when cell changes
+  // Load meetings when cell changes (with SWR cache)
   useEffect(() => {
     if (!selectedCellId) return;
     let isMounted = true;
-    CareCellService.getMeetings(undefined, selectedCellId).then((list) => {
-      if (!isMounted) return;
-      setMeetings(list);
-      // If we don't have a current meeting or the current meeting belongs to a different cell
-      if (!currentMeeting || currentMeeting.cellId !== selectedCellId) {
-        setCurrentMeeting(list[0] || null);
-      }
-    });
+    loadWithInstantCache<CareCellMeeting[]>({
+      key: cellMeetingsCacheKey,
+      freshSkipMs: 30_000,
+      fetcher: () => CareCellService.getMeetings(churchId, selectedCellId),
+      onCached: (cached) => {
+        if (!isMounted) return;
+        setMeetings(cached);
+        setCurrentMeeting((prev) => (!prev || prev.cellId !== selectedCellId ? cached[0] || null : prev));
+      },
+      onFresh: (fresh) => {
+        if (!isMounted) return;
+        setMeetings(fresh);
+        setCurrentMeeting((prev) => (!prev || prev.cellId !== selectedCellId ? fresh[0] || null : prev));
+      },
+    }).catch((err) => console.error('Error loading attendance meetings:', err));
     return () => {
       isMounted = false;
     };
-  }, [selectedCellId]);
+  }, [selectedCellId, churchId, cellMeetingsCacheKey]);
 
   // Sync when selectedMeeting prop changes externally
   useEffect(() => {
@@ -104,47 +141,71 @@ export default function CareCellAttendanceTab({
     }
   }, [selectedMeeting]);
 
-  // Load cell roster and existing attendance when currentMeeting changes
-  const loadAttendanceRoster = useCallback(async () => {
-    if (!currentMeeting) {
-      setRosterRows([]);
-      return;
-    }
+  // Load cell roster and existing attendance when currentMeeting changes (with SWR cache)
+  const loadAttendanceRoster = useCallback(
+    async (forceRefresh = false) => {
+      if (!currentMeeting) {
+        setRosterRows([]);
+        setLoading(false);
+        return;
+      }
 
-    setLoading(true);
-    try {
-      const churchId = await CareCellService.getChurchId();
-      const [memberships, existingAttendance] = await Promise.all([
-        CareCellService.getActiveCellMemberships(churchId, currentMeeting.cellId),
-        CareCellService.getMeetingAttendance(churchId, currentMeeting.id),
-      ]);
+      const mem = forceRefresh ? null : getInstantMemory<MemberAttendanceRowState[]>(rosterCacheKey);
+      if (mem) {
+        setRosterRows(mem);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
 
-      const attendanceMap = new Map<string, CareCellAttendance>();
-      existingAttendance.forEach((a) => attendanceMap.set(a.memberId, a));
+      try {
+        const activeChurchId = churchId || (await CareCellService.getChurchId());
+        await loadWithInstantCache<MemberAttendanceRowState[]>({
+          key: rosterCacheKey,
+          freshSkipMs: 25_000,
+          forceRefresh,
+          screenName: 'CareCellAttendanceTab',
+          fetcher: async () => {
+            const [memberships, existingAttendance] = await Promise.all([
+              CareCellService.getActiveCellMemberships(activeChurchId, currentMeeting.cellId),
+              CareCellService.getMeetingAttendance(activeChurchId, currentMeeting.id),
+            ]);
 
-      // Build rows for all active cell members
-      const rows: MemberAttendanceRowState[] = memberships.map((m) => {
-        const existing = attendanceMap.get(m.memberId);
-        return {
-          memberId: m.memberId,
-          memberName: m.memberName,
-          memberPhone: m.memberPhone,
-          memberPhoto: m.memberPhoto,
-          status: existing ? existing.attendanceStatus : 'Present', // Default to Present for quick roll-call
-          notes: existing?.notes || '',
-        };
-      });
+            const attendanceMap = new Map<string, CareCellAttendance>();
+            existingAttendance.forEach((a) => attendanceMap.set(a.memberId, a));
 
-      setRosterRows(rows);
-    } catch (e) {
-      console.error('Error loading attendance roster:', e);
-    } finally {
-      setLoading(false);
-    }
-  }, [currentMeeting]);
+            return memberships.map((m) => {
+              const existing = attendanceMap.get(m.memberId);
+              return {
+                memberId: m.memberId,
+                memberName: m.memberName,
+                memberPhone: m.memberPhone,
+                memberPhoto: m.memberPhoto,
+                status: existing ? existing.attendanceStatus : 'Present',
+                notes: existing?.notes || '',
+              };
+            });
+          },
+          onCached: (cached) => {
+            setRosterRows(cached);
+            setLoading(false);
+          },
+          onFresh: (fresh) => {
+            setRosterRows(fresh);
+            setLoading(false);
+          },
+        });
+      } catch (e) {
+        console.error('Error loading attendance roster:', e);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [currentMeeting, churchId, rosterCacheKey]
+  );
 
   useEffect(() => {
-    loadAttendanceRoster();
+    loadAttendanceRoster(false);
   }, [loadAttendanceRoster]);
 
   // Attendance Counts Summary
@@ -228,7 +289,7 @@ export default function CareCellAttendanceTab({
       <View style={styles.memberCard}>
         {/* Avatar */}
         {item.memberPhoto ? (
-          <Image source={{ uri: item.memberPhoto }} style={styles.avatarImg} />
+          <CachedImage uri={item.memberPhoto} style={styles.avatarImg} />
         ) : (
           <View style={styles.avatarFallback}>
             <Text style={styles.avatarInitials}>{initials}</Text>
@@ -465,6 +526,10 @@ export default function CareCellAttendanceTab({
           renderItem={renderMemberRow}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          initialNumToRender={15}
+          maxToRenderPerBatch={12}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Users size={44} color="#CBD5E1" />
@@ -502,7 +567,8 @@ export default function CareCellAttendanceTab({
         </View>
       )}
 
-      {/* Meeting Picker Modal */}
+      {/* Meeting Picker Modal (lazy mounted) */}
+      {showMeetingPicker && (
       <Modal visible={showMeetingPicker} transparent animationType="fade" onRequestClose={() => setShowMeetingPicker(false)}>
         <TouchableOpacity style={styles.subModalOverlay} activeOpacity={1} onPress={() => setShowMeetingPicker(false)}>
           <View style={styles.subModalContainer}>
@@ -534,6 +600,7 @@ export default function CareCellAttendanceTab({
           </View>
         </TouchableOpacity>
       </Modal>
+      )}
     </View>
   );
 }

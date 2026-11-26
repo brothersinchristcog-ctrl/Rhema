@@ -2,6 +2,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
+import { assertAdminModulePermission } from './adminPermissions.js';
 
 const DEFAULT_CHURCH_ID = 'rhema';
 
@@ -385,13 +386,7 @@ export const triggerPledgeRemindersManual = onCall(
 
     const churchId = String(request.data?.churchId || DEFAULT_CHURCH_ID).trim() || DEFAULT_CHURCH_ID;
     const db = getFirestore();
-    const memberSnap = await db.collection('Rhema Church').doc(churchId).collection('members').doc(uid).get();
-    const userType = String(memberSnap.data()?.userType || '').toLowerCase();
-    const isAdmin = ['admin', 'super_admin', 'super admin'].includes(userType);
-
-    if (!isAdmin) {
-      throw new HttpsError('permission-denied', 'Admin privileges are required to trigger pledge reminders manually.');
-    }
+    await assertAdminModulePermission(db, request.auth, churchId, 'donations');
 
     const summary = await runPledgeAndMandateReminderSweep(churchId);
     return { success: true, ...summary };

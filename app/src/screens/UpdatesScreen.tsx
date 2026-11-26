@@ -48,6 +48,7 @@ const resolveUpdateIcon = (type?: string) => {
     case 'birthday':
       return Gift;
     case 'baptism':
+    case 'baptism_anniversary':
     case 'baptism_request':
     case 'baptism_request_admin':
     case 'baptism_request_member':
@@ -59,7 +60,7 @@ const resolveUpdateIcon = (type?: string) => {
     case 'prayer':
       return Heart;
     case 'celebration':
-    case 'baptism_anniversary':
+      return Gift;
     case 'testimony_admin':
     case 'testimony_published':
     case 'testimony_member_status':
@@ -234,6 +235,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
     if (type === 'testimony_member_status') return 'TESTIMONY UPDATE';
     if (type === 'baptism_request_admin' || type === 'baptism_request') return 'BAPTISM REQUEST';
     if (type === 'prayer_request_admin' || type === 'prayer_request' || type === 'prayer') return 'PRAYER REQUEST';
+    if (type === 'baptism_anniversary') return 'BAPTISM ANNIVERSARY';
     if (type === 'baptism' || type === 'baptism_request_member') return 'BAPTISM';
     if (type === 'admin_roster_alert') return 'SERVICE ROSTER ALERT';
     if (type === 'service_roster') return 'SERVICE ROSTER';
@@ -835,14 +837,46 @@ export default function UpdatesScreen({ navigation, route }: any) {
       icon = Droplets;
       color = '#0284c7';
       resolvedType = 'baptism';
+    } else if (data.type === 'celebration') {
+      const catHint = String(data.celebrationCategory || data.category || '').toLowerCase();
+      const titleHint = String(data.title || '').toLowerCase();
+      const contentHint = String(data.content || '').toLowerCase();
+      if (catHint.includes('birthday') || data.title?.includes('🎂') || titleHint.includes('birthday')) {
+        icon = Gift;
+        color = '#d97706';
+        resolvedType = 'birthday';
+      } else if (
+        catHint.includes('wedding') ||
+        (catHint.includes('anniversary') && !catHint.includes('baptism')) ||
+        data.title?.includes('💐') ||
+        data.title?.includes('💒') ||
+        (titleHint.includes('anniversary') && !titleHint.includes('baptism'))
+      ) {
+        icon = Heart;
+        color = '#be185d';
+        resolvedType = 'anniversary';
+      } else if (
+        catHint.includes('baptism') ||
+        titleHint.includes('baptism') ||
+        contentHint.includes('baptism') ||
+        data.title?.includes('🕊️')
+      ) {
+        icon = Droplets;
+        color = '#3b82f6';
+        resolvedType = 'baptism_anniversary';
+      } else {
+        icon = Gift;
+        color = '#3b82f6';
+        resolvedType = 'celebration';
+      }
     } else if (data.type === 'birthday') {
       icon = Gift;
       color = '#d97706';
       resolvedType = 'birthday';
-    } else if (data.type === 'baptism_anniversary' || data.type === 'celebration' || (data.type === 'baptism' && data.isCelebration)) {
-      icon = Sparkles;
+    } else if (data.type === 'baptism_anniversary' || (data.type === 'baptism' && data.isCelebration)) {
+      icon = Droplets;
       color = '#3b82f6';
-      resolvedType = 'celebration';
+      resolvedType = 'baptism_anniversary';
     } else if (data.type === 'anniversary') {
       icon = Heart;
       color = '#be185d';
@@ -851,8 +885,12 @@ export default function UpdatesScreen({ navigation, route }: any) {
       icon = Gift;
       color = '#d97706';
       resolvedType = 'birthday';
-    } else if (data.title?.includes('🎉') || data.title?.includes('🕊️') || data.content?.includes('Baptism') || data.title?.includes('Baptism') || data.type === 'baptism') {
-      icon = Sparkles;
+    } else if (data.title?.includes('🕊️') || data.content?.toLowerCase()?.includes('baptism') || data.title?.toLowerCase()?.includes('baptism') || data.type === 'baptism') {
+      icon = Droplets;
+      color = '#3b82f6';
+      resolvedType = 'baptism_anniversary';
+    } else if (data.title?.includes('🎉')) {
+      icon = Gift;
       color = '#3b82f6';
       resolvedType = 'celebration';
     } else if (data.type === 'testimony_admin' || data.title?.includes('New Testimony Submitted')) {
@@ -1656,6 +1694,44 @@ export default function UpdatesScreen({ navigation, route }: any) {
                 </View>
                 <Text style={[styles.updateTitle, isDark && { color: colors.text }]}>{update.title}</Text>
                 <Text style={[styles.updateContent, isDark && { color: colors.textSecondary }]} numberOfLines={2}>{update.content}</Text>
+                {update.type === 'youtube_live' && (
+                  <TouchableOpacity
+                    style={{
+                      marginTop: 10,
+                      alignSelf: 'flex-start',
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: '#DC2626',
+                      paddingHorizontal: 14,
+                      paddingVertical: 7,
+                      borderRadius: 999,
+                      gap: 6,
+                    }}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      const rawUrl =
+                        update?.url ||
+                        activeChurch?.socialLinks?.youtube ||
+                        'https://www.youtube.com/@RhemaGlobalMinistries/live';
+                      let targetUrl = rawUrl;
+                      if (rawUrl.includes('@') && !rawUrl.includes('/live') && !rawUrl.includes('/streams')) {
+                        const base = rawUrl.split('?')[0];
+                        targetUrl = base.endsWith('/') ? `${base}live` : `${base}/live`;
+                      }
+                      navigation.navigate('YouTubeLive', {
+                        url: targetUrl,
+                        videoId: update?.videoId,
+                        title: update?.title,
+                        churchId: update?.churchId || activeChurch?.id || 'rhema',
+                      });
+                    }}
+                  >
+                    <Tv size={14} color="#FFFFFF" strokeWidth={2.4} />
+                    <Text style={{ color: '#FFFFFF', fontSize: 12.5, fontWeight: '800' }}>
+                      Join Live
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </TouchableOpacity>
           </SwipeableRow>
@@ -1681,7 +1757,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
               isDark && { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
               selectedUpdate?.type === 'birthday' && styles.modalCardBirthday,
               selectedUpdate?.type === 'anniversary' && styles.modalCardAnniversary,
-              selectedUpdate?.type === 'celebration' && styles.modalCardCelebration,
+              (selectedUpdate?.type === 'celebration' || selectedUpdate?.type === 'baptism_anniversary') && styles.modalCardCelebration,
               (selectedUpdate?.type === 'emergency' || selectedUpdate?.title?.includes('🚨')) && styles.modalCardEmergency
             ]}
           >
@@ -1691,14 +1767,21 @@ export default function UpdatesScreen({ navigation, route }: any) {
                 styles.modalCloseBtn,
                 isDark &&
                 selectedUpdate?.type !== 'birthday' &&
-                selectedUpdate?.type !== 'anniversary' && { backgroundColor: colors.background },
-                (selectedUpdate?.type === 'birthday' || selectedUpdate?.type === 'anniversary') && styles.modalCloseBtnGold
+                selectedUpdate?.type !== 'anniversary' &&
+                selectedUpdate?.type !== 'celebration' &&
+                selectedUpdate?.type !== 'baptism_anniversary' && { backgroundColor: colors.background },
+                (selectedUpdate?.type === 'birthday' ||
+                  selectedUpdate?.type === 'anniversary' ||
+                  selectedUpdate?.type === 'celebration' ||
+                  selectedUpdate?.type === 'baptism_anniversary') && styles.modalCloseBtnGold
               ]}
               onPress={() => setSelectedUpdate(null)}
             >
               <X size={20} color={
                 selectedUpdate?.type === 'birthday' ? '#b45309' :
-                  selectedUpdate?.type === 'anniversary' ? '#be185d' : (isDark ? colors.textSecondary : '#475569')
+                  selectedUpdate?.type === 'anniversary' ? '#be185d' :
+                    (selectedUpdate?.type === 'celebration' || selectedUpdate?.type === 'baptism_anniversary') ? '#1d4ed8' :
+                      (isDark ? colors.textSecondary : '#475569')
               } />
             </TouchableOpacity>
 
@@ -1708,21 +1791,28 @@ export default function UpdatesScreen({ navigation, route }: any) {
               <View style={styles.celebrationContainer}>
                 <View style={styles.balloonRow}>
                   <Text style={styles.emojiDecor}>🎈</Text>
-                  <Text style={[styles.emojiDecor, { fontSize: 44, marginTop: -15 }]}>🎂</Text>
+                  <Text style={[styles.emojiDecor, { fontSize: 44, marginTop: -12 }]}>🎂</Text>
                   <Text style={styles.emojiDecor}>🎈</Text>
                 </View>
                 <Text style={styles.celebrationTitleEn}>{t('updates.birthdayGreeting')}</Text>
                 <Text style={styles.celebrationTitleTe}>{t('updates.birthdaySubGreeting')}</Text>
                 <View style={styles.dividerGold} />
 
-                <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+                <ScrollView
+                  style={styles.modalScroll}
+                  contentContainerStyle={styles.modalScrollContent}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {selectedUpdate?.imageUrl && (
+                    <Image source={{ uri: selectedUpdate.imageUrl }} style={styles.modalImage} resizeMode="contain" />
+                  )}
                   <Text style={styles.celebrationGreeting}>
                     {selectedUpdate?.content}
                   </Text>
                 </ScrollView>
 
                 <View style={styles.celebrationFooter}>
-                  <Gift size={24} color="#b45309" />
+                  <Gift size={22} color="#b45309" />
                   <Text style={styles.footerBlessing}>{t('updates.birthdayBlessing')}</Text>
                 </View>
               </View>
@@ -1731,38 +1821,49 @@ export default function UpdatesScreen({ navigation, route }: any) {
               <View style={styles.celebrationContainer}>
                 <View style={styles.balloonRow}>
                   <Text style={styles.emojiDecor}>💖</Text>
-                  <Text style={[styles.emojiDecor, { fontSize: 44, marginTop: -15 }]}>💐</Text>
+                  <Text style={[styles.emojiDecor, { fontSize: 44, marginTop: -12 }]}>💐</Text>
                   <Text style={styles.emojiDecor}>💖</Text>
                 </View>
                 <Text style={[styles.celebrationTitleEn, { color: '#be185d' }]}>{t('updates.anniversaryGreeting')}</Text>
                 <Text style={[styles.celebrationTitleTe, { color: '#be185d' }]}>{t('updates.anniversarySubGreeting')}</Text>
                 <View style={styles.dividerPink} />
 
-                <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+                <ScrollView
+                  style={styles.modalScroll}
+                  contentContainerStyle={styles.modalScrollContent}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {selectedUpdate?.imageUrl && (
+                    <Image source={{ uri: selectedUpdate.imageUrl }} style={styles.modalImage} resizeMode="contain" />
+                  )}
                   <Text style={[styles.celebrationGreeting, { color: '#85144b' }]}>
                     {selectedUpdate?.content}
                   </Text>
                 </ScrollView>
 
                 <View style={styles.celebrationFooter}>
-                  <Heart size={24} color="#be185d" strokeWidth={2} />
+                  <Heart size={22} color="#be185d" strokeWidth={2} />
                   <Text style={[styles.footerBlessing, { color: '#be185d' }]}>{t('updates.anniversaryBlessing')}</Text>
                 </View>
               </View>
-            ) : selectedUpdate?.type === 'celebration' ? (
+            ) : (selectedUpdate?.type === 'celebration' || selectedUpdate?.type === 'baptism_anniversary') ? (
               // --- 🎉 BAPTISM / CELEBRATION UI ---
               <View style={styles.celebrationContainer}>
                 <View style={styles.balloonRow}>
                   <Text style={styles.emojiDecor}>🕊️</Text>
-                  <Text style={[styles.emojiDecor, { fontSize: 44, marginTop: -15 }]}>🎉</Text>
+                  <Text style={[styles.emojiDecor, { fontSize: 44, marginTop: -12 }]}>🎉</Text>
                   <Text style={styles.emojiDecor}>🕊️</Text>
                 </View>
                 <Text style={[styles.celebrationTitleEn, { color: '#3b82f6' }]}>{selectedUpdate?.title || t('updates.celebrationDefault')}</Text>
                 <View style={styles.dividerBlue} />
 
-                <ScrollView style={[styles.modalScroll, { maxHeight: 400 }]} showsVerticalScrollIndicator={false}>
+                <ScrollView
+                  style={styles.modalScroll}
+                  contentContainerStyle={styles.modalScrollContent}
+                  showsVerticalScrollIndicator={false}
+                >
                   {selectedUpdate?.imageUrl && (
-                    <Image source={{ uri: selectedUpdate.imageUrl }} style={styles.modalImage} resizeMode="cover" />
+                    <Image source={{ uri: selectedUpdate.imageUrl }} style={styles.modalImage} resizeMode="contain" />
                   )}
                   <Text style={[styles.celebrationGreeting, { color: '#1e3a8a' }]}>
                     {selectedUpdate?.content}
@@ -1770,6 +1871,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
                 </ScrollView>
 
                 <View style={[styles.celebrationFooter, { borderTopColor: '#3b82f6' }]}>
+                  <Droplets size={22} color="#1d4ed8" />
                   <Text style={[styles.footerBlessing, { color: '#1e3a8a' }]}>{t('updates.baptismBlessing')}</Text>
                 </View>
               </View>
@@ -2758,13 +2860,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 24,
     width: '100%',
-    maxHeight: '80%',
-    padding: 24,
+    maxHeight: '85%',
+    padding: 20,
     elevation: 20,
     shadowColor: '#000',
     shadowOpacity: 0.25,
     shadowRadius: 15,
-    position: 'relative'
+    position: 'relative',
+    overflow: 'hidden'
   },
   modalCardBirthday: {
     backgroundColor: '#fffdf5',
@@ -2803,13 +2906,16 @@ const styles = StyleSheet.create({
   // Birthday & Anniversary Styles
   celebrationContainer: {
     alignItems: 'center',
-    paddingTop: 10
+    paddingTop: 8,
+    maxHeight: '100%',
+    flexShrink: 1,
+    width: '100%'
   },
   balloonRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 15,
-    marginBottom: 14
+    marginBottom: 10
   },
   emojiDecor: {
     fontSize: 32,
@@ -2833,51 +2939,55 @@ const styles = StyleSheet.create({
     height: 2,
     backgroundColor: '#f59e0b',
     width: 80,
-    marginVertical: 16,
+    marginVertical: 12,
     borderRadius: 1
   },
   dividerPink: {
     height: 2,
     backgroundColor: '#fda4af',
     width: 80,
-    marginVertical: 16,
+    marginVertical: 12,
     borderRadius: 1
   },
   dividerBlue: {
     height: 2,
     backgroundColor: '#3b82f6',
     width: 80,
-    marginVertical: 16,
+    marginVertical: 12,
     borderRadius: 1
   },
   modalScroll: {
     width: '100%',
-    maxHeight: 400,
-    marginVertical: 10
+    flexGrow: 0,
+    flexShrink: 1,
+    marginVertical: 6
+  },
+  modalScrollContent: {
+    alignItems: 'center',
+    paddingBottom: 6
   },
   modalImage: {
     width: '100%',
-    height: 220,
+    height: 250,
     borderRadius: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0'
+    marginBottom: 14
   },
   celebrationGreeting: {
     fontSize: 14,
     color: '#78350f',
     textAlign: 'center',
-    lineHeight: 24,
+    lineHeight: 22,
     fontWeight: '600',
     paddingHorizontal: 8
   },
   celebrationFooter: {
-    marginTop: 20,
+    marginTop: 10,
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
     borderTopWidth: 0.5,
     borderTopColor: '#f59e0b',
-    paddingTop: 16,
+    paddingTop: 12,
+    paddingBottom: 2,
     width: '100%'
   },
   footerBlessing: {

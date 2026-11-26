@@ -76,9 +76,10 @@ export declare const monitorMeetingLive: import("firebase-functions/v2/scheduler
 /**
  * Shared YouTube Live FCM dispatcher:
  * Sends BOTH direct token multicast (to every active member device registered in Firestore)
- * and topic broadcast (`church_{churchId}`), with full Android `notification` + `android.notification`
- * (`channelId: 'church_alerts'`, shared `tag` & `collapseKey`) so killed/background Android devices
- * always display the alert natively without duplicates.
+ * and topic broadcast (`church_{churchId}`).
+ * Uses high-priority data payload on Android (so `app/index.js` renders via `expo-notifications`
+ * with the "📺 Join Live" action button and dedupe identifier even when killed/backgrounded)
+ * and full APNs alert + `youtube_live` category on iOS.
  */
 export declare function dispatchYouTubeLivePush(db: any, params: {
     churchId: string;
@@ -88,7 +89,7 @@ export declare function dispatchYouTubeLivePush(db: any, params: {
     pushBody: string;
     streamTitle?: string;
     docId?: string;
-}): Promise<{
+}, messagingOverride?: any): Promise<{
     delivered: boolean;
     totalTokens: number;
     multicastSuccess: number;
