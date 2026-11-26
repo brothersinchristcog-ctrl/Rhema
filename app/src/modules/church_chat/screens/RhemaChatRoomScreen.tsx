@@ -46,6 +46,8 @@ import ChatEncryptionModal, { ChatEncryptionModalMode } from '../../../component
 import InAppDocumentViewerModal, {
   InAppDocumentViewerDoc,
 } from '../../../components/InAppDocumentViewerModal';
+import UnreadMessagesDivider from '../../../components/UnreadMessagesDivider';
+import { resolveRtdbUnreadAnchor } from '../../../utils/chatUnreadHelper';
 import { useChatTheme } from '../constants/useChatTheme';
 import { rhemaChatService } from '../services/rhemaChatService';
 import { rhemaDirectoryService } from '../services/rhemaDirectoryService';
@@ -157,6 +159,17 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
   const syncedStaleInboxRef = useRef<boolean>(false);
   const didInitialReadRef = useRef<boolean>(false);
 
+  const [unreadDividerMsgId, setUnreadDividerMsgId] = useState<string | null>(null);
+  const unreadDividerMsgIdRef = useRef<string | null>(null);
+  const userInteractedRef = useRef<boolean>(false);
+  const isNearBottomRef = useRef<boolean>(true);
+  const didInitialScrollRef = useRef<boolean>(false);
+  const hasScrolledToUnreadRef = useRef<boolean>(false);
+  const lastScrolledUnreadIdRef = useRef<string | null>(null);
+  const pendingScrollToEndRef = useRef<boolean>(false);
+  const prevMsgCountRef = useRef<number>(0);
+  const pendingUnreadMarkIdsRef = useRef<string[]>([]);
+
   const roomType = roomDetails?.meta?.type || initialRoomType;
   const isGroup = roomType === 'group';
   const roomTitle = isGroup
@@ -220,6 +233,20 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
     };
   }, [churchId, roomId, myUid, myName, isGroup, peerUid]);
 
+  // Reset unread/scroll session flags only when opening a different room or switching user.
+  useEffect(() => {
+    unreadDividerMsgIdRef.current = null;
+    setUnreadDividerMsgId(null);
+    userInteractedRef.current = false;
+    isNearBottomRef.current = true;
+    didInitialScrollRef.current = false;
+    hasScrolledToUnreadRef.current = false;
+    lastScrolledUnreadIdRef.current = null;
+    pendingScrollToEndRef.current = false;
+    prevMsgCountRef.current = 0;
+    pendingUnreadMarkIdsRef.current = [];
+  }, [churchId, roomId, myUid]);
+
   useEffect(() => {
     if (!myUid || !roomId) return;
     syncedStaleInboxRef.current = false;
@@ -230,6 +257,33 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
       myUid,
       msgLimit,
       (list) => {
+        const nextAnchorId = resolveRtdbUnreadAnchor({
+          currentAnchorId: unreadDividerMsgIdRef.current,
+          messages: list,
+          myUid,
+          userInteracted: userInteractedRef.current,
+          isNearBottom: isNearBottomRef.current,
+        });
+        if (nextAnchorId !== unreadDividerMsgIdRef.current) {
+          unreadDividerMsgIdRef.current = nextAnchorId;
+          setUnreadDividerMsgId(nextAnchorId);
+          // Allow scrolling to newly captured unread anchor if user hasn't manually scrolled yet
+          if (nextAnchorId && !userInteractedRef.current) {
+            hasScrolledToUnreadRef.current = false;
+          }
+        }
+
+        const prevCount = prevMsgCountRef.current;
+        prevMsgCountRef.current = list.length;
+        if (
+          didInitialScrollRef.current &&
+          list.length > prevCount &&
+          isNearBottomRef.current &&
+          !nextAnchorId
+        ) {
+          pendingScrollToEndRef.current = true;
+        }
+
         setMessages(list);
         if (!syncedStaleInboxRef.current && list.length < msgLimit) {
           syncedStaleInboxRef.current = true;
@@ -238,8 +292,13 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
         const unreadIncoming = list
           .filter((m) => m.senderUid !== myUid && m.type !== 'system' && !m.readBy?.[myUid])
           .map((m) => m.id);
-        if (unreadIncoming.length > 0 || !didInitialReadRef.current) {
+
+        if (userInteractedRef.current && !isNearBottomRef.current && unreadIncoming.length > 0) {
+          // User is scrolled up reading older messages: keep incoming IDs queued until they scroll down
+          pendingUnreadMarkIdsRef.current = unreadIncoming;
+        } else if (unreadIncoming.length > 0 || !didInitialReadRef.current) {
           didInitialReadRef.current = true;
+          pendingUnreadMarkIdsRef.current = [];
           rhemaChatService.markRoomRead(
             churchId,
             roomId,
@@ -257,13 +316,16 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
   useEffect(() => {
     const showSub = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      () => setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 120)
+      () => {
+        isNearBottomRef.current = true;
+        setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 120);
+      }
     );
     return () => showSub.remove();
   }, []);
 
   useEffect(() => {
-    if (!inChatSearch && typingUsers.length > 0) {
+    if (!inChatSearch && typingUsers.length > 0 && isNearBottomRef.current) {
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
     }
   }, [typingUsers.length, inChatSearch]);
@@ -273,6 +335,43 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
     if (!q) return messages;
     return messages.filter((m) => m.text.toLowerCase().includes(q));
   }, [messages, inChatSearch]);
+
+  const scrollToMessageIndex = (index: number, animated = false) => {
+    if (index < 0 || !listRef.current) return;
+    try {
+      listRef.current.scrollToIndex({
+        index,
+        animated,
+        viewPosition: 0.08,
+      });
+    } catch {
+      // Handled by onScrollToIndexFailed
+    }
+  };
+
+  useEffect(() => {
+    if (!unreadDividerMsgId || inChatSearch.trim() || userInteractedRef.current) return;
+    if (
+      lastScrolledUnreadIdRef.current === unreadDividerMsgId &&
+      hasScrolledToUnreadRef.current
+    ) {
+      return;
+    }
+    const idx = displayedMessages.findIndex((m) => m.id === unreadDividerMsgId);
+    if (idx < 0) return;
+
+    lastScrolledUnreadIdRef.current = unreadDividerMsgId;
+    hasScrolledToUnreadRef.current = true;
+    didInitialScrollRef.current = true;
+    isNearBottomRef.current = false;
+
+    const raf = requestAnimationFrame(() => {
+      setTimeout(() => {
+        scrollToMessageIndex(idx, false);
+      }, 45);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [unreadDividerMsgId, displayedMessages, inChatSearch]);
 
   const clearTypingState = () => {
     if (typingTimerRef.current) {
@@ -346,6 +445,9 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
         text: clean,
         replyTo: currentReply,
       });
+      unreadDividerMsgIdRef.current = null;
+      setUnreadDividerMsgId(null);
+      isNearBottomRef.current = true;
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
     } catch (err: any) {
       setInputText(clean);
@@ -389,6 +491,9 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
         msgId,
       });
       setReplyTo(null);
+      unreadDividerMsgIdRef.current = null;
+      setUnreadDividerMsgId(null);
+      isNearBottomRef.current = true;
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (err: any) {
       if (err?.message === 'PIN_UNLOCK_REQUIRED') {
@@ -843,9 +948,67 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
+          scrollEventThrottle={100}
+          onScrollBeginDrag={() => {
+            userInteractedRef.current = true;
+          }}
+          onScroll={(e) => {
+            const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+            const distanceFromBottom =
+              contentSize.height - (contentOffset.y + layoutMeasurement.height);
+            const nearBottom = distanceFromBottom <= 120;
+            isNearBottomRef.current = nearBottom;
+            if (nearBottom && pendingUnreadMarkIdsRef.current.length > 0) {
+              const idsToMark = pendingUnreadMarkIdsRef.current;
+              pendingUnreadMarkIdsRef.current = [];
+              rhemaChatService.markRoomRead(
+                churchId,
+                roomId,
+                myUid,
+                !isGroup,
+                peerUid,
+                idsToMark
+              );
+            }
+          }}
+          onScrollToIndexFailed={(info) => {
+            const approxOffset = Math.max(0, info.averageItemLength * info.index - 48);
+            listRef.current?.scrollToOffset({ offset: approxOffset, animated: false });
+            setTimeout(() => {
+              if (listRef.current && info.index < displayedMessages.length) {
+                listRef.current.scrollToIndex({
+                  index: info.index,
+                  animated: false,
+                  viewPosition: 0.08,
+                });
+              }
+            }, 90);
+          }}
           onContentSizeChange={() => {
-            if (!inChatSearch && messages.length > 0) {
+            if (inChatSearch.trim() || displayedMessages.length === 0) return;
+
+            if (unreadDividerMsgIdRef.current) {
+              if (!hasScrolledToUnreadRef.current) {
+                const idx = displayedMessages.findIndex(
+                  (m) => m.id === unreadDividerMsgIdRef.current
+                );
+                if (idx >= 0) {
+                  lastScrolledUnreadIdRef.current = unreadDividerMsgIdRef.current;
+                  hasScrolledToUnreadRef.current = true;
+                  didInitialScrollRef.current = true;
+                  isNearBottomRef.current = false;
+                  scrollToMessageIndex(idx, false);
+                }
+              }
+              return;
+            }
+
+            if (!didInitialScrollRef.current) {
+              didInitialScrollRef.current = true;
               listRef.current?.scrollToEnd({ animated: false });
+            } else if (pendingScrollToEndRef.current && isNearBottomRef.current) {
+              pendingScrollToEndRef.current = false;
+              listRef.current?.scrollToEnd({ animated: true });
             }
           }}
           ListHeaderComponent={
@@ -903,8 +1066,12 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
               index < displayedMessages.length - 1 ? displayedMessages[index + 1] : null;
             const isMine = item.senderUid === myUid;
 
+            const showUnreadDivider = !inChatSearch.trim() && item.id === unreadDividerMsgId;
             const samePrevSender =
-              prev && prev.type !== 'system' && prev.senderUid === item.senderUid;
+              !showUnreadDivider &&
+              prev &&
+              prev.type !== 'system' &&
+              prev.senderUid === item.senderUid;
             const sameNextSender =
               next && next.type !== 'system' && next.senderUid === item.senderUid;
 
@@ -912,13 +1079,25 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
               !prev || Math.abs(item.createdAt - prev.createdAt) > 2 * 60 * 1000;
 
             return (
-              <MessageBubble
-                message={item}
-                isMine={isMine}
-                isGroup={isGroup}
-                showSenderName={!samePrevSender || timeGapBig}
-                showAvatar={!isMine && (!sameNextSender || index === displayedMessages.length - 1)}
-                showTimestampHeader={!samePrevSender || timeGapBig}
+              <View>
+                {showUnreadDivider ? (
+                  <UnreadMessagesDivider
+                    label="Unread Messages"
+                    lineColor={palette.glassBorder}
+                    pillBgColor={palette.systemPillBg}
+                    pillBorderColor={palette.glassBorder}
+                    textColor={palette.accent}
+                    fontFamily={fontFamily}
+                    fontSize={scaleFont(11.5)}
+                  />
+                ) : null}
+                <MessageBubble
+                  message={item}
+                  isMine={isMine}
+                  isGroup={isGroup}
+                  showSenderName={!samePrevSender || timeGapBig}
+                  showAvatar={!isMine && (!sameNextSender || index === displayedMessages.length - 1)}
+                  showTimestampHeader={showUnreadDivider || !samePrevSender || timeGapBig}
                 myUid={myUid}
                 otherParticipantCount={Math.max(1, participantUids.length - 1)}
                 palette={palette}
@@ -954,6 +1133,7 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
                   })
                 }
               />
+              </View>
             );
           }}
           ListFooterComponent={

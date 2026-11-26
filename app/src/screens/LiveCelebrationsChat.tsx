@@ -41,6 +41,11 @@ import {
   extractTodaysCelebrants,
   matchesIstCelebrationDay,
 } from '../utils/celebrationDateHelper';
+import UnreadMessagesDivider from '../components/UnreadMessagesDivider';
+import {
+  findFirstUnreadTimestampedMessageIndex,
+  getChatMessageTimeMs,
+} from '../utils/chatUnreadHelper';
 
 const WISH_DICTIONARY: Record<string, string[]> = {
   'Birthday': [
@@ -162,6 +167,14 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
   const isTypingLocally = useRef(false);
 
   const [initialLastReadTime, setInitialLastReadTime] = useState<number>(0);
+  const [lastReadLoaded, setLastReadLoaded] = useState(false);
+  const unreadDividerRef = useRef<View>(null);
+  const outerScrollRef = useRef<ScrollView>(null);
+  const chatSectionYRef = useRef<number | null>(null);
+  const messagesContainerYRef = useRef<number | null>(null);
+  const unreadDividerYRef = useRef<number | null>(null);
+  const lastScrolledUnreadKeyRef = useRef<string | null>(null);
+  const latestCelebMsgTimeRef = useRef<number>(0);
 
   const e2eeUid = user?.uid || member?.id || '';
   const [e2eeState, setE2eeState] = useState<E2EEStateSnapshot>(() => e2eeService.getState());
@@ -209,18 +222,52 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    setLastReadLoaded(false);
+    unreadDividerYRef.current = null;
+    lastScrolledUnreadKeyRef.current = null;
     const fetchLastRead = async () => {
-      const lastRead = await AsyncStorage.getItem(`@lastReadCeleb_${todayStr}`);
-      setInitialLastReadTime(lastRead ? parseInt(lastRead, 10) : 0);
+      try {
+        const lastRead = await AsyncStorage.getItem(`@lastReadCeleb_${todayStr}`);
+        if (!active) return;
+        const parsed = lastRead ? parseInt(lastRead, 10) : 0;
+        setInitialLastReadTime(Number.isFinite(parsed) && parsed > 0 ? parsed : 0);
+      } catch {
+        if (active) setInitialLastReadTime(0);
+      } finally {
+        if (active) setLastReadLoaded(true);
+      }
     };
     fetchLastRead();
+    return () => {
+      active = false;
+    };
   }, [todayStr]);
 
   useEffect(() => {
     if (messages.length > 0) {
-      AsyncStorage.setItem(`@lastReadCeleb_${todayStr}`, Date.now().toString());
+      const maxMsgTs = messages.reduce(
+        (acc, m) => Math.max(acc, getChatMessageTimeMs(m?.createdAt)),
+        0
+      );
+      latestCelebMsgTimeRef.current = Math.max(Date.now(), maxMsgTs);
+      // Delay writing the read marker so the unread divider stays visible while reading,
+      // and also persist on unmount so backing out immediately updates the unread badge.
+      const timer = setTimeout(() => {
+        AsyncStorage.setItem(
+          `@lastReadCeleb_${todayStr}`,
+          Math.max(Date.now(), latestCelebMsgTimeRef.current).toString()
+        ).catch(() => {});
+      }, 3000);
+      return () => {
+        clearTimeout(timer);
+        AsyncStorage.setItem(
+          `@lastReadCeleb_${todayStr}`,
+          Math.max(Date.now(), latestCelebMsgTimeRef.current).toString()
+        ).catch(() => {});
+      };
     }
-  }, [messages.length, todayStr]);
+  }, [messages, todayStr]);
 
   const updateTypingStatus = async (isTyping: boolean) => {
     const myId = member?.id || user?.uid;
@@ -554,6 +601,9 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
         }
 
         await batch.commit();
+        const sentAt = Date.now();
+        setInitialLastReadTime(sentAt);
+        AsyncStorage.setItem(`@lastReadCeleb_${todayStr}`, sentAt.toString()).catch(() => {});
         setSelectedCelebrantId(null);
         setSelectedCelebrantName(null);
       }
@@ -701,6 +751,9 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
       }
 
       await batch.commit();
+      const sentAt = Date.now();
+      setInitialLastReadTime(sentAt);
+      AsyncStorage.setItem(`@lastReadCeleb_${todayStr}`, sentAt.toString()).catch(() => {});
       setSelectedCelebrantId(null);
       setSelectedCelebrantName(null);
     } catch (e) {
@@ -789,6 +842,50 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
   const currentUserId = member?.id || user?.uid;
   const participantCount = displayedMessages.length > 0 ? [...new Set(displayedMessages.map(m => m.userId))].length : 0;
 
+  // Compute the index of the first unread message (from other users) for both new and existing chats
+  const firstUnreadIndex = React.useMemo(
+    () =>
+      findFirstUnreadTimestampedMessageIndex(
+        displayedMessages,
+        currentUserId || '',
+        initialLastReadTime,
+        lastReadLoaded
+      ),
+    [displayedMessages, initialLastReadTime, lastReadLoaded, currentUserId]
+  );
+
+  const selectedCelebScopeKey =
+    selectedCardCeleb?.id || selectedCardCeleb?.uid || selectedCardCeleb?.Id || 'all';
+  const firstUnreadMsgId = firstUnreadIndex >= 0 ? displayedMessages[firstUnreadIndex]?.id || null : null;
+
+  useEffect(() => {
+    unreadDividerYRef.current = null;
+    lastScrolledUnreadKeyRef.current = null;
+  }, [selectedCelebScopeKey, todayStr]);
+
+  const scrollToUnreadDividerIfReady = () => {
+    if (loading || !firstUnreadMsgId || !outerScrollRef.current) return;
+    const scopeKey = `${todayStr}::${selectedCelebScopeKey}::${firstUnreadMsgId}`;
+    if (lastScrolledUnreadKeyRef.current === scopeKey) return;
+
+    const sectionY = chatSectionYRef.current;
+    const containerY = messagesContainerYRef.current;
+    const dividerY = unreadDividerYRef.current;
+    if (sectionY === null || containerY === null || dividerY === null) return;
+
+    lastScrolledUnreadKeyRef.current = scopeKey;
+    const targetY = Math.max(0, sectionY + containerY + dividerY - 12);
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        outerScrollRef.current?.scrollTo({ y: targetY, animated: true });
+      }, 40);
+    });
+  };
+
+  useEffect(() => {
+    scrollToUnreadDividerIfReady();
+  }, [loading, firstUnreadMsgId, selectedCelebScopeKey, todayStr]);
+
   const celebrationTypes = new Set(
     selectedCardCeleb
       ? [getCelebrationType(selectedCardCeleb)]
@@ -865,6 +962,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
         enabled={Platform.OS === 'ios'}
       >
         <ScrollView
+          ref={outerScrollRef}
           style={styles.scrollFlex}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
@@ -945,7 +1043,13 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
           <View style={styles.divider} />
 
           {/* Live Wishes Chat Section */}
-          <View style={styles.chatSection}>
+          <View
+            style={styles.chatSection}
+            onLayout={(e) => {
+              chatSectionYRef.current = e.nativeEvent.layout.y;
+              scrollToUnreadDividerIfReady();
+            }}
+          >
             {e2eeState.status === 'needs_pin_unlock' ? (
               <TouchableOpacity
                 activeOpacity={0.85}
@@ -985,11 +1089,39 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
             {loading ? (
               <ActivityIndicator color={COLORS.primary} style={{ marginTop: 40 }} />
             ) : (
-              <View style={styles.messagesContainer}>
+              <View
+                style={styles.messagesContainer}
+                onLayout={(e) => {
+                  messagesContainerYRef.current = e.nativeEvent.layout.y;
+                  scrollToUnreadDividerIfReady();
+                }}
+              >
                 {displayedMessages.map((item, index) => {
                   const isMe = item.userId === currentUserId;
+                  const showUnreadDivider = index === firstUnreadIndex;
+                  const msgTimeMs = getChatMessageTimeMs(item.createdAt);
+                  const isUnreadMsg =
+                    !isMe &&
+                    lastReadLoaded &&
+                    (initialLastReadTime <= 0 ? true : msgTimeMs > initialLastReadTime);
                   return (
-                    <View key={item.id} style={[styles.messageRow, isMe ? styles.messageRowRight : styles.messageRowLeft]}>
+                    <React.Fragment key={item.id}>
+                      {showUnreadDivider && (
+                        <UnreadMessagesDivider
+                          ref={unreadDividerRef}
+                          label="Unread Messages"
+                          lineColor="rgba(255, 200, 128, 0.3)"
+                          pillBgColor="rgba(255, 200, 128, 0.14)"
+                          pillBorderColor="rgba(255, 200, 128, 0.38)"
+                          textColor={COLORS.primary}
+                          containerStyle={{ marginVertical: 4 }}
+                          onLayout={(e) => {
+                            unreadDividerYRef.current = e.nativeEvent.layout.y;
+                            scrollToUnreadDividerIfReady();
+                          }}
+                        />
+                      )}
+                      <View style={[styles.messageRow, isMe ? styles.messageRowRight : styles.messageRowLeft]}>
                       {!isMe && (
                         <View style={styles.avatarContainer}>
                           {item.userPhoto ? (
@@ -1041,7 +1173,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
                         <View style={[styles.messageBubble, styles.messageBubbleInbound, { flexShrink: 1 }]}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
                             <Text style={[styles.messageSenderName, { marginBottom: 0 }]}>{item.userName}</Text>
-                            {initialLastReadTime > 0 && (item.createdAt?.toMillis?.() || (typeof item.createdAt === 'number' ? item.createdAt : 0)) > initialLastReadTime && (
+                            {isUnreadMsg && (
                               <View style={{ backgroundColor: '#ef4444', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, marginLeft: 8 }}>
                                 <Text style={{ color: '#fff', fontSize: 9, fontWeight: 'bold' }}>NEW</Text>
                               </View>
@@ -1084,7 +1216,8 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
                           )}
                         </View>
                       )}
-                    </View>
+                      </View>
+                    </React.Fragment>
                   );
                 })}
               </View>
