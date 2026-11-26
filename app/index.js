@@ -1,11 +1,14 @@
 import './src/utils/FontSizeManager';
+import { InteractionManager } from 'react-native';
 import { registerRootComponent } from 'expo';
 import messaging from '@react-native-firebase/messaging';
 import NotificationService from './src/services/NotificationService';
 import App from './App';
 
-// Pre-register category & channel early
-NotificationService.setupCategoriesAndChannels().catch(() => {});
+// Register notification channels/categories after initial UI frame renders
+InteractionManager.runAfterInteractions(() => {
+  NotificationService.setupCategoriesAndChannels().catch(() => {});
+});
 
 // Register background handler
 messaging().setBackgroundMessageHandler(async remoteMessage => {

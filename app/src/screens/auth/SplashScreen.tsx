@@ -28,24 +28,24 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
   onFinishRef.current = onFinish;
 
   useEffect(() => {
-    // Staggered smooth native fade for an ultra-crisp vector reveal
+    // Crisp, short fade animation so first paint happens quickly
     Animated.parallel([
       Animated.timing(bgFade, {
         toValue: 1,
-        duration: 500,
+        duration: 220,
         useNativeDriver: true,
       }),
       Animated.timing(contentFade, {
         toValue: 1,
-        duration: 750,
-        delay: 150,
+        duration: 280,
+        delay: 40,
         useNativeDriver: true,
       }),
     ]).start();
 
     const timer = setTimeout(() => {
       onFinishRef.current?.();
-    }, 2500);
+    }, 550);
 
     return () => clearTimeout(timer);
   }, [bgFade, contentFade]);

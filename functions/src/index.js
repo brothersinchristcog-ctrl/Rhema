@@ -882,6 +882,25 @@ async function handleBroadcastPushDispatch(data, churchIdParam, messageIdParam) 
     // Strip calendar emojis (📅, 🗓️, 📆) which mobile OS fonts (e.g. Android Noto Emoji) permanently render with "July 17"
     title = title.replace(/[📅🗓️📆]/gu, '').trim();
     const churchId = churchIdParam || data.targetChurchId || DEFAULT_CHURCH_ID;
+    // Deduplicate prayer request broadcasts against dedicated onPrayerRequestCreatedAdmin / onPrayerRequestProcessedMember triggers
+    if ((type === 'prayer_request_admin' || type === 'prayer_request_member') &&
+        (data.prayerId || data.requestId)) {
+        try {
+            const db = getDb();
+            const targetPrayerId = String(data.prayerId || data.requestId);
+            const prayerSnap = await db
+                .collection('Rhema Church')
+                .doc(churchId)
+                .collection('prayerRequests')
+                .doc(targetPrayerId)
+                .get();
+            if (prayerSnap.exists) {
+                console.log(`🛑 [BroadcastPush] Skipping redundant ${type} push for prayer ${targetPrayerId} (handled by prayerRequests trigger)`);
+                return;
+            }
+        }
+        catch (_) { }
+    }
     // Atomic coordination with onVolunteerPostCreated so volunteer_post_new is sent once and never skipped
     if (type === 'volunteer_post_new' && data.postId) {
         try {

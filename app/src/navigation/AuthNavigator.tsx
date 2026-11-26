@@ -1,12 +1,5 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import LoginScreen from '../screens/auth/LoginScreen';
-import VerifyOtpScreen from '../screens/auth/VerifyOtpScreen';
-import SignUpScreen from '../screens/auth/SignUpScreen';
-import RegistrationSuccessScreen from '../screens/auth/RegistrationSuccessScreen';
-import ApprovalPendingScreen from '../screens/auth/ApprovalPendingScreen';
-import ChurchSelectionScreen from '../screens/auth/ChurchSelectionScreen';
-import JoinSuccessScreen from '../screens/auth/JoinSuccessScreen';
 import Theme from '../theme/Theme';
 
 export type AuthStackParamList = {
@@ -66,37 +59,37 @@ export default function AuthNavigator() {
     >
       <Stack.Screen
         name="Login"
-        component={LoginScreen}
+        getComponent={() => require('../screens/auth/LoginScreen').default}
         options={{ headerShown: false }}
       />
       <Stack.Screen
         name="SignUp"
-        component={SignUpScreen}
+        getComponent={() => require('../screens/auth/SignUpScreen').default}
         options={{ headerShown: false }}
       />
       <Stack.Screen
         name="RegistrationSuccess"
-        component={RegistrationSuccessScreen}
+        getComponent={() => require('../screens/auth/RegistrationSuccessScreen').default}
         options={{ headerShown: false }}
       />
       <Stack.Screen
         name="ApprovalPending"
-        component={ApprovalPendingScreen}
+        getComponent={() => require('../screens/auth/ApprovalPendingScreen').default}
         options={{ headerShown: false }}
       />
       <Stack.Screen
         name="VerifyOtp"
-        component={VerifyOtpScreen}
+        getComponent={() => require('../screens/auth/VerifyOtpScreen').default}
         options={{ headerShown: false }}
       />
       <Stack.Screen
         name="ChurchSelection"
-        component={ChurchSelectionScreen}
+        getComponent={() => require('../screens/auth/ChurchSelectionScreen').default}
         options={{ headerShown: false }}
       />
       <Stack.Screen
         name="JoinSuccess"
-        component={JoinSuccessScreen}
+        getComponent={() => require('../screens/auth/JoinSuccessScreen').default}
         options={{ headerShown: false, gestureEnabled: false }}
       />
     </Stack.Navigator>

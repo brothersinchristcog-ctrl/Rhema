@@ -1,12 +1,17 @@
 import { Share, Linking, Platform } from 'react-native';
 import { BIBLE_BOOKS, CHAPTER_COUNTS, BIBLE_BOOK_USFM, BibleService } from './BibleService';
 
-// Local bundled Telugu Bible JSON
-let LOCAL_TELUGU_BIBLE: any = null;
-try {
-  LOCAL_TELUGU_BIBLE = require('../../assets/telugu_bible.json');
-} catch (e) {
-  console.warn('Local Telugu Bible JSON not loaded in PrayerVerseService:', e);
+// Local bundled Telugu Bible JSON (lazy-loaded on first Telugu lookup so startup never parses 12MB JSON unnecessarily)
+let _localTeluguBible: any = undefined;
+function getLocalTeluguBible(): any {
+  if (_localTeluguBible !== undefined) return _localTeluguBible;
+  try {
+    _localTeluguBible = require('../../assets/telugu_bible.json');
+  } catch (e) {
+    console.warn('Local Telugu Bible JSON not loaded in PrayerVerseService:', e);
+    _localTeluguBible = null;
+  }
+  return _localTeluguBible;
 }
 
 export interface BibleBookItem {
@@ -84,10 +89,11 @@ class PrayerVerseService {
    */
   getVerseCount(bookIndex: number, chapter: number): number {
     try {
-      if (LOCAL_TELUGU_BIBLE?.Book?.[bookIndex]?.Chapter?.[chapter - 1]?.Verse) {
-        return LOCAL_TELUGU_BIBLE.Book[bookIndex].Chapter[chapter - 1].Verse.length;
+      const localBible = getLocalTeluguBible();
+      if (localBible?.Book?.[bookIndex]?.Chapter?.[chapter - 1]?.Verse) {
+        return localBible.Book[bookIndex].Chapter[chapter - 1].Verse.length;
       }
-    } catch (_) {}
+    } catch (_) { }
     return 30; // fallback reasonable count
   }
 
@@ -130,8 +136,9 @@ class PrayerVerseService {
     // ── 5a. Telugu Scripture Lookup (100% Offline, Instant from Local JSON) ──
     let textTe = '';
     try {
-      if (LOCAL_TELUGU_BIBLE?.Book?.[bookIndex]?.Chapter?.[chapter - 1]?.Verse) {
-        const chVerses = LOCAL_TELUGU_BIBLE.Book[bookIndex].Chapter[chapter - 1].Verse;
+      const localBible = getLocalTeluguBible();
+      if (localBible?.Book?.[bookIndex]?.Chapter?.[chapter - 1]?.Verse) {
+        const chVerses = localBible.Book[bookIndex].Chapter[chapter - 1].Verse;
         const parts: string[] = [];
         for (let v = start; v <= end; v++) {
           const item = chVerses[v - 1];

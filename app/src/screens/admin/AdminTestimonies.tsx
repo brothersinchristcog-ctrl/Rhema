@@ -44,7 +44,11 @@ import {
   X,
   BookOpen,
   Video as VideoIcon,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react-native';
+import { useIsFocused } from '@react-navigation/native';
+import { useVideoOrientationController } from '../../utils/videoOrientation';
 import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
 import { AdminTabContext } from '../../context/AdminTabContext';
@@ -165,6 +169,17 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
   const [isPlaying, setIsPlaying] = useState(false);
   const [positionMs, setPositionMs] = useState(0);
   const [durationMs, setDurationMs] = useState(0);
+  const isFocused = useIsFocused();
+  const {
+    isLandscape: isAdminVideoLandscape,
+    playerHeight: adminVideoHeight,
+    handleNativeFullscreenUpdate: handleAdminFullscreenUpdate,
+    toggleOrientation: toggleAdminVideoOrientation,
+  } = useVideoOrientationController(
+    isFocused && Boolean(selectedTestimony && videoUrl),
+    'modal:AdminTestimonyVideo',
+    { theaterInLandscape: false, horizontalPadding: 64, maxPortraitWidth: 600, landscapeVerticalReserve: 96 }
+  );
 
   // Attachments & In-App Document Viewer state
   const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
@@ -976,6 +991,7 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
       <Modal
         visible={Boolean(selectedTestimony)}
         animationType="slide"
+        supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}
         onRequestClose={() => setSelectedTestimony(null)}
       >
         <SafeAreaView style={[styles.modalContainer, { backgroundColor: screenBg }]} edges={['top', 'bottom']}>
@@ -1254,7 +1270,7 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
                       )}
                     </View>
 
-                    <View style={styles.videoPlayerBox}>
+                    <View style={[styles.videoPlayerBox, { height: Math.max(200, adminVideoHeight) }]}>
                       {videoLoading ? (
                         <View style={styles.videoCenterState}>
                           <ActivityIndicator size="large" color="#FFFFFF" />
@@ -1285,6 +1301,7 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
                           useNativeControls
                           resizeMode={ResizeMode.CONTAIN}
                           shouldPlay={false}
+                          onFullscreenUpdate={handleAdminFullscreenUpdate}
                           onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
                           onError={() =>
                             setVideoError('Error playing video file.')
@@ -1294,25 +1311,58 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
                     </View>
 
                     {videoUrl && !videoError && (
-                      <TouchableOpacity
-                        style={[
-                          styles.playPauseBtn,
-                          { backgroundColor: accentColor },
-                        ]}
-                        onPress={handleTogglePlayPause}
-                      >
-                        {isPlaying ? (
-                          <>
-                            <Pause size={15} color="#FFFFFF" />
-                            <Text style={styles.playPauseBtnText}>Pause</Text>
-                          </>
-                        ) : (
-                          <>
-                            <Play size={15} color="#FFFFFF" />
-                            <Text style={styles.playPauseBtnText}>Play Video</Text>
-                          </>
-                        )}
-                      </TouchableOpacity>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, gap: 8, flexWrap: 'wrap' }}>
+                        <TouchableOpacity
+                          style={[
+                            styles.playPauseBtn,
+                            { backgroundColor: accentColor, marginTop: 0 },
+                          ]}
+                          onPress={handleTogglePlayPause}
+                        >
+                          {isPlaying ? (
+                            <>
+                              <Pause size={15} color="#FFFFFF" />
+                              <Text style={styles.playPauseBtnText}>Pause</Text>
+                            </>
+                          ) : (
+                            <>
+                              <Play size={15} color="#FFFFFF" />
+                              <Text style={styles.playPauseBtnText}>Play Video</Text>
+                            </>
+                          )}
+                        </TouchableOpacity>
+
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <TouchableOpacity
+                            style={[
+                              styles.playPauseBtn,
+                              { backgroundColor: isDark ? '#1E293B' : '#F1F5F9', marginTop: 0 },
+                            ]}
+                            onPress={toggleAdminVideoOrientation}
+                          >
+                            {isAdminVideoLandscape ? (
+                              <Minimize2 size={14} color={isDark ? '#F8FAFC' : '#0F172A'} />
+                            ) : (
+                              <Maximize2 size={14} color={isDark ? '#F8FAFC' : '#0F172A'} />
+                            )}
+                            <Text style={[styles.playPauseBtnText, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>
+                              {isAdminVideoLandscape ? 'Portrait' : 'Landscape'}
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[
+                              styles.playPauseBtn,
+                              { backgroundColor: isDark ? '#1E293B' : '#F1F5F9', marginTop: 0 },
+                            ]}
+                            onPress={() => {
+                              videoRef.current?.presentFullscreenPlayer?.().catch(() => {});
+                            }}
+                          >
+                            <Maximize2 size={14} color={accentColor} />
+                            <Text style={[styles.playPauseBtnText, { color: accentColor }]}>Full Screen</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
                     )}
                   </View>
                 ) : null}

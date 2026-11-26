@@ -37,12 +37,14 @@ import {
   X,
   BookOpen,
   Maximize2,
+  Minimize2,
   ChevronUp,
   ChevronDown,
   Calendar as CalendarIcon,
   Folder,
   User
 } from 'lucide-react-native';
+import { useIsFocused } from '@react-navigation/native';
 import FirestoreService from '../services/FirestoreService';
 import firestore from '@react-native-firebase/firestore';
 import { useAuth } from '../context/AuthContext';
@@ -50,8 +52,7 @@ import { useChurch } from '../context/ChurchContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
 import { formatSermonDuration, formatDateDisplay } from '../utils/DateUtils';
-
-const { width } = Dimensions.get('window');
+import { useVideoOrientationController } from '../utils/videoOrientation';
 
 const extractYoutubeId = (url: string) => {
   if (!url || typeof url !== 'string') return '';
@@ -143,9 +144,26 @@ export default function SermonVideoScreen({ navigation, route }: any) {
   const { activeChurch, churchId } = useChurch();
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
+  const isFocused = useIsFocused();
   const { colors, isDark } = useTheme();
   const subKeyPrefix = user?.uid || 'anon';
   const videosCacheKey = makeScopedCacheKey('sermon_videos_v1', churchId || activeChurch?.id, user?.uid);
+
+  const finalVideoId = extractYoutubeId(activeVideo?.youtubeId || '');
+  const hasValidVideo = finalVideoId.length > 0;
+  const {
+    windowWidth,
+    windowHeight,
+    isLandscape,
+    playerWidth,
+    playerHeight,
+    handleFullScreenChange,
+    toggleOrientation,
+  } = useVideoOrientationController(
+    isFocused && hasValidVideo,
+    'screen:SermonVideo',
+    { theaterInLandscape: true, horizontalPadding: 32, maxPortraitWidth: 600 }
+  );
 
   // Bell ringing animation for Subscribe button (stops once subscribed to save idle CPU/UI frames)
   const bellAnim = useRef(new Animated.Value(0)).current;
@@ -521,53 +539,79 @@ export default function SermonVideoScreen({ navigation, route }: any) {
     return cat;
   })();
 
-  const finalVideoId = extractYoutubeId(activeVideo?.youtubeId || '');
-  const hasValidVideo = finalVideoId.length > 0;
   const metaTextColor = isDark ? '#F8FAFC' : '#0F172A';
+  const isLandscapeTheater = isLandscape && hasValidVideo;
 
-  const playerWidth = Math.min(width - 32, 600);
-  const playerHeight = Math.round(playerWidth * 0.5625);
+  useEffect(() => {
+    if (isLandscapeTheater) {
+      scrollViewRef.current?.scrollTo({ y: 0, animated: false });
+    }
+  }, [isLandscapeTheater]);
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle={colors.barStyle || (isDark ? 'light-content' : 'dark-content')} backgroundColor={colors.background} />
+    <View style={[styles.container, { backgroundColor: isLandscapeTheater ? '#000000' : colors.background }]}>
+      <StatusBar
+        hidden={isLandscapeTheater}
+        translucent={isLandscapeTheater}
+        barStyle={isLandscapeTheater ? 'light-content' : (colors.barStyle || (isDark ? 'light-content' : 'dark-content'))}
+        backgroundColor={isLandscapeTheater ? '#000000' : colors.background}
+      />
 
-      {/* ── Screen Header (Clean circular back button & title) ── */}
-      <View
-        style={[
-          styles.headerRow,
-          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8 }
-        ]}
-      >
-        <TouchableOpacity
-          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          onPress={() => navigation.goBack()}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          activeOpacity={0.8}
+      {/* ── Screen Header (Hidden in Landscape Theater) ── */}
+      {!isLandscapeTheater ? (
+        <View
+          style={[
+            styles.headerRow,
+            { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8 }
+          ]}
         >
-          <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={() => navigation.goBack()}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            activeOpacity={0.8}
+          >
+            <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
+          </TouchableOpacity>
 
-        <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
-          {t('sermons.videoTitle') || 'Sermon Video'}
-        </Text>
+          <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
+            {t('sermons.videoTitle') || 'Sermon Video'}
+          </Text>
 
-        <View style={styles.headerRightSpacer} />
-      </View>
+          {hasValidVideo ? (
+            <TouchableOpacity
+              style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={toggleOrientation}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              activeOpacity={0.8}
+            >
+              <Maximize2 size={18} color={colors.text} strokeWidth={2.2} />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.headerRightSpacer} />
+          )}
+        </View>
+      ) : null}
 
-      <ScrollView ref={scrollViewRef} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+      <ScrollView
+        ref={scrollViewRef}
+        scrollEnabled={!isLandscapeTheater}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={isLandscapeTheater ? styles.landscapeScrollContent : styles.scroll}
+      >
 
-        {/* ── Video Player (Spaced with rounded corners) ── */}
-        <View style={styles.playerSection}>
+        {/* ── Video Player (Same mounted instance across Portrait <-> Landscape) ── */}
+        <View style={isLandscapeTheater ? styles.landscapeContainer : styles.playerSection}>
           {hasValidVideo ? (
             <YoutubePlayer
               ref={playerRef}
               key={`yt_${finalVideoId}`}
-              width={playerWidth}
-              height={playerHeight}
+              width={isLandscapeTheater ? windowWidth : playerWidth}
+              height={isLandscapeTheater ? windowHeight : playerHeight}
               play={playing}
               videoId={finalVideoId}
               onChangeState={onStateChange}
+              onFullScreenChange={handleFullScreenChange}
               onReady={() => {
                 setPlaying(true);
               }}
@@ -655,8 +699,38 @@ export default function SermonVideoScreen({ navigation, route }: any) {
               <Text style={{ color: '#9CA3AF', marginTop: 10, fontSize: 12, fontWeight: '600' }}>{t('sermons.noVideoLink')}</Text>
             </View>
           )}
+          {isLandscapeTheater ? (
+            <View
+              pointerEvents="box-none"
+              style={[
+                styles.landscapeOverlayBar,
+                {
+                  top: Math.max(insets.top, 12),
+                  left: Math.max(insets.left, 16),
+                  right: Math.max(insets.right, 16),
+                },
+              ]}
+            >
+              <TouchableOpacity
+                style={styles.landscapePillBtn}
+                onPress={() => navigation.goBack()}
+                activeOpacity={0.8}
+              >
+                <ArrowLeft size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.landscapePillBtn}
+                onPress={toggleOrientation}
+                activeOpacity={0.8}
+              >
+                <Minimize2 size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+          ) : null}
         </View>
 
+        {!isLandscapeTheater ? (
+          <>
         {/* ── Video Details ── */}
         <View style={[styles.videoDetails, { backgroundColor: colors.surface, borderColor: isDark ? colors.border : '#E2E8F0' }]}>
           <Text style={[styles.videoTitle, { color: colors.text }]}>{activeVideo?.title || t('home.exploreSermons')}</Text>
@@ -933,6 +1007,8 @@ export default function SermonVideoScreen({ navigation, route }: any) {
             })
           )}
         </View>
+          </>
+        ) : null}
 
       </ScrollView>
 
@@ -1141,6 +1217,35 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 8,
     elevation: 4,
+  },
+  landscapeScrollContent: {
+    flexGrow: 1,
+    backgroundColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  landscapeContainer: {
+    flex: 1,
+    backgroundColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  landscapeOverlayBar: {
+    position: 'absolute',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    zIndex: 20,
+  },
+  landscapePillBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(0, 0, 0, 0.56)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   videoDetails: {

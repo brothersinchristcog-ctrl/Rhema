@@ -71,12 +71,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!targetUid) return false;
 
     try {
-      // 1. Check root platform_admins collection
-      const adminDoc = await firestore()
-        .collection('platform_admins')
-        .doc(targetUid)
-        .get()
-        .catch(() => null);
+      // Check root platform_admins and member doc concurrently to avoid sequential roundtrips on 1st launch
+      const [adminDoc, memberDoc] = await Promise.all([
+        firestore()
+          .collection('platform_admins')
+          .doc(targetUid)
+          .get()
+          .catch(() => null),
+        firestore()
+          .collection('Rhema Church')
+          .doc(RHEMA_CHURCH_ID)
+          .collection('members')
+          .doc(targetUid)
+          .get()
+          .catch(() => null),
+      ]);
+
       if (adminDoc && adminDoc.exists) {
         const d = adminDoc.data();
         if (
@@ -89,14 +99,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      // 6. Member document check in Rhema Church
-      const memberDoc = await firestore()
-        .collection('Rhema Church')
-        .doc(RHEMA_CHURCH_ID)
-        .collection('members')
-        .doc(targetUid)
-        .get()
-        .catch(() => null);
       if (memberDoc && memberDoc.exists) {
         const d = memberDoc.data();
         if (
@@ -326,9 +328,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               );
 
             let globalUser = globalUserResult;
+            let checkedPhoneAlready = false;
 
             if (!globalUser && userState.phoneNumber) {
               console.log('🔄 [Auth] Looking up member by phone...', userState.phoneNumber);
+              checkedPhoneAlready = true;
               const fallback = await FirestoreService.checkContactExists(userState.phoneNumber);
               if (fallback?.exists && fallback?.member) {
                 const targetChurch = fallback.member.churchId || RHEMA_CHURCH_ID;
@@ -343,8 +347,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             const targetChurchId = globalUser?.primaryChurchId || RHEMA_CHURCH_ID;
 
-            // Fetch nested member profile
-            let memberProfile = await FirestoreService.getMemberProfile(targetChurchId, userState.uid);
+            // Reuse globalUser when it was already loaded from the same primary church and has valid identity fields
+            const globalHasIdentity = Boolean(
+              globalUser &&
+              globalUser.primaryChurchId === targetChurchId &&
+              ((globalUser as any).firstName || (globalUser as any).name || (globalUser as any).status === 'Active')
+            );
+            let memberProfile: AppMember | null = globalHasIdentity
+              ? ({ ...(globalUser as any), id: userState.uid } as AppMember)
+              : await FirestoreService.getMemberProfile(targetChurchId, userState.uid);
 
             const searchPhone = userState.phoneNumber || globalUser?.phone || memberProfile?.phone || cachedMemberObj?.phone;
             const needsContactMerge =
@@ -362,7 +373,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   globalUser = { ...(globalUser || {}), ...synced } as any;
                 }
 
-                if (!memberProfile || memberProfile.isGuest === true) {
+                if ((!memberProfile || memberProfile.isGuest === true) && !(checkedPhoneAlready && searchPhone === userState.phoneNumber)) {
                   const contactCheck = await FirestoreService.checkContactExists(searchPhone);
                   if (contactCheck?.exists && contactCheck.member) {
                     if (contactCheck.member.id !== userState.uid) {
@@ -483,26 +494,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // Immediately unblock app loading once member state is set
             setLoading(false);
 
-            // FCM Setup in background - ONLY for approved active members (never block startup)
-            (async () => {
-              try {
-                const NotificationService = require('../services/NotificationService').default;
-                await NotificationService.setupCategoriesAndChannels().catch(() => {});
-                await NotificationService.requestUserPermission().catch(() => {});
-                const token = await messaging().getToken().catch(() => null);
-                if (token) {
-                  await NotificationService.saveTokenToFirestore(token);
-                }
-                await NotificationService.subscribeToChurchTopic(targetChurchId);
+            // Defer FCM token registration slightly so startup navigation and Home data are never contended
+            InteractionManager.runAfterInteractions(() => {
+              setTimeout(async () => {
+                try {
+                  const NotificationService = require('../services/NotificationService').default;
+                  const token = await messaging().getToken().catch(() => null);
+                  if (token) {
+                    await NotificationService.saveTokenToFirestore(token);
+                  }
 
-                messaging().onTokenRefresh(async (newToken) => {
-                  await NotificationService.saveTokenToFirestore(newToken);
-                  await NotificationService.subscribeToChurchTopic(targetChurchId);
-                });
-              } catch (err) {
-                console.log('❌ [FCM] Error setting up notifications:', err);
-              }
-            })();
+                  messaging().onTokenRefresh(async (newToken) => {
+                    await NotificationService.saveTokenToFirestore(newToken);
+                    await NotificationService.subscribeToChurchTopic(targetChurchId);
+                  });
+                } catch (err) {
+                  console.log('❌ [FCM] Error setting up notifications:', err);
+                }
+              }, 1200);
+            });
 
             // Real-time listener on member profile (updates role/profile changes live, NEVER auto-logs out)
             if (memberListenerRef.current) memberListenerRef.current();

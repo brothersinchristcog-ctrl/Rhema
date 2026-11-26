@@ -16,6 +16,7 @@ import {
   Alert,
   StatusBar,
   Animated,
+  InteractionManager,
   Modal
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -33,6 +34,7 @@ import { CachedImage } from '../components/CachedImage';
 import {
   makeScopedCacheKey,
   getInstantMemory,
+  readInstantCache,
   writeInstantCache,
 } from '../utils/instantCache';
 import FirestoreService from '../services/FirestoreService';
@@ -41,6 +43,15 @@ import {
   extractTodaysCelebrants,
   matchesIstCelebrationDay,
 } from '../utils/celebrationDateHelper';
+import UnreadMessagesDivider from '../components/UnreadMessagesDivider';
+import {
+  findFirstUnreadTimestampedMessageIndex,
+  getChatMessageTimeMs,
+  mergeCelebrationMessages,
+} from '../utils/chatUnreadHelper';
+
+const INITIAL_CELEB_PAGE_SIZE = 25;
+const OLDER_CELEB_PAGE_SIZE = 25;
 
 const WISH_DICTIONARY: Record<string, string[]> = {
   'Birthday': [
@@ -127,12 +138,16 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
   const dateFormatted = istParts.displayDate;
 
   const celebMsgsCacheKey = React.useMemo(
-    () => makeScopedCacheKey('live_celebrations_chat_v1', targetChurchId, user?.uid || member?.id),
-    [targetChurchId, user?.uid, member?.id]
+    () => makeScopedCacheKey('live_celebrations_chat_v2', targetChurchId, user?.uid || member?.id, todayStr),
+    [targetChurchId, user?.uid, member?.id, todayStr]
   );
   const initialCelebMsgs = React.useMemo(() => getInstantMemory<any[]>(celebMsgsCacheKey), [celebMsgsCacheKey]);
 
-  const [messages, setMessages] = useState<any[]>(initialCelebMsgs || []);
+  const [latestMessages, setLatestMessages] = useState<any[]>(initialCelebMsgs || []);
+  const [olderMessages, setOlderMessages] = useState<any[]>([]);
+  const [optimisticMessages, setOptimisticMessages] = useState<any[]>([]);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [hasMoreOlder, setHasMoreOlder] = useState(false);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(!initialCelebMsgs);
   const [isKeyboardVisible, setKeyboardVisible] = useState(false);
@@ -144,7 +159,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
   const [playingId, setPlayingId] = useState<string | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
   const recordingWaveAnim = useRef(new Animated.Value(0)).current;
-  const flatListRef = useRef<FlatList>(null);
+  const flatListRef = useRef<FlatList<any>>(null);
   const [celebrations, setCelebrations] = useState<any[]>(() =>
     Array.isArray(route.params?.celebrations) ? route.params.celebrations : []
   );
@@ -162,6 +177,26 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
   const isTypingLocally = useRef(false);
 
   const [initialLastReadTime, setInitialLastReadTime] = useState<number>(0);
+  const [lastReadLoaded, setLastReadLoaded] = useState(false);
+  const lastScrolledUnreadKeyRef = useRef<string | null>(null);
+  const latestCelebMsgTimeRef = useRef<number>(0);
+
+  // Pagination & Scroll refs
+  const oldestLiveDocRef = useRef<any>(null);
+  const oldestOlderDocRef = useRef<any>(null);
+  const hasLoadedOlderPagesRef = useRef<boolean>(false);
+  const loadingOlderRef = useRef<boolean>(false);
+  const didInitialBottomScrollRef = useRef<boolean>(false);
+  const scrollToBottomPendingRef = useRef<boolean>(false);
+  const scrollToBottomTimerRef = useRef<any>(null);
+  const userScrolledRef = useRef<boolean>(false);
+  const prevScrollYRef = useRef<number>(0);
+  const lastSentAtRef = useRef<number>(0);
+
+  const messages = React.useMemo(
+    () => mergeCelebrationMessages(olderMessages, latestMessages, optimisticMessages),
+    [olderMessages, latestMessages, optimisticMessages]
+  );
 
   const e2eeUid = user?.uid || member?.id || '';
   const [e2eeState, setE2eeState] = useState<E2EEStateSnapshot>(() => e2eeService.getState());
@@ -209,18 +244,65 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    setLastReadLoaded(false);
+    lastScrolledUnreadKeyRef.current = null;
+    didInitialBottomScrollRef.current = false;
+    userScrolledRef.current = false;
+    prevScrollYRef.current = 0;
+
+    // Hydrate disk cache immediately on cold opens so UI renders before Firestore responds
+    if (!getInstantMemory(celebMsgsCacheKey)) {
+      readInstantCache<any[]>(celebMsgsCacheKey).then((cached) => {
+        if (active && cached && Array.isArray(cached.data) && cached.data.length > 0) {
+          setLatestMessages((prev) => (prev.length === 0 ? cached.data : prev));
+          setLoading(false);
+        }
+      });
+    }
+
     const fetchLastRead = async () => {
-      const lastRead = await AsyncStorage.getItem(`@lastReadCeleb_${todayStr}`);
-      setInitialLastReadTime(lastRead ? parseInt(lastRead, 10) : 0);
+      try {
+        const lastRead = await AsyncStorage.getItem(`@lastReadCeleb_${todayStr}`);
+        if (!active) return;
+        const parsed = lastRead ? parseInt(lastRead, 10) : 0;
+        setInitialLastReadTime(Number.isFinite(parsed) && parsed > 0 ? parsed : 0);
+      } catch {
+        if (active) setInitialLastReadTime(0);
+      } finally {
+        if (active) setLastReadLoaded(true);
+      }
     };
     fetchLastRead();
-  }, [todayStr]);
+    return () => {
+      active = false;
+    };
+  }, [todayStr, celebMsgsCacheKey]);
 
   useEffect(() => {
     if (messages.length > 0) {
-      AsyncStorage.setItem(`@lastReadCeleb_${todayStr}`, Date.now().toString());
+      const maxMsgTs = messages.reduce(
+        (acc, m) => Math.max(acc, getChatMessageTimeMs(m?.createdAt)),
+        0
+      );
+      latestCelebMsgTimeRef.current = Math.max(Date.now(), maxMsgTs);
+      // Delay writing the read marker so the unread divider stays visible while reading,
+      // and also persist on unmount so backing out immediately updates the unread badge.
+      const timer = setTimeout(() => {
+        AsyncStorage.setItem(
+          `@lastReadCeleb_${todayStr}`,
+          Math.max(Date.now(), latestCelebMsgTimeRef.current).toString()
+        ).catch(() => {});
+      }, 3000);
+      return () => {
+        clearTimeout(timer);
+        AsyncStorage.setItem(
+          `@lastReadCeleb_${todayStr}`,
+          Math.max(Date.now(), latestCelebMsgTimeRef.current).toString()
+        ).catch(() => {});
+      };
     }
-  }, [messages.length, todayStr]);
+  }, [messages, todayStr]);
 
   const updateTypingStatus = async (isTyping: boolean) => {
     const myId = member?.id || user?.uid;
@@ -311,12 +393,61 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
       if (Platform.OS === 'android') {
         setKeyboardHeight(0);
       }
+      if (scrollToBottomPendingRef.current || Date.now() - lastSentAtRef.current < 800) {
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 60);
+      }
     });
     return () => {
       keyboardDidHideListener.remove();
       keyboardDidShowListener.remove();
+      if (scrollToBottomTimerRef.current) clearTimeout(scrollToBottomTimerRef.current);
     };
   }, []);
+
+  const decryptCelebrationDocs = async (
+    docs: Array<{ id: string; data: Record<string, any> }>,
+    ctx: { scope: 'celebrations'; churchId: string; dateId: string }
+  ): Promise<{ items: any[]; hasLocked: boolean }> => {
+    if (docs.length === 0) return { items: [], hasLocked: false };
+
+    const hasEncrypted =
+      Boolean(e2eeUid) &&
+      docs.some(({ data }) => typeof data.text === 'string' && e2eeService.isEncryptedPayload(data.text));
+
+    if (!hasEncrypted) {
+      return {
+        items: docs.map(({ id, data }) => ({ id, ...data, text: typeof data.text === 'string' ? data.text : '' })),
+        hasLocked: false,
+      };
+    }
+
+    await e2eeService.initializeForUser(e2eeUid);
+    let foundLocked = false;
+    const decrypted = await Promise.all(
+      docs.map(async ({ id, data }) => {
+        const rawText = typeof data.text === 'string' ? data.text : '';
+        let finalText = rawText;
+        if (rawText && e2eeService.isEncryptedPayload(rawText) && e2eeUid) {
+          const dec = await roomKeyManager.decryptString(ctx, e2eeUid, rawText);
+          finalText = dec.text;
+          if (dec.lockedReason) foundLocked = true;
+        }
+        return { id, ...data, text: finalText };
+      })
+    );
+    return { items: decrypted, hasLocked: foundLocked };
+  };
+
+  useEffect(() => {
+    setOlderMessages([]);
+    setOptimisticMessages([]);
+    oldestLiveDocRef.current = null;
+    oldestOlderDocRef.current = null;
+    hasLoadedOlderPagesRef.current = false;
+    loadingOlderRef.current = false;
+    setLoadingOlder(false);
+    setHasMoreOlder(false);
+  }, [targetChurchId, todayStr]);
 
   useEffect(() => {
     if (!targetChurchId) return;
@@ -336,22 +467,14 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
 
     const processDocs = async (docs: Array<{ id: string; data: Record<string, any> }>) => {
       const currentSeq = ++seq;
-      let foundLocked = false;
-      const decrypted = await Promise.all(
-        docs.map(async ({ id, data }) => {
-          const rawText = typeof data.text === 'string' ? data.text : '';
-          let finalText = rawText;
-          if (rawText && e2eeService.isEncryptedPayload(rawText) && e2eeUid) {
-            const dec = await roomKeyManager.decryptString(ctx, e2eeUid, rawText);
-            finalText = dec.text;
-            if (dec.lockedReason) foundLocked = true;
-          }
-          return { id, ...data, text: finalText };
-        })
-      );
+      const { items: decrypted, hasLocked: foundLocked } = await decryptCelebrationDocs(docs, ctx);
       if (disposed || currentSeq !== seq) return;
       hasLockedMessages = foundLocked;
-      setMessages(decrypted);
+      setLatestMessages(decrypted);
+      // Clean out any optimistic messages that have now arrived in the live snapshot
+      setOptimisticMessages((prev) =>
+        prev.filter((opt) => !decrypted.some((live) => live.clientMsgId && live.clientMsgId === opt.clientMsgId))
+      );
       if (!foundLocked) {
         writeInstantCache(celebMsgsCacheKey, decrypted).catch(() => { });
       }
@@ -361,10 +484,14 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
     const unsubscribe = celebrationDocRef
       .collection('messages')
       .orderBy('createdAt', 'desc')
-      .limit(100)
+      .limit(INITIAL_CELEB_PAGE_SIZE)
       .onSnapshot(
         (snap) => {
           if (snap) {
+            if (!hasLoadedOlderPagesRef.current) {
+              oldestLiveDocRef.current = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
+              setHasMoreOlder(snap.docs.length >= INITIAL_CELEB_PAGE_SIZE);
+            }
             latestDocs = snap.docs
               .slice()
               .reverse()
@@ -405,7 +532,9 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
           e2eeUid &&
           e2eeService.getState().status === 'ready'
         ) {
-          roomKeyManager.fulfillCelebrationsKeyRequests(ctx, e2eeUid).catch(() => { });
+          InteractionManager.runAfterInteractions(() => {
+            roomKeyManager.fulfillCelebrationsKeyRequests(ctx, e2eeUid).catch(() => { });
+          });
         }
       },
       () => { }
@@ -434,7 +563,9 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
             processDocs(latestDocs);
           }
           if (e2eeUid) {
-            roomKeyManager.fulfillCelebrationsKeyRequests(ctx, e2eeUid).catch(() => { });
+            InteractionManager.runAfterInteractions(() => {
+              roomKeyManager.fulfillCelebrationsKeyRequests(ctx, e2eeUid).catch(() => { });
+            });
           }
         }
       }
@@ -448,7 +579,83 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
       envelopesUnsubscribe();
       unsubState();
     };
-  }, [targetChurchId, todayStr, e2eeUid]);
+  }, [targetChurchId, todayStr, e2eeUid, celebMsgsCacheKey]);
+
+  const loadOlderMessages = async () => {
+    if (loadingOlderRef.current || !hasMoreOlder || !targetChurchId) return;
+    const cursor = oldestOlderDocRef.current || oldestLiveDocRef.current;
+    if (!cursor) {
+      setHasMoreOlder(false);
+      return;
+    }
+
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    try {
+      const ctx = { scope: 'celebrations' as const, churchId: targetChurchId, dateId: todayStr };
+      const snap = await firestore()
+        .collection('Rhema Church')
+        .doc(targetChurchId)
+        .collection('live_celebrations')
+        .doc(todayStr)
+        .collection('messages')
+        .orderBy('createdAt', 'desc')
+        .startAfter(cursor)
+        .limit(OLDER_CELEB_PAGE_SIZE)
+        .get();
+
+      if (snap.empty) {
+        setHasMoreOlder(false);
+        return;
+      }
+
+      hasLoadedOlderPagesRef.current = true;
+      oldestOlderDocRef.current = snap.docs[snap.docs.length - 1];
+      setHasMoreOlder(snap.docs.length >= OLDER_CELEB_PAGE_SIZE);
+
+      const docsAsc = snap.docs
+        .slice()
+        .reverse()
+        .map((doc) => ({ id: doc.id, data: doc.data() || {} }));
+      const { items: decrypted } = await decryptCelebrationDocs(docsAsc, ctx);
+
+      setOlderMessages((prev) => {
+        const seen = new Set(prev.map((m) => m.id));
+        const additions = decrypted.filter((m) => !seen.has(m.id));
+        return additions.length > 0 ? [...additions, ...prev] : prev;
+      });
+    } catch (err) {
+      console.warn('[LiveCelebrationsChat] Failed loading older wishes:', err);
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  };
+
+  const scrollToLatestMessage = (animated = true) => {
+    scrollToBottomPendingRef.current = true;
+    lastSentAtRef.current = Date.now();
+    if (scrollToBottomTimerRef.current) clearTimeout(scrollToBottomTimerRef.current);
+
+    requestAnimationFrame(() => {
+      try {
+        flatListRef.current?.scrollToEnd({ animated });
+      } catch {
+        // Fallback retry below
+      }
+    });
+    setTimeout(() => {
+      if (flatListRef.current && scrollToBottomPendingRef.current) {
+        flatListRef.current.scrollToEnd({ animated });
+      }
+    }, 110);
+    scrollToBottomTimerRef.current = setTimeout(() => {
+      if (flatListRef.current && scrollToBottomPendingRef.current) {
+        flatListRef.current.scrollToEnd({ animated: false });
+      }
+      scrollToBottomPendingRef.current = false;
+    }, 360);
+  };
 
   const sendMessage = async (text: string) => {
     const cleanText = text.trim();
@@ -461,12 +668,61 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
       dateId: todayStr,
     };
 
+    const userPhoto =
+      (member as any)?.profilePhoto ||
+      (member as any)?.photoURL ||
+      (member as any)?.photoUrl ||
+      (member as any)?.profileImageUrl ||
+      (member as any)?.PhotoUrl ||
+      (member as any)?.Photo ||
+      user?.photoURL ||
+      null;
+    const userName = member?.name || user?.displayName || 'Unknown';
+    const targetCelebIdSnapshot = selectedCelebrantId;
+    const targetCelebNameSnapshot = selectedCelebrantName;
+
+    setInputText('');
+    setShowMentionPopup(false);
+    Keyboard.dismiss();
+    isTypingLocally.current = false;
+    updateTypingStatus(false);
+
+    let optimisticId: string | null = null;
+    if (!editingMsgId) {
+      const now = Date.now();
+      optimisticId = `opt_${now}_${Math.random().toString(36).slice(2, 7)}`;
+      const optMsg = {
+        id: optimisticId,
+        clientMsgId: optimisticId,
+        text: cleanText,
+        userId: senderId,
+        userName,
+        userPhoto,
+        createdAt: now,
+        localCreatedAt: now,
+        reactions: {},
+        pending: true,
+        ...(targetCelebIdSnapshot
+          ? { targetCelebrantId: targetCelebIdSnapshot, targetCelebrantName: targetCelebNameSnapshot }
+          : {}),
+      };
+      setOptimisticMessages((prev) => [...prev, optMsg]);
+      setInitialLastReadTime(now);
+      AsyncStorage.setItem(`@lastReadCeleb_${todayStr}`, now.toString()).catch(() => {});
+      didInitialBottomScrollRef.current = true;
+      scrollToLatestMessage(true);
+    }
+
     let storedText = cleanText;
     if (e2eeUid) {
       try {
         const enc = await roomKeyManager.encryptString(ctx, e2eeUid, [e2eeUid], cleanText);
         storedText = enc.cipherText;
       } catch (encErr: any) {
+        if (optimisticId) {
+          setOptimisticMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+        }
+        setInputText(cleanText);
         if (encErr?.message === 'PIN_UNLOCK_REQUIRED') {
           setE2eeModalMode('unlock_backup');
           return;
@@ -475,11 +731,6 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
         return;
       }
     }
-
-    setInputText('');
-    Keyboard.dismiss();
-    isTypingLocally.current = false;
-    updateTypingStatus(false);
 
     try {
       if (editingMsgId) {
@@ -505,32 +756,27 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
           .doc(todayStr)
           .collection('messages')
           .doc();
+        const localTs = Date.now();
 
         batch.set(msgRef, {
           text: storedText,
           encrypted: true,
+          clientMsgId: optimisticId,
+          localCreatedAt: localTs,
           userId: senderId,
-          userName: member?.name || user?.displayName || 'Unknown',
-          userPhoto:
-            (member as any)?.profilePhoto ||
-            (member as any)?.photoURL ||
-            (member as any)?.photoUrl ||
-            (member as any)?.profileImageUrl ||
-            (member as any)?.PhotoUrl ||
-            (member as any)?.Photo ||
-            user?.photoURL ||
-            null,
+          userName,
+          userPhoto,
           createdAt: firestore.FieldValue.serverTimestamp(),
           reactions: {},
-          ...(selectedCelebrantId
-            ? { targetCelebrantId: selectedCelebrantId, targetCelebrantName: selectedCelebrantName }
+          ...(targetCelebIdSnapshot
+            ? { targetCelebrantId: targetCelebIdSnapshot, targetCelebrantName: targetCelebNameSnapshot }
             : {}),
         });
 
-        if (selectedCelebrantId) {
+        if (targetCelebIdSnapshot) {
           const matchedCeleb =
             selectedCardCeleb ||
-            celebrations.find((c: any) => (c.id || c.uid || c.Id) === selectedCelebrantId) ||
+            celebrations.find((c: any) => (c.id || c.uid || c.Id) === targetCelebIdSnapshot) ||
             {};
           const celebRef = firestore()
             .collection('Rhema Church')
@@ -538,14 +784,14 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
             .collection('live_celebrations')
             .doc(todayStr)
             .collection('celebrants')
-            .doc(selectedCelebrantId);
+            .doc(targetCelebIdSnapshot);
 
           const tokens = [...(matchedCeleb?.fcmTokens || [])];
           if (matchedCeleb?.fcmToken) tokens.push(matchedCeleb.fcmToken);
 
           batch.set(celebRef, {
-            memberId: matchedCeleb?.memberId || matchedCeleb?.Id || selectedCelebrantId,
-            name: matchedCeleb?.Name || matchedCeleb?.name || selectedCelebrantName || 'Member',
+            memberId: matchedCeleb?.memberId || matchedCeleb?.Id || targetCelebIdSnapshot,
+            name: matchedCeleb?.Name || matchedCeleb?.name || targetCelebNameSnapshot || 'Member',
             unnotifiedWishes: firestore.FieldValue.increment(1),
             totalWishes: firestore.FieldValue.increment(1),
             type: getCelebrationType(matchedCeleb),
@@ -553,12 +799,20 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
           }, { merge: true });
         }
 
-        await batch.commit();
         setSelectedCelebrantId(null);
         setSelectedCelebrantName(null);
+        await batch.commit();
+        const sentAt = Date.now();
+        setInitialLastReadTime(sentAt);
+        AsyncStorage.setItem(`@lastReadCeleb_${todayStr}`, sentAt.toString()).catch(() => {});
+        scrollToLatestMessage(true);
       }
     } catch (e) {
       console.error('Send error:', e);
+      if (optimisticId) {
+        setOptimisticMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+      }
+      setInputText(cleanText);
     }
   };
 
@@ -664,8 +918,10 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
         .collection('messages')
         .doc();
 
+      const localTs = Date.now();
       batch.set(msgRef, {
         audioUrl,
+        localCreatedAt: localTs,
         userId: senderId,
         userName: member?.name || user?.displayName || 'Unknown',
         userPhoto: (member as any)?.profilePhoto || (member as any)?.photoURL || (member as any)?.photoUrl || (member as any)?.profileImageUrl || (member as any)?.PhotoUrl || (member as any)?.Photo || user?.photoURL || null,
@@ -701,8 +957,12 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
       }
 
       await batch.commit();
+      const sentAt = Date.now();
+      setInitialLastReadTime(sentAt);
+      AsyncStorage.setItem(`@lastReadCeleb_${todayStr}`, sentAt.toString()).catch(() => {});
       setSelectedCelebrantId(null);
       setSelectedCelebrantName(null);
+      scrollToLatestMessage(true);
     } catch (e) {
       console.error('Audio send error:', e);
       Alert.alert('Error', 'Failed to send audio. Please try again.');
@@ -745,9 +1005,9 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
   };
 
   const formatTime = (timestamp: any) => {
-    if (!timestamp) return '';
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const ms = getChatMessageTimeMs(timestamp);
+    if (!ms) return '';
+    return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   const getCelebrationType = (celeb: any) => {
@@ -788,6 +1048,69 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
 
   const currentUserId = member?.id || user?.uid;
   const participantCount = displayedMessages.length > 0 ? [...new Set(displayedMessages.map(m => m.userId))].length : 0;
+
+  // Compute the index of the first unread message (from other users) for both new and existing chats
+  const firstUnreadIndex = React.useMemo(
+    () =>
+      findFirstUnreadTimestampedMessageIndex(
+        displayedMessages,
+        currentUserId || '',
+        initialLastReadTime,
+        lastReadLoaded
+      ),
+    [displayedMessages, initialLastReadTime, lastReadLoaded, currentUserId]
+  );
+
+  const selectedCelebScopeKey =
+    selectedCardCeleb?.id || selectedCardCeleb?.uid || selectedCardCeleb?.Id || 'all';
+  const firstUnreadMsgId = firstUnreadIndex >= 0 ? displayedMessages[firstUnreadIndex]?.id || null : null;
+
+  useEffect(() => {
+    lastScrolledUnreadKeyRef.current = null;
+    didInitialBottomScrollRef.current = false;
+  }, [selectedCelebScopeKey, todayStr]);
+
+  const scrollToCelebMessageIndex = (index: number, animated = true) => {
+    if (index < 0 || !flatListRef.current) return;
+    try {
+      flatListRef.current.scrollToIndex({
+        index,
+        animated,
+        viewPosition: 0.08,
+      });
+    } catch {
+      // Handled by onScrollToIndexFailed
+    }
+  };
+
+  useEffect(() => {
+    if (loading || !lastReadLoaded || displayedMessages.length === 0 || !flatListRef.current) return;
+    if (scrollToBottomPendingRef.current) return;
+
+    if (firstUnreadIndex >= 0 && firstUnreadMsgId) {
+      const scopeKey = `${todayStr}::${selectedCelebScopeKey}::${firstUnreadMsgId}`;
+      if (lastScrolledUnreadKeyRef.current === scopeKey) return;
+      lastScrolledUnreadKeyRef.current = scopeKey;
+      didInitialBottomScrollRef.current = true;
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          scrollToCelebMessageIndex(firstUnreadIndex, true);
+        }, 45);
+      });
+    } else if (!didInitialBottomScrollRef.current) {
+      didInitialBottomScrollRef.current = true;
+      scrollToBottomPendingRef.current = true;
+      requestAnimationFrame(() => {
+        flatListRef.current?.scrollToEnd({ animated: false });
+      });
+      setTimeout(() => {
+        if (scrollToBottomPendingRef.current) {
+          flatListRef.current?.scrollToEnd({ animated: false });
+          scrollToBottomPendingRef.current = false;
+        }
+      }, 180);
+    }
+  }, [loading, lastReadLoaded, firstUnreadIndex, firstUnreadMsgId, displayedMessages.length, selectedCelebScopeKey, todayStr]);
 
   const celebrationTypes = new Set(
     selectedCardCeleb
@@ -864,233 +1187,313 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
         enabled={Platform.OS === 'ios'}
       >
-        <ScrollView
+        <FlatList
+          ref={flatListRef}
           style={styles.scrollFlex}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
-        >
-          {/* Celebration Cards Section */}
-          <View style={styles.celebrationsSection}>
-            <View style={styles.tapInstructionRow}>
-              <Text style={styles.tapEmoji}>👉</Text>
-              <Text style={styles.tapText}>Tap a card to see their dedicated wishes</Text>
-            </View>
-
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.cardsScroll}
-            >
-              {celebrations.map((celeb: any, idx: number) => {
-                const photo = getPhotoUrl(celeb);
-                const celebId = celeb.id || celeb.uid || celeb.Id;
-                const celebMemberId = celeb.memberId || celeb.Id;
-                const celebName = celeb.Name || celeb.name || 'Member';
-                const wishCount = messages.filter(m => {
-                  if (m.targetCelebrantId) {
-                    return (
-                      m.targetCelebrantId === celebId ||
-                      (celebMemberId && m.targetCelebrantId === celebMemberId)
-                    );
-                  }
-                  return Boolean(m.targetCelebrantName && m.targetCelebrantName.toLowerCase() === celebName.toLowerCase());
-                }).length;
-                return (
-                  <TouchableOpacity key={idx} style={[styles.celebCard, selectedCardCeleb && (selectedCardCeleb.id || selectedCardCeleb.uid || selectedCardCeleb.Id) === celebId && { borderColor: COLORS.primary, borderWidth: 1 }]} onPress={() => {
-                    const currentSelectedId = selectedCardCeleb?.id || selectedCardCeleb?.uid || selectedCardCeleb?.Id;
-                    if (currentSelectedId === celebId) {
-                      setSelectedCardCeleb(null);
-                    } else {
-                      setSelectedCardCeleb(celeb);
-                    }
-                  }}>
-                    {photo ? (
-                      <CachedImage source={{ uri: photo }} style={styles.celebImage} resizeMode="cover" />
-                    ) : (
-                      <View style={styles.celebInitialBox}>
-                        <Text style={styles.celebInitial}>
-                          {(celebName)[0].toUpperCase()}
-                        </Text>
-                      </View>
-                    )}
-                    <View style={styles.celebCardTextInfo}>
-                      <Text style={styles.celebCardName} numberOfLines={1}>
-                        {celebName}
-                      </Text>
-                      <View style={styles.celebCardTypeRow}>
-                        <Text style={styles.celebCardTypeEmoji}>{getCelebrationIcon(getCelebrationType(celeb))}</Text>
-                        <Text style={styles.celebCardTypeText} numberOfLines={1}>
-                          {getCelebrationType(celeb)}
-                        </Text>
-                      </View>
-                      {wishCount > 0 && (
-                        <View style={styles.wishCountBadge}>
-                          <MaterialIcons name="favorite" color="#ef4444" size={10} />
-                          <Text style={styles.wishCountText}>{wishCount} {wishCount === 1 ? 'wish' : 'wishes'}</Text>
-                        </View>
-                      )}
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-              {celebrations.length === 0 && (
-                <View style={styles.noCelebBox}>
-                  <Text style={styles.tapText}>No celebrations today.</Text>
+          data={loading ? [] : displayedMessages}
+          keyExtractor={(item) => item.id}
+          initialNumToRender={16}
+          maxToRenderPerBatch={12}
+          windowSize={9}
+          removeClippedSubviews={Platform.OS === 'android'}
+          maintainVisibleContentPosition={{ minIndexForVisible: 0, autoscrollToTopThreshold: 10 }}
+          scrollEventThrottle={100}
+          onScrollBeginDrag={() => {
+            userScrolledRef.current = true;
+          }}
+          onScroll={(e) => {
+            const y = e.nativeEvent.contentOffset.y;
+            const isScrollingUpward = y < prevScrollYRef.current;
+            prevScrollYRef.current = y;
+            if (
+              userScrolledRef.current &&
+              isScrollingUpward &&
+              y <= 220 &&
+              hasMoreOlder &&
+              !loadingOlderRef.current
+            ) {
+              loadOlderMessages();
+            }
+          }}
+          onScrollToIndexFailed={(info) => {
+            const approxOffset = Math.max(0, info.averageItemLength * info.index - 40);
+            flatListRef.current?.scrollToOffset({ offset: approxOffset, animated: false });
+            setTimeout(() => {
+              if (flatListRef.current && info.index < displayedMessages.length) {
+                flatListRef.current.scrollToIndex({
+                  index: info.index,
+                  animated: false,
+                  viewPosition: 0.08,
+                });
+              }
+            }, 90);
+          }}
+          onContentSizeChange={() => {
+            if (scrollToBottomPendingRef.current && displayedMessages.length > 0) {
+              flatListRef.current?.scrollToEnd({ animated: true });
+            }
+          }}
+          onLayout={() => {
+            if (scrollToBottomPendingRef.current && displayedMessages.length > 0) {
+              flatListRef.current?.scrollToEnd({ animated: true });
+            }
+          }}
+          ListHeaderComponent={
+            <View>
+              {/* Celebration Cards Section */}
+              <View style={styles.celebrationsSection}>
+                <View style={styles.tapInstructionRow}>
+                  <Text style={styles.tapEmoji}>👉</Text>
+                  <Text style={styles.tapText}>Tap a card to see their dedicated wishes</Text>
                 </View>
-              )}
-            </ScrollView>
-          </View>
 
-          {/* Divider */}
-          <View style={styles.divider} />
-
-          {/* Live Wishes Chat Section */}
-          <View style={styles.chatSection}>
-            {e2eeState.status === 'needs_pin_unlock' ? (
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={() => setE2eeModalMode('unlock_backup')}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 8,
-                  paddingHorizontal: 12,
-                  paddingVertical: 9,
-                  borderRadius: 12,
-                  marginBottom: 10,
-                  backgroundColor: 'rgba(255, 200, 128, 0.14)',
-                  borderWidth: 1,
-                  borderColor: 'rgba(255, 200, 128, 0.38)',
-                }}
-              >
-                <MaterialIcons name="lock" size={14} color={COLORS.primary} />
-                <Text style={{ flex: 1, color: COLORS.primary, fontSize: 12, fontWeight: '700' }}>
-                  Encrypted wishes locked on this device — Tap to enter Backup PIN
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-            <View style={styles.chatHeader}>
-              <View style={[styles.chatHeaderLeft, { flex: 1 }]}>
-                <Text style={{ fontSize: 20 }}>💬</Text>
-                <Text style={styles.chatHeaderText} numberOfLines={1}>
-                  Live Wishes
-                </Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.cardsScroll}
+                >
+                  {celebrations.map((celeb: any, idx: number) => {
+                    const photo = getPhotoUrl(celeb);
+                    const celebId = celeb.id || celeb.uid || celeb.Id;
+                    const celebMemberId = celeb.memberId || celeb.Id;
+                    const celebName = celeb.Name || celeb.name || 'Member';
+                    const wishCount = messages.filter(m => {
+                      if (m.targetCelebrantId) {
+                        return (
+                          m.targetCelebrantId === celebId ||
+                          (celebMemberId && m.targetCelebrantId === celebMemberId)
+                        );
+                      }
+                      return Boolean(m.targetCelebrantName && m.targetCelebrantName.toLowerCase() === celebName.toLowerCase());
+                    }).length;
+                    return (
+                      <TouchableOpacity key={idx} style={[styles.celebCard, selectedCardCeleb && (selectedCardCeleb.id || selectedCardCeleb.uid || selectedCardCeleb.Id) === celebId && { borderColor: COLORS.primary, borderWidth: 1 }]} onPress={() => {
+                        const currentSelectedId = selectedCardCeleb?.id || selectedCardCeleb?.uid || selectedCardCeleb?.Id;
+                        if (currentSelectedId === celebId) {
+                          setSelectedCardCeleb(null);
+                        } else {
+                          setSelectedCardCeleb(celeb);
+                        }
+                      }}>
+                        {photo ? (
+                          <CachedImage source={{ uri: photo }} style={styles.celebImage} resizeMode="cover" />
+                        ) : (
+                          <View style={styles.celebInitialBox}>
+                            <Text style={styles.celebInitial}>
+                              {(celebName)[0].toUpperCase()}
+                            </Text>
+                          </View>
+                        )}
+                        <View style={styles.celebCardTextInfo}>
+                          <Text style={styles.celebCardName} numberOfLines={1}>
+                            {celebName}
+                          </Text>
+                          <View style={styles.celebCardTypeRow}>
+                            <Text style={styles.celebCardTypeEmoji}>{getCelebrationIcon(getCelebrationType(celeb))}</Text>
+                            <Text style={styles.celebCardTypeText} numberOfLines={1}>
+                              {getCelebrationType(celeb)}
+                            </Text>
+                          </View>
+                          {wishCount > 0 && (
+                            <View style={styles.wishCountBadge}>
+                              <MaterialIcons name="favorite" color="#ef4444" size={10} />
+                              <Text style={styles.wishCountText}>{wishCount} {wishCount === 1 ? 'wish' : 'wishes'}</Text>
+                            </View>
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  {celebrations.length === 0 && (
+                    <View style={styles.noCelebBox}>
+                      <Text style={styles.tapText}>No celebrations today.</Text>
+                    </View>
+                  )}
+                </ScrollView>
               </View>
-              <View style={styles.chatParticipantBadge}>
-                <MaterialIcons name="group" color={COLORS.onSurfaceVariant} size={16} />
-                <Text style={styles.chatParticipantText}>{participantCount} members</Text>
+
+              {/* Divider */}
+              <View style={styles.divider} />
+
+              {/* Live Wishes Chat Header Section */}
+              <View style={styles.chatHeaderSection}>
+                {e2eeState.status === 'needs_pin_unlock' ? (
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => setE2eeModalMode('unlock_backup')}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 8,
+                      paddingHorizontal: 12,
+                      paddingVertical: 9,
+                      borderRadius: 12,
+                      marginBottom: 10,
+                      backgroundColor: 'rgba(255, 200, 128, 0.14)',
+                      borderWidth: 1,
+                      borderColor: 'rgba(255, 200, 128, 0.38)',
+                    }}
+                  >
+                    <MaterialIcons name="lock" size={14} color={COLORS.primary} />
+                    <Text style={{ flex: 1, color: COLORS.primary, fontSize: 12, fontWeight: '700' }}>
+                      Encrypted wishes locked on this device — Tap to enter Backup PIN
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+                <View style={styles.chatHeader}>
+                  <View style={[styles.chatHeaderLeft, { flex: 1 }]}>
+                    <Text style={{ fontSize: 20 }}>💬</Text>
+                    <Text style={styles.chatHeaderText} numberOfLines={1}>
+                      Live Wishes
+                    </Text>
+                  </View>
+                  <View style={styles.chatParticipantBadge}>
+                    <MaterialIcons name="group" color={COLORS.onSurfaceVariant} size={16} />
+                    <Text style={styles.chatParticipantText}>{participantCount} members</Text>
+                  </View>
+                </View>
+
+                {loading ? (
+                  <ActivityIndicator color={COLORS.primary} style={{ marginTop: 40 }} />
+                ) : (hasMoreOlder || loadingOlder) ? (
+                  <TouchableOpacity
+                    style={styles.loadEarlierBtn}
+                    disabled={loadingOlder}
+                    onPress={loadOlderMessages}
+                    activeOpacity={0.8}
+                  >
+                    {loadingOlder ? (
+                      <ActivityIndicator size="small" color={COLORS.primary} />
+                    ) : (
+                      <Text style={styles.loadEarlierText}>Load earlier wishes</Text>
+                    )}
+                  </TouchableOpacity>
+                ) : null}
               </View>
             </View>
-
-            {loading ? (
-              <ActivityIndicator color={COLORS.primary} style={{ marginTop: 40 }} />
-            ) : (
-              <View style={styles.messagesContainer}>
-                {displayedMessages.map((item, index) => {
-                  const isMe = item.userId === currentUserId;
-                  return (
-                    <View key={item.id} style={[styles.messageRow, isMe ? styles.messageRowRight : styles.messageRowLeft]}>
-                      {!isMe && (
-                        <View style={styles.avatarContainer}>
-                          {item.userPhoto ? (
-                            <CachedImage source={{ uri: item.userPhoto }} style={styles.avatarImage} resizeMode="cover" />
-                          ) : (
-                            <View style={[styles.avatarImage, { backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' }]}>
-                              <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: 'bold' }}>{item.userName?.[0]?.toUpperCase()}</Text>
-                            </View>
-                          )}
-                        </View>
-                      )}
-
-                      {isMe ? (
-                        <TouchableOpacity activeOpacity={0.8} onLongPress={() => handleMessageLongPress(item)} style={{ maxWidth: '75%', flexShrink: 1 }}>
-                          <LinearGradient
-                            colors={[COLORS.bubbleOutboundStart, COLORS.bubbleOutboundEnd]}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                            style={[styles.messageBubble, styles.messageBubbleOutbound, { maxWidth: '100%' }]}
-                          >
-                            {item.targetCelebrantName && (
-                              <Text style={styles.mentionTag}>To @{item.targetCelebrantName}</Text>
-                            )}
-                            {item.audioUrl ? (
-                              <View>
-                                <TouchableOpacity style={styles.audioBubble} onPress={() => playAudio(item.audioUrl, item.id)}>
-                                  <MaterialIcons name={playingId === item.id ? 'stop' : 'play-arrow'} color="#452b00" size={28} />
-                                  <View style={styles.audioWaveform}>
-                                    {[...Array(10)].map((_, i) => <View key={i} style={[styles.audioBar, { height: 4 + (i % 4) * 6 }]} />)}
-                                  </View>
-                                </TouchableOpacity>
-                                <Text style={[styles.messageTimeOutbound, { position: 'relative', bottom: 0, right: 0, textAlign: 'right', marginTop: 4 }]}>
-                                  {formatTime(item.createdAt)}
-                                </Text>
-                              </View>
-                            ) : (
-                              <View>
-                                <Text style={styles.messageTextOutbound}>{item.text}</Text>
-                                <View style={styles.messageSpacer} />
-                                <Text style={styles.messageTimeOutbound}>
-                                  {item.isEdited && <Text style={{ fontStyle: 'italic' }}>(edited) </Text>}
-                                  {formatTime(item.createdAt)}
-                                </Text>
-                              </View>
-                            )}
-                          </LinearGradient>
-                        </TouchableOpacity>
+          }
+          renderItem={({ item, index }) => {
+            const isMe = item.userId === currentUserId;
+            const showUnreadDivider = index === firstUnreadIndex;
+            const msgTimeMs = getChatMessageTimeMs(item.createdAt) || (typeof item.localCreatedAt === 'number' ? item.localCreatedAt : 0);
+            const isUnreadMsg =
+              !isMe &&
+              lastReadLoaded &&
+              (initialLastReadTime <= 0 ? true : msgTimeMs > initialLastReadTime);
+            return (
+              <View style={styles.messageItemWrapper}>
+                {showUnreadDivider && (
+                  <UnreadMessagesDivider
+                    label="Unread Messages"
+                    lineColor="rgba(255, 200, 128, 0.3)"
+                    pillBgColor="rgba(255, 200, 128, 0.14)"
+                    pillBorderColor="rgba(255, 200, 128, 0.38)"
+                    textColor={COLORS.primary}
+                    containerStyle={{ marginVertical: 6 }}
+                  />
+                )}
+                <View style={[styles.messageRow, isMe ? styles.messageRowRight : styles.messageRowLeft]}>
+                  {!isMe && (
+                    <View style={styles.avatarContainer}>
+                      {item.userPhoto ? (
+                        <CachedImage source={{ uri: item.userPhoto }} style={styles.avatarImage} resizeMode="cover" />
                       ) : (
-                        <View style={[styles.messageBubble, styles.messageBubbleInbound, { flexShrink: 1 }]}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
-                            <Text style={[styles.messageSenderName, { marginBottom: 0 }]}>{item.userName}</Text>
-                            {initialLastReadTime > 0 && (item.createdAt?.toMillis?.() || (typeof item.createdAt === 'number' ? item.createdAt : 0)) > initialLastReadTime && (
-                              <View style={{ backgroundColor: '#ef4444', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, marginLeft: 8 }}>
-                                <Text style={{ color: '#fff', fontSize: 9, fontWeight: 'bold' }}>NEW</Text>
-                              </View>
-                            )}
-                          </View>
-                          {item.targetCelebrantName && (
-                            <Text style={styles.mentionTag}>To @{item.targetCelebrantName}</Text>
-                          )}
-                          {item.audioUrl ? (
-                            <View>
-                              <TouchableOpacity style={styles.audioBubble} onPress={() => playAudio(item.audioUrl, item.id)}>
-                                <MaterialIcons name={playingId === item.id ? 'stop' : 'play-arrow'} color={COLORS.primary} size={28} />
-                                <View style={styles.audioWaveform}>
-                                  {[...Array(10)].map((_, i) => <View key={i} style={[styles.audioBar, { height: 4 + (i % 4) * 6, backgroundColor: COLORS.primary }]} />)}
-                                </View>
-                              </TouchableOpacity>
-                              <Text style={[styles.messageTimeInbound, { position: 'relative', bottom: 0, right: 0, textAlign: 'right', marginTop: 4 }]}>{formatTime(item.createdAt)}</Text>
-                            </View>
-                          ) : (
-                            <View>
-                              <Text style={styles.messageTextInbound}>{item.text}</Text>
-                              <View style={styles.messageSpacer} />
-                              <Text style={styles.messageTimeInbound}>
-                                {item.isEdited && <Text style={{ fontStyle: 'italic' }}>(edited) </Text>}
-                                {formatTime(item.createdAt)}
-                              </Text>
-                            </View>
-                          )}
-                        </View>
-                      )}
-
-                      {isMe && (
-                        <View style={styles.avatarContainer}>
-                          {item.userPhoto ? (
-                            <CachedImage source={{ uri: item.userPhoto }} style={styles.avatarImage} resizeMode="cover" />
-                          ) : (
-                            <View style={[styles.avatarImage, { backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' }]}>
-                              <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: 'bold' }}>{item.userName?.[0]?.toUpperCase()}</Text>
-                            </View>
-                          )}
+                        <View style={[styles.avatarImage, { backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' }]}>
+                          <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: 'bold' }}>{item.userName?.[0]?.toUpperCase()}</Text>
                         </View>
                       )}
                     </View>
-                  );
-                })}
+                  )}
+
+                  {isMe ? (
+                    <TouchableOpacity activeOpacity={0.8} onLongPress={() => handleMessageLongPress(item)} style={{ maxWidth: '75%', flexShrink: 1 }}>
+                      <LinearGradient
+                        colors={[COLORS.bubbleOutboundStart, COLORS.bubbleOutboundEnd]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={[styles.messageBubble, styles.messageBubbleOutbound, { maxWidth: '100%' }]}
+                      >
+                        {item.targetCelebrantName && (
+                          <Text style={styles.mentionTag}>To @{item.targetCelebrantName}</Text>
+                        )}
+                        {item.audioUrl ? (
+                          <View>
+                            <TouchableOpacity style={styles.audioBubble} onPress={() => playAudio(item.audioUrl, item.id)}>
+                              <MaterialIcons name={playingId === item.id ? 'stop' : 'play-arrow'} color="#452b00" size={28} />
+                              <View style={styles.audioWaveform}>
+                                {[...Array(10)].map((_, i) => <View key={i} style={[styles.audioBar, { height: 4 + (i % 4) * 6 }]} />)}
+                              </View>
+                            </TouchableOpacity>
+                            <Text style={[styles.messageTimeOutbound, { position: 'relative', bottom: 0, right: 0, textAlign: 'right', marginTop: 4 }]}>
+                              {formatTime(item.createdAt || item.localCreatedAt)}
+                            </Text>
+                          </View>
+                        ) : (
+                          <View>
+                            <Text style={styles.messageTextOutbound}>{item.text}</Text>
+                            <View style={styles.messageSpacer} />
+                            <Text style={styles.messageTimeOutbound}>
+                              {item.isEdited && <Text style={{ fontStyle: 'italic' }}>(edited) </Text>}
+                              {formatTime(item.createdAt || item.localCreatedAt)}
+                            </Text>
+                          </View>
+                        )}
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={[styles.messageBubble, styles.messageBubbleInbound, { flexShrink: 1 }]}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                        <Text style={[styles.messageSenderName, { marginBottom: 0 }]}>{item.userName}</Text>
+                        {isUnreadMsg && (
+                          <View style={{ backgroundColor: '#ef4444', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, marginLeft: 8 }}>
+                            <Text style={{ color: '#fff', fontSize: 9, fontWeight: 'bold' }}>NEW</Text>
+                          </View>
+                        )}
+                      </View>
+                      {item.targetCelebrantName && (
+                        <Text style={styles.mentionTag}>To @{item.targetCelebrantName}</Text>
+                      )}
+                      {item.audioUrl ? (
+                        <View>
+                          <TouchableOpacity style={styles.audioBubble} onPress={() => playAudio(item.audioUrl, item.id)}>
+                            <MaterialIcons name={playingId === item.id ? 'stop' : 'play-arrow'} color={COLORS.primary} size={28} />
+                            <View style={styles.audioWaveform}>
+                              {[...Array(10)].map((_, i) => <View key={i} style={[styles.audioBar, { height: 4 + (i % 4) * 6, backgroundColor: COLORS.primary }]} />)}
+                            </View>
+                          </TouchableOpacity>
+                          <Text style={[styles.messageTimeInbound, { position: 'relative', bottom: 0, right: 0, textAlign: 'right', marginTop: 4 }]}>{formatTime(item.createdAt || item.localCreatedAt)}</Text>
+                        </View>
+                      ) : (
+                        <View>
+                          <Text style={styles.messageTextInbound}>{item.text}</Text>
+                          <View style={styles.messageSpacer} />
+                          <Text style={styles.messageTimeInbound}>
+                            {item.isEdited && <Text style={{ fontStyle: 'italic' }}>(edited) </Text>}
+                            {formatTime(item.createdAt || item.localCreatedAt)}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                  {isMe && (
+                    <View style={styles.avatarContainer}>
+                      {item.userPhoto ? (
+                        <CachedImage source={{ uri: item.userPhoto }} style={styles.avatarImage} resizeMode="cover" />
+                      ) : (
+                        <View style={[styles.avatarImage, { backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' }]}>
+                          <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: 'bold' }}>{item.userName?.[0]?.toUpperCase()}</Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
+                </View>
               </View>
-            )}
-          </View>
-        </ScrollView>
+            );
+          }}
+        />
 
         {/* Bottom Action Area */}
         <View style={[styles.bottomArea, { paddingBottom: Platform.OS === 'ios' ? 24 : (isKeyboardVisible ? 8 : 48) }]}>
@@ -1206,6 +1609,23 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
                     value={inputText}
                     onChangeText={handleTextChange}
                     multiline
+                    returnKeyType="send"
+                    submitBehavior="submit"
+                    onSubmitEditing={() => {
+                      if (inputText.trim()) {
+                        sendMessage(inputText);
+                      }
+                    }}
+                    onKeyPress={(e) => {
+                      if (
+                        e.nativeEvent.key === 'Enter' &&
+                        !(e.nativeEvent as any).shiftKey &&
+                        inputText.trim()
+                      ) {
+                        (e as any).preventDefault?.();
+                        sendMessage(inputText);
+                      }
+                    }}
                   />
                 </View>
 
@@ -1491,6 +1911,29 @@ const styles = StyleSheet.create({
   },
   chatSection: {
     paddingVertical: 16,
+    paddingHorizontal: 16,
+  },
+  chatHeaderSection: {
+    paddingTop: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  loadEarlierBtn: {
+    alignSelf: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 200, 128, 0.3)',
+    backgroundColor: 'rgba(255, 200, 128, 0.08)',
+    marginBottom: 8,
+  },
+  loadEarlierText: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  messageItemWrapper: {
     paddingHorizontal: 16,
   },
   chatHeader: {

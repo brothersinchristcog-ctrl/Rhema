@@ -23,6 +23,8 @@ import {
   Pause,
   Play,
   Volume2,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react-native';
 import YoutubePlayer from 'react-native-youtube-iframe';
 import { Audio } from 'expo-av';
@@ -30,10 +32,7 @@ import { KidsWorshipSong } from '../../../types/KidsMinistryTypes';
 import { useTheme } from '../../../context/ThemeContext';
 import { isColorLight } from '../../SongsScreen';
 import { getSermonCardColor, POSTER as SERMON_POSTER_GRADIENTS } from '../../SermonsScreen';
-
-const { width } = Dimensions.get('window');
-const STAGE_WIDTH = width - 32;
-const STAGE_HEIGHT = Math.round((STAGE_WIDTH * 9) / 16);
+import { useVideoOrientationController } from '../../../utils/videoOrientation';
 
 function extractYoutubeId(urlOrId?: string): string {
   if (!urlOrId || typeof urlOrId !== 'string') return '';
@@ -102,6 +101,19 @@ export default function KidsSongPlayerModal({
     };
   }, [song?.id, visible]);
 
+  const videoId = song ? extractYoutubeId(song.youtubeVideoId) : '';
+  const {
+    isLandscape,
+    playerWidth: stageWidth,
+    playerHeight: stageHeight,
+    handleFullScreenChange,
+    toggleOrientation,
+  } = useVideoOrientationController(
+    visible && Boolean(videoId),
+    `modal:KidsSongPlayer:${song?.id || 'song'}`,
+    { theaterInLandscape: false, horizontalPadding: 32, maxPortraitWidth: 680, landscapeVerticalReserve: 72 }
+  );
+
   if (!song) return null;
 
   const screenBg = isDark ? '#0B0F19' : '#FFFDF9';
@@ -116,7 +128,6 @@ export default function KidsSongPlayerModal({
   const violetSoft = isDark ? 'rgba(139, 92, 246, 0.16)' : '#EFE9FE';
   const barStyle = isDark ? 'light-content' : 'dark-content';
 
-  const videoId = extractYoutubeId(song.youtubeVideoId);
   const hasAudio = Boolean(song.audioUrl && song.audioUrl.trim().length > 0);
   const thumbUri =
     song.thumbnailUrl ||
@@ -189,7 +200,13 @@ export default function KidsSongPlayerModal({
   const otherSongs = allSongs.filter(s => s.id !== song.id);
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="fullScreen"
+      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}
+      onRequestClose={onClose}
+    >
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
         <SafeAreaView style={[styles.container, { backgroundColor: screenBg }]} edges={['top', 'bottom']}>
           <StatusBar barStyle={barStyle} backgroundColor={screenBg} />
@@ -213,20 +230,35 @@ export default function KidsSongPlayerModal({
               </Text>
             </View>
 
-            <View style={{ width: 38 }} />
+            {videoId ? (
+              <TouchableOpacity
+                onPress={toggleOrientation}
+                style={[styles.backBtn, { backgroundColor: cardBg, borderColor: border }]}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                {isLandscape ? (
+                  <Minimize2 size={18} color={textPrimary} />
+                ) : (
+                  <Maximize2 size={18} color={textPrimary} />
+                )}
+              </TouchableOpacity>
+            ) : (
+              <View style={{ width: 38 }} />
+            )}
           </View>
 
           {/* Full Scrollable Page (Media + Audio + Bilingual Lyrics + Up Next) */}
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
             {/* Rounded 16:9 Media Stage */}
-            <View style={[styles.stageCard, { backgroundColor: cardBg, borderColor: border }]}>
-              <View style={styles.stage16x9Frame}>
+            <View style={[styles.stageCard, { backgroundColor: cardBg, borderColor: border, alignSelf: 'center', width: stageWidth }]}>
+              <View style={[styles.stage16x9Frame, { width: stageWidth, height: stageHeight }]}>
                 {videoId ? (
                   <YoutubePlayer
-                    height={STAGE_HEIGHT}
-                    width={STAGE_WIDTH}
+                    height={stageHeight}
+                    width={stageWidth}
                     videoId={videoId}
                     play={playingVideo}
+                    onFullScreenChange={handleFullScreenChange}
                     onChangeState={state => {
                       if (state === 'ended') setPlayingVideo(false);
                     }}
@@ -555,8 +587,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   stage16x9Frame: {
-    width: STAGE_WIDTH,
-    height: STAGE_HEIGHT,
+    width: '100%',
     backgroundColor: '#0F172A',
     overflow: 'hidden',
   },

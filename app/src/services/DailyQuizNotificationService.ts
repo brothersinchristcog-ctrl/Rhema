@@ -37,10 +37,27 @@ const DEFAULT_SCHEDULE_CONFIG: DailyQuizScheduleConfig = {
 class DailyQuizNotificationService {
   private isScheduling = false;
 
-  /**
-   * Loads schedule settings from Firestore and caches locally.
-   */
-  async getScheduleConfig(): Promise<DailyQuizScheduleConfig> {
+  private scheduleConfigMemory: { config: DailyQuizScheduleConfig; fetchedAt: number } | null = null;
+  private scheduleConfigInFlight: Promise<DailyQuizScheduleConfig> | null = null;
+
+  private parseScheduleConfigDoc(data: Partial<DailyQuizScheduleConfig>): DailyQuizScheduleConfig {
+    const timeVal = data.scheduledTime || data.time24 || '06:00';
+    const parts = timeVal.split(':');
+    const h = typeof data.hour === 'number' ? data.hour : parseInt(parts[0], 10) || 6;
+    const m = typeof data.minute === 'number' ? data.minute : parseInt(parts[1], 10) || 0;
+    return {
+      enabled: typeof data.enabled === 'boolean' ? data.enabled : true,
+      scheduledTime: timeVal,
+      time24: timeVal,
+      hour: h,
+      minute: m,
+      customTitle: data.customTitle || DEFAULT_SCHEDULE_CONFIG.customTitle,
+      customBody: data.customBody || DEFAULT_SCHEDULE_CONFIG.customBody,
+      targetScope: data.targetScope || 'all',
+    };
+  }
+
+  private async fetchScheduleConfigFromFirestore(): Promise<DailyQuizScheduleConfig | null> {
     try {
       const snap = await firestore()
         .collection('Rhema Church')
@@ -51,42 +68,60 @@ class DailyQuizNotificationService {
 
       const exists = typeof (snap as any).exists === 'function' ? (snap as any).exists() : (snap as any).exists;
       if (exists) {
-        const data = snap.data() as Partial<DailyQuizScheduleConfig>;
-        const timeVal = data.scheduledTime || data.time24 || '06:00';
-        const parts = timeVal.split(':');
-        const h = typeof data.hour === 'number' ? data.hour : parseInt(parts[0], 10) || 6;
-        const m = typeof data.minute === 'number' ? data.minute : parseInt(parts[1], 10) || 0;
-
-        const config: DailyQuizScheduleConfig = {
-          enabled: typeof data.enabled === 'boolean' ? data.enabled : true,
-          scheduledTime: timeVal,
-          time24: timeVal,
-          hour: h,
-          minute: m,
-          customTitle: data.customTitle || DEFAULT_SCHEDULE_CONFIG.customTitle,
-          customBody: data.customBody || DEFAULT_SCHEDULE_CONFIG.customBody,
-          targetScope: data.targetScope || 'all',
-        };
-        await AsyncStorage.setItem(QUIZ_SCHEDULE_SETTINGS_KEY, JSON.stringify(config)).catch(() => {});
+        const config = this.parseScheduleConfigDoc(snap.data() as Partial<DailyQuizScheduleConfig>);
+        this.scheduleConfigMemory = { config, fetchedAt: Date.now() };
+        AsyncStorage.setItem(QUIZ_SCHEDULE_SETTINGS_KEY, JSON.stringify({ ...config, _cachedAt: Date.now() })).catch(() => {});
         return config;
       }
     } catch {
       // offline fallback
     }
+    return null;
+  }
 
-    try {
-      const cached = await AsyncStorage.getItem(QUIZ_SCHEDULE_SETTINGS_KEY);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        return {
-          ...DEFAULT_SCHEDULE_CONFIG,
-          ...parsed,
-          scheduledTime: parsed.scheduledTime || parsed.time24 || '06:00',
-        };
+  /**
+   * Loads schedule settings cache-first for zero-latency startup, refreshing from Firestore in the background.
+   */
+  async getScheduleConfig(forceRefresh: boolean = false): Promise<DailyQuizScheduleConfig> {
+    if (!forceRefresh && this.scheduleConfigMemory && Date.now() - this.scheduleConfigMemory.fetchedAt < 15 * 60_000) {
+      return this.scheduleConfigMemory.config;
+    }
+
+    if (!forceRefresh) {
+      try {
+        const cached = await AsyncStorage.getItem(QUIZ_SCHEDULE_SETTINGS_KEY);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          const config: DailyQuizScheduleConfig = {
+            ...DEFAULT_SCHEDULE_CONFIG,
+            ...parsed,
+            scheduledTime: parsed.scheduledTime || parsed.time24 || '06:00',
+          };
+          this.scheduleConfigMemory = { config, fetchedAt: parsed._cachedAt || Date.now() };
+          // Refresh asynchronously in background if cache is older than 15 minutes
+          if (!parsed._cachedAt || Date.now() - parsed._cachedAt > 15 * 60_000) {
+            this.fetchScheduleConfigFromFirestore().catch(() => {});
+          }
+          return config;
+        }
+      } catch {}
+    }
+
+    if (this.scheduleConfigInFlight) {
+      return this.scheduleConfigInFlight;
+    }
+
+    this.scheduleConfigInFlight = (async () => {
+      try {
+        const remote = await this.fetchScheduleConfigFromFirestore();
+        if (remote) return remote;
+      } finally {
+        this.scheduleConfigInFlight = null;
       }
-    } catch {}
+      return this.scheduleConfigMemory?.config || DEFAULT_SCHEDULE_CONFIG;
+    })();
 
-    return DEFAULT_SCHEDULE_CONFIG;
+    return this.scheduleConfigInFlight;
   }
 
   /**
@@ -236,6 +271,7 @@ class DailyQuizNotificationService {
       const now = new Date();
       let scheduledCount = 0;
       let firstUpcomingDate: string | null = null;
+      const scheduleTasks: Promise<void>[] = [];
 
       for (let i = 0; i <= daysAhead; i++) {
         const targetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
@@ -273,30 +309,36 @@ class DailyQuizNotificationService {
         const titleText = config.customTitle || '📖 Daily Bible Quiz is Live!';
         const bodyText = config.customBody || `Today's Scripture challenge (${formatDateDisplay(dateStr)}) is ready. Test your knowledge and reflect on God's Word!`;
 
-        await Notifications.scheduleNotificationAsync({
-          identifier: notifId,
-          content: {
-            title: titleText,
-            body: bodyText,
-            sound: true,
-            data: {
-              type: 'bible_quiz',
-              quizId: `daily_quiz_${dateStr}`,
-              id: `daily_quiz_${dateStr}`,
-              relatedId: `daily_quiz_${dateStr}`,
-              churchId: RHEMA_CHURCH_ID,
-              scheduledDate: dateStr,
-              screen: 'BibleQuizDetail',
+        scheduleTasks.push(
+          Notifications.scheduleNotificationAsync({
+            identifier: notifId,
+            content: {
+              title: titleText,
+              body: bodyText,
+              sound: true,
+              data: {
+                type: 'bible_quiz',
+                quizId: `daily_quiz_${dateStr}`,
+                id: `daily_quiz_${dateStr}`,
+                relatedId: `daily_quiz_${dateStr}`,
+                churchId: RHEMA_CHURCH_ID,
+                scheduledDate: dateStr,
+                screen: 'BibleQuizDetail',
+              },
             },
-          },
-          trigger: {
-            type: Notifications.SchedulableTriggerInputTypes.DATE,
-            date: scheduleDateTime,
-            channelId: 'daily_quiz',
-          },
-        });
+            trigger: {
+              type: Notifications.SchedulableTriggerInputTypes.DATE,
+              date: scheduleDateTime,
+              channelId: 'daily_quiz',
+            },
+          }).then(() => {
+            scheduledCount++;
+          })
+        );
+      }
 
-        scheduledCount++;
+      if (scheduleTasks.length > 0) {
+        await Promise.all(scheduleTasks);
       }
 
       // Note: A separate recurring DAILY trigger has been removed because it caused

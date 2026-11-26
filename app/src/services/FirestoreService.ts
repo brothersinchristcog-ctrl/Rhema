@@ -3441,10 +3441,10 @@ class FirestoreService {
   async submitPrayerRequest(data: any) {
     try {
       const col = await this.getCollection('prayerRequests');
-      const textVal = data.text || data.request || data.requestEn || '';
-      const textTeVal = data.textTe || data.requestTe || '';
+      const textVal = String(data.text || data.request || data.requestEn || '').trim();
+      const textTeVal = String(data.textTe || data.requestTe || '').trim();
       const authorIdVal = data.authorId || data.contactId || data.uid || null;
-      const memberNameVal = data.name || data.memberName || data.authorName || 'Church Member';
+      const memberNameVal = String(data.name || data.memberName || data.authorName || 'Church Member').trim() || 'Church Member';
       
       const docRef = await col.add({
         ...data,
@@ -3465,17 +3465,22 @@ class FirestoreService {
         createdAt: FieldValue.serverTimestamp()
       });
 
-      // 1. Write direct notification to notifications collection for Admin in-app visibility
+      // Write ONE deterministic in-app notification doc for Admin Updates visibility.
+      // (Cloud Function onPrayerRequestCreatedAdmin merges into this same doc ID and handles permission-filtered FCM push,
+      //  avoiding duplicate notifications across `notifications` and `broadcasts`.)
       try {
         const notifCol = await this.getCollection('notifications');
         const excerpt = textVal.length > 80 ? `${textVal.substring(0, 80)}...` : textVal;
         const pushTitle = data.isPublic
           ? `🙏 New Public Prayer Request: ${memberNameVal}`
           : `🙏 New Prayer Request: ${memberNameVal}`;
-        const pushBody = excerpt ? `${memberNameVal} submitted a prayer request: "${excerpt}"` : `${memberNameVal} submitted a new prayer request. Tap to review.`;
+        const pushBody = excerpt
+          ? `${memberNameVal} submitted a prayer request: "${excerpt}". Tap to review.`
+          : `${memberNameVal} submitted a new prayer request. Tap to review.`;
 
-        await notifCol.add({
+        await notifCol.doc(`prayer_admin_${docRef.id}`).set({
           type: 'prayer_request_admin',
+          targetRole: 'admin',
           title: pushTitle,
           body: pushBody,
           memberName: memberNameVal,
@@ -3488,43 +3493,9 @@ class FirestoreService {
           isPublic: data.isPublic ?? false,
           read: false,
           createdAt: FieldValue.serverTimestamp()
-        });
+        }, { merge: true });
       } catch (notifErr) {
         console.warn('⚠️ Could not write admin notification doc directly:', notifErr);
-      }
-
-      // 2. Dispatch immediate Admin push notification via broadcasts collection
-      try {
-        const churchId = await this.getChurchId();
-        const excerpt = textVal.length > 80 ? `${textVal.substring(0, 80)}...` : textVal;
-        const pushTitle = data.isPublic
-          ? `🙏 New Public Prayer Request: ${memberNameVal}`
-          : `🙏 New Prayer Request: ${memberNameVal}`;
-        const pushBody = excerpt ? `${memberNameVal} submitted a prayer request: "${excerpt}"` : `${memberNameVal} submitted a new prayer request. Tap to review.`;
-
-        const bcastData = {
-          type: 'prayer_request_admin',
-          targetRole: 'admin',
-          title: pushTitle,
-          content: pushBody,
-          body: pushBody,
-          memberName: memberNameVal,
-          prayerId: docRef.id,
-          requestId: docRef.id,
-          targetTab: 'Prayers',
-          screen: 'AdminRoot',
-          requestExcerpt: excerpt,
-          category: data.category || '',
-          isPublic: data.isPublic ?? false,
-          silent: false,
-          createdAt: FieldValue.serverTimestamp()
-        };
-
-        const bcastCol = await this.getCollection('broadcasts');
-        await bcastCol.add(bcastData);
-        console.log('🔔 [submitPrayerRequest] Successfully dispatched admin prayer push broadcast:', docRef.id);
-      } catch (bcastErr) {
-        console.warn('⚠️ Could not write admin prayer push broadcast doc:', bcastErr);
       }
 
       console.log('🙏 [submitPrayerRequest] Successfully submitted prayer request & admin notification:', docRef.id);
@@ -3586,10 +3557,11 @@ class FirestoreService {
         : `Dear ${memberName}, your prayer request has been received and prayed for.${verseSnippet}`;
 
       if (memberId || memberPhone) {
-        // 1. In-app notification document targeted to this member only
+        // Write ONE deterministic in-app notification document targeted to this member only.
+        // (Cloud Function onPrayerRequestProcessedMember handles direct member FCM multicast push.)
         try {
           const notifCol = await this.getCollection('notifications');
-          await notifCol.add({
+          await notifCol.doc(`prayer_member_${id}`).set({
             type: 'prayer_request_member',
             title: notifTitle,
             body: notifBody,
@@ -3603,29 +3575,9 @@ class FirestoreService {
             verseText: verseInfo?.text || existing.verseText || null,
             read: false,
             createdAt: FieldValue.serverTimestamp()
-          });
+          }, { merge: true });
         } catch (notifErr) {
           console.warn('⚠️ Could not write member prayer in-app notification:', notifErr);
-        }
-
-        // 2. Targeted push broadcast ONLY for this member (no topic fallback)
-        try {
-          const bcastCol = await this.getCollection('broadcasts');
-          await bcastCol.add({
-            title: notifTitle,
-            content: notifBody,
-            type: 'prayer_request_member',
-            prayerId: id,
-            requestId: id,
-            targetPhone: memberPhone,
-            targetMemberId: memberId,
-            targetUid: memberId,
-            bibleVerse: verseRef || null,
-            silent: false,
-            createdAt: FieldValue.serverTimestamp()
-          });
-        } catch (bcastErr) {
-          console.warn('⚠️ Could not trigger targeted member broadcast:', bcastErr);
         }
       }
 

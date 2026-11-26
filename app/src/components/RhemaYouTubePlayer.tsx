@@ -6,6 +6,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { unlockForVideo, useVideoOrientationLease } from '../utils/videoOrientation';
 
 interface RhemaYouTubePlayerProps {
   videoId: string;
@@ -17,6 +18,7 @@ interface RhemaYouTubePlayerProps {
   isLive?: boolean;
   onReady?: () => void;
   onChangeState?: (state: string) => void;
+  onFullScreenChange?: (isFullScreen: boolean) => void;
   style?: StyleProp<ViewStyle>;
   showExternalButton?: boolean;
 }
@@ -61,11 +63,16 @@ export default function RhemaYouTubePlayer({
   isLive = false,
   onReady,
   onChangeState,
+  onFullScreenChange,
   style,
 }: RhemaYouTubePlayerProps) {
   const finalVideoId = useMemo(() => cleanVideoId(videoId), [videoId]);
   const [loading, setLoading] = useState(true);
   const webViewRef = useRef<WebView>(null);
+  const leaseIdRef = useRef(`yt_player_${Math.random().toString(36).slice(2, 9)}`);
+
+  // Ensure orientation is unlocked whenever an active YouTube player is mounted
+  useVideoOrientationLease(Boolean(finalVideoId), leaseIdRef.current);
 
   useEffect(() => {
     if (!finalVideoId || !webViewRef.current) return;
@@ -94,19 +101,38 @@ export default function RhemaYouTubePlayer({
       src="https://www.youtube-nocookie.com/embed/${finalVideoId}?autoplay=${autoPlay ? 1 : 0}&playsinline=1&rel=0&modestbranding=1&enablejsapi=1&origin=${TRUSTED_ORIGIN}"
       frameborder="0"
       referrerpolicy="strict-origin-when-cross-origin"
-      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
       allowfullscreen
     ></iframe>
+    <script>
+      (function () {
+        function notifyFs() {
+          try {
+            var fs = Boolean(
+              document.fullscreenElement ||
+              document.webkitFullscreenElement ||
+              document.mozFullScreenElement ||
+              document.msFullscreenElement
+            );
+            if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+              window.ReactNativeWebView.postMessage(JSON.stringify({ eventType: 'fullScreenChange', data: fs }));
+            }
+          } catch (e) {}
+        }
+        document.addEventListener('fullscreenchange', notifyFs);
+        document.addEventListener('webkitfullscreenchange', notifyFs);
+      })();
+    </script>
   </body>
 </html>`;
   }, [finalVideoId, autoPlay]);
 
   if (!finalVideoId) {
-    return <View style={[styles.container, { height }, style]} />;
+    return <View style={[styles.container, { height, ...(width ? { width } : {}) }, style]} />;
   }
 
   return (
-    <View style={[styles.container, { height }, style]}>
+    <View style={[styles.container, { height, ...(width ? { width } : {}) }, style]}>
       <View style={styles.playerWrapper}>
         <WebView
           ref={webViewRef}
@@ -127,6 +153,22 @@ export default function RhemaYouTubePlayer({
           scrollEnabled={false}
           bounces={false}
           setSupportMultipleWindows={false}
+          onMessage={(event) => {
+            try {
+              const payload = JSON.parse(event?.nativeEvent?.data || '{}');
+              if (payload?.eventType === 'fullScreenChange') {
+                const isFs = Boolean(payload.data);
+                if (!isFs) {
+                  // Re-unlock so Android WebChromeClient restoring initialRequestedOrientation
+                  // never prevents landscape rotation after exiting fullscreen.
+                  setTimeout(() => unlockForVideo(), 50);
+                }
+                onFullScreenChange?.(isFs);
+              }
+            } catch {
+              // Ignore non-JSON messages
+            }
+          }}
           onLoadEnd={() => {
             setLoading(false);
             onReady?.();

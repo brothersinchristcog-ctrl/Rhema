@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -11,10 +12,14 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
+  ArrowLeft,
   CheckSquare,
+  ChevronRight,
   Clock,
   History,
+  Info,
   Lock,
   RefreshCw,
   Save,
@@ -23,6 +28,7 @@ import {
   Sliders,
   Square,
   UserCheck,
+  Users,
   X,
 } from 'lucide-react-native';
 import {
@@ -86,6 +92,7 @@ export default function AdminPermissionsManager({
   searchQuery = '',
 }: AdminPermissionsManagerProps) {
   const { activeChurch } = useChurch();
+  const insets = useSafeAreaInsets();
   const {
     isDark,
     screenBg,
@@ -103,9 +110,12 @@ export default function AdminPermissionsManager({
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [usingFallback, setUsingFallback] = useState(false);
 
   const [admins, setAdmins] = useState<AdminDirectoryEntry[]>([]);
+  const [roleFilter, setRoleFilter] = useState<'all' | 'admins' | 'super_admins'>('all');
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
+  const [showEditorWindow, setShowEditorWindow] = useState(false);
   const [draftModules, setDraftModules] = useState<Record<string, boolean>>({
     dashboard: true,
   });
@@ -138,25 +148,20 @@ export default function AdminPermissionsManager({
         setAdmins(res.admins);
         setDefaultModules(res.defaultModules);
         setDefaultsDraft(res.defaultModules);
+        setUsingFallback(Boolean(res.fromFirestoreFallback));
 
         setSelectedUid((prevUid) => {
-          const prevStillPresent = prevUid
-            ? res.admins.find((a) => a.uid === prevUid)
-            : null;
+          if (!prevUid) return null;
+          const prevStillPresent = res.admins.find((a) => a.uid === prevUid);
           if (prevStillPresent) {
             setDraftModules(normalizeModulesMap(prevStillPresent.modules));
             return prevStillPresent.uid;
           }
-          const firstStandard =
-            res.admins.find((a) => !a.isSuperAdmin) || res.admins[0] || null;
-          if (firstStandard) {
-            setDraftModules(normalizeModulesMap(firstStandard.modules));
-            return firstStandard.uid;
-          }
+          setShowEditorWindow(false);
           return null;
         });
       } catch (err: any) {
-        console.error('loadDirectory error:', err);
+        console.warn('AdminPermissions loadDirectory notice:', err?.message || err);
         setErrorMsg(
           err?.message || 'Unable to load church administrators and permissions.'
         );
@@ -181,14 +186,24 @@ export default function AdminPermissionsManager({
     });
   }, [admins, searchQuery]);
 
+  const standardAdminMembers = useMemo(
+    () => filteredAdmins.filter((a) => !a.isSuperAdmin),
+    [filteredAdmins]
+  );
+  const superAdminMembers = useMemo(
+    () => filteredAdmins.filter((a) => a.isSuperAdmin),
+    [filteredAdmins]
+  );
+
   const selectedAdmin = useMemo(
     () => admins.find((a) => a.uid === selectedUid) || null,
     [admins, selectedUid]
   );
 
-  const handleSelectAdmin = (admin: AdminDirectoryEntry) => {
+  const handleOpenAdminWindow = (admin: AdminDirectoryEntry) => {
     setSelectedUid(admin.uid);
     setDraftModules(normalizeModulesMap(admin.modules));
+    setShowEditorWindow(true);
   };
 
   const hasUnsavedChanges = useMemo(() => {
@@ -198,6 +213,30 @@ export default function AdminPermissionsManager({
       (k) => Boolean(draftModules[k]) !== Boolean(saved[k])
     );
   }, [selectedAdmin, draftModules]);
+
+  const handleCloseAdminWindow = () => {
+    if (saving) return;
+    if (hasUnsavedChanges) {
+      Alert.alert(
+        'Discard Unsaved Changes?',
+        'You have modified module toggles for this administrator without saving.',
+        [
+          { text: 'Keep Editing', style: 'cancel' },
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => {
+              setShowEditorWindow(false);
+              setSelectedUid(null);
+            },
+          },
+        ]
+      );
+      return;
+    }
+    setShowEditorWindow(false);
+    setSelectedUid(null);
+  };
 
   const enabledCountForDraft = useMemo(
     () => DELEGABLE_MODULE_KEYS.filter((k) => draftModules[k] === true).length,
@@ -251,6 +290,7 @@ export default function AdminPermissionsManager({
 
       const savedModules = normalizeModulesMap(res?.modules || payload);
       setDraftModules(savedModules);
+      setUsingFallback(false);
       setAdmins((prev) =>
         prev.map((a) =>
           a.uid === selectedAdmin.uid
@@ -322,7 +362,8 @@ export default function AdminPermissionsManager({
       );
       setAuditLogs(logs);
     } catch (err: any) {
-      console.warn('Audit log fetch warning:', err?.message);
+      console.warn('Audit log fetch notice:', err?.message);
+      setAuditLogs([]);
     } finally {
       setLoadingLogs(false);
     }
@@ -332,16 +373,107 @@ export default function AdminPermissionsManager({
   const accentBlue = '#3B82F6';
   const mutedBorder = isDark ? 'rgba(255,255,255,0.08)' : borderColor;
 
+  const renderAdminCardRow = (adm: AdminDirectoryEntry) => {
+    const enabledCount = DELEGABLE_MODULE_KEYS.filter(
+      (k) => adm.modules?.[k] === true
+    ).length;
+    const initials =
+      adm.name
+        .split(/\s+/)
+        .slice(0, 2)
+        .map((w) => w.charAt(0).toUpperCase())
+        .join('') || 'A';
+
+    return (
+      <TouchableOpacity
+        key={adm.uid}
+        onPress={() => handleOpenAdminWindow(adm)}
+        activeOpacity={0.82}
+        style={[
+          styles.memberRowCard,
+          {
+            backgroundColor: secondarySurface,
+            borderColor: mutedBorder,
+            borderWidth: 1,
+          },
+        ]}
+      >
+        <View
+          style={[
+            styles.avatarCircle,
+            {
+              backgroundColor: adm.isSuperAdmin
+                ? 'rgba(240, 180, 41, 0.2)'
+                : 'rgba(59, 130, 246, 0.16)',
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.avatarInitials,
+              { color: adm.isSuperAdmin ? accentGold : accentBlue },
+            ]}
+          >
+            {initials}
+          </Text>
+        </View>
+
+        <View style={{ flex: 1, marginRight: 6 }}>
+          <Text
+            style={[styles.adminCardName, { color: primaryText }]}
+            numberOfLines={1}
+          >
+            {adm.name}
+          </Text>
+          <Text
+            style={[styles.adminCardMeta, { color: secondaryText }]}
+            numberOfLines={1}
+          >
+            {adm.userType || adm.role || (adm.isSuperAdmin ? 'Super Admin' : 'Admin')}
+            {adm.phone ? ` · ${adm.phone}` : ''}
+          </Text>
+        </View>
+
+        {adm.isSuperAdmin ? (
+          <View style={styles.superPill}>
+            <Shield size={10} color="#1a1200" />
+            <Text style={styles.superPillText}>SUPER ADMIN</Text>
+          </View>
+        ) : (
+          <View
+            style={[
+              styles.countPill,
+              {
+                backgroundColor: isDark
+                  ? 'rgba(59, 130, 246, 0.2)'
+                  : '#DBEAFE',
+              },
+            ]}
+          >
+            <Text style={[styles.countPillText, { color: accentBlue }]}>
+              {enabledCount}/{DELEGABLE_MODULE_KEYS.length} tabs
+            </Text>
+          </View>
+        )}
+
+        <ChevronRight size={16} color={secondaryText} />
+      </TouchableOpacity>
+    );
+  };
+
   if (loading && admins.length === 0) {
     return (
       <View style={[styles.centerWrap, { backgroundColor: screenBg }]}>
         <ActivityIndicator size="large" color={accentGold} />
         <Text style={[styles.loadingText, { color: secondaryText }]}>
-          Loading church administrators...
+          Loading Admin & Super Admin members...
         </Text>
       </View>
     );
   }
+
+  const totalAdminCount = admins.filter((a) => !a.isSuperAdmin).length;
+  const totalSuperCount = admins.filter((a) => a.isSuperAdmin).length;
 
   return (
     <ScrollView
@@ -378,8 +510,8 @@ export default function AdminPermissionsManager({
                 Admin Permissions
               </Text>
               <Text style={[styles.sectionSub, { color: secondaryText }]}>
-                {admins.length} registered administrator
-                {admins.length === 1 ? '' : 's'} · Centralized access control
+                {totalAdminCount} Admin Member{totalAdminCount === 1 ? '' : 's'} ·{' '}
+                {totalSuperCount} Super Admin{totalSuperCount === 1 ? '' : 's'}
               </Text>
             </View>
           </View>
@@ -425,6 +557,27 @@ export default function AdminPermissionsManager({
         </View>
       </View>
 
+      {usingFallback && (
+        <View
+          style={[
+            styles.infoBanner,
+            {
+              backgroundColor: isDark
+                ? 'rgba(245, 158, 11, 0.12)'
+                : '#FFFBEB',
+              borderColor: 'rgba(245, 158, 11, 0.45)',
+            },
+          ]}
+        >
+          <Info size={16} color="#F59E0B" />
+          <Text style={[styles.infoBannerText, { color: primaryText }]}>
+            Showing Admin & Super Admin members from Firestore. Deploy Cloud
+            Functions & Rules (`firebase deploy --only functions,firestore:rules`)
+            to save and enforce changes live.
+          </Text>
+        </View>
+      )}
+
       {errorMsg && (
         <View
           style={[
@@ -436,141 +589,196 @@ export default function AdminPermissionsManager({
         </View>
       )}
 
-      {/* Select Administrator Horizontal List */}
-      <View style={styles.blockHeader}>
-        <Text style={[styles.blockTitle, { color: primaryText }]}>
-          Select Administrator
-        </Text>
-        <Text style={[styles.blockCount, { color: secondaryText }]}>
-          {filteredAdmins.length} shown
-        </Text>
-      </View>
-
-      {filteredAdmins.length === 0 ? (
-        <View
-          style={[
-            styles.emptyCard,
-            { backgroundColor: cardSurface, borderColor: mutedBorder },
-          ]}
-        >
-          <Text style={[styles.emptyText, { color: secondaryText }]}>
-            No administrators match your search query.
+      {/* Role Filter Chips & Admin/Super Admin Member Directory */}
+      <View
+        style={[
+          styles.directoryCard,
+          { backgroundColor: cardSurface, borderColor: mutedBorder },
+        ]}
+      >
+        <View style={styles.blockHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Users size={15} color={accentGold} />
+            <Text style={[styles.blockTitle, { color: primaryText }]}>
+              Admin & Super Admin Members
+            </Text>
+          </View>
+          <Text style={[styles.blockCount, { color: secondaryText }]}>
+            Tap any admin to manage
           </Text>
         </View>
-      ) : (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.adminCarousel}
-        >
-          {filteredAdmins.map((adm) => {
-            const isSelected = adm.uid === selectedUid;
-            const enabledCount = DELEGABLE_MODULE_KEYS.filter(
-              (k) => adm.modules?.[k] === true
-            ).length;
-            const initials = adm.name
-              .split(/\s+/)
-              .slice(0, 2)
-              .map((w) => w.charAt(0).toUpperCase())
-              .join('') || 'A';
 
+        <View style={styles.filterPillsRow}>
+          {[
+            { id: 'all' as const, label: `All (${filteredAdmins.length})` },
+            {
+              id: 'admins' as const,
+              label: `Admins (${standardAdminMembers.length})`,
+            },
+            {
+              id: 'super_admins' as const,
+              label: `Super Admins (${superAdminMembers.length})`,
+            },
+          ].map((pill) => {
+            const active = roleFilter === pill.id;
             return (
               <TouchableOpacity
-                key={adm.uid}
-                onPress={() => handleSelectAdmin(adm)}
-                activeOpacity={0.85}
+                key={pill.id}
+                onPress={() => setRoleFilter(pill.id)}
                 style={[
-                  styles.adminCard,
+                  styles.filterPill,
                   {
-                    backgroundColor: cardSurface,
-                    borderColor: isSelected
-                      ? adm.isSuperAdmin
-                        ? accentGold
-                        : accentBlue
-                      : mutedBorder,
-                    borderWidth: isSelected ? 2 : 1,
+                    backgroundColor: active ? accentGold : secondarySurface,
+                    borderColor: active ? accentGold : mutedBorder,
                   },
                 ]}
               >
-                <View style={styles.adminCardTop}>
-                  <View
-                    style={[
-                      styles.avatarCircle,
-                      {
-                        backgroundColor: adm.isSuperAdmin
-                          ? 'rgba(240, 180, 41, 0.18)'
-                          : 'rgba(59, 130, 246, 0.15)',
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.avatarInitials,
-                        { color: adm.isSuperAdmin ? accentGold : accentBlue },
-                      ]}
-                    >
-                      {initials}
-                    </Text>
-                  </View>
-                  {adm.isSuperAdmin ? (
-                    <View style={styles.superPill}>
-                      <Shield size={11} color="#1a1200" />
-                      <Text style={styles.superPillText}>SUPER ADMIN</Text>
-                    </View>
-                  ) : (
-                    <View
-                      style={[
-                        styles.countPill,
-                        { backgroundColor: secondarySurface },
-                      ]}
-                    >
-                      <Text style={[styles.countPillText, { color: primaryText }]}>
-                        {enabledCount}/{DELEGABLE_MODULE_KEYS.length} tabs
-                      </Text>
-                    </View>
-                  )}
-                </View>
-
                 <Text
-                  style={[styles.adminCardName, { color: primaryText }]}
-                  numberOfLines={1}
+                  style={[
+                    styles.filterPillText,
+                    { color: active ? '#1a1200' : primaryText },
+                  ]}
                 >
-                  {adm.name}
-                </Text>
-                <Text
-                  style={[styles.adminCardMeta, { color: secondaryText }]}
-                  numberOfLines={1}
-                >
-                  {adm.userType || adm.role || 'Admin'}
-                  {adm.phone ? ` · ${adm.phone}` : ''}
+                  {pill.label}
                 </Text>
               </TouchableOpacity>
             );
           })}
-        </ScrollView>
-      )}
+        </View>
 
-      {/* Selected Administrator Permission Panel */}
-      {selectedAdmin && (
-        <View
-          style={[
-            styles.editorCard,
-            { backgroundColor: cardSurface, borderColor: mutedBorder },
-          ]}
+        {filteredAdmins.length === 0 ? (
+          <Text style={[styles.emptyText, { color: secondaryText }]}>
+            No admin or super admin members match your search query.
+          </Text>
+        ) : (
+          <View style={styles.memberSectionsWrap}>
+            {(roleFilter === 'all' || roleFilter === 'admins') && (
+              <View style={styles.memberGroupBlock}>
+                <Text style={[styles.groupHeading, { color: accentBlue }]}>
+                  Admin Members ({standardAdminMembers.length})
+                </Text>
+                {standardAdminMembers.length === 0 ? (
+                  <Text style={[styles.groupEmptyText, { color: secondaryText }]}>
+                    No standard Admin members found yet. Promote a member in
+                    Members tab to assign custom tab access.
+                  </Text>
+                ) : (
+                  <View style={styles.groupList}>
+                    {standardAdminMembers.map(renderAdminCardRow)}
+                  </View>
+                )}
+              </View>
+            )}
+
+            {(roleFilter === 'all' || roleFilter === 'super_admins') && (
+              <View style={styles.memberGroupBlock}>
+                <Text style={[styles.groupHeading, { color: accentGold }]}>
+                  Super Admin Members ({superAdminMembers.length})
+                </Text>
+                {superAdminMembers.length === 0 ? (
+                  <Text style={[styles.groupEmptyText, { color: secondaryText }]}>
+                    No Super Admin members found.
+                  </Text>
+                ) : (
+                  <View style={styles.groupList}>
+                    {superAdminMembers.map(renderAdminCardRow)}
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+        )}
+      </View>
+
+      {/* Dedicated Next Window for Selected Administrator Permissions */}
+      <Modal
+        visible={showEditorWindow && Boolean(selectedAdmin)}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={handleCloseAdminWindow}
+      >
+        <SafeAreaView
+          edges={['left', 'right']}
+          style={[styles.windowContainer, { backgroundColor: screenBg }]}
         >
-          <View style={styles.editorHeader}>
+          {/* Window Top Header Bar */}
+          <View
+            style={[
+              styles.windowHeader,
+              {
+                paddingTop: Math.max(insets.top, Platform.OS === 'android' ? 14 : 12),
+                backgroundColor: cardSurface,
+                borderBottomColor: mutedBorder,
+              },
+            ]}
+          >
+            <TouchableOpacity
+              onPress={handleCloseAdminWindow}
+              style={styles.windowBackBtn}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <ArrowLeft size={22} color={primaryText} />
+            </TouchableOpacity>
+
             <View style={{ flex: 1 }}>
               <View style={styles.editorNameRow}>
                 <UserCheck
                   size={17}
-                  color={selectedAdmin.isSuperAdmin ? accentGold : accentBlue}
+                  color={selectedAdmin?.isSuperAdmin ? accentGold : accentBlue}
                 />
-                <Text style={[styles.editorName, { color: primaryText }]}>
-                  {selectedAdmin.name}
+                <Text
+                  style={[styles.editorName, { color: primaryText }]}
+                  numberOfLines={1}
+                >
+                  {selectedAdmin?.name || 'Administrator'}
                 </Text>
               </View>
-              <View style={styles.lastUpdatedRow}>
-                <Clock size={12} color={secondaryText} />
+              <Text
+                style={[styles.windowSubText, { color: secondaryText }]}
+                numberOfLines={1}
+              >
+                {selectedAdmin?.userType || selectedAdmin?.role || 'Admin'}
+                {selectedAdmin?.phone ? ` · ${selectedAdmin.phone}` : ''}
+              </Text>
+            </View>
+
+            {selectedAdmin?.isSuperAdmin ? (
+              <View style={styles.superPill}>
+                <Shield size={11} color="#1a1200" />
+                <Text style={styles.superPillText}>SUPER ADMIN</Text>
+              </View>
+            ) : (
+              <View
+                style={[
+                  styles.countPill,
+                  {
+                    backgroundColor: isDark
+                      ? 'rgba(16, 185, 129, 0.16)'
+                      : '#DCFCE7',
+                  },
+                ]}
+              >
+                <Text style={[styles.countPillText, { color: '#10B981' }]}>
+                  {enabledCountForDraft}/{DELEGABLE_MODULE_KEYS.length} ON
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {selectedAdmin && (
+            <ScrollView
+              style={styles.windowScroll}
+              contentContainerStyle={styles.windowScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Last Updated & Context Card */}
+              <View
+                style={[
+                  styles.metaBanner,
+                  { backgroundColor: cardSurface, borderColor: mutedBorder },
+                ]}
+              >
+                <Clock size={14} color={secondaryText} />
                 <Text style={[styles.lastUpdatedText, { color: secondaryText }]}>
                   Last updated: {formatDateTime(selectedAdmin.updatedAtMs)}
                   {selectedAdmin.updatedByName
@@ -578,154 +786,244 @@ export default function AdminPermissionsManager({
                     : ''}
                 </Text>
               </View>
-            </View>
-          </View>
 
-          {selectedAdmin.isSuperAdmin ? (
+              {selectedAdmin.isSuperAdmin ? (
+                <View
+                  style={[
+                    styles.superLockedBox,
+                    {
+                      backgroundColor: isDark
+                        ? 'rgba(240, 180, 41, 0.12)'
+                        : '#FFFBEB',
+                      borderColor: 'rgba(240, 180, 41, 0.45)',
+                    },
+                  ]}
+                >
+                  <Lock size={20} color="#D97706" />
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={[styles.superLockedTitle, { color: primaryText }]}
+                    >
+                      Super Admin Privileges Locked
+                    </Text>
+                    <Text
+                      style={[styles.superLockedDesc, { color: secondaryText }]}
+                    >
+                      Super Admins automatically retain full access to every
+                      Admin Dashboard tab plus Care Cells, Expense, Donations,
+                      Daily Verses, and App Admin. Super Admin permissions cannot
+                      be disabled or revoked.
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <View
+                  style={[
+                    styles.editorCard,
+                    { backgroundColor: cardSurface, borderColor: mutedBorder },
+                  ]}
+                >
+                  {/* Select All / Deselect All Toolbar */}
+                  <View
+                    style={[
+                      styles.toolbarRow,
+                      { borderBottomColor: mutedBorder },
+                    ]}
+                  >
+                    <View style={styles.bulkButtonsRow}>
+                      <TouchableOpacity
+                        onPress={handleSelectAll}
+                        style={[
+                          styles.bulkBtn,
+                          {
+                            backgroundColor: secondarySurface,
+                            borderColor: mutedBorder,
+                          },
+                        ]}
+                      >
+                        <CheckSquare size={14} color="#10B981" />
+                        <Text
+                          style={[styles.bulkBtnText, { color: primaryText }]}
+                        >
+                          Select All
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        onPress={handleDeselectAll}
+                        style={[
+                          styles.bulkBtn,
+                          {
+                            backgroundColor: secondarySurface,
+                            borderColor: mutedBorder,
+                          },
+                        ]}
+                      >
+                        <Square size={14} color="#EF4444" />
+                        <Text
+                          style={[styles.bulkBtnText, { color: primaryText }]}
+                        >
+                          Deselect All
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <Text
+                      style={[styles.moduleCounterText, { color: secondaryText }]}
+                    >
+                      {enabledCountForDraft}/{DELEGABLE_MODULE_KEYS.length} Active
+                    </Text>
+                  </View>
+
+                  {/* Core Always-ON Dashboard Row */}
+                  <View
+                    style={[
+                      styles.moduleRow,
+                      { borderBottomColor: mutedBorder },
+                    ]}
+                  >
+                    <View style={{ flex: 1, paddingRight: 12 }}>
+                      <Text
+                        style={[styles.moduleTitle, { color: primaryText }]}
+                      >
+                        Dashboard
+                      </Text>
+                      <Text
+                        style={[styles.moduleDesc, { color: secondaryText }]}
+                      >
+                        Core Admin home hub (always enabled for active Admins)
+                      </Text>
+                    </View>
+                    <View style={styles.alwaysOnBadge}>
+                      <Text style={styles.alwaysOnText}>ALWAYS ON</Text>
+                    </View>
+                  </View>
+
+                  {/* Categorized Delegable Module Switches */}
+                  {groupedModules.map((group) => (
+                    <View key={group.category} style={styles.categorySection}>
+                      <Text
+                        style={[styles.categoryTitle, { color: accentGold }]}
+                      >
+                        {group.category}
+                      </Text>
+
+                      {group.items.map((mod) => {
+                        const enabled = draftModules[mod.key] === true;
+                        return (
+                          <View
+                            key={mod.key}
+                            style={[
+                              styles.moduleRow,
+                              { borderBottomColor: mutedBorder },
+                            ]}
+                          >
+                            <View style={{ flex: 1, paddingRight: 12 }}>
+                              <Text
+                                style={[
+                                  styles.moduleTitle,
+                                  { color: primaryText },
+                                ]}
+                              >
+                                {mod.label}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.moduleDesc,
+                                  { color: secondaryText },
+                                ]}
+                              >
+                                {mod.description}
+                              </Text>
+                            </View>
+                            <Switch
+                              value={enabled}
+                              onValueChange={(val) =>
+                                handleToggleModule(mod.key, val)
+                              }
+                              trackColor={{
+                                false: isDark ? '#3F3F46' : '#CBD5E1',
+                                true: '#10B981',
+                              }}
+                              thumbColor="#FFFFFF"
+                            />
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* Super Admin Protected Modules Lock Card */}
+              <View
+                style={[
+                  styles.protectedCard,
+                  { backgroundColor: cardSurface, borderColor: mutedBorder },
+                ]}
+              >
+                <View style={styles.protectedHeader}>
+                  <Lock size={16} color="#F59E0B" />
+                  <Text
+                    style={[styles.protectedTitle, { color: primaryText }]}
+                  >
+                    Super Admin Protected Modules
+                  </Text>
+                </View>
+                <Text style={[styles.protectedSub, { color: secondaryText }]}>
+                  Care Cells, Expense, Donations, Daily Verses, and App Admin
+                  remain strictly controlled by Super Admin and cannot be
+                  delegated here.
+                </Text>
+
+                {PROTECTED_SUPER_ADMIN_MODULES.map((mod) => (
+                  <View
+                    key={mod.key}
+                    style={[
+                      styles.moduleRow,
+                      { borderBottomColor: mutedBorder },
+                    ]}
+                  >
+                    <View style={{ flex: 1, paddingRight: 12 }}>
+                      <Text
+                        style={[styles.moduleTitle, { color: primaryText }]}
+                      >
+                        {mod.label}
+                      </Text>
+                      <Text
+                        style={[styles.moduleDesc, { color: secondaryText }]}
+                      >
+                        {mod.description}
+                      </Text>
+                    </View>
+                    <View style={styles.lockedBadge}>
+                      <Lock size={11} color="#F59E0B" />
+                      <Text style={styles.lockedBadgeText}>SUPER ADMIN</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+          )}
+
+          {/* Pinned Bottom Action Bar in Window */}
+          {selectedAdmin && !selectedAdmin.isSuperAdmin && (
             <View
               style={[
-                styles.superLockedBox,
+                styles.windowFooter,
                 {
-                  backgroundColor: isDark
-                    ? 'rgba(240, 180, 41, 0.12)'
-                    : '#FFFBEB',
-                  borderColor: 'rgba(240, 180, 41, 0.45)',
+                  backgroundColor: cardSurface,
+                  borderTopColor: mutedBorder,
+                  paddingBottom: Math.max(insets.bottom, 14),
                 },
               ]}
             >
-              <Lock size={20} color="#D97706" />
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.superLockedTitle, { color: primaryText }]}>
-                  Super Admin Privileges Locked
-                </Text>
-                <Text style={[styles.superLockedDesc, { color: secondaryText }]}>
-                  Super Admins retain full access to every Admin Dashboard tab
-                  plus Care Cells, Expense, Donations, Daily Verses, and App
-                  Admin. Super Admin permissions cannot be disabled or revoked.
-                </Text>
-              </View>
-            </View>
-          ) : (
-            <>
-              {/* Select All / Deselect All + Save Row */}
-              <View
-                style={[
-                  styles.toolbarRow,
-                  { borderBottomColor: mutedBorder },
-                ]}
-              >
-                <View style={styles.bulkButtonsRow}>
-                  <TouchableOpacity
-                    onPress={handleSelectAll}
-                    style={[
-                      styles.bulkBtn,
-                      {
-                        backgroundColor: secondarySurface,
-                        borderColor: mutedBorder,
-                      },
-                    ]}
-                  >
-                    <CheckSquare size={14} color="#10B981" />
-                    <Text style={[styles.bulkBtnText, { color: primaryText }]}>
-                      Select All
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    onPress={handleDeselectAll}
-                    style={[
-                      styles.bulkBtn,
-                      {
-                        backgroundColor: secondarySurface,
-                        borderColor: mutedBorder,
-                      },
-                    ]}
-                  >
-                    <Square size={14} color="#EF4444" />
-                    <Text style={[styles.bulkBtnText, { color: primaryText }]}>
-                      Deselect All
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                <Text style={[styles.moduleCounterText, { color: secondaryText }]}>
-                  {enabledCountForDraft}/{DELEGABLE_MODULE_KEYS.length} Active
-                </Text>
-              </View>
-
-              {/* Core Always-ON Dashboard Row */}
-              <View
-                style={[
-                  styles.moduleRow,
-                  { borderBottomColor: mutedBorder },
-                ]}
-              >
-                <View style={{ flex: 1, paddingRight: 12 }}>
-                  <Text style={[styles.moduleTitle, { color: primaryText }]}>
-                    Dashboard
-                  </Text>
-                  <Text style={[styles.moduleDesc, { color: secondaryText }]}>
-                    Core Admin home hub (always enabled for active Admins)
-                  </Text>
-                </View>
-                <View style={styles.alwaysOnBadge}>
-                  <Text style={styles.alwaysOnText}>ALWAYS ON</Text>
-                </View>
-              </View>
-
-              {/* Categorized Delegable Module Switches */}
-              {groupedModules.map((group) => (
-                <View key={group.category} style={styles.categorySection}>
-                  <Text style={[styles.categoryTitle, { color: accentGold }]}>
-                    {group.category}
-                  </Text>
-
-                  {group.items.map((mod) => {
-                    const enabled = draftModules[mod.key] === true;
-                    return (
-                      <View
-                        key={mod.key}
-                        style={[
-                          styles.moduleRow,
-                          { borderBottomColor: mutedBorder },
-                        ]}
-                      >
-                        <View style={{ flex: 1, paddingRight: 12 }}>
-                          <Text
-                            style={[styles.moduleTitle, { color: primaryText }]}
-                          >
-                            {mod.label}
-                          </Text>
-                          <Text
-                            style={[styles.moduleDesc, { color: secondaryText }]}
-                          >
-                            {mod.description}
-                          </Text>
-                        </View>
-                        <Switch
-                          value={enabled}
-                          onValueChange={(val) =>
-                            handleToggleModule(mod.key, val)
-                          }
-                          trackColor={{
-                            false: isDark ? '#3F3F46' : '#CBD5E1',
-                            true: '#10B981',
-                          }}
-                          thumbColor="#FFFFFF"
-                        />
-                      </View>
-                    );
-                  })}
-                </View>
-              ))}
-
-              {/* Primary Save Changes Button */}
               <TouchableOpacity
                 onPress={handleSavePermissions}
                 disabled={saving || !hasUnsavedChanges}
                 activeOpacity={0.85}
                 style={[
-                  styles.saveBtn,
+                  styles.saveBtnFooter,
                   {
                     backgroundColor: hasUnsavedChanges ? '#10B981' : '#64748B',
                     opacity: saving || !hasUnsavedChanges ? 0.65 : 1,
@@ -743,49 +1041,10 @@ export default function AdminPermissionsManager({
                   </>
                 )}
               </TouchableOpacity>
-            </>
+            </View>
           )}
-        </View>
-      )}
-
-      {/* Strictly Super Admin Protected Section */}
-      <View
-        style={[
-          styles.protectedCard,
-          { backgroundColor: cardSurface, borderColor: mutedBorder },
-        ]}
-      >
-        <View style={styles.protectedHeader}>
-          <Lock size={16} color="#F59E0B" />
-          <Text style={[styles.protectedTitle, { color: primaryText }]}>
-            Super Admin Protected Modules
-          </Text>
-        </View>
-        <Text style={[styles.protectedSub, { color: secondaryText }]}>
-          Care Cells, Expense, Donations, Daily Verses, and App Admin remain
-          strictly controlled by Super Admin and cannot be delegated here.
-        </Text>
-
-        {PROTECTED_SUPER_ADMIN_MODULES.map((mod) => (
-          <View
-            key={mod.key}
-            style={[styles.moduleRow, { borderBottomColor: mutedBorder }]}
-          >
-            <View style={{ flex: 1, paddingRight: 12 }}>
-              <Text style={[styles.moduleTitle, { color: primaryText }]}>
-                {mod.label}
-              </Text>
-              <Text style={[styles.moduleDesc, { color: secondaryText }]}>
-                {mod.description}
-              </Text>
-            </View>
-            <View style={styles.lockedBadge}>
-              <Lock size={11} color="#F59E0B" />
-              <Text style={styles.lockedBadgeText}>SUPER ADMIN</Text>
-            </View>
-          </View>
-        ))}
-      </View>
+        </SafeAreaView>
+      </Modal>
 
       {/* Default New Admin Permissions Modal */}
       <Modal
@@ -853,7 +1112,12 @@ export default function AdminPermissionsManager({
               ))}
             </ScrollView>
 
-            <View style={styles.modalFooter}>
+            <View
+              style={[
+                styles.modalFooter,
+                { paddingBottom: Math.max(insets.bottom, 6) },
+              ]}
+            >
               <TouchableOpacity
                 onPress={() =>
                   setDefaultsDraft(buildDefaultNewAdminModules(null))
@@ -1026,38 +1290,70 @@ const styles = StyleSheet.create({
   },
   topActionBtnText: { fontSize: 12.5, fontWeight: '700' },
 
+  infoBanner: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 9,
+  },
+  infoBannerText: { flex: 1, fontSize: 12, lineHeight: 17 },
+
   errorBox: { borderRadius: 12, borderWidth: 1, padding: 12 },
   errorText: { color: '#EF4444', fontSize: 13, fontWeight: '600' },
 
+  directoryCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
+    gap: 12,
+  },
   blockHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 2,
   },
-  blockTitle: { fontSize: 14, fontWeight: '800' },
-  blockCount: { fontSize: 12, fontWeight: '600' },
+  blockTitle: { fontSize: 14.5, fontWeight: '800' },
+  blockCount: { fontSize: 11.5, fontWeight: '600' },
 
-  emptyCard: { borderRadius: 14, borderWidth: 1, padding: 18, alignItems: 'center' },
-  emptyText: { fontSize: 13, textAlign: 'center', paddingVertical: 12 },
-
-  adminCarousel: { gap: 10, paddingVertical: 2 },
-  adminCard: {
-    width: 215,
-    borderRadius: 14,
-    padding: 12,
-    gap: 6,
+  filterPillsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
   },
-  adminCardTop: {
+  filterPill: {
+    paddingVertical: 6,
+    paddingHorizontal: 11,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  filterPillText: { fontSize: 12, fontWeight: '700' },
+
+  memberSectionsWrap: { gap: 14 },
+  memberGroupBlock: { gap: 8 },
+  groupHeading: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+  },
+  groupList: { gap: 8 },
+  groupEmptyText: { fontSize: 12.5, lineHeight: 18, paddingVertical: 4 },
+
+  memberRowCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
+    borderRadius: 12,
+    padding: 11,
+    gap: 10,
   },
+  emptyText: { fontSize: 13, textAlign: 'center', paddingVertical: 12 },
+
   avatarCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1068,34 +1364,58 @@ const styles = StyleSheet.create({
     gap: 4,
     backgroundColor: '#f0b429',
     paddingHorizontal: 7,
-    paddingVertical: 3,
+    paddingVertical: 4,
     borderRadius: 6,
   },
   superPillText: { fontSize: 9.5, fontWeight: '900', color: '#1a1200' },
-  countPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  countPill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   countPillText: { fontSize: 11, fontWeight: '700' },
   adminCardName: { fontSize: 14, fontWeight: '700' },
-  adminCardMeta: { fontSize: 11.5 },
+  adminCardMeta: { fontSize: 11.5, marginTop: 1 },
+
+  // Dedicated Next Window styles
+  windowContainer: { flex: 1 },
+  windowHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    gap: 10,
+  },
+  windowBackBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  windowSubText: { fontSize: 11.5, marginTop: 2 },
+  windowScroll: { flex: 1 },
+  windowScrollContent: { padding: 16, gap: 14, paddingBottom: 28 },
+  metaBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  windowFooter: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+  },
 
   editorCard: {
     borderRadius: 16,
     borderWidth: 1,
     padding: 14,
   },
-  editorHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  editorNameRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  editorName: { fontSize: 16, fontWeight: '800' },
-  lastUpdatedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    marginTop: 4,
-  },
-  lastUpdatedText: { fontSize: 11.5 },
+  editorNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  editorName: { fontSize: 16, fontWeight: '800', flexShrink: 1 },
+  lastUpdatedText: { fontSize: 11.5, flex: 1 },
 
   superLockedBox: {
     flexDirection: 'row',
@@ -1104,7 +1424,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     alignItems: 'flex-start',
-    marginTop: 4,
   },
   superLockedTitle: { fontSize: 14, fontWeight: '800', marginBottom: 4 },
   superLockedDesc: { fontSize: 12.5, lineHeight: 18 },
@@ -1113,7 +1432,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 10,
+    paddingBottom: 10,
     borderBottomWidth: 1,
   },
   bulkButtonsRow: { flexDirection: 'row', gap: 8 },
@@ -1154,8 +1473,7 @@ const styles = StyleSheet.create({
   },
   alwaysOnText: { color: '#10B981', fontSize: 10.5, fontWeight: '800' },
 
-  saveBtn: {
-    marginTop: 18,
+  saveBtnFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

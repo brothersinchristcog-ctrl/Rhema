@@ -4,7 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
 import { Home, Heart, BookOpen, HandCoins, User, ShieldCheck, Users as UsersSwitch, HeartHandshake } from 'lucide-react-native';
 import Svg, { Path as SvgPath, Circle as SvgCircle, Defs as SvgDefs, LinearGradient as SvgLinearGradient, Stop as SvgStop } from 'react-native-svg';
-import { ActivityIndicator, View, Text, StyleSheet, Alert, Platform, TouchableOpacity, AppState, Image, Animated, PanResponder, Dimensions, Linking } from 'react-native';
+import { ActivityIndicator, View, Text, StyleSheet, Alert, Platform, TouchableOpacity, AppState, Image, Animated, PanResponder, Dimensions, Linking, InteractionManager } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import firestore from '@react-native-firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -52,16 +52,8 @@ function getGuardedAdminScreen(
   return wrapped;
 }
 
-// Auth & Onboarding
-import AuthNavigator from './AuthNavigator';
+// Eagerly import only SplashScreen for immediate 1st frame; auth & tab screens load lazily via getComponent
 import SplashScreen from '../screens/auth/SplashScreen';
-import OnboardingScreen from '../screens/auth/OnboardingScreen';
-import ApprovalPendingScreen from '../screens/auth/ApprovalPendingScreen';
-import LoginScreen from '../screens/auth/LoginScreen';
-import SignUpScreen from '../screens/auth/SignUpScreen';
-
-// Initial Tab Screen (loaded eagerly for fastest startup; secondary screens load on demand via getComponent)
-import HomeScreen from '../screens/HomeScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -791,7 +783,7 @@ function TabNavigatorContent() {
       >
         <Tab.Screen
           name="Home"
-          component={HomeScreen}
+          getComponent={() => require('../screens/HomeScreen').default}
         />
         <Tab.Screen
           name="Promise"
@@ -1477,26 +1469,31 @@ function Navigation() {
   }, [user, loading, showSplash, pendingNotification, viewMode]);
 
   useEffect(() => {
-    if (user && !loading) {
+    if (user && !loading && !showSplash) {
+      let cancelled = false;
       let unsubLiveNotifs: (() => void) | null = null;
+      let startTimer: ReturnType<typeof setTimeout> | null = null;
+      let interactionHandle: { cancel?: () => void } | null = null;
       const listenerStartMs = Date.now();
       let initialSnapshotHandled = false;
 
       const initNotifications = async () => {
+        if (cancelled) return;
         await NotificationService.setupCategoriesAndChannels();
+        if (cancelled) return;
         const hasPermission = await NotificationService.requestUserPermission();
+        if (cancelled) return;
         if (hasPermission) {
-          await NotificationService.getFcmToken();
+          NotificationService.getFcmToken().catch(() => {});
         }
 
-        // Initialize Daily Verses Background Sync & Local Notifications
+        // Schedule local notification syncs in background after 1st-launch UI settles
         VerseNotificationService.initialize();
-
-        // Initialize Daily Bible Quiz 5:00 AM Automated Notifications
         DailyQuizNotificationService.initialize();
 
         const targetChurchId = (await FirestoreService.getChurchId()) || 'rhema';
-        await NotificationService.subscribeToChurchTopic(targetChurchId);
+        if (cancelled) return;
+        NotificationService.subscribeToChurchTopic(targetChurchId).catch(() => {});
 
         try {
           const firestoreMod = require('@react-native-firebase/firestore').default;
@@ -1552,17 +1549,26 @@ function Navigation() {
             );
         } catch (_) { }
       };
-      initNotifications();
+
+      interactionHandle = InteractionManager.runAfterInteractions(() => {
+        if (cancelled) return;
+        startTimer = setTimeout(() => {
+          if (!cancelled) initNotifications();
+        }, 900);
+      });
 
       return () => {
+        cancelled = true;
+        interactionHandle?.cancel?.();
+        if (startTimer) clearTimeout(startTimer);
         if (unsubLiveNotifs) unsubLiveNotifs();
       };
     }
-  }, [user, loading, isAdmin, member?.phone]);
+  }, [user, loading, showSplash, isAdmin, member?.phone]);
 
-  // Ensure splash screen always dismisses after a fixed duration and never resets on user state updates
+  // Brief crisp splash reveal that never artificially locks out ready sessions for multi-second durations
   useEffect(() => {
-    const timer = setTimeout(() => setShowSplash(false), 2600);
+    const timer = setTimeout(() => setShowSplash(false), 350);
     return () => clearTimeout(timer);
   }, []);
 
@@ -1631,7 +1637,7 @@ function Navigation() {
       <Stack.Navigator id="approval-pending-navigator" screenOptions={{ headerShown: false, animation: 'none' }}>
         <Stack.Screen
           name="ApprovalPending"
-          component={ApprovalPendingScreen}
+          getComponent={() => require('../screens/auth/ApprovalPendingScreen').default}
           initialParams={{
             phoneNumber: user?.phoneNumber || registrationRequest?.phone || storedPendingData?.phone,
             churchId: activeChurch?.id || registrationRequest?.churchId || storedPendingData?.church,
@@ -1640,8 +1646,8 @@ function Navigation() {
             gender: registrationRequest?.gender || storedPendingData?.gender,
           }}
         />
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="SignUp" component={SignUpScreen} />
+        <Stack.Screen name="Login" getComponent={() => require('../screens/auth/LoginScreen').default} />
+        <Stack.Screen name="SignUp" getComponent={() => require('../screens/auth/SignUpScreen').default} />
       </Stack.Navigator>
     );
   }
@@ -1748,10 +1754,10 @@ function Navigation() {
             <Stack.Screen name="AdminMatrimonyProfileDetail" getComponent={() => getGuardedAdminScreen('AdminMatrimonyProfileDetail', 'matrimony', () => require('../screens/admin/AdminMatrimonyProfileDetailScreen').default)} />
           </>
         ) : (
-          <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+          <Stack.Screen name="Onboarding" getComponent={() => require('../screens/auth/OnboardingScreen').default} />
         )
       ) : (
-        <Stack.Screen name="Auth" component={AuthNavigator} />
+        <Stack.Screen name="Auth" getComponent={() => require('./AuthNavigator').default} />
       )}
     </Stack.Navigator>
   );
