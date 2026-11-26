@@ -2,14 +2,14 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import React, { useEffect, useState, useRef } from 'react';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
-import { Animated, View, Text, TouchableOpacity, StyleSheet, Dimensions, Platform, Modal, Linking, BackHandler, ToastAndroid, Image, Clipboard } from 'react-native';
+import { Animated, View, Text, TouchableOpacity, StyleSheet, Dimensions, Platform, Modal, Linking, BackHandler, ToastAndroid, Image, Clipboard, InteractionManager } from 'react-native';
 import messaging from '@react-native-firebase/messaging';
 import { Bell, Copy, Key } from 'lucide-react-native';
 import RootNavigator from './src/navigation/RootNavigator';
 import * as Application from 'expo-application';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import SpInAppUpdates, { IAUUpdateKind } from 'sp-react-native-in-app-updates';
-import { loadTeluguFonts } from './src/utils/ThumbnailTypography';
+import { loadStartupFonts } from './src/utils/ThumbnailTypography';
 import './src/utils/FontSizeManager';
 import { perfMonitor } from './src/utils/perfMonitor';
 
@@ -118,14 +118,27 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    loadTeluguFonts().catch(e => console.warn('Telugu fonts startup preload error:', e));
+    let cancelled = false;
+    const handle = InteractionManager.runAfterInteractions(() => {
+      if (cancelled) return;
+      loadStartupFonts().catch(e => console.warn('Startup fonts preload error:', e));
+    });
+    return () => {
+      cancelled = true;
+      handle?.cancel?.();
+    };
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    let updateTimer = null;
+    let interactionHandle = null;
+
     const checkUpdates = async () => {
       try {
         const firestore = require('@react-native-firebase/firestore').default;
         const configDoc = await firestore().collection('public_settings').doc('app_config').get();
+        if (cancelled) return;
         const configData = configDoc.data() || {};
         const forceUpdate = configData.forceUpdate === true;
         const latestVersionCode = configData.latestAndroidVersionCode || 0;
@@ -146,7 +159,7 @@ export default function App() {
         
         // 3. Official Google Play In-App Updates Check
         const result = await inAppUpdates.checkNeedsUpdate();
-        if (result.shouldUpdate) {
+        if (!cancelled && result.shouldUpdate) {
           if (Platform.OS === 'android') {
             const updateOptions = {
               updateType: forceUpdate ? IAUUpdateKind.IMMEDIATE : IAUUpdateKind.FLEXIBLE,
@@ -166,7 +179,13 @@ export default function App() {
       }
     };
     
-    checkUpdates();
+    // Defer remote update check until first screen interactions settle
+    interactionHandle = InteractionManager.runAfterInteractions(() => {
+      if (cancelled) return;
+      updateTimer = setTimeout(() => {
+        if (!cancelled) checkUpdates();
+      }, 2500);
+    });
 
     const unsubscribe = messaging().onMessage(async remoteMessage => {
       const rawData = remoteMessage?.data || {};
@@ -217,7 +236,12 @@ export default function App() {
         })
       ]).start(() => setNotification(null));
     });
-    return unsubscribe;
+    return () => {
+      cancelled = true;
+      interactionHandle?.cancel?.();
+      if (updateTimer) clearTimeout(updateTimer);
+      unsubscribe();
+    };
   }, [slideAnim]);
 
   const linking = {

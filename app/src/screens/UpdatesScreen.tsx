@@ -298,6 +298,8 @@ export default function UpdatesScreen({ navigation, route }: any) {
     const combined = [...churchNotifsList, ...broadcastsList, ...meetingsList, ...memberNotifsList].sort((a, b) => (b.rawDate || 0) - (a.rawDate || 0));
     const seenIds = new Set<string>();
     const seenMeetingKeys = new Set<string>();
+    const seenPrayerKeys = new Set<string>();
+    const seenBaptismKeys = new Set<string>();
     const seenVolunteerKeys = new Set<string>();
     const seenRosterAlertKeys = new Set<string>();
     const seenLiveStreams = new Set<string>();
@@ -308,6 +310,39 @@ export default function UpdatesScreen({ navigation, route }: any) {
         return false;
       }
       seenIds.add(item.id);
+
+      // Deduplicate prayer request alerts (admin & member) across notifications, broadcasts, and Cloud Functions
+      if (
+        item.type === 'prayer_request_admin' ||
+        item.type === 'prayer_request' ||
+        item.type === 'prayer' ||
+        item.type === 'prayer_request_member'
+      ) {
+        const prayerBucket = item.type === 'prayer_request_member' ? 'member' : 'admin';
+        const refId = String(item.prayerId || item.requestId || '').trim();
+        const fallbackKey = `${String(item.title || '').trim()}|${Math.floor(Number(item.rawDate || 0) / 120_000)}`;
+        const prayerKey = `${prayerBucket}|${refId || fallbackKey}`;
+        if (seenPrayerKeys.has(prayerKey)) {
+          return false;
+        }
+        seenPrayerKeys.add(prayerKey);
+      }
+
+      // Deduplicate baptism request alerts across notifications & broadcasts
+      if (
+        item.type === 'baptism_request_admin' ||
+        item.type === 'baptism_request' ||
+        item.type === 'baptism_request_member'
+      ) {
+        const bapBucket = item.type === 'baptism_request_member' ? 'member' : 'admin';
+        const refId = String(item.requestId || '').trim();
+        const fallbackKey = `${String(item.title || '').trim()}|${Math.floor(Number(item.rawDate || 0) / 120_000)}`;
+        const baptismKey = `${bapBucket}|${refId || fallbackKey}`;
+        if (seenBaptismKeys.has(baptismKey)) {
+          return false;
+        }
+        seenBaptismKeys.add(baptismKey);
+      }
 
       // Deduplicate online meeting notifications by event kind + meetingId
       if (item.type === 'online_meeting' || item.type === 'online_meeting_scheduled') {
@@ -486,10 +521,17 @@ export default function UpdatesScreen({ navigation, route }: any) {
   const handleDeleteUpdate = async (id: string, item?: any) => {
     try {
       const targetItem = item || allUpdates.find((u) => u.id === id);
+      const targetPrayerOrReqId = targetItem
+        ? String(targetItem.prayerId || targetItem.requestId || '').trim()
+        : '';
       const allRawMatches = [...broadcastsList, ...churchNotifsList, ...memberNotifsList, ...meetingsList].filter(
         (raw) =>
           raw &&
           (raw.id === id ||
+            (targetPrayerOrReqId &&
+              targetItem &&
+              raw.type === targetItem.type &&
+              String(raw.prayerId || raw.requestId || '').trim() === targetPrayerOrReqId) ||
             (targetItem &&
               raw.type === targetItem.type &&
               raw.title === targetItem.title &&

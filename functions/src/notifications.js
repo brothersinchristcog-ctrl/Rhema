@@ -17,17 +17,28 @@ async function handlePrayerRequestAdminPush(prayer, churchId, prayerId, snapRef)
         return;
     const db = getFirestore();
     const messaging = getMessaging();
-    // Deduplication guard
+    // Atomic deduplication guard so retries or concurrent triggers never double-send
     if (prayer.adminPushSent === true) {
         console.log(`🛑 Skipping duplicate prayer admin push for request: ${prayerId}`);
         return;
     }
     if (snapRef) {
         try {
-            await snapRef.update({
-                adminPushSent: true,
-                adminPushSentAt: FieldValue.serverTimestamp(),
+            const claimed = await db.runTransaction(async (tx) => {
+                const fresh = await tx.get(snapRef);
+                if (fresh?.exists && fresh.data()?.adminPushSent === true) {
+                    return false;
+                }
+                tx.update(snapRef, {
+                    adminPushSent: true,
+                    adminPushSentAt: FieldValue.serverTimestamp(),
+                });
+                return true;
             });
+            if (!claimed) {
+                console.log(`🛑 Skipping duplicate prayer admin push (transaction claimed) for request: ${prayerId}`);
+                return;
+            }
         }
         catch (_) { }
     }
@@ -147,49 +158,60 @@ async function handlePrayerRequestAdminPush(prayer, churchId, prayerId, snapRef)
             console.error('Error sending multicast prayer admin notification:', pushErr);
         }
     }
-    // 6. Broadcast to church admin topic church_{churchId}_admin ONLY (never general church topic)
-    try {
-        await messaging.send({
-            notification: { title, body },
-            data: notificationData,
-            topic: `church_${churchId}_admin`,
-            android: {
-                priority: 'high',
-                notification: {
-                    sound: 'default',
-                    channelId: 'church_alerts',
-                },
-            },
-            apns: {
-                payload: {
-                    aps: {
+    // 6. Topic fallback ONLY if no authorized admin records/tokens were found
+    // (Sending to both multicast tokens and church_{churchId}_admin topic delivers 2 identical pushes to admins and bypasses module permissions.)
+    if (uniqueTokens.length === 0 && adminUids.length === 0) {
+        try {
+            await messaging.send({
+                notification: { title, body },
+                data: notificationData,
+                topic: `church_${churchId}_admin`,
+                android: {
+                    priority: 'high',
+                    notification: {
                         sound: 'default',
-                        badge: 1,
+                        channelId: 'church_alerts',
                     },
                 },
-            },
-        });
-        console.log(`✅ Broadcasted prayer request notification to topic: church_${churchId}_admin`);
+                apns: {
+                    payload: {
+                        aps: {
+                            sound: 'default',
+                            badge: 1,
+                        },
+                    },
+                },
+            });
+            console.log(`✅ Fallback-broadcasted prayer request notification to topic: church_${churchId}_admin`);
+        }
+        catch (topicErr) {
+            console.error('Error sending to church admin topic:', topicErr);
+        }
     }
-    catch (topicErr) {
-        console.error('Error sending to church admin topic:', topicErr);
-    }
-    // 7. Write in-app notification doc for admins in Rhema Church notifications
+    // 7. Write/merge ONE deterministic in-app notification doc for admins in Rhema Church notifications
     try {
         const notifPayload = {
             type: 'prayer_request_admin',
+            targetRole: 'admin',
             title,
             body,
             memberName,
             prayerId,
             requestId: prayerId,
+            targetTab: 'Prayers',
+            screen: 'AdminRoot',
             requestExcerpt: excerpt,
             category: prayer.category || '',
             isPublic: prayer.isPublic ?? false,
             read: false,
             createdAt: FieldValue.serverTimestamp(),
         };
-        await db.collection('Rhema Church').doc(churchId).collection('notifications').add(notifPayload);
+        await db
+            .collection('Rhema Church')
+            .doc(churchId)
+            .collection('notifications')
+            .doc(`prayer_admin_${prayerId}`)
+            .set(notifPayload, { merge: true });
     }
     catch (dbErr) {
         console.error('Error writing prayer in-app notification document:', dbErr);
@@ -357,37 +379,40 @@ async function handleBaptismRequestAdminPush(baptism, churchId, requestId, snapR
             console.error('Error sending multicast baptism admin notification:', pushErr);
         }
     }
-    // 4. Send to church admin topic church_{churchId}_admin ONLY (never general church topic)
-    try {
-        await messaging.send({
-            notification: { title, body },
-            data: notificationData,
-            topic: `church_${churchId}_admin`,
-            android: {
-                priority: 'high',
-                notification: {
-                    sound: 'default',
-                    channelId: 'church_alerts',
-                },
-            },
-            apns: {
-                payload: {
-                    aps: {
+    // 4. Topic fallback ONLY if no authorized admin records/tokens were found
+    if (uniqueTokens.length === 0 && adminUids.length === 0) {
+        try {
+            await messaging.send({
+                notification: { title, body },
+                data: notificationData,
+                topic: `church_${churchId}_admin`,
+                android: {
+                    priority: 'high',
+                    notification: {
                         sound: 'default',
-                        badge: 1,
+                        channelId: 'church_alerts',
                     },
                 },
-            },
-        });
-        console.log(`✅ Broadcasted baptism request notification to topic: church_${churchId}_admin`);
+                apns: {
+                    payload: {
+                        aps: {
+                            sound: 'default',
+                            badge: 1,
+                        },
+                    },
+                },
+            });
+            console.log(`✅ Fallback-broadcasted baptism request notification to topic: church_${churchId}_admin`);
+        }
+        catch (topicErr) {
+            console.error('Error sending to church admin topic:', topicErr);
+        }
     }
-    catch (topicErr) {
-        console.error('Error sending to church admin topic:', topicErr);
-    }
-    // 5. Write in-app notification doc for admins in Rhema Church notifications
+    // 5. Write/merge deterministic in-app notification doc for admins in Rhema Church notifications
     try {
         const notifPayload = {
             type: 'baptism_request_admin',
+            targetRole: 'admin',
             title,
             body,
             memberName,
@@ -397,7 +422,12 @@ async function handleBaptismRequestAdminPush(baptism, churchId, requestId, snapR
             read: false,
             createdAt: FieldValue.serverTimestamp(),
         };
-        await db.collection('Rhema Church').doc(churchId).collection('notifications').add(notifPayload);
+        await db
+            .collection('Rhema Church')
+            .doc(churchId)
+            .collection('notifications')
+            .doc(`baptism_admin_${requestId}`)
+            .set(notifPayload, { merge: true });
     }
     catch (dbErr) {
         console.error('Error writing baptism in-app notification document:', dbErr);
@@ -605,7 +635,12 @@ async function handlePrayerRequestMemberPush(before, after, churchId, prayerId, 
             read: false,
             createdAt: FieldValue.serverTimestamp(),
         };
-        await db.collection('Rhema Church').doc(churchId).collection('notifications').add(notifPayload);
+        await db
+            .collection('Rhema Church')
+            .doc(churchId)
+            .collection('notifications')
+            .doc(`prayer_member_${prayerId}`)
+            .set(notifPayload, { merge: true });
     }
     catch (dbErr) {
         console.error('Error writing member prayer in-app notification doc:', dbErr);

@@ -23,7 +23,8 @@ import {
   Pressable,
   useWindowDimensions,
   LayoutAnimation,
-  UIManager
+  UIManager,
+  InteractionManager
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -2679,9 +2680,13 @@ export default function HomeScreen() {
         () => { }
       );
 
-    refreshHomeLiveStream();
+    // Defer initial external YouTube discovery until interactions settle so 1st launch UI stays instant
+    const interactionHandle = InteractionManager.runAfterInteractions(() => {
+      refreshHomeLiveStream();
+    });
     const pollTimer = setInterval(refreshHomeLiveStream, 60000);
     return () => {
+      interactionHandle?.cancel?.();
       unsubChurch();
       clearInterval(pollTimer);
     };
@@ -2746,7 +2751,7 @@ export default function HomeScreen() {
     const loadCurrentVerse = () => {
       const period = getCurrentPeriod();
       setTodayPeriod(period);
-      VerseNotificationService.getVerseForDate(new Date(), period, true).then(async v => {
+      VerseNotificationService.getVerseForDate(new Date(), period, false).then(async v => {
         if (!active) return;
         if (v) {
           if (language !== 'en') {
@@ -2776,6 +2781,65 @@ export default function HomeScreen() {
     };
   }, [language]);
 
+  const allCelebrationsRef = useRef<{ churchId: string; dateStr: string; list: any[] } | null>(null);
+
+  const appendSelfCelebrations = (baseTodays: any[], ist: any) => {
+    const todays = [...baseTodays];
+    if (!member) return todays;
+    const { matchesIstCelebrationDay } = require('../utils/celebrationDateHelper');
+    const mAny = member as any;
+    const selfChecks = [
+      {
+        raw: mAny.Birthdate || mAny.dob || mAny.birthdate || mAny.dateOfBirth || mAny.birthday,
+        suffix: 'bday',
+        type: 'Birthday',
+      },
+      {
+        raw: mAny.Anniversary_Date__c || mAny.anniversaryDate || mAny.marriageDate || mAny.weddingAnniversary || mAny.anniversary,
+        suffix: 'anniv',
+        type: 'Wedding Anniversary',
+      },
+      {
+        raw: mAny.Baptism_Date__c || mAny.baptismDate || mAny.baptism,
+        suffix: 'bap',
+        type: 'Baptism Anniversary',
+      },
+    ];
+
+    const selfId = String(mAny.id || mAny.Id || 'self');
+    const selfName = String(mAny.name || mAny.firstName || 'Member').trim();
+    const selfPhone10 = String(mAny.phone || mAny.mobile || '').replace(/\D/g, '').slice(-10);
+
+    for (const chk of selfChecks) {
+      if (!matchesIstCelebrationDay(chk.raw, ist)) continue;
+      const alreadyInTodays = todays.some(
+        (t: any) =>
+          t.type === chk.type &&
+          (t.memberId === selfId ||
+            t.Id === selfId ||
+            (selfPhone10 &&
+              String(t.directPhone || t.Phone || t.phone || '')
+                .replace(/\D/g, '')
+                .slice(-10) === selfPhone10 &&
+              String(t.Name || t.name || '').trim().toLowerCase() === selfName.toLowerCase()))
+      );
+      if (!alreadyInTodays) {
+        todays.push({
+          ...member,
+          id: `${selfId}_${chk.suffix}`,
+          memberId: selfId,
+          Id: selfId,
+          Name: selfName,
+          name: selfName,
+          type: chk.type,
+          celebrationType: chk.type,
+          isSelf: true,
+        });
+      }
+    }
+    return todays;
+  };
+
   const fetchLiveCelebrations = async () => {
     if (!activeChurch?.id) return;
     try {
@@ -2783,76 +2847,49 @@ export default function HomeScreen() {
       const {
         getIstCalendarParts,
         extractTodaysCelebrants,
-        matchesIstCelebrationDay,
       } = require('../utils/celebrationDateHelper');
 
       const ist = getIstCalendarParts();
-      const allCelebs = await FirestoreService.getAllCelebrations(activeChurch.id);
-      const todays = extractTodaysCelebrants(allCelebs, ist);
+      const celebCacheKey = `home_live_celebrations_${activeChurch.id}_${ist.dateStr}_v1`;
 
-      if (member) {
-        const mAny = member as any;
-        const selfChecks = [
-          {
-            raw: mAny.Birthdate || mAny.dob || mAny.birthdate || mAny.dateOfBirth || mAny.birthday,
-            suffix: 'bday',
-            type: 'Birthday',
-          },
-          {
-            raw: mAny.Anniversary_Date__c || mAny.anniversaryDate || mAny.marriageDate || mAny.weddingAnniversary || mAny.anniversary,
-            suffix: 'anniv',
-            type: 'Wedding Anniversary',
-          },
-          {
-            raw: mAny.Baptism_Date__c || mAny.baptismDate || mAny.baptism,
-            suffix: 'bap',
-            type: 'Baptism Anniversary',
-          },
-        ];
+      // Reuse today's cached celebrants list immediately if already fetched for this church/day
+      if (
+        allCelebrationsRef.current &&
+        allCelebrationsRef.current.churchId === activeChurch.id &&
+        allCelebrationsRef.current.dateStr === ist.dateStr
+      ) {
+        setLiveCelebrations(appendSelfCelebrations(allCelebrationsRef.current.list, ist));
+        return;
+      }
 
-        const selfId = String(mAny.id || mAny.Id || 'self');
-        const selfName = String(mAny.name || mAny.firstName || 'Member').trim();
-        const selfPhone10 = String(mAny.phone || mAny.mobile || '').replace(/\D/g, '').slice(-10);
-
-        for (const chk of selfChecks) {
-          if (!matchesIstCelebrationDay(chk.raw, ist)) continue;
-          const alreadyInTodays = todays.some(
-            (t: any) =>
-              t.type === chk.type &&
-              (t.memberId === selfId ||
-                t.Id === selfId ||
-                (selfPhone10 &&
-                  String(t.directPhone || t.Phone || t.phone || '')
-                    .replace(/\D/g, '')
-                    .slice(-10) === selfPhone10 &&
-                  String(t.Name || t.name || '').trim().toLowerCase() === selfName.toLowerCase()))
-          );
-          if (!alreadyInTodays) {
-            todays.push({
-              ...member,
-              id: `${selfId}_${chk.suffix}`,
-              memberId: selfId,
-              Id: selfId,
-              Name: selfName,
-              name: selfName,
-              type: chk.type,
-              celebrationType: chk.type,
-              isSelf: true,
-            });
-          }
+      const cached = await readInstantCache<any[]>(celebCacheKey).catch(() => null);
+      if (cached?.data) {
+        allCelebrationsRef.current = { churchId: activeChurch.id, dateStr: ist.dateStr, list: cached.data };
+        setLiveCelebrations(appendSelfCelebrations(cached.data, ist));
+        if (!cached.isStale && Date.now() - cached.fetchedAt < 5 * 60_000) {
+          return;
         }
       }
 
-      setLiveCelebrations(todays);
+      const allCelebs = await FirestoreService.getAllCelebrations(activeChurch.id);
+      const todaysBase = extractTodaysCelebrants(allCelebs, ist);
+      allCelebrationsRef.current = { churchId: activeChurch.id, dateStr: ist.dateStr, list: todaysBase };
+      writeInstantCache(celebCacheKey, todaysBase).catch(() => {});
+
+      setLiveCelebrations(appendSelfCelebrations(todaysBase, ist));
     } catch (e) {
       console.error(e);
     }
   };
 
-  const lastHomeFocusRefreshAtRef = useRef<number>(0);
+  // Initialize to mount timestamp so initial focus does not duplicate fetchData() queries
+  const lastHomeFocusRefreshAtRef = useRef<number>(Date.now());
 
   useEffect(() => {
-    fetchLiveCelebrations();
+    const handle = InteractionManager.runAfterInteractions(() => {
+      fetchLiveCelebrations();
+    });
+    return () => handle?.cancel?.();
   }, [activeChurch?.id, member]);
 
   useFocusEffect(
@@ -3480,9 +3517,6 @@ export default function HomeScreen() {
         }
       }).catch(() => { });
 
-      // 7. Refresh YouTube Live stream state for inline Home playback
-      refreshHomeLiveStream();
-
     } catch (error) {
       console.error('Error fetching home data:', error);
     } finally {
@@ -3633,25 +3667,10 @@ export default function HomeScreen() {
     }, 7000);
   };
 
-  // Load 4 verses on mount and listen to Firestore in real-time for immediate synchronization
+  // Listen to Firestore in real-time for immediate verse synchronization without duplicate cold-start queries
   useEffect(() => {
-    // 1. Initial force-refresh fetch to get latest Firestore verses immediately
-    VerseNotificationService.getTodayVerses(true).then(freshVerses => {
-      if (freshVerses && freshVerses.length > 0) {
-        cachedTodayFourVerses = freshVerses;
-        setTodayFourVerses(freshVerses);
-        if (language !== 'en') {
-          VerseNotificationService.localizeVerses(freshVerses, language as any).then(lv => {
-            if (lv) {
-              cachedTodayFourVerses = lv;
-              setTodayFourVerses(lv);
-            }
-          }).catch(() => { });
-        }
-      }
-    }).catch(() => { });
-
-    // 2. Real-time Firestore listener for today's daily verses
+    let lastMetaSignature: string | null = null;
+    // 1. Real-time Firestore listener for today's daily verses (initial data is fetched via fetchData)
     const todayIndices = VerseNotificationService.getIndicesForDate(new Date(), 5863, 'rhema');
     const unsubDailyVerses = firestore()
       .collection('daily_verses')
@@ -3743,7 +3762,7 @@ export default function HomeScreen() {
         }
       );
 
-    // 3. Listen to metadata changes (e.g. admin reassigned schedule or bumped lastUpdatedAt)
+    // 2. Listen to metadata changes (only invalidate & refetch if metadata genuinely changed after mount)
     const unsubMeta = firestore()
       .collection('daily_verses_meta')
       .doc('metadata')
@@ -3755,6 +3774,19 @@ export default function HomeScreen() {
             if (mData?.scheduleStartDate) {
               (VerseNotificationService as any).cachedScheduleStartDate = mData.scheduleStartDate;
             }
+            const nextSig = `${mData?.scheduleStartDate || ''}:${mData?.totalVerses || ''}:${mData?.lastUpdatedAt?.toMillis?.() || mData?.lastUpdatedAt || ''}`;
+            if (lastMetaSignature === null) {
+              lastMetaSignature = nextSig;
+              if (mData?.totalVerses) {
+                AsyncStorage.setItem('@rhema_verses_meta', String(mData.totalVerses)).catch(() => { });
+              }
+              return;
+            }
+            if (lastMetaSignature === nextSig) {
+              return;
+            }
+            lastMetaSignature = nextSig;
+
             await VerseNotificationService.invalidateCache();
             const fresh = await VerseNotificationService.getTodayVerses(true);
             if (fresh && fresh.length >= 4) {

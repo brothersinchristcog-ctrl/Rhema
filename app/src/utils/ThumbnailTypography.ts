@@ -9,6 +9,34 @@ export interface TeluguFontOption {
   fontFamily: string;
 }
 
+let startupFontsPromise: Promise<boolean> | null = null;
+let isStartupFontsLoaded = false;
+
+/**
+ * Loads only lightweight decorative fonts needed on Home/Receipt views (~100KB total)
+ * instead of decoding all 20+ heavy editor typefaces during initial app boot.
+ */
+export const loadStartupFonts = async (): Promise<boolean> => {
+  if (isStartupFontsLoaded || isFontsLoaded) return true;
+  if (!startupFontsPromise) {
+    startupFontsPromise = (async () => {
+      try {
+        await Font.loadAsync({
+          Pacifico: require('../../assets/fonts/Pacifico-Regular.ttf'),
+          'Pacifico-Regular': require('../../assets/fonts/Pacifico-Regular.ttf'),
+          DancingScript_700Bold: require('../../assets/fonts/Satisfy-Regular.ttf'),
+        });
+        isStartupFontsLoaded = true;
+        return true;
+      } catch (err) {
+        console.warn('⚠️ Error loading startup fonts, falling back to system:', err);
+        return false;
+      }
+    })();
+  }
+  return startupFontsPromise;
+};
+
 let fontsLoadedPromise: Promise<boolean> | null = null;
 let isFontsLoaded = false;
 
