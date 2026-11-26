@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform, useWindowDimensions } from 'react-native';
+import { Alert, Platform, useWindowDimensions } from 'react-native';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 
 // Matches expo-screen-orientation's OrientationLock enum values without triggering
@@ -227,6 +227,14 @@ export function useVideoOrientationController(
 
   const toggleOrientation = useCallback(() => {
     if (!activeRef.current) return;
+    const mod = getScreenOrientationNative();
+    if (!mod?.lockAsync) {
+      Alert.alert(
+        'Rebuild Required',
+        'Landscape orientation support requires a fresh app build (EAS / expo run:android) so the new orientation settings are included.'
+      );
+      return;
+    }
     if (dims.isLandscape) {
       forcedLandscapeRef.current = false;
       returnToPortraitThenUnlock();

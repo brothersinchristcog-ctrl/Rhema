@@ -540,114 +540,74 @@ export default function SermonVideoScreen({ navigation, route }: any) {
   })();
 
   const metaTextColor = isDark ? '#F8FAFC' : '#0F172A';
+  const isLandscapeTheater = isLandscape && hasValidVideo;
 
-  if (isLandscape && hasValidVideo) {
-    return (
-      <View style={styles.landscapeContainer}>
-        <StatusBar hidden={true} translucent backgroundColor="#000000" />
-        <YoutubePlayer
-          ref={playerRef}
-          key={`yt_${finalVideoId}`}
-          width={windowWidth}
-          height={windowHeight}
-          play={playing}
-          videoId={finalVideoId}
-          onChangeState={onStateChange}
-          onFullScreenChange={handleFullScreenChange}
-          onReady={() => {
-            setPlaying(true);
-          }}
-          forceAndroidAutoplay={true}
-          initialPlayerParams={{
-            preventFullScreen: false,
-            controls: true,
-            rel: false,
-            iv_load_policy: 3,
-          }}
-          webViewProps={{
-            androidLayerType: 'hardware',
-            mediaPlaybackRequiresUserAction: false,
-            allowsInlineMediaPlayback: true,
-          }}
-        />
+  useEffect(() => {
+    if (isLandscapeTheater) {
+      scrollViewRef.current?.scrollTo({ y: 0, animated: false });
+    }
+  }, [isLandscapeTheater]);
+
+  return (
+    <View style={[styles.container, { backgroundColor: isLandscapeTheater ? '#000000' : colors.background }]}>
+      <StatusBar
+        hidden={isLandscapeTheater}
+        translucent={isLandscapeTheater}
+        barStyle={isLandscapeTheater ? 'light-content' : (colors.barStyle || (isDark ? 'light-content' : 'dark-content'))}
+        backgroundColor={isLandscapeTheater ? '#000000' : colors.background}
+      />
+
+      {/* ── Screen Header (Hidden in Landscape Theater) ── */}
+      {!isLandscapeTheater ? (
         <View
-          pointerEvents="box-none"
           style={[
-            styles.landscapeOverlayBar,
-            {
-              top: Math.max(insets.top, 12),
-              left: Math.max(insets.left, 16),
-              right: Math.max(insets.right, 16),
-            },
+            styles.headerRow,
+            { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8 }
           ]}
         >
           <TouchableOpacity
-            style={styles.landscapePillBtn}
-            onPress={() => navigation.goBack()}
-            activeOpacity={0.8}
-          >
-            <ArrowLeft size={18} color="#FFFFFF" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.landscapePillBtn}
-            onPress={toggleOrientation}
-            activeOpacity={0.8}
-          >
-            <Minimize2 size={18} color="#FFFFFF" />
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
-  return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar hidden={false} barStyle={colors.barStyle || (isDark ? 'light-content' : 'dark-content')} backgroundColor={colors.background} />
-
-      {/* ── Screen Header (Clean circular back button & title) ── */}
-      <View
-        style={[
-          styles.headerRow,
-          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8 }
-        ]}
-      >
-        <TouchableOpacity
-          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          onPress={() => navigation.goBack()}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          activeOpacity={0.8}
-        >
-          <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
-        </TouchableOpacity>
-
-        <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
-          {t('sermons.videoTitle') || 'Sermon Video'}
-        </Text>
-
-        {hasValidVideo ? (
-          <TouchableOpacity
             style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            onPress={toggleOrientation}
+            onPress={() => navigation.goBack()}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             activeOpacity={0.8}
           >
-            <Maximize2 size={18} color={colors.text} strokeWidth={2.2} />
+            <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
           </TouchableOpacity>
-        ) : (
-          <View style={styles.headerRightSpacer} />
-        )}
-      </View>
 
-      <ScrollView ref={scrollViewRef} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+          <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
+            {t('sermons.videoTitle') || 'Sermon Video'}
+          </Text>
 
-        {/* ── Video Player (Spaced with rounded corners) ── */}
-        <View style={styles.playerSection}>
+          {hasValidVideo ? (
+            <TouchableOpacity
+              style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={toggleOrientation}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              activeOpacity={0.8}
+            >
+              <Maximize2 size={18} color={colors.text} strokeWidth={2.2} />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.headerRightSpacer} />
+          )}
+        </View>
+      ) : null}
+
+      <ScrollView
+        ref={scrollViewRef}
+        scrollEnabled={!isLandscapeTheater}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={isLandscapeTheater ? styles.landscapeScrollContent : styles.scroll}
+      >
+
+        {/* ── Video Player (Same mounted instance across Portrait <-> Landscape) ── */}
+        <View style={isLandscapeTheater ? styles.landscapeContainer : styles.playerSection}>
           {hasValidVideo ? (
             <YoutubePlayer
               ref={playerRef}
               key={`yt_${finalVideoId}`}
-              width={playerWidth}
-              height={playerHeight}
+              width={isLandscapeTheater ? windowWidth : playerWidth}
+              height={isLandscapeTheater ? windowHeight : playerHeight}
               play={playing}
               videoId={finalVideoId}
               onChangeState={onStateChange}
@@ -739,8 +699,38 @@ export default function SermonVideoScreen({ navigation, route }: any) {
               <Text style={{ color: '#9CA3AF', marginTop: 10, fontSize: 12, fontWeight: '600' }}>{t('sermons.noVideoLink')}</Text>
             </View>
           )}
+          {isLandscapeTheater ? (
+            <View
+              pointerEvents="box-none"
+              style={[
+                styles.landscapeOverlayBar,
+                {
+                  top: Math.max(insets.top, 12),
+                  left: Math.max(insets.left, 16),
+                  right: Math.max(insets.right, 16),
+                },
+              ]}
+            >
+              <TouchableOpacity
+                style={styles.landscapePillBtn}
+                onPress={() => navigation.goBack()}
+                activeOpacity={0.8}
+              >
+                <ArrowLeft size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.landscapePillBtn}
+                onPress={toggleOrientation}
+                activeOpacity={0.8}
+              >
+                <Minimize2 size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+          ) : null}
         </View>
 
+        {!isLandscapeTheater ? (
+          <>
         {/* ── Video Details ── */}
         <View style={[styles.videoDetails, { backgroundColor: colors.surface, borderColor: isDark ? colors.border : '#E2E8F0' }]}>
           <Text style={[styles.videoTitle, { color: colors.text }]}>{activeVideo?.title || t('home.exploreSermons')}</Text>
@@ -1017,6 +1007,8 @@ export default function SermonVideoScreen({ navigation, route }: any) {
             })
           )}
         </View>
+          </>
+        ) : null}
 
       </ScrollView>
 
@@ -1225,6 +1217,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 8,
     elevation: 4,
+  },
+  landscapeScrollContent: {
+    flexGrow: 1,
+    backgroundColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   landscapeContainer: {
     flex: 1,

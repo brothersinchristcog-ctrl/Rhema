@@ -382,6 +382,13 @@ export default function DailyVideoScreen({ navigation, route }: any) {
 
   const pastVideos = videos.filter((v) => v.youtubeId !== activeVidId);
   const accentRed = '#DC2626';
+  const isLandscapeTheater = isLandscape && Boolean(activeVidId);
+
+  useEffect(() => {
+    if (isLandscapeTheater) {
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+    }
+  }, [isLandscapeTheater]);
 
   if (loading && !activeVideo) {
     return (
@@ -403,145 +410,105 @@ export default function DailyVideoScreen({ navigation, route }: any) {
     );
   }
 
-  if (isLandscape && activeVidId) {
-    return (
-      <View style={styles.landscapeContainer}>
-        <StatusBar hidden={true} translucent backgroundColor="#000000" />
-        <RhemaYouTubePlayer
-          key={`dev_yt_${activeVidId}`}
-          width={windowWidth}
-          height={windowHeight}
-          play={playing}
-          autoPlay={true}
-          videoId={activeVidId}
-          title={activeVideo?.title}
-          onChangeState={onPlayerStateChange}
-          onFullScreenChange={handleFullScreenChange}
-        />
+  return (
+    <View style={[styles.container, { backgroundColor: isLandscapeTheater ? '#000000' : screenBg }]}>
+      <StatusBar
+        hidden={isLandscapeTheater}
+        translucent={isLandscapeTheater}
+        barStyle={isLandscapeTheater ? 'light-content' : (isDark ? 'light-content' : 'dark-content')}
+        backgroundColor={isLandscapeTheater ? '#000000' : screenBg}
+      />
+
+      {/* ── CLEAN MODERN HEADER (Hidden in Landscape Theater) ── */}
+      {!isLandscapeTheater ? (
         <View
-          pointerEvents="box-none"
           style={[
-            styles.landscapeOverlayBar,
+            styles.header,
             {
-              top: Math.max(insets.top, 12),
-              left: Math.max(insets.left, 16),
-              right: Math.max(insets.right, 16),
+              paddingTop:
+                Math.max(
+                  insets.top,
+                  Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 28
+                ) + 10,
+              backgroundColor: screenBg,
+              borderBottomColor: isDark ? '#27272A' : '#E2E8F0',
             },
           ]}
         >
           <TouchableOpacity
-            style={styles.landscapePillBtn}
+            style={[
+              styles.circularBtn,
+              { backgroundColor: cardSurface, borderColor: adminBorderColor },
+            ]}
             onPress={() => navigation.goBack()}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             activeOpacity={0.8}
           >
-            <ArrowLeft size={18} color="#FFFFFF" />
+            <ArrowLeft size={20} color={primaryText} strokeWidth={2.4} />
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.landscapePillBtn}
-            onPress={toggleOrientation}
-            activeOpacity={0.8}
-          >
-            <Minimize2 size={18} color="#FFFFFF" />
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
 
-  return (
-    <View style={[styles.container, { backgroundColor: screenBg }]}>
-      <StatusBar
-        hidden={false}
-        barStyle={isDark ? 'light-content' : 'dark-content'}
-        backgroundColor={screenBg}
-      />
+          <View style={styles.headerCenter}>
+            <Text
+              style={[
+                styles.headerTitle,
+                { color: primaryText, fontFamily: appFontFamily, fontSize: scaleFont(18) },
+              ]}
+              numberOfLines={1}
+            >
+              Video Devotional
+            </Text>
+            <Text
+              style={[
+                styles.headerSub,
+                { color: secondaryText, fontFamily: appFontFamily, fontSize: scaleFont(11.5) },
+              ]}
+              numberOfLines={1}
+            >
+              ప్రార్థన సందేశం
+            </Text>
+          </View>
 
-      {/* ── CLEAN MODERN HEADER (Matches YouTube Live & Sermon Video) ── */}
-      <View
-        style={[
-          styles.header,
-          {
-            paddingTop:
-              Math.max(
-                insets.top,
-                Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 28
-              ) + 10,
-            backgroundColor: screenBg,
-            borderBottomColor: isDark ? '#27272A' : '#E2E8F0',
-          },
-        ]}
-      >
-        <TouchableOpacity
-          style={[
-            styles.circularBtn,
-            { backgroundColor: cardSurface, borderColor: adminBorderColor },
-          ]}
-          onPress={() => navigation.goBack()}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          activeOpacity={0.8}
-        >
-          <ArrowLeft size={20} color={primaryText} strokeWidth={2.4} />
-        </TouchableOpacity>
-
-        <View style={styles.headerCenter}>
-          <Text
-            style={[
-              styles.headerTitle,
-              { color: primaryText, fontFamily: appFontFamily, fontSize: scaleFont(18) },
-            ]}
-            numberOfLines={1}
-          >
-            Video Devotional
-          </Text>
-          <Text
-            style={[
-              styles.headerSub,
-              { color: secondaryText, fontFamily: appFontFamily, fontSize: scaleFont(11.5) },
-            ]}
-            numberOfLines={1}
-          >
-            ప్రార్థన సందేశం
-          </Text>
-        </View>
-
-        {activeVideo ? (
-          <View style={styles.headerActionsGroup}>
-            {activeVidId ? (
+          {activeVideo ? (
+            <View style={styles.headerActionsGroup}>
+              {activeVidId ? (
+                <TouchableOpacity
+                  style={[
+                    styles.circularBtn,
+                    { backgroundColor: cardSurface, borderColor: adminBorderColor },
+                  ]}
+                  onPress={toggleOrientation}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  activeOpacity={0.8}
+                >
+                  <Maximize2 size={17} color={primaryText} strokeWidth={2.2} />
+                </TouchableOpacity>
+              ) : null}
               <TouchableOpacity
                 style={[
                   styles.circularBtn,
                   { backgroundColor: cardSurface, borderColor: adminBorderColor },
                 ]}
-                onPress={toggleOrientation}
+                onPress={handleShare}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 activeOpacity={0.8}
               >
-                <Maximize2 size={17} color={primaryText} strokeWidth={2.2} />
+                <Share2 size={18} color={primaryText} strokeWidth={2.2} />
               </TouchableOpacity>
-            ) : null}
-            <TouchableOpacity
-              style={[
-                styles.circularBtn,
-                { backgroundColor: cardSurface, borderColor: adminBorderColor },
-              ]}
-              onPress={handleShare}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              activeOpacity={0.8}
-            >
-              <Share2 size={18} color={primaryText} strokeWidth={2.2} />
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <View style={styles.headerSpacer} />
-        )}
-      </View>
+            </View>
+          ) : (
+            <View style={styles.headerSpacer} />
+          )}
+        </View>
+      ) : null}
 
       <ScrollView
         ref={scrollRef}
+        scrollEnabled={!isLandscapeTheater}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={isLandscapeTheater ? styles.landscapeScrollContent : styles.scrollContent}
         refreshControl={
           <RefreshControl
+            enabled={!isLandscapeTheater}
             refreshing={refreshing}
             onRefresh={() => loadDevotionals(true)}
             tintColor={accentRed}
@@ -549,24 +516,34 @@ export default function DailyVideoScreen({ navigation, route }: any) {
           />
         }
       >
-        {/* ── HERO VIDEO PLAYER CARD ── */}
+        {/* ── HERO VIDEO PLAYER CARD (Same mounted instance across Portrait <-> Landscape) ── */}
         <View
-          style={[
-            styles.playerCard,
-            {
-              width: responsiveWidth,
-              minHeight: responsiveHeight,
-              backgroundColor: cardSurface,
-              borderColor: adminBorderColor,
-            },
-          ]}
+          style={
+            isLandscapeTheater
+              ? styles.landscapeContainer
+              : [
+                  styles.playerCard,
+                  {
+                    width: responsiveWidth,
+                    minHeight: responsiveHeight,
+                    backgroundColor: cardSurface,
+                    borderColor: adminBorderColor,
+                  },
+                ]
+          }
         >
           {activeVidId ? (
-            <View style={[styles.playerFrame, { width: responsiveWidth, height: responsiveHeight }]}>
+            <View
+              style={
+                isLandscapeTheater
+                  ? { width: windowWidth, height: windowHeight, backgroundColor: '#000000' }
+                  : [styles.playerFrame, { width: responsiveWidth, height: responsiveHeight }]
+              }
+            >
               <RhemaYouTubePlayer
                 key={`dev_yt_${activeVidId}`}
-                width={responsiveWidth}
-                height={responsiveHeight}
+                width={isLandscapeTheater ? windowWidth : responsiveWidth}
+                height={isLandscapeTheater ? windowHeight : responsiveHeight}
                 play={playing}
                 autoPlay={true}
                 videoId={activeVidId}
@@ -574,6 +551,34 @@ export default function DailyVideoScreen({ navigation, route }: any) {
                 onChangeState={onPlayerStateChange}
                 onFullScreenChange={handleFullScreenChange}
               />
+              {isLandscapeTheater ? (
+                <View
+                  pointerEvents="box-none"
+                  style={[
+                    styles.landscapeOverlayBar,
+                    {
+                      top: Math.max(insets.top, 12),
+                      left: Math.max(insets.left, 16),
+                      right: Math.max(insets.right, 16),
+                    },
+                  ]}
+                >
+                  <TouchableOpacity
+                    style={styles.landscapePillBtn}
+                    onPress={() => navigation.goBack()}
+                    activeOpacity={0.8}
+                  >
+                    <ArrowLeft size={18} color="#FFFFFF" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.landscapePillBtn}
+                    onPress={toggleOrientation}
+                    activeOpacity={0.8}
+                  >
+                    <Minimize2 size={18} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+              ) : null}
             </View>
           ) : (
             <View style={[styles.emptyPlayerBox, { minHeight: responsiveHeight + 16, backgroundColor: cardSurface }]}>
@@ -628,6 +633,8 @@ export default function DailyVideoScreen({ navigation, route }: any) {
           )}
         </View>
 
+        {!isLandscapeTheater ? (
+          <>
         {/* ── HERO DETAILS CARD ── */}
         {activeVideo && (
           <View
@@ -939,6 +946,8 @@ export default function DailyVideoScreen({ navigation, route }: any) {
             )}
           </View>
         </View>
+          </>
+        ) : null}
       </ScrollView>
 
       {/* ── UNSUBSCRIBE CONFIRMATION MODAL ── */}
@@ -1092,6 +1101,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 20,
     paddingVertical: 24,
+  },
+  landscapeScrollContent: {
+    flexGrow: 1,
+    backgroundColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   landscapeContainer: {
     flex: 1,

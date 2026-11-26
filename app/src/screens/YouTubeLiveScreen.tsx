@@ -445,107 +445,77 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
     }
   };
 
-  if (isLandscape && hasPlayableLiveStream && activeVideoId) {
-    return (
-      <View style={styles.landscapeContainer}>
-        <StatusBar hidden={true} translucent backgroundColor="#000000" />
-        <RhemaYouTubePlayer
-          width={windowWidth}
-          height={windowHeight}
-          play={playing}
-          autoPlay={true}
-          isLive={true}
-          videoId={activeVideoId}
-          title={streamTitle}
-          onChangeState={onPlayerStateChange}
-          onFullScreenChange={handleFullScreenChange}
-        />
+  const scrollRef = useRef<ScrollView>(null);
+  const isLandscapeTheater = isLandscape && hasPlayableLiveStream && Boolean(activeVideoId);
+
+  useEffect(() => {
+    if (isLandscapeTheater) {
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+    }
+  }, [isLandscapeTheater]);
+
+  return (
+    <View style={[styles.container, { backgroundColor: isLandscapeTheater ? '#000000' : screenBg }]}>
+      <StatusBar
+        hidden={isLandscapeTheater}
+        translucent={isLandscapeTheater}
+        barStyle={isLandscapeTheater ? 'light-content' : (isDark ? 'light-content' : 'dark-content')}
+        backgroundColor={isLandscapeTheater ? '#000000' : screenBg}
+      />
+
+      {/* ── TOP HEADER (Hidden in Landscape Theater) ── */}
+      {!isLandscapeTheater ? (
         <View
-          pointerEvents="box-none"
           style={[
-            styles.landscapeOverlayBar,
+            styles.header,
             {
-              top: Math.max(insets.top, 12),
-              left: Math.max(insets.left, 16),
-              right: Math.max(insets.right, 16),
+              paddingTop:
+                Math.max(
+                  insets.top,
+                  Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 28
+                ) + 12,
+              backgroundColor: screenBg,
+              borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1',
             },
           ]}
         >
           <TouchableOpacity
-            style={styles.landscapePillBtn}
-            onPress={() => navigation.goBack()}
-            activeOpacity={0.8}
-          >
-            <ArrowLeft size={18} color="#FFFFFF" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.landscapePillBtn}
-            onPress={toggleOrientation}
-            activeOpacity={0.8}
-          >
-            <Minimize2 size={18} color="#FFFFFF" />
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
-  return (
-    <View style={[styles.container, { backgroundColor: screenBg }]}>
-      <StatusBar
-        hidden={false}
-        barStyle={isDark ? 'light-content' : 'dark-content'}
-        backgroundColor={screenBg}
-      />
-
-      {/* ── TOP HEADER ── */}
-      <View
-        style={[
-          styles.header,
-          {
-            paddingTop:
-              Math.max(
-                insets.top,
-                Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 28
-              ) + 12,
-            backgroundColor: screenBg,
-            borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1',
-          },
-        ]}
-      >
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          activeOpacity={0.8}
-        >
-          <ArrowLeft size={20} color={primaryText} strokeWidth={2.4} />
-        </TouchableOpacity>
-
-        <Text style={[styles.headerTitle, { color: primaryText }]} numberOfLines={1}>
-          YouTube Live
-        </Text>
-
-        {hasPlayableLiveStream ? (
-          <TouchableOpacity
             style={styles.backButton}
-            onPress={toggleOrientation}
+            onPress={() => navigation.goBack()}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             activeOpacity={0.8}
           >
-            <Maximize2 size={18} color={primaryText} strokeWidth={2.2} />
+            <ArrowLeft size={20} color={primaryText} strokeWidth={2.4} />
           </TouchableOpacity>
-        ) : (
-          <View style={styles.headerRightSpacer} />
-        )}
-      </View>
+
+          <Text style={[styles.headerTitle, { color: primaryText }]} numberOfLines={1}>
+            YouTube Live
+          </Text>
+
+          {hasPlayableLiveStream ? (
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={toggleOrientation}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              activeOpacity={0.8}
+            >
+              <Maximize2 size={18} color={primaryText} strokeWidth={2.2} />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.headerRightSpacer} />
+          )}
+        </View>
+      ) : null}
 
       <ScrollView
+        ref={scrollRef}
+        scrollEnabled={!isLandscapeTheater}
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={isLandscapeTheater ? styles.landscapeScrollContent : styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
+            enabled={!isLandscapeTheater}
             refreshing={refreshing}
             onRefresh={() => resolveLiveStream(true)}
             tintColor="#EF4444"
@@ -553,17 +523,21 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
           />
         }
       >
-        {/* ── VIDEO PLAYER SECTION ── */}
+        {/* ── VIDEO PLAYER SECTION (Same mounted instance across Portrait <-> Landscape) ── */}
         <View
-          style={[
-            styles.playerContainer,
-            {
-              minHeight: responsiveHeight,
-              backgroundColor: cardSurface,
-              borderColor: adminBorderColor,
-              borderWidth: 1,
-            },
-          ]}
+          style={
+            isLandscapeTheater
+              ? styles.landscapeContainer
+              : [
+                  styles.playerContainer,
+                  {
+                    minHeight: responsiveHeight,
+                    backgroundColor: cardSurface,
+                    borderColor: adminBorderColor,
+                    borderWidth: 1,
+                  },
+                ]
+          }
         >
           {loading ? (
             <View style={[styles.playerPlaceholder, { height: responsiveHeight, backgroundColor: cardSurface }]}>
@@ -573,10 +547,16 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
               </Text>
             </View>
           ) : streamStatus === 'live' && activeVideoId ? (
-            <View style={[styles.playerFrame, { width: responsiveWidth, height: responsiveHeight }]}>
+            <View
+              style={
+                isLandscapeTheater
+                  ? { width: windowWidth, height: windowHeight, backgroundColor: '#000000' }
+                  : [styles.playerFrame, { width: responsiveWidth, height: responsiveHeight }]
+              }
+            >
               <RhemaYouTubePlayer
-                width={responsiveWidth}
-                height={responsiveHeight}
+                width={isLandscapeTheater ? windowWidth : responsiveWidth}
+                height={isLandscapeTheater ? windowHeight : responsiveHeight}
                 play={playing}
                 autoPlay={true}
                 isLive={true}
@@ -585,6 +565,34 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
                 onChangeState={onPlayerStateChange}
                 onFullScreenChange={handleFullScreenChange}
               />
+              {isLandscapeTheater ? (
+                <View
+                  pointerEvents="box-none"
+                  style={[
+                    styles.landscapeOverlayBar,
+                    {
+                      top: Math.max(insets.top, 12),
+                      left: Math.max(insets.left, 16),
+                      right: Math.max(insets.right, 16),
+                    },
+                  ]}
+                >
+                  <TouchableOpacity
+                    style={styles.landscapePillBtn}
+                    onPress={() => navigation.goBack()}
+                    activeOpacity={0.8}
+                  >
+                    <ArrowLeft size={18} color="#FFFFFF" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.landscapePillBtn}
+                    onPress={toggleOrientation}
+                    activeOpacity={0.8}
+                  >
+                    <Minimize2 size={18} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+              ) : null}
             </View>
           ) : streamStatus === 'completed' ? (
             // Live Stream Completed — Do not play recorded video per Quick Access rules
@@ -662,6 +670,8 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
           )}
         </View>
 
+        {!isLandscapeTheater ? (
+          <>
         {/* ── STREAM DETAILS CARD ── */}
         <View
           style={[
@@ -849,6 +859,8 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
             </Text>
           </View>
         </View>
+          </>
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -925,6 +937,12 @@ const styles = createAdminThemedStyles({
     paddingHorizontal: 20,
     paddingVertical: 24,
     borderRadius: 16,
+  },
+  landscapeScrollContent: {
+    flexGrow: 1,
+    backgroundColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   landscapeContainer: {
     flex: 1,
