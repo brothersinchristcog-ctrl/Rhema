@@ -86,6 +86,58 @@ export function findFirstUnreadTimestampedMessageIndex<T extends MinimalUnreadMe
   return -1;
 }
 
+export interface CelebrationMergeMessage extends MinimalUnreadMessage {
+  clientMsgId?: string;
+  localCreatedAt?: number;
+  text?: string;
+  audioUrl?: string;
+  pending?: boolean;
+}
+
+/**
+ * Merges paginated older messages, latest live snapshot messages, and instant optimistic messages
+ * cleanly in ascending chronological order without duplicates or timestamp jumps.
+ */
+export function mergeCelebrationMessages<T extends CelebrationMergeMessage>(
+  olderMessages: T[],
+  latestMessages: T[],
+  optimisticMessages: T[]
+): T[] {
+  const byId = new Map<string, T>();
+  olderMessages.forEach((m) => {
+    if (m?.id) byId.set(m.id, m);
+  });
+  latestMessages.forEach((m) => {
+    if (m?.id) byId.set(m.id, m);
+  });
+
+  const syncedClientIds = new Set<string>();
+  byId.forEach((m) => {
+    if (m.clientMsgId) syncedClientIds.add(m.clientMsgId);
+  });
+
+  optimisticMessages.forEach((opt) => {
+    if (!opt?.id) return;
+    if (opt.clientMsgId && syncedClientIds.has(opt.clientMsgId)) return;
+    const optTime = getChatMessageTimeMs(opt.createdAt) || opt.localCreatedAt || 0;
+    const matchedLegacy = latestMessages.some(
+      (live) =>
+        live.userId === opt.userId &&
+        (live.text || '') === (opt.text || '') &&
+        (live.audioUrl || '') === (opt.audioUrl || '') &&
+        Math.abs((getChatMessageTimeMs(live.createdAt) || live.localCreatedAt || optTime) - optTime) < 20000
+    );
+    if (!matchedLegacy && !byId.has(opt.id)) {
+      byId.set(opt.id, opt);
+    }
+  });
+
+  const resolveSortMs = (m: T): number =>
+    getChatMessageTimeMs(m.createdAt) || (typeof m.localCreatedAt === 'number' ? m.localCreatedAt : 0);
+
+  return Array.from(byId.values()).sort((a, b) => resolveSortMs(a) - resolveSortMs(b));
+}
+
 export interface UnreadAnchorSnapshotInput<T extends MinimalUnreadMessage> {
   currentAnchorId: string | null;
   messages: T[];
