@@ -327,20 +327,21 @@ async function collectChurchAdmins(db, churchId) {
         'Super Admin',
         'super_admin',
         'superadmin',
+        'Youth Pastor',
         'Senior Pastor',
         'Associate Pastor',
-        'Youth Pastor',
-        'Assistant Pastor',
     ];
-    const [byFlagSnap, byUserTypeSnap, byRoleSnap, platformSnap] = await Promise.all([
+    const [byFlagSnap, bySuperFlagSnap, bySuperLowerSnap, byUserTypeSnap, byRoleSnap, platformSnap] = await Promise.all([
         membersRef.where('isAdmin', '==', true).limit(150).get().catch(() => null),
+        membersRef.where('isSuperAdmin', '==', true).limit(150).get().catch(() => null),
+        membersRef.where('superadmin', '==', true).limit(150).get().catch(() => null),
         membersRef
-            .where('userType', 'in', adminRoleValues.slice(0, 10))
+            .where('userType', 'in', adminRoleValues)
             .limit(150)
             .get()
             .catch(() => null),
         membersRef
-            .where('role', 'in', adminRoleValues.slice(0, 10))
+            .where('role', 'in', adminRoleValues)
             .limit(150)
             .get()
             .catch(() => null),
@@ -376,7 +377,7 @@ async function collectChurchAdmins(db, churchId) {
             isSuperAdmin: Boolean(existing?.isSuperAdmin || isSuper),
         });
     };
-    [byFlagSnap, byUserTypeSnap, byRoleSnap].forEach((snap) => {
+    [byFlagSnap, bySuperFlagSnap, bySuperLowerSnap, byUserTypeSnap, byRoleSnap].forEach((snap) => {
         snap?.docs?.forEach((doc) => ingestMemberDoc(doc));
     });
     // Ensure any platform_admins member missing from queried batches is still listed

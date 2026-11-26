@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, TextInput, Platform, BackHandler, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, TextInput, Platform, BackHandler } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { StatusBar } from 'expo-status-bar';
@@ -70,13 +70,8 @@ export default function SuperAdminDashboard({ navigation }: any) {
             <View style={{ width: 40 }} />
           </View>
 
-          {/* Tab Bar: Daily Verse, Church Quiz, Super Admins & Admin Permissions */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={[styles.tabBar, { backgroundColor: screenBg, borderBottomColor: borderColor }]}
-            contentContainerStyle={styles.tabBarContent}
-          >
+          {/* Tab Bar: All 4 tabs fit cleanly in one row without horizontal clipping */}
+          <View style={[styles.tabBar, { backgroundColor: screenBg, borderBottomColor: borderColor }]}>
             <TouchableOpacity
               style={[styles.tab, activeTab === 'verses' && styles.tabActive]}
               onPress={() => setActiveTab('verses')}
@@ -84,6 +79,8 @@ export default function SuperAdminDashboard({ navigation }: any) {
               <Text
                 style={[styles.tabText, { color: secondaryText }, activeTab === 'verses' && styles.tabTextActive]}
                 numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.72}
               >
                 Daily Verse
               </Text>
@@ -96,6 +93,8 @@ export default function SuperAdminDashboard({ navigation }: any) {
               <Text
                 style={[styles.tabText, { color: secondaryText }, activeTab === 'daily_quiz' && styles.tabTextActive]}
                 numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.72}
               >
                 Church Quiz
               </Text>
@@ -108,6 +107,8 @@ export default function SuperAdminDashboard({ navigation }: any) {
               <Text
                 style={[styles.tabText, { color: secondaryText }, activeTab === 'super_admins' && styles.tabTextActive]}
                 numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.72}
               >
                 Super Admins
               </Text>
@@ -120,11 +121,13 @@ export default function SuperAdminDashboard({ navigation }: any) {
               <Text
                 style={[styles.tabText, { color: secondaryText }, activeTab === 'permissions' && styles.tabTextActive]}
                 numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.72}
               >
-                Admin Permissions
+                Permissions
               </Text>
             </TouchableOpacity>
-          </ScrollView>
+          </View>
 
           {/* Search Bar */}
           <View style={[styles.searchBar, { backgroundColor: cardSurface, borderColor }]}>
@@ -137,12 +140,13 @@ export default function SuperAdminDashboard({ navigation }: any) {
                   : activeTab === 'daily_quiz'
                     ? 'Search church quizzes, date, scripture...'
                     : activeTab === 'permissions'
-                      ? 'Search administrators by name, phone, or role...'
+                      ? 'Search admin & super admin members...'
                       : 'Search super admins by name or phone...'
               }
               placeholderTextColor={secondaryText}
               value={searchQuery}
               onChangeText={setSearchQuery}
+              numberOfLines={1}
             />
             {searchQuery.length > 0 && (
               <TouchableOpacity onPress={() => setSearchQuery('')} style={{ padding: 4 }}>
@@ -211,42 +215,40 @@ const styles = StyleSheet.create({
   },
 
   tabBar: {
-    flexGrow: 0,
+    flexDirection: 'row',
     backgroundColor: '#0a0f1e',
     marginHorizontal: -16,
-    marginBottom: 16,
+    paddingHorizontal: 10,
+    marginBottom: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#242e50',
   },
-  tabBarContent: {
-    paddingHorizontal: 16,
-    flexGrow: 1,
-    alignItems: 'center',
-  },
   tab: {
-    paddingVertical: 14,
-    paddingHorizontal: 12,
+    flex: 1,
+    paddingVertical: 13,
+    paddingHorizontal: 4,
     alignItems: 'center',
+    justifyContent: 'center',
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',
   },
   tabActive: { borderBottomColor: '#f0b429' },
-  tabText: { color: '#5c6890', fontSize: 14, fontWeight: '700' },
+  tabText: { color: '#5c6890', fontSize: 12.5, fontWeight: '700', textAlign: 'center' },
   tabTextActive: { color: '#f0b429' },
 
   content: { flex: 1, padding: 16, backgroundColor: '#0a0f1e' },
 
   searchBar: {
     backgroundColor: '#0f172a',
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 6,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    minHeight: 46,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: 20,
+    gap: 10,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: '#1e293b',
   },
-  searchInput: { flex: 1, fontSize: 15, color: '#f4f6fb' },
+  searchInput: { flex: 1, fontSize: 14, color: '#f4f6fb', paddingVertical: Platform.OS === 'ios' ? 11 : 6 },
 });
