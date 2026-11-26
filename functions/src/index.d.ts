@@ -49,4 +49,5 @@ export { createRazorpayOrder, verifyRazorpayPayment, createRazorpayRecurringDona
 export { sendPledgeRemindersScheduled, triggerPledgeRemindersManual, } from './pledgeReminders.js';
 export { sendDailyBirthdayPushScheduled, sendDailyBaptismAnniversaryPushScheduled, sendDailyWeddingAnniversaryPushScheduled, triggerCelebrationPushManual, } from './celebrationPushScheduler.js';
 export { weCelebrationDailySweepV3, triggerMorningCelebrations, weCelebrationBatchedWishes, executeBatchedWishes, } from './celebrations.js';
+export { listChurchAdminsWithPermissions, saveAdminModulePermissions, saveDefaultAdminPermissions, promoteOrDemoteChurchAdmin, onMemberAdminRoleWritten, } from './adminPermissions.js';
 //# sourceMappingURL=index.d.ts.map

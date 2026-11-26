@@ -1512,7 +1512,8 @@ export const triggerTestYouTubeLive = onCall({ invoker: 'public' }, async (reque
     const churchId = rawChurchId;
 
     const db = getDb();
-    await assertChurchAdminAccess(db, request.auth.uid, request.auth.token, churchId);
+    const { assertAdminModulePermission } = await import('./adminPermissions.js');
+    await assertAdminModulePermission(db, request.auth, churchId, 'notifications');
 
     const liveUrl = validateYouTubeLiveUrl(request.data?.url);
     const rawVideoId = request.data?.videoId;
@@ -1998,3 +1999,11 @@ export {
   weCelebrationBatchedWishes,
   executeBatchedWishes,
 } from './celebrations.js';
+
+export {
+  listChurchAdminsWithPermissions,
+  saveAdminModulePermissions,
+  saveDefaultAdminPermissions,
+  promoteOrDemoteChurchAdmin,
+  onMemberAdminRoleWritten,
+} from './adminPermissions.js';

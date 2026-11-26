@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, TextInput, Platform, BackHandler } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, TextInput, Platform, BackHandler, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { StatusBar } from 'expo-status-bar';
@@ -18,7 +18,7 @@ export default function SuperAdminDashboard({ navigation }: any) {
     String(member?.userType || '').toUpperCase().includes('SUPER') ||
     Boolean((member as any)?.isSuperAdmin);
 
-  const [activeTab, setActiveTab] = useState<'verses' | 'daily_quiz' | 'super_admins'>('verses');
+  const [activeTab, setActiveTab] = useState<'verses' | 'daily_quiz' | 'super_admins' | 'permissions'>('verses');
   const [searchQuery, setSearchQuery] = useState('');
 
   const handleAdminBack = () => {
@@ -70,8 +70,13 @@ export default function SuperAdminDashboard({ navigation }: any) {
             <View style={{ width: 40 }} />
           </View>
 
-          {/* Tab Bar: Daily Verse, Church Quiz & Super Admins */}
-          <View style={[styles.tabBar, { backgroundColor: screenBg, borderBottomColor: borderColor }]}>
+          {/* Tab Bar: Daily Verse, Church Quiz, Super Admins & Admin Permissions */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={[styles.tabBar, { backgroundColor: screenBg, borderBottomColor: borderColor }]}
+            contentContainerStyle={styles.tabBarContent}
+          >
             <TouchableOpacity
               style={[styles.tab, activeTab === 'verses' && styles.tabActive]}
               onPress={() => setActiveTab('verses')}
@@ -79,8 +84,6 @@ export default function SuperAdminDashboard({ navigation }: any) {
               <Text
                 style={[styles.tabText, { color: secondaryText }, activeTab === 'verses' && styles.tabTextActive]}
                 numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.85}
               >
                 Daily Verse
               </Text>
@@ -93,8 +96,6 @@ export default function SuperAdminDashboard({ navigation }: any) {
               <Text
                 style={[styles.tabText, { color: secondaryText }, activeTab === 'daily_quiz' && styles.tabTextActive]}
                 numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.85}
               >
                 Church Quiz
               </Text>
@@ -107,13 +108,23 @@ export default function SuperAdminDashboard({ navigation }: any) {
               <Text
                 style={[styles.tabText, { color: secondaryText }, activeTab === 'super_admins' && styles.tabTextActive]}
                 numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.85}
               >
                 Super Admins
               </Text>
             </TouchableOpacity>
-          </View>
+
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'permissions' && styles.tabActive]}
+              onPress={() => setActiveTab('permissions')}
+            >
+              <Text
+                style={[styles.tabText, { color: secondaryText }, activeTab === 'permissions' && styles.tabTextActive]}
+                numberOfLines={1}
+              >
+                Admin Permissions
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
 
           {/* Search Bar */}
           <View style={[styles.searchBar, { backgroundColor: cardSurface, borderColor }]}>
@@ -125,7 +136,9 @@ export default function SuperAdminDashboard({ navigation }: any) {
                   ? 'Search daily verses...'
                   : activeTab === 'daily_quiz'
                     ? 'Search church quizzes, date, scripture...'
-                    : 'Search super admins by name or phone...'
+                    : activeTab === 'permissions'
+                      ? 'Search administrators by name, phone, or role...'
+                      : 'Search super admins by name or phone...'
               }
               placeholderTextColor={secondaryText}
               value={searchQuery}
@@ -148,6 +161,10 @@ export default function SuperAdminDashboard({ navigation }: any) {
           if (activeTab === 'daily_quiz') {
             const SuperAdminDailyQuizManager = require('./SuperAdminDailyQuizManager').default;
             return <SuperAdminDailyQuizManager searchQuery={searchQuery} />;
+          }
+          if (activeTab === 'permissions') {
+            const AdminPermissionsManager = require('./AdminPermissionsManager').default;
+            return <AdminPermissionsManager searchQuery={searchQuery} />;
           }
           const SuperAdminRoleManager = require('./SuperAdminRoleManager').default;
           return <SuperAdminRoleManager searchQuery={searchQuery} />;
@@ -194,17 +211,21 @@ const styles = StyleSheet.create({
   },
 
   tabBar: {
-    flexDirection: 'row',
+    flexGrow: 0,
     backgroundColor: '#0a0f1e',
     marginHorizontal: -16,
-    paddingHorizontal: 16,
     marginBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#242e50',
   },
+  tabBarContent: {
+    paddingHorizontal: 16,
+    flexGrow: 1,
+    alignItems: 'center',
+  },
   tab: {
-    flex: 1,
     paddingVertical: 14,
+    paddingHorizontal: 12,
     alignItems: 'center',
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',

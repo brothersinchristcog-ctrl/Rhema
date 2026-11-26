@@ -26,6 +26,11 @@ import { useChurch } from '../context/ChurchContext';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../utils/instantCache';
+import {
+  shouldShowTabSpinner,
+  tryAcquireInFlightFetch,
+  releaseInFlightFetch,
+} from '../utils/tabLoadingHelper';
 
 const { width } = Dimensions.get('window');
 
@@ -59,8 +64,11 @@ export default function PromiseArchiveScreen({ navigation }: { navigation: any }
   const [refreshing, setRefreshing] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
   const viewShotRef = useRef<ViewShot>(null);
+  const inFlightMapRef = useRef<Map<string, number>>(new Map());
+  const hasPromisesRef = useRef<boolean>(Boolean(initialArchive?.length));
 
   const applyPromises = React.useCallback((sortedData: DailyPromise[]) => {
+    hasPromisesRef.current = (sortedData || []).length > 0;
     setPromises(sortedData);
     const today = getTodayStr();
     const todayPromise = sortedData.find(p => p.date === today);
@@ -69,10 +77,15 @@ export default function PromiseArchiveScreen({ navigation }: { navigation: any }
   }, []);
 
   const fetchPromises = React.useCallback(async (forceRefresh = false) => {
+    const fetchKey = `promise_${archiveCacheKey}`;
+    if (!forceRefresh && !tryAcquireInFlightFetch(inFlightMapRef.current, fetchKey)) {
+      return;
+    }
+
     const memHit = getInstantMemory<DailyPromise[]>(archiveCacheKey);
     if (memHit?.length) {
       applyPromises(memHit);
-    } else if (!forceRefresh) {
+    } else if (!hasPromisesRef.current && !forceRefresh) {
       setLoading(true);
     }
 
@@ -96,6 +109,7 @@ export default function PromiseArchiveScreen({ navigation }: { navigation: any }
     } catch (error) {
       console.error('Error fetching promises:', error);
     } finally {
+      releaseInFlightFetch(inFlightMapRef.current, fetchKey);
       setLoading(false);
       setRefreshing(false);
     }
@@ -128,7 +142,7 @@ export default function PromiseArchiveScreen({ navigation }: { navigation: any }
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchPromises();
+    fetchPromises(true);
   };
 
   const handleShare = async (promise: DailyPromise) => {
@@ -322,6 +336,13 @@ export default function PromiseArchiveScreen({ navigation }: { navigation: any }
               </TouchableOpacity>
             )}
           </View>
+        ) : shouldShowTabSpinner({ loading, hasData: promises.length > 0, refreshing }) ? (
+          <View style={[styles.noTodayCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <ActivityIndicator size="large" color={colors.accent} />
+            <Text style={[styles.noTodayTxt, { color: colors.text, marginTop: 14 }]}>
+              Loading today&apos;s promise...
+            </Text>
+          </View>
         ) : !loading ? (
           <View style={[styles.noTodayCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={[styles.noTodayIcon, { backgroundColor: colors.background }]}>
@@ -347,6 +368,17 @@ export default function PromiseArchiveScreen({ navigation }: { navigation: any }
                 if (p.status === 'Draft') return false;
                 return p.date < todayStr && p.date >= sevenDaysAgoStr;
               });
+
+              if (shouldShowTabSpinner({ loading, hasData: pastPromises.length > 0, refreshing })) {
+                return (
+                  <View style={{ padding: 24, alignItems: 'center', gap: 10 }}>
+                    <ActivityIndicator size="small" color={colors.accent} />
+                    <Text style={{ color: colors.textSecondary, fontSize: 13 }}>
+                      Loading past promises...
+                    </Text>
+                  </View>
+                );
+              }
 
               if (pastPromises.length === 0) {
                 return (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useCallback } from 'react';
+import React, { useState, useEffect, useContext, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -25,19 +25,15 @@ import {
 } from 'lucide-react-native';
 import { AdminTabContext } from '../../../context/AdminTabContext';
 import { useAuth } from '../../../context/AuthContext';
+import { useChurch } from '../../../context/ChurchContext';
 import CareCellService from '../../../services/CareCellService';
 import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
-import CareCellsOverviewTab from './tabs/CareCellsOverviewTab';
-import CareCellsManageTab from './tabs/CareCellsManageTab';
-import CareCellMembersTab from './tabs/CareCellMembersTab';
-import CareCellMemberLocationsTab from './tabs/CareCellMemberLocationsTab';
-import CareCellMeetingsTab from './tabs/CareCellMeetingsTab';
-import CareCellAttendanceTab from './tabs/CareCellAttendanceTab';
-import CareCellVisitsTab from './tabs/CareCellVisitsTab';
-import CareCellFollowupsTab from './tabs/CareCellFollowupsTab';
-import CareCellAnnouncePrayerTab from './tabs/CareCellAnnouncePrayerTab';
-import CareCellFormModal from './components/CareCellFormModal';
-import MeetingFormModal from './components/MeetingFormModal';
+import { RHEMA_CHURCH_ID } from '../../../constants/ChurchConfig';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  loadWithInstantCache,
+} from '../../../utils/instantCache';
 import { CareCell, CareCellMeeting } from '../../../types/CareCellTypes';
 
 const { width } = Dimensions.get('window');
@@ -66,13 +62,31 @@ export default function AdminCareCellsHub() {
   const insets = useSafeAreaInsets();
   const { goBack, setTabByName } = useContext(AdminTabContext);
   const { user, member, isPlatformSuperAdmin } = useAuth();
+  const { activeChurch } = useChurch();
+  const activeChurchId = activeChurch?.id || RHEMA_CHURCH_ID;
+  const cellsCacheKey = useMemo(
+    () =>
+      makeScopedCacheKey(
+        'admin_care_cells_list_v1',
+        activeChurchId,
+        isPlatformSuperAdmin ? 'superadmin' : user?.uid || member?.id || 'admin'
+      ),
+    [activeChurchId, isPlatformSuperAdmin, user?.uid, member?.id]
+  );
+
+  const initialCellsCache = useMemo(
+    () => getInstantMemory<CareCell[]>(cellsCacheKey),
+    [cellsCacheKey]
+  );
 
   const [activeSubTab, setActiveSubTab] = useState<SubTabKey>('overview');
-  const [cells, setCells] = useState<CareCell[]>([]);
-  const [loadingCells, setLoadingCells] = useState(true);
+  const [cells, setCells] = useState<CareCell[]>(initialCellsCache || []);
+  const [loadingCells, setLoadingCells] = useState(!initialCellsCache);
 
   // Selected cell context shared across tabs
-  const [selectedCellId, setSelectedCellId] = useState<string>('');
+  const [selectedCellId, setSelectedCellId] = useState<string>(() =>
+    initialCellsCache && initialCellsCache.length > 0 ? initialCellsCache[0].id : ''
+  );
   const [selectedMeetingForAttendance, setSelectedMeetingForAttendance] = useState<CareCellMeeting | null>(null);
 
   // Modals
@@ -82,33 +96,53 @@ export default function AdminCareCellsHub() {
   const [createMeetingModalVisible, setCreateMeetingModalVisible] = useState(false);
   const [editingMeeting, setEditingMeeting] = useState<CareCellMeeting | null>(null);
 
-  const loadAllCells = useCallback(async () => {
-    try {
-      const churchId = await CareCellService.getChurchId();
-      const list = await CareCellService.getCareCells(churchId);
-      const filtered = isPlatformSuperAdmin
-        ? list
-        : list.filter(
-          (c) =>
-            (Array.isArray(c.assignedAdminIds) && c.assignedAdminIds.includes(user?.uid)) ||
-            c.leaderId === member?.id ||
-            c.leaderId === user?.uid ||
-            c.assistantLeaderId === member?.id ||
-            c.assistantLeaderId === user?.uid
-        );
-      setCells(filtered);
-      if (filtered.length > 0) {
-        setSelectedCellId((prev) => prev || filtered[0].id);
+  const loadAllCells = useCallback(
+    async (forceRefresh = false) => {
+      try {
+        await loadWithInstantCache<CareCell[]>({
+          key: cellsCacheKey,
+          freshSkipMs: 45_000,
+          forceRefresh,
+          screenName: 'AdminCareCellsHub',
+          fetcher: async () => {
+            const list = await CareCellService.getCareCells(activeChurchId);
+            return isPlatformSuperAdmin
+              ? list
+              : list.filter(
+                  (c) =>
+                    (Array.isArray(c.assignedAdminIds) && c.assignedAdminIds.includes(user?.uid)) ||
+                    c.leaderId === member?.id ||
+                    c.leaderId === user?.uid ||
+                    c.assistantLeaderId === member?.id ||
+                    c.assistantLeaderId === user?.uid
+                );
+          },
+          onCached: (cached) => {
+            setCells(cached);
+            if (cached.length > 0) {
+              setSelectedCellId((prev) => prev || cached[0].id);
+            }
+            setLoadingCells(false);
+          },
+          onFresh: (fresh) => {
+            setCells(fresh);
+            if (fresh.length > 0) {
+              setSelectedCellId((prev) => prev || fresh[0].id);
+            }
+            setLoadingCells(false);
+          },
+        });
+      } catch (e) {
+        console.error('Error loading Care Cells in AdminCareCellsHub:', e);
+      } finally {
+        setLoadingCells(false);
       }
-    } catch (e) {
-      console.error('Error loading Care Cells in AdminCareCellsHub:', e);
-    } finally {
-      setLoadingCells(false);
-    }
-  }, [isPlatformSuperAdmin, user?.uid, member?.id]);
+    },
+    [cellsCacheKey, activeChurchId, isPlatformSuperAdmin, user?.uid, member?.id]
+  );
 
   useEffect(() => {
-    loadAllCells();
+    loadAllCells(false);
   }, [loadAllCells]);
 
   const handleBack = () => {
@@ -241,140 +275,185 @@ export default function AdminCareCellsHub() {
         </ScrollView>
       </View>
 
-      {/* Tab Views */}
+      {/* Tab Views (lazy-required per active subtab so heavy maps/tabs never parse upfront) */}
       <View style={styles.tabContentArea}>
-        {activeSubTab === 'overview' && (
-          <CareCellsOverviewTab
-            cells={cells}
-            onNavigateTab={(idx) => {
-              const target = SUB_TABS[idx]?.key || 'overview';
-              setActiveSubTab(target);
-            }}
-            onOpenCreateCell={() => {
-              setEditingCell(null);
-              setCreateCellModalVisible(true);
-            }}
-            onOpenCreateMeeting={() => {
-              setEditingMeeting(null);
-              setCreateMeetingModalVisible(true);
-            }}
-          />
-        )}
-
-        {activeSubTab === 'manage' && (
-          <CareCellsManageTab
-            cells={cells}
-            onRefreshCells={loadAllCells}
-            onOpenCreateCell={() => {
-              setEditingCell(null);
-              setCreateCellModalVisible(true);
-            }}
-            onEditCell={(cell) => {
-              setEditingCell(cell);
-              setCreateCellModalVisible(true);
-            }}
-            onManageMembers={(cell) => {
-              setSelectedCellId(cell.id);
-              setActiveSubTab('members');
-            }}
-            onViewMeetings={(cell) => {
-              setSelectedCellId(cell.id);
-              setActiveSubTab('meetings');
-            }}
-          />
-        )}
-
-        {activeSubTab === 'members' && (
-          <CareCellMembersTab
-            cells={cells}
-            selectedCellId={selectedCellId}
-            onSelectCellId={setSelectedCellId}
-          />
-        )}
-
-        {activeSubTab === 'locations' && (
-          <CareCellMemberLocationsTab
-            cells={cells}
-            selectedCellId={selectedCellId}
-            onSelectCellId={setSelectedCellId}
-          />
-        )}
-
-        {activeSubTab === 'meetings' && (
-          <CareCellMeetingsTab
-            cells={cells}
-            selectedCellId={selectedCellId}
-            onSelectCellId={setSelectedCellId}
-            onOpenCreateMeeting={() => {
-              setEditingMeeting(null);
-              setCreateMeetingModalVisible(true);
-            }}
-            onEditMeeting={(meeting) => {
-              setEditingMeeting(meeting);
-              setCreateMeetingModalVisible(true);
-            }}
-            onMarkAttendance={(meeting) => {
-              setSelectedMeetingForAttendance(meeting);
-              setActiveSubTab('attendance');
-            }}
-          />
-        )}
-
-        {activeSubTab === 'attendance' && (
-          <CareCellAttendanceTab
-            cells={cells}
-            selectedMeeting={selectedMeetingForAttendance}
-            onClearSelectedMeeting={() => setSelectedMeetingForAttendance(null)}
-          />
-        )}
-
-        {activeSubTab === 'visits' && (
-          <CareCellVisitsTab
-            cells={cells}
-            selectedCellId={selectedCellId}
-            onSelectCellId={setSelectedCellId}
-          />
-        )}
-
-        {activeSubTab === 'followups' && (
-          <CareCellFollowupsTab
-            selectedCellId={selectedCellId}
-            onSelectCell={setSelectedCellId}
-          />
-        )}
-
-        {activeSubTab === 'announcements' && (
-          <CareCellAnnouncePrayerTab />
-        )}
+        {(() => {
+          switch (activeSubTab) {
+            case 'overview': {
+              const CareCellsOverviewTab = require('./tabs/CareCellsOverviewTab').default;
+              return (
+                <CareCellsOverviewTab
+                  churchId={activeChurchId}
+                  cells={cells}
+                  onNavigateTab={(idxOrKey: number | SubTabKey) => {
+                    const target =
+                      typeof idxOrKey === 'string'
+                        ? idxOrKey
+                        : SUB_TABS[idxOrKey]?.key || 'overview';
+                    setActiveSubTab(target);
+                  }}
+                  onOpenCreateCell={() => {
+                    setEditingCell(null);
+                    setCreateCellModalVisible(true);
+                  }}
+                  onOpenCreateMeeting={() => {
+                    setEditingMeeting(null);
+                    setCreateMeetingModalVisible(true);
+                  }}
+                />
+              );
+            }
+            case 'manage': {
+              const CareCellsManageTab = require('./tabs/CareCellsManageTab').default;
+              return (
+                <CareCellsManageTab
+                  cells={cells}
+                  onRefreshCells={() => loadAllCells(true)}
+                  onOpenCreateCell={() => {
+                    setEditingCell(null);
+                    setCreateCellModalVisible(true);
+                  }}
+                  onEditCell={(cell: CareCell) => {
+                    setEditingCell(cell);
+                    setCreateCellModalVisible(true);
+                  }}
+                  onManageMembers={(cell: CareCell) => {
+                    setSelectedCellId(cell.id);
+                    setActiveSubTab('members');
+                  }}
+                  onViewMeetings={(cell: CareCell) => {
+                    setSelectedCellId(cell.id);
+                    setActiveSubTab('meetings');
+                  }}
+                />
+              );
+            }
+            case 'members': {
+              const CareCellMembersTab = require('./tabs/CareCellMembersTab').default;
+              return (
+                <CareCellMembersTab
+                  churchId={activeChurchId}
+                  cells={cells}
+                  selectedCellId={selectedCellId}
+                  onSelectCellId={setSelectedCellId}
+                />
+              );
+            }
+            case 'locations': {
+              const CareCellMemberLocationsTab = require('./tabs/CareCellMemberLocationsTab').default;
+              return (
+                <CareCellMemberLocationsTab
+                  churchId={activeChurchId}
+                  cells={cells}
+                  selectedCellId={selectedCellId}
+                  onSelectCellId={setSelectedCellId}
+                />
+              );
+            }
+            case 'meetings': {
+              const CareCellMeetingsTab = require('./tabs/CareCellMeetingsTab').default;
+              return (
+                <CareCellMeetingsTab
+                  churchId={activeChurchId}
+                  cells={cells}
+                  selectedCellId={selectedCellId}
+                  onSelectCellId={setSelectedCellId}
+                  onOpenCreateMeeting={() => {
+                    setEditingMeeting(null);
+                    setCreateMeetingModalVisible(true);
+                  }}
+                  onEditMeeting={(meeting: CareCellMeeting) => {
+                    setEditingMeeting(meeting);
+                    setCreateMeetingModalVisible(true);
+                  }}
+                  onMarkAttendance={(meeting: CareCellMeeting) => {
+                    setSelectedMeetingForAttendance(meeting);
+                    setActiveSubTab('attendance');
+                  }}
+                />
+              );
+            }
+            case 'attendance': {
+              const CareCellAttendanceTab = require('./tabs/CareCellAttendanceTab').default;
+              return (
+                <CareCellAttendanceTab
+                  churchId={activeChurchId}
+                  cells={cells}
+                  selectedMeeting={selectedMeetingForAttendance}
+                  onClearSelectedMeeting={() => setSelectedMeetingForAttendance(null)}
+                />
+              );
+            }
+            case 'visits': {
+              const CareCellVisitsTab = require('./tabs/CareCellVisitsTab').default;
+              return (
+                <CareCellVisitsTab
+                  churchId={activeChurchId}
+                  cells={cells}
+                  selectedCellId={selectedCellId}
+                  onSelectCellId={setSelectedCellId}
+                />
+              );
+            }
+            case 'followups': {
+              const CareCellFollowupsTab = require('./tabs/CareCellFollowupsTab').default;
+              return (
+                <CareCellFollowupsTab
+                  churchId={activeChurchId}
+                  cells={cells}
+                  selectedCellId={selectedCellId}
+                  onSelectCell={setSelectedCellId}
+                />
+              );
+            }
+            case 'announcements': {
+              const CareCellAnnouncePrayerTab = require('./tabs/CareCellAnnouncePrayerTab').default;
+              return (
+                <CareCellAnnouncePrayerTab
+                  churchId={activeChurchId}
+                  cells={cells}
+                />
+              );
+            }
+            default:
+              return null;
+          }
+        })()}
       </View>
 
-      {/* Create / Edit Care Cell Modal (lazy-mounted only while open) */}
-      {createCellModalVisible && (
-        <CareCellFormModal
-          visible={createCellModalVisible}
-          cellToEdit={editingCell}
-          onClose={() => {
-            setCreateCellModalVisible(false);
-            setEditingCell(null);
-          }}
-          onSaved={loadAllCells}
-        />
-      )}
+      {/* Create / Edit Care Cell Modal (lazy-required & mounted only while open) */}
+      {createCellModalVisible && (() => {
+        const CareCellFormModal = require('./components/CareCellFormModal').default;
+        return (
+          <CareCellFormModal
+            visible={createCellModalVisible}
+            cellToEdit={editingCell}
+            onClose={() => {
+              setCreateCellModalVisible(false);
+              setEditingCell(null);
+            }}
+            onSaved={() => loadAllCells(true)}
+          />
+        );
+      })()}
 
-      {/* Create / Edit Meeting Modal (lazy-mounted only while open) */}
-      {createMeetingModalVisible && (
-        <MeetingFormModal
-          visible={createMeetingModalVisible}
-          cells={cells}
-          defaultCellId={selectedCellId}
-          meetingToEdit={editingMeeting}
-          onClose={() => {
-            setCreateMeetingModalVisible(false);
-            setEditingMeeting(null);
-          }}
-          onSaved={loadAllCells}
-        />
-      )}
+      {/* Create / Edit Meeting Modal (lazy-required & mounted only while open) */}
+      {createMeetingModalVisible && (() => {
+        const MeetingFormModal = require('./components/MeetingFormModal').default;
+        return (
+          <MeetingFormModal
+            visible={createMeetingModalVisible}
+            cells={cells}
+            defaultCellId={selectedCellId}
+            meetingToEdit={editingMeeting}
+            onClose={() => {
+              setCreateMeetingModalVisible(false);
+              setEditingMeeting(null);
+            }}
+            onSaved={() => loadAllCells(true)}
+          />
+        );
+      })()}
     </SafeAreaView>
   );
 }

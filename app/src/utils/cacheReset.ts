@@ -66,6 +66,9 @@ export async function resetAllClientCaches(
   try {
     require('../modules/matrimony/services/matrimonyApi').matrimonyApi?.clearAllCaches?.();
   } catch {}
+  try {
+    require('../services/AdminPermissionService').AdminPermissionService?.clearCache?.();
+  } catch {}
 
   if (reason === 'logout' || reason === 'account_switch') {
     try {

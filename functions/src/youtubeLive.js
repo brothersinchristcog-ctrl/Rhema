@@ -3,6 +3,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { OAuth2Client } from 'google-auth-library';
 import axios from 'axios';
 import { getZoomServerToServerToken, extractZoomUserId } from './meetings.js';
+import { assertAdminModulePermission } from './adminPermissions.js';
 const getDb = () => getFirestore();
 const CLIENT_ID = process.env.GOOGLE_YOUTUBE_CLIENT_ID || '';
 const CLIENT_SECRET = process.env.GOOGLE_YOUTUBE_CLIENT_SECRET || '';
@@ -53,6 +54,7 @@ export const getYoutubeAuthUrl = onCall({ cors: true, invoker: 'public' }, async
     if (!churchId) {
         throw new HttpsError('invalid-argument', 'churchId is required.');
     }
+    await assertAdminModulePermission(getDb(), request.auth, churchId, 'online_meetings');
     const oauth2Client = createOAuth2Client();
     const authUrl = oauth2Client.generateAuthUrl({
         access_type: 'offline',
@@ -182,6 +184,9 @@ export const youtubeOAuthCallback = onRequest({ cors: true, invoker: 'public' },
  * Checks whether the church has an active linked YouTube channel
  */
 export const getYouTubeChannelStatus = onCall({ cors: true, invoker: 'public' }, async (request) => {
+    if (!request.auth?.uid) {
+        throw new HttpsError('unauthenticated', 'Authentication is required.');
+    }
     const { churchId } = request.data || {};
     if (!churchId) {
         throw new HttpsError('invalid-argument', 'churchId is required.');
@@ -211,6 +216,7 @@ export const disconnectYouTubeChannel = onCall({ cors: true, invoker: 'public' }
     if (!churchId) {
         throw new HttpsError('invalid-argument', 'churchId is required.');
     }
+    await assertAdminModulePermission(getDb(), request.auth, churchId, 'online_meetings');
     await getDb().collection('churches').doc(churchId).collection('secrets').doc('youtube').delete();
     await getDb().collection('churches').doc(churchId).collection('settings').doc('youtube_channel').set({
         isConnected: false,
@@ -238,6 +244,7 @@ export const createZoomWithYouTubeLive = onCall({ cors: true, invoker: 'public' 
     if (!churchId) {
         throw new HttpsError('invalid-argument', 'churchId is required.');
     }
+    await assertAdminModulePermission(getDb(), request.auth, churchId, 'online_meetings');
     const startDt = startTime ? new Date(startTime) : new Date();
     const endDt = endTime ? new Date(endTime) : new Date(startDt.getTime() + 60 * 60 * 1000);
     const durationMinutes = Math.max(15, Math.round((endDt.getTime() - startDt.getTime()) / 60000));
@@ -422,6 +429,7 @@ export const checkYouTubeLiveStatus = onCall({ cors: true, invoker: 'public' }, 
     if (!broadcastId || !churchId) {
         throw new HttpsError('invalid-argument', 'broadcastId and churchId are required.');
     }
+    await assertAdminModulePermission(getDb(), request.auth, churchId, 'online_meetings');
     try {
         const ytAccessToken = await getChurchYouTubeAccessToken(churchId);
         const res = await axios.get(`https://www.googleapis.com/youtube/v3/liveBroadcasts?part=status,snippet&id=${broadcastId}`, {
@@ -474,10 +482,11 @@ export const checkYouTubeLiveStatus = onCall({ cors: true, invoker: 'public' }, 
  * Triggers Zoom to begin pushing RTMP to YouTube once the meeting has started
  */
 export const startZoomLiveStream = onCall({ cors: true, invoker: 'public' }, async (request) => {
-    const { meetingId } = request.data || {};
+    const { meetingId, churchId = 'rhema' } = request.data || {};
     if (!meetingId) {
         throw new HttpsError('invalid-argument', 'meetingId is required.');
     }
+    await assertAdminModulePermission(getDb(), request.auth, String(churchId || 'rhema').trim() || 'rhema', 'online_meetings');
     try {
         const zoomToken = await getZoomServerToServerToken();
         const res = await axios.patch(`https://api.zoom.us/v2/meetings/${meetingId}/livestream/status`, { action: 'start' }, {

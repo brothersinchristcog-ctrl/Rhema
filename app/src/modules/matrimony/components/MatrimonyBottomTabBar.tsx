@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -9,6 +9,7 @@ import { FONT_STYLE_OPTIONS, useTheme } from '../../../context/ThemeContext';
 import { matrimonyApi } from '../services/matrimonyApi';
 import { matrimonyChatService } from '../services/matrimonyChatService';
 import { MatrimonyPlanSpec } from '../types/matrimony';
+import { isTabRouteLoaded, markTabRouteLoaded } from '../../../utils/tabLoadingHelper';
 
 const ORANGE = '#EA580C';
 const WHATSAPP_GREEN = '#00A884';
@@ -66,6 +67,27 @@ export default function MatrimonyBottomTabBar({ state, navigation }: BottomTabBa
   }, [user?.uid]);
 
   const activeRouteName = state.routes[state.index]?.name;
+  const [loadingRoute, setLoadingRoute] = useState<string | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const navigatingRef = useRef<string | null>(null);
+
+  const clearTabLoader = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    navigatingRef.current = null;
+    setLoadingRoute(null);
+  }, []);
+
+  useEffect(() => {
+    if (activeRouteName) {
+      markTabRouteLoaded(activeRouteName);
+    }
+    clearTabLoader();
+  }, [activeRouteName, clearTabLoader]);
+
+  useEffect(() => () => clearTabLoader(), [clearTabLoader]);
 
   return (
     <View
@@ -80,16 +102,35 @@ export default function MatrimonyBottomTabBar({ state, navigation }: BottomTabBa
     >
       {TAB_ITEMS.map(({ key, routeName, label, Icon }) => {
         const isActive = activeRouteName === routeName;
+        const isLoading = loadingRoute === routeName;
         const badge = key === 'Messages' ? unreadChatCount : 0;
 
         const handlePress = () => {
-          if (routeName === 'MatrimonyUpgrade') {
-            navigation.getParent()?.navigate('MatrimonyUpgrade');
+          if (navigatingRef.current === routeName || (isActive && routeName !== 'MatrimonyUpgrade')) {
             return;
           }
-          if (!isActive) {
-            navigation.navigate(routeName);
+          const performNav = () => {
+            markTabRouteLoaded(routeName);
+            if (routeName === 'MatrimonyUpgrade') {
+              navigation.getParent()?.navigate('MatrimonyUpgrade');
+            } else if (!isActive) {
+              navigation.navigate(routeName);
+            }
+          };
+
+          if (isTabRouteLoaded(routeName)) {
+            performNav();
+            return;
           }
+
+          navigatingRef.current = routeName;
+          setLoadingRoute(routeName);
+          if (timerRef.current) clearTimeout(timerRef.current);
+          timerRef.current = setTimeout(clearTabLoader, 900);
+          requestAnimationFrame(() => {
+            performNav();
+            requestAnimationFrame(clearTabLoader);
+          });
         };
 
         const showUpgradeOffer = key === 'Upgrade' && platinumDiscountPercent > 0;
@@ -102,7 +143,11 @@ export default function MatrimonyBottomTabBar({ state, navigation }: BottomTabBa
             activeOpacity={0.8}
           >
             <View style={showUpgradeOffer ? styles.upgradeIconStack : styles.iconWrap}>
-              <Icon size={20} color={isActive ? ORANGE : colors.textSecondary} />
+              {isLoading ? (
+                <ActivityIndicator size="small" color={ORANGE} />
+              ) : (
+                <Icon size={20} color={isActive ? ORANGE : colors.textSecondary} />
+              )}
               {badge > 0 && (
                 <View style={styles.navBadge}>
                   <Text style={styles.navBadgeText}>{badge > 99 ? '99+' : badge}</Text>

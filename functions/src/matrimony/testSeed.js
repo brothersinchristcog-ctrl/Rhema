@@ -18,34 +18,9 @@ function isAdminRoleRecord(record) {
         userTypeStr.includes('super'));
 }
 async function requireTestSeedAdmin(request) {
-    const uid = request.auth?.uid;
-    if (!uid) {
-        throw new HttpsError('unauthenticated', 'Authentication is required.');
-    }
-    const token = request.auth?.token || {};
-    if (token.matrimonyAdmin === true || token.superadmin === true) {
-        return uid;
-    }
-    const db = getFirestore();
-    const [platformSnap, memberSnap, userSnap, churchSnap] = await Promise.all([
-        db.collection('platform_admins').doc(uid).get(),
-        db.collection('Rhema Church').doc(DEFAULT_CHURCH_ID).collection('members').doc(uid).get(),
-        db.collection('users').doc(uid).get(),
-        db.collection('Rhema Church').doc(DEFAULT_CHURCH_ID).get(),
-    ]);
-    if (platformSnap.exists && platformSnap.data()?.superadmin === true)
-        return uid;
-    if (memberSnap.exists && isAdminRoleRecord(memberSnap.data()))
-        return uid;
-    if (userSnap.exists && isAdminRoleRecord(userSnap.data()))
-        return uid;
-    if (churchSnap.exists) {
-        const cData = churchSnap.data() || {};
-        const adminUids = [cData.adminUid, cData.createdBy, cData.pastorUid, cData.ownerUid].filter(Boolean);
-        if (adminUids.includes(uid))
-            return uid;
-    }
-    throw new HttpsError('permission-denied', 'Admin privileges are required.');
+    const { assertSuperAdminCaller } = await import('../adminPermissions.js');
+    const result = await assertSuperAdminCaller(getFirestore(), request.auth, DEFAULT_CHURCH_ID);
+    return result.uid;
 }
 async function commitBatchedWrites(db, writes) {
     for (let i = 0; i < writes.length; i += 400) {

@@ -21,6 +21,8 @@ import { Users, Phone, Mail, ChevronDown, ChevronUp, Clock, UserCheck, UserX, Sh
 import FirestoreService from '../../services/FirestoreService';
 import { isGuestMemberDoc, stripGuestSuffix } from '../../utils/phoneUtils';
 import { useChurch } from '../../context/ChurchContext';
+import { useAuth } from '../../context/AuthContext';
+import AdminPermissionService from '../../services/AdminPermissionService';
 import { formatDateDisplay } from '../../utils/DateUtils';
 import { CustomAlert, AlertButton } from '../../components/CustomAlert';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
@@ -98,6 +100,7 @@ const parseSkillsList = (val: any): string[] => {
 export default function AdminMembers() {
   const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { activeChurch, churchId } = useChurch();
+  const { isSuperAdminUser } = useAuth();
   const { setActiveTab } = React.useContext(AdminTabContext);
   const membersCacheKey = useMemo(
     () => makeScopedCacheKey('admin_members_v1', activeChurch?.id || churchId || 'default', 'admin'),
@@ -221,78 +224,88 @@ export default function AdminMembers() {
   }, [membersCacheKey]);
 
   const handlePromoteAdmin = async (memberId: string) => {
+    if (!isSuperAdminUser) {
+      Alert.alert('Super Admin Required', 'Only a Super Admin can promote members to Admin.');
+      return;
+    }
+
+    const prevUserType =
+      members.find(m => m.id === memberId)?.userType || selectedMember?.userType || 'Member';
     // Optimistic UI Update
-    setMembers(prev => prev.map(m => m.id === memberId ? { ...m, userType: 'Admin' } : m));
-    setSelectedMember(prev => (prev && prev.id === memberId ? { ...prev, userType: 'Admin' } : prev));
+    setMembers(prev => prev.map(m => m.id === memberId ? { ...m, userType: 'Admin', isAdmin: true } : m));
+    setSelectedMember(prev => (prev && prev.id === memberId ? { ...prev, userType: 'Admin', isAdmin: true } : prev));
     setMemberDetailsForm(prev => ({ ...prev, userType: 'Admin' }));
-    
-    setAlertConfig({
-      visible: true,
-      title: 'Promoted',
-      message: 'Member has been promoted to Admin.',
-      type: 'success',
-      buttons: [{ text: 'OK', onPress: () => setAlertConfig(prev => ({ ...prev, visible: false })) }]
-    });
 
     try {
-      const success = await FirestoreService.updateMemberRole(memberId, 'Admin');
-      if (!success) {
-        // Revert optimistic update on failure
-        setMembers(prev => prev.map(m => m.id === memberId ? { ...m, userType: 'Member' } : m));
-        setSelectedMember(prev => (prev && prev.id === memberId ? { ...prev, userType: 'Member' } : prev));
-        setMemberDetailsForm(prev => ({ ...prev, userType: 'Member' }));
-        setAlertConfig({
-          visible: true,
-          title: 'Error',
-          message: 'Failed to promote member.',
-          type: 'error',
-          buttons: [{ text: 'OK', onPress: () => setAlertConfig(prev => ({ ...prev, visible: false })) }]
-        });
-      }
-    } catch (err) {
+      const targetChurch = activeChurch?.id || churchId || (await FirestoreService.getChurchId());
+      await AdminPermissionService.promoteOrDemoteChurchAdmin({
+        churchId: targetChurch,
+        targetUid: memberId,
+        newUserType: 'Admin',
+      });
+      setAlertConfig({
+        visible: true,
+        title: 'Promoted',
+        message: 'Member has been promoted to Admin with default module permissions.',
+        type: 'success',
+        buttons: [{ text: 'OK', onPress: () => setAlertConfig(prev => ({ ...prev, visible: false })) }]
+      });
+    } catch (err: any) {
       console.error(err);
       // Revert optimistic update on failure
-      setMembers(prev => prev.map(m => m.id === memberId ? { ...m, userType: 'Member' } : m));
-      setSelectedMember(prev => (prev && prev.id === memberId ? { ...prev, userType: 'Member' } : prev));
-      setMemberDetailsForm(prev => ({ ...prev, userType: 'Member' }));
+      setMembers(prev => prev.map(m => m.id === memberId ? { ...m, userType: prevUserType, isAdmin: false } : m));
+      setSelectedMember(prev => (prev && prev.id === memberId ? { ...prev, userType: prevUserType, isAdmin: false } : prev));
+      setMemberDetailsForm(prev => ({ ...prev, userType: prevUserType }));
+      setAlertConfig({
+        visible: true,
+        title: 'Error',
+        message: err?.message || 'Failed to promote member.',
+        type: 'error',
+        buttons: [{ text: 'OK', onPress: () => setAlertConfig(prev => ({ ...prev, visible: false })) }]
+      });
     }
   };
 
   const handleRemoveAdmin = async (memberId: string, memberName: string) => {
+    if (!isSuperAdminUser) {
+      Alert.alert('Super Admin Required', 'Only a Super Admin can remove Admin privileges.');
+      return;
+    }
+
+    const prevUserType =
+      members.find(m => m.id === memberId)?.userType || selectedMember?.userType || 'Admin';
     // Optimistic UI Update
-    setMembers(prev => prev.map(m => m.id === memberId ? { ...m, userType: 'Member' } : m));
-    setSelectedMember(prev => (prev && prev.id === memberId ? { ...prev, userType: 'Member' } : prev));
+    setMembers(prev => prev.map(m => m.id === memberId ? { ...m, userType: 'Member', isAdmin: false } : m));
+    setSelectedMember(prev => (prev && prev.id === memberId ? { ...prev, userType: 'Member', isAdmin: false } : prev));
     setMemberDetailsForm(prev => ({ ...prev, userType: 'Member' }));
-    
-    setAlertConfig({
-      visible: true,
-      title: 'Access Removed',
-      message: `${memberName} is now a regular member.`,
-      type: 'success',
-      buttons: [{ text: 'OK', onPress: () => setAlertConfig(prev => ({ ...prev, visible: false })) }]
-    });
 
     try {
-      const success = await FirestoreService.updateMemberRole(memberId, 'Member');
-      if (!success) {
-        // Revert optimistic update on failure
-        setMembers(prev => prev.map(m => m.id === memberId ? { ...m, userType: 'Admin' } : m));
-        setSelectedMember(prev => (prev && prev.id === memberId ? { ...prev, userType: 'Admin' } : prev));
-        setMemberDetailsForm(prev => ({ ...prev, userType: 'Admin' }));
-        setAlertConfig({
-          visible: true,
-          title: 'Error',
-          message: 'Failed to remove admin role.',
-          type: 'error',
-          buttons: [{ text: 'OK', onPress: () => setAlertConfig(prev => ({ ...prev, visible: false })) }]
-        });
-      }
-    } catch (err) {
+      const targetChurch = activeChurch?.id || churchId || (await FirestoreService.getChurchId());
+      await AdminPermissionService.promoteOrDemoteChurchAdmin({
+        churchId: targetChurch,
+        targetUid: memberId,
+        newUserType: 'Member',
+      });
+      setAlertConfig({
+        visible: true,
+        title: 'Access Removed',
+        message: `${memberName} is now a regular member.`,
+        type: 'success',
+        buttons: [{ text: 'OK', onPress: () => setAlertConfig(prev => ({ ...prev, visible: false })) }]
+      });
+    } catch (err: any) {
       console.error(err);
       // Revert optimistic update on failure
-      setMembers(prev => prev.map(m => m.id === memberId ? { ...m, userType: 'Admin' } : m));
-      setSelectedMember(prev => (prev && prev.id === memberId ? { ...prev, userType: 'Admin' } : prev));
-      setMemberDetailsForm(prev => ({ ...prev, userType: 'Admin' }));
+      setMembers(prev => prev.map(m => m.id === memberId ? { ...m, userType: prevUserType, isAdmin: true } : m));
+      setSelectedMember(prev => (prev && prev.id === memberId ? { ...prev, userType: prevUserType, isAdmin: true } : prev));
+      setMemberDetailsForm(prev => ({ ...prev, userType: prevUserType }));
+      setAlertConfig({
+        visible: true,
+        title: 'Error',
+        message: err?.message || 'Failed to remove admin role.',
+        type: 'error',
+        buttons: [{ text: 'OK', onPress: () => setAlertConfig(prev => ({ ...prev, visible: false })) }]
+      });
     }
   };
 
@@ -425,7 +438,9 @@ export default function AdminMembers() {
         Anniversary_Date__c: memberDetailsForm.anniversaryDate || '',
         primarySkill: memberDetailsForm.primarySkill?.trim() || '',
         secondarySkill: memberDetailsForm.secondarySkill?.trim() || '',
-        userType: memberDetailsForm.userType || selectedMember.userType || 'member',
+        ...(isSuperAdminUser
+          ? { userType: memberDetailsForm.userType || selectedMember.userType || 'member' }
+          : {}),
       };
 
       const res = await FirestoreService.adminUpdateMember(targetChurchId, selectedMember.id, updatedPayload);
@@ -649,7 +664,7 @@ export default function AdminMembers() {
           firstName: addFirstName,
           lastName: addLastName,
           phone: formattedPhone,
-          userType: newMemberForm.userType,
+          ...(isSuperAdminUser ? { userType: newMemberForm.userType } : {}),
           dob: newMemberForm.dob,
           city: newMemberForm.city,
           baptismDate: newMemberForm.baptismDate,
@@ -664,7 +679,7 @@ export default function AdminMembers() {
           firstName: addFirstName,
           lastName: addLastName,
           phone: formattedPhone,
-          userType: newMemberForm.userType,
+          userType: isSuperAdminUser ? newMemberForm.userType : 'member',
           dob: newMemberForm.dob,
           churchId: targetChurchId,
           city: newMemberForm.city,
@@ -1038,7 +1053,7 @@ May God bless you abundantly! ❤️`;
             />
           </View>
 
-          {/* Role Field */}
+          {/* Role Field (Super Admin only for role modification) */}
           <View style={styles.formGroup}>
             <Text style={styles.formLabel}>Role</Text>
             <TextInput
@@ -1047,13 +1062,17 @@ May God bless you abundantly! ❤️`;
                 isDark
                   ? { backgroundColor: '#18181B', borderColor: 'rgba(255, 255, 255, 0.14)', color: '#FFFFFF' }
                   : { backgroundColor: '#FFFFFF', borderColor: '#CBD5E1', color: '#0F172A' },
-                !isEditingMember && { opacity: 0.85 }
+                (!isEditingMember || !isSuperAdminUser) && { opacity: 0.85 }
               ]}
               value={memberDetailsForm.userType ? memberDetailsForm.userType.split(/[_\s]+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') : 'Member'}
-              onChangeText={(t) => setMemberDetailsForm(prev => ({ ...prev, userType: t }))}
+              onChangeText={(t) => {
+                if (isSuperAdminUser) {
+                  setMemberDetailsForm(prev => ({ ...prev, userType: t }));
+                }
+              }}
               placeholder="Role"
               placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
-              editable={isEditingMember}
+              editable={isEditingMember && isSuperAdminUser}
             />
           </View>
 
@@ -1381,7 +1400,7 @@ May God bless you abundantly! ❤️`;
               </TouchableOpacity>
             )}
 
-            {isAdminRole ? (
+            {isSuperAdminUser && (isAdminRole ? (
               <TouchableOpacity
                 style={[
                   styles.adminActionBtn,
@@ -1431,7 +1450,7 @@ May God bless you abundantly! ❤️`;
                   </Text>
                 </View>
               </TouchableOpacity>
-            )}
+            ))}
 
             {/* Remove Member from Church Button */}
             <TouchableOpacity
@@ -2403,24 +2422,26 @@ May God bless you abundantly! ❤️`;
                   >
                     <Text style={{ fontWeight: '800', color: newMemberForm.userType.trim().toLowerCase() === 'member' ? '#FFFFFF' : (isDark ? '#A1A1AA' : '#6B7280') }}>Member</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={{
-                      flex: 1,
-                      padding: 14,
-                      borderRadius: 12,
-                      borderWidth: 1.5,
-                      alignItems: 'center',
-                      borderColor: newMemberForm.userType.trim().toLowerCase() === 'admin'
-                        ? (isDark ? '#60A5FA' : '#1a2d5a')
-                        : (isDark ? 'rgba(255,255,255,0.14)' : 'rgba(26,45,90,0.1)'),
-                      backgroundColor: newMemberForm.userType.trim().toLowerCase() === 'admin'
-                        ? (isDark ? '#2563EB' : '#1a2d5a')
-                        : (isDark ? '#27272A' : '#FFFFFF')
-                    }}
-                    onPress={() => setNewMemberForm({...newMemberForm, userType: 'admin'})}
-                  >
-                    <Text style={{ fontWeight: '800', color: newMemberForm.userType.trim().toLowerCase() === 'admin' ? '#FFFFFF' : (isDark ? '#A1A1AA' : '#6B7280') }}>Admin</Text>
-                  </TouchableOpacity>
+                  {isSuperAdminUser && (
+                    <TouchableOpacity
+                      style={{
+                        flex: 1,
+                        padding: 14,
+                        borderRadius: 12,
+                        borderWidth: 1.5,
+                        alignItems: 'center',
+                        borderColor: newMemberForm.userType.trim().toLowerCase() === 'admin'
+                          ? (isDark ? '#60A5FA' : '#1a2d5a')
+                          : (isDark ? 'rgba(255,255,255,0.14)' : 'rgba(26,45,90,0.1)'),
+                        backgroundColor: newMemberForm.userType.trim().toLowerCase() === 'admin'
+                          ? (isDark ? '#2563EB' : '#1a2d5a')
+                          : (isDark ? '#27272A' : '#FFFFFF')
+                      }}
+                      onPress={() => setNewMemberForm({...newMemberForm, userType: 'admin'})}
+                    >
+                      <Text style={{ fontWeight: '800', color: newMemberForm.userType.trim().toLowerCase() === 'admin' ? '#FFFFFF' : (isDark ? '#A1A1AA' : '#6B7280') }}>Admin</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               </View>
 

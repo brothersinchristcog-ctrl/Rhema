@@ -105,7 +105,7 @@ export default function SuperAdminRoleManager({ searchQuery: externalQuery = '' 
               };
             });
             setSuperAdmins(list);
-            writeInstantCache(superAdminsCacheKey, list).catch(() => {});
+            writeInstantCache(superAdminsCacheKey, list).catch(() => { });
           }
           if (mountedRef.current) setLoading(false);
         },

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   RefreshControl,
   Alert,
   Dimensions,
+  Platform,
 } from 'react-native';
 import {
   Home,
@@ -33,6 +34,12 @@ import CareCellService from '../../../../services/CareCellService';
 import { formatDateDisplay } from '../../../../utils/DateUtils';
 import { useAuth } from '../../../../context/AuthContext';
 import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
+import { RHEMA_CHURCH_ID } from '../../../../constants/ChurchConfig';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  loadWithInstantCache,
+} from '../../../../utils/instantCache';
 import { CareCell, CareCellVisit, CareCellMembership, VisitStatus, formatTime12h } from '../../../../types/CareCellTypes';
 import CareCellVisitModal from '../components/CareCellVisitModal';
 import CareCellVisitResponsesModal from '../components/CareCellVisitResponsesModal';
@@ -66,13 +73,30 @@ export default function CareCellVisitsTab({
   const { user, member, isPlatformSuperAdmin } = useAuth();
   const [activeCellId, setActiveCellId] = useState<string>(selectedCellId || 'ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'Scheduled' | 'Completed' | 'Cancelled'>('ALL');
-  const [visits, setVisits] = useState<CareCellVisit[]>([]);
-  const [loading, setLoading] = useState(true);
+  const resolvedChurchScope = churchId || RHEMA_CHURCH_ID;
+  const visitsCacheKey = useMemo(
+    () =>
+      makeScopedCacheKey(
+        'admin_care_cell_visits_v1',
+        resolvedChurchScope,
+        `${activeCellId}_${statusFilter}`
+      ),
+    [resolvedChurchScope, activeCellId, statusFilter]
+  );
+  const initialVisitsCache = useMemo(
+    () => getInstantMemory<CareCellVisit[]>(visitsCacheKey),
+    [visitsCacheKey]
+  );
+
+  const [visits, setVisits] = useState<CareCellVisit[]>(initialVisitsCache || []);
+  const [loading, setLoading] = useState(!initialVisitsCache);
   const [refreshing, setRefreshing] = useState(false);
 
   // Modals
   const [createModalVisible, setCreateModalVisible] = useState(false);
   const [selectedVisitForResponses, setSelectedVisitForResponses] = useState<CareCellVisit | null>(null);
+  const selectedVisitIdRef = useRef<string | null>(null);
+  selectedVisitIdRef.current = selectedVisitForResponses?.id || null;
 
   // Visiting Route Map state
   const [routeMapState, setRouteMapState] = useState<{
@@ -150,7 +174,7 @@ export default function CareCellVisitsTab({
     try {
       const activeChurchId = churchId || (await CareCellService.getChurchId());
       await CareCellService.updateVisitRouteStops(activeChurchId, routeMapState.visit.id, stops);
-      loadVisits();
+      loadVisits(true);
     } catch (e: any) {
       console.error('Error saving visit route stops:', e);
       Alert.alert('Save Error', 'Failed to save updated visit route stops.');
@@ -162,37 +186,58 @@ export default function CareCellVisitsTab({
     handleOpenVisitRouteMap(visit, true);
   };
 
-  const loadVisits = useCallback(async () => {
-    try {
-      const activeChurchId = churchId || (await CareCellService.getChurchId());
-      const list = await CareCellService.getVisits(
-        activeChurchId,
-        activeCellId === 'ALL' ? undefined : activeCellId,
-        statusFilter === 'ALL' ? undefined : statusFilter
-      );
-      setVisits(list);
-
-      // Refresh selected visit modal if open
-      if (selectedVisitForResponses) {
-        const fresh = list.find((v) => v.id === selectedVisitForResponses.id);
-        if (fresh) setSelectedVisitForResponses(fresh);
+  const loadVisits = useCallback(
+    async (forceRefresh = false) => {
+      const mem = forceRefresh ? null : getInstantMemory<CareCellVisit[]>(visitsCacheKey);
+      if (mem) {
+        setVisits(mem);
+        setLoading(false);
+      } else {
+        setLoading(true);
       }
-    } catch (e) {
-      console.error('Error loading Care Cell visits:', e);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [churchId, activeCellId, statusFilter, selectedVisitForResponses?.id]);
+      try {
+        const activeChurchId = churchId || (await CareCellService.getChurchId());
+        await loadWithInstantCache<CareCellVisit[]>({
+          key: visitsCacheKey,
+          freshSkipMs: 30_000,
+          forceRefresh,
+          screenName: 'CareCellVisitsTab',
+          fetcher: () =>
+            CareCellService.getVisits(
+              activeChurchId,
+              activeCellId === 'ALL' ? undefined : activeCellId,
+              statusFilter === 'ALL' ? undefined : statusFilter
+            ),
+          onCached: (cached) => {
+            setVisits(cached);
+            setLoading(false);
+          },
+          onFresh: (fresh) => {
+            setVisits(fresh);
+            setLoading(false);
+            if (selectedVisitIdRef.current) {
+              const updated = fresh.find((v) => v.id === selectedVisitIdRef.current);
+              if (updated) setSelectedVisitForResponses(updated);
+            }
+          },
+        });
+      } catch (e) {
+        console.error('Error loading Care Cell visits:', e);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [churchId, activeCellId, statusFilter, visitsCacheKey]
+  );
 
   useEffect(() => {
-    setLoading(true);
-    loadVisits();
+    loadVisits(false);
   }, [loadVisits]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    loadVisits();
+    loadVisits(true);
   };
 
   const handleCellSelect = (id: string) => {
@@ -212,7 +257,7 @@ export default function CareCellVisitsTab({
             try {
               const activeChurchId = churchId || (await CareCellService.getChurchId());
               await CareCellService.updateVisitStatus(activeChurchId, visit.id, newStatus);
-              loadVisits();
+              loadVisits(true);
             } catch (err: any) {
               Alert.alert('Error', err.message || 'Failed to update visit status.');
             }
@@ -235,7 +280,7 @@ export default function CareCellVisitsTab({
             try {
               const activeChurchId = churchId || (await CareCellService.getChurchId());
               await CareCellService.deleteVisit(activeChurchId, visit.id);
-              loadVisits();
+              loadVisits(true);
             } catch (err: any) {
               Alert.alert('Error', err.message || 'Failed to delete visit.');
             }
@@ -395,6 +440,10 @@ export default function CareCellVisitsTab({
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[primaryBtnBg]} />}
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <View style={[styles.emptyIconWrap, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder, borderWidth: 1 }]}>
@@ -610,25 +659,29 @@ export default function CareCellVisitsTab({
         />
       )}
 
-      {/* Create Visit Modal */}
-      <CareCellVisitModal
-        visible={createModalVisible}
-        onClose={() => setCreateModalVisible(false)}
-        cells={cells}
-        initialCellId={activeCellId}
-        createdBy={user?.uid || member?.id || ''}
-        createdByName={member?.name || user?.displayName || 'Super Admin'}
-        onSuccess={loadVisits}
-      />
+      {/* Create Visit Modal (lazy mounted) */}
+      {createModalVisible && (
+        <CareCellVisitModal
+          visible={createModalVisible}
+          onClose={() => setCreateModalVisible(false)}
+          cells={cells}
+          initialCellId={activeCellId}
+          createdBy={user?.uid || member?.id || ''}
+          createdByName={member?.name || user?.displayName || 'Super Admin'}
+          onSuccess={() => loadVisits(true)}
+        />
+      )}
 
-      {/* Member Responses Breakdown Modal */}
-      <CareCellVisitResponsesModal
-        visible={!!selectedVisitForResponses}
-        onClose={() => setSelectedVisitForResponses(null)}
-        visit={selectedVisitForResponses}
-        churchId={churchId}
-        onResponseUpdated={loadVisits}
-      />
+      {/* Member Responses Breakdown Modal (lazy mounted) */}
+      {!!selectedVisitForResponses && (
+        <CareCellVisitResponsesModal
+          visible={!!selectedVisitForResponses}
+          onClose={() => setSelectedVisitForResponses(null)}
+          visit={selectedVisitForResponses}
+          churchId={churchId}
+          onResponseUpdated={() => loadVisits(true)}
+        />
+      )}
 
       {/* Visiting Route Map Modal */}
       {routeMapState.visible && routeMapState.cell && (

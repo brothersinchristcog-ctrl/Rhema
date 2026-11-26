@@ -48,6 +48,7 @@ const resolveUpdateIcon = (type?: string) => {
     case 'birthday':
       return Gift;
     case 'baptism':
+    case 'baptism_anniversary':
     case 'baptism_request':
     case 'baptism_request_admin':
     case 'baptism_request_member':
@@ -59,7 +60,7 @@ const resolveUpdateIcon = (type?: string) => {
     case 'prayer':
       return Heart;
     case 'celebration':
-    case 'baptism_anniversary':
+      return Gift;
     case 'testimony_admin':
     case 'testimony_published':
     case 'testimony_member_status':
@@ -234,6 +235,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
     if (type === 'testimony_member_status') return 'TESTIMONY UPDATE';
     if (type === 'baptism_request_admin' || type === 'baptism_request') return 'BAPTISM REQUEST';
     if (type === 'prayer_request_admin' || type === 'prayer_request' || type === 'prayer') return 'PRAYER REQUEST';
+    if (type === 'baptism_anniversary') return 'BAPTISM ANNIVERSARY';
     if (type === 'baptism' || type === 'baptism_request_member') return 'BAPTISM';
     if (type === 'admin_roster_alert') return 'SERVICE ROSTER ALERT';
     if (type === 'service_roster') return 'SERVICE ROSTER';
@@ -838,6 +840,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
     } else if (data.type === 'celebration') {
       const catHint = String(data.celebrationCategory || data.category || '').toLowerCase();
       const titleHint = String(data.title || '').toLowerCase();
+      const contentHint = String(data.content || '').toLowerCase();
       if (catHint.includes('birthday') || data.title?.includes('🎂') || titleHint.includes('birthday')) {
         icon = Gift;
         color = '#d97706';
@@ -852,8 +855,17 @@ export default function UpdatesScreen({ navigation, route }: any) {
         icon = Heart;
         color = '#be185d';
         resolvedType = 'anniversary';
+      } else if (
+        catHint.includes('baptism') ||
+        titleHint.includes('baptism') ||
+        contentHint.includes('baptism') ||
+        data.title?.includes('🕊️')
+      ) {
+        icon = Droplets;
+        color = '#3b82f6';
+        resolvedType = 'baptism_anniversary';
       } else {
-        icon = Sparkles;
+        icon = Gift;
         color = '#3b82f6';
         resolvedType = 'celebration';
       }
@@ -862,9 +874,9 @@ export default function UpdatesScreen({ navigation, route }: any) {
       color = '#d97706';
       resolvedType = 'birthday';
     } else if (data.type === 'baptism_anniversary' || (data.type === 'baptism' && data.isCelebration)) {
-      icon = Sparkles;
+      icon = Droplets;
       color = '#3b82f6';
-      resolvedType = 'celebration';
+      resolvedType = 'baptism_anniversary';
     } else if (data.type === 'anniversary') {
       icon = Heart;
       color = '#be185d';
@@ -873,8 +885,12 @@ export default function UpdatesScreen({ navigation, route }: any) {
       icon = Gift;
       color = '#d97706';
       resolvedType = 'birthday';
-    } else if (data.title?.includes('🎉') || data.title?.includes('🕊️') || data.content?.includes('Baptism') || data.title?.includes('Baptism') || data.type === 'baptism') {
-      icon = Sparkles;
+    } else if (data.title?.includes('🕊️') || data.content?.toLowerCase()?.includes('baptism') || data.title?.toLowerCase()?.includes('baptism') || data.type === 'baptism') {
+      icon = Droplets;
+      color = '#3b82f6';
+      resolvedType = 'baptism_anniversary';
+    } else if (data.title?.includes('🎉')) {
+      icon = Gift;
       color = '#3b82f6';
       resolvedType = 'celebration';
     } else if (data.type === 'testimony_admin' || data.title?.includes('New Testimony Submitted')) {
@@ -1678,6 +1694,44 @@ export default function UpdatesScreen({ navigation, route }: any) {
                 </View>
                 <Text style={[styles.updateTitle, isDark && { color: colors.text }]}>{update.title}</Text>
                 <Text style={[styles.updateContent, isDark && { color: colors.textSecondary }]} numberOfLines={2}>{update.content}</Text>
+                {update.type === 'youtube_live' && (
+                  <TouchableOpacity
+                    style={{
+                      marginTop: 10,
+                      alignSelf: 'flex-start',
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: '#DC2626',
+                      paddingHorizontal: 14,
+                      paddingVertical: 7,
+                      borderRadius: 999,
+                      gap: 6,
+                    }}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      const rawUrl =
+                        update?.url ||
+                        activeChurch?.socialLinks?.youtube ||
+                        'https://www.youtube.com/@RhemaGlobalMinistries/live';
+                      let targetUrl = rawUrl;
+                      if (rawUrl.includes('@') && !rawUrl.includes('/live') && !rawUrl.includes('/streams')) {
+                        const base = rawUrl.split('?')[0];
+                        targetUrl = base.endsWith('/') ? `${base}live` : `${base}/live`;
+                      }
+                      navigation.navigate('YouTubeLive', {
+                        url: targetUrl,
+                        videoId: update?.videoId,
+                        title: update?.title,
+                        churchId: update?.churchId || activeChurch?.id || 'rhema',
+                      });
+                    }}
+                  >
+                    <Tv size={14} color="#FFFFFF" strokeWidth={2.4} />
+                    <Text style={{ color: '#FFFFFF', fontSize: 12.5, fontWeight: '800' }}>
+                      Join Live
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </TouchableOpacity>
           </SwipeableRow>
@@ -1703,7 +1757,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
               isDark && { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
               selectedUpdate?.type === 'birthday' && styles.modalCardBirthday,
               selectedUpdate?.type === 'anniversary' && styles.modalCardAnniversary,
-              selectedUpdate?.type === 'celebration' && styles.modalCardCelebration,
+              (selectedUpdate?.type === 'celebration' || selectedUpdate?.type === 'baptism_anniversary') && styles.modalCardCelebration,
               (selectedUpdate?.type === 'emergency' || selectedUpdate?.title?.includes('🚨')) && styles.modalCardEmergency
             ]}
           >
@@ -1713,14 +1767,21 @@ export default function UpdatesScreen({ navigation, route }: any) {
                 styles.modalCloseBtn,
                 isDark &&
                 selectedUpdate?.type !== 'birthday' &&
-                selectedUpdate?.type !== 'anniversary' && { backgroundColor: colors.background },
-                (selectedUpdate?.type === 'birthday' || selectedUpdate?.type === 'anniversary') && styles.modalCloseBtnGold
+                selectedUpdate?.type !== 'anniversary' &&
+                selectedUpdate?.type !== 'celebration' &&
+                selectedUpdate?.type !== 'baptism_anniversary' && { backgroundColor: colors.background },
+                (selectedUpdate?.type === 'birthday' ||
+                  selectedUpdate?.type === 'anniversary' ||
+                  selectedUpdate?.type === 'celebration' ||
+                  selectedUpdate?.type === 'baptism_anniversary') && styles.modalCloseBtnGold
               ]}
               onPress={() => setSelectedUpdate(null)}
             >
               <X size={20} color={
                 selectedUpdate?.type === 'birthday' ? '#b45309' :
-                  selectedUpdate?.type === 'anniversary' ? '#be185d' : (isDark ? colors.textSecondary : '#475569')
+                  selectedUpdate?.type === 'anniversary' ? '#be185d' :
+                    (selectedUpdate?.type === 'celebration' || selectedUpdate?.type === 'baptism_anniversary') ? '#1d4ed8' :
+                      (isDark ? colors.textSecondary : '#475569')
               } />
             </TouchableOpacity>
 
@@ -1785,7 +1846,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
                   <Text style={[styles.footerBlessing, { color: '#be185d' }]}>{t('updates.anniversaryBlessing')}</Text>
                 </View>
               </View>
-            ) : selectedUpdate?.type === 'celebration' ? (
+            ) : (selectedUpdate?.type === 'celebration' || selectedUpdate?.type === 'baptism_anniversary') ? (
               // --- 🎉 BAPTISM / CELEBRATION UI ---
               <View style={styles.celebrationContainer}>
                 <View style={styles.balloonRow}>
@@ -1810,6 +1871,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
                 </ScrollView>
 
                 <View style={[styles.celebrationFooter, { borderTopColor: '#3b82f6' }]}>
+                  <Droplets size={22} color="#1d4ed8" />
                   <Text style={[styles.footerBlessing, { color: '#1e3a8a' }]}>{t('updates.baptismBlessing')}</Text>
                 </View>
               </View>

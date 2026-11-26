@@ -58,7 +58,7 @@ export declare const checkYouTubeLiveStatus: import("firebase-functions/v2/https
     watchUrl?: never;
     error?: never;
 } | {
-    status: "live" | "scheduled" | "ended" | "failed";
+    status: "failed" | "scheduled" | "live" | "ended";
     lifeCycleStatus: any;
     watchUrl: string;
     error?: never;

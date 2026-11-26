@@ -2,6 +2,7 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 import axios from 'axios';
+import { assertAdminModulePermission } from './adminPermissions.js';
 const getDb = () => getFirestore();
 let cachedZoomToken = null;
 /**
@@ -344,6 +345,8 @@ async function scheduleZoomMeetingOnApi(params) {
  * Called by AdminZoomMeetingsCreate.tsx when tapping "+ Generate Zoom Meet Link".
  */
 export const generateZoomMeetingLink = onCall({ region: 'asia-south1', cors: true, invoker: 'public' }, async (request) => {
+    const churchId = String(request.data?.churchId || 'rhema').trim() || 'rhema';
+    await assertAdminModulePermission(getDb(), request.auth, churchId, 'online_meetings');
     const { topic, title, description, startTime, endTime, duration, password } = request.data || {};
     const resolvedTopic = String(topic || title || 'Church Online Meeting').trim();
     try {
@@ -415,24 +418,8 @@ function buildMeetingPayload(data, churchId) {
         ...(data.password ? { password: String(data.password).trim() } : {}),
     };
 }
-async function assertMeetingAdmin(uid, churchId) {
-    if (!uid) {
-        throw new HttpsError('unauthenticated', 'Authentication is required.');
-    }
-    const db = getDb();
-    const [platformSnap, memberSnap] = await Promise.all([
-        db.collection('platform_admins').doc(uid).get(),
-        db.collection('Rhema Church').doc(churchId).collection('members').doc(uid).get(),
-    ]);
-    if (platformSnap.exists && platformSnap.data()?.superadmin === true) {
-        return;
-    }
-    const roleStr = String(memberSnap.data()?.userType || memberSnap.data()?.role || '').toUpperCase();
-    if (memberSnap.exists &&
-        (roleStr.includes('ADMIN') || roleStr.includes('PASTOR') || roleStr.includes('SUPER'))) {
-        return;
-    }
-    throw new HttpsError('permission-denied', 'Only church admins or pastors can manage meetings.');
+async function assertMeetingAdmin(auth, churchId) {
+    await assertAdminModulePermission(getDb(), auth, churchId, 'online_meetings');
 }
 /**
  * 📅 CREATE ONLINE MEETING / BIBLE CLASS & NOTIFY MEMBERS (asia-south1)
@@ -441,7 +428,7 @@ async function assertMeetingAdmin(uid, churchId) {
 export const createBibleClass = onCall({ region: 'asia-south1', cors: true, invoker: 'public' }, async (request) => {
     const data = request.data || {};
     const churchId = normalizeChurchId(data.churchId);
-    await assertMeetingAdmin(request.auth?.uid, churchId);
+    await assertMeetingAdmin(request.auth, churchId);
     const baseFields = buildMeetingPayload(data, churchId);
     try {
         const db = getDb();
@@ -501,7 +488,7 @@ export const startBibleClass = onCall({ region: 'asia-south1', cors: true, invok
     if (!meetingId) {
         throw new HttpsError('invalid-argument', 'Meeting ID is required.');
     }
-    await assertMeetingAdmin(request.auth?.uid, churchId);
+    await assertMeetingAdmin(request.auth, churchId);
     try {
         const db = getDb();
         const memberRef = db
@@ -581,7 +568,7 @@ export const endBibleClass = onCall({ region: 'asia-south1', cors: true, invoker
     if (!meetingId) {
         throw new HttpsError('invalid-argument', 'Meeting ID is required.');
     }
-    await assertMeetingAdmin(request.auth?.uid, churchId);
+    await assertMeetingAdmin(request.auth, churchId);
     try {
         const db = getDb();
         const endPatch = {
@@ -628,7 +615,7 @@ export const updateBibleClass = onCall({ region: 'asia-south1', cors: true, invo
     if (!meetingId) {
         throw new HttpsError('invalid-argument', 'Meeting ID is required.');
     }
-    await assertMeetingAdmin(request.auth?.uid, churchId);
+    await assertMeetingAdmin(request.auth, churchId);
     const baseFields = buildMeetingPayload(data, churchId);
     try {
         const db = getDb();
@@ -673,7 +660,7 @@ export const deleteBibleClass = onCall({ region: 'asia-south1', cors: true, invo
     if (!meetingId) {
         throw new HttpsError('invalid-argument', 'Meeting ID is required.');
     }
-    await assertMeetingAdmin(request.auth?.uid, churchId);
+    await assertMeetingAdmin(request.auth, churchId);
     try {
         const db = getDb();
         await Promise.all([

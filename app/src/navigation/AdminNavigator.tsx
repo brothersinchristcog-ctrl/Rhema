@@ -58,6 +58,7 @@ import ChurchService from '../services/ChurchService';
 import { RHEMA_CHURCH_ID } from '../constants/ChurchConfig';
 import { isSuperAdminMember } from '../utils/roleUtils';
 import { perfMonitor } from '../utils/perfMonitor';
+import { getModuleKeyForAdminTab } from '../constants/AdminModules';
 
 const { width } = Dimensions.get('window');
 
@@ -82,7 +83,7 @@ const DotGridIcon = ({ color, size }: { color: string; size: number }) => {
 };
 
 export default function AdminNavigator({ navigation, route }: any) {
-  const { signOut, user, member, setViewMode, isPlatformSuperAdmin } = useAuth();
+  const { signOut, user, member, setViewMode, isPlatformSuperAdmin, canAccessAdminModule } = useAuth();
   const { activeChurch, isImpersonating, impersonatedBranchName, stopImpersonation } = useChurch();
 
 
@@ -150,8 +151,8 @@ export default function AdminNavigator({ navigation, route }: any) {
   const userTypeUpper = String(member?.userType || '').toUpperCase();
   const hasWhatsAppTabRole = userTypeUpper.includes('ADMIN') || userTypeUpper.includes('SUPER');
 
-  const tabs = useMemo(
-    () => [
+  const tabs = useMemo(() => {
+    const rawTabs = [
       { name: 'Dashboard', icon: DotGridIcon, getComponent: () => AdminDashboard },
       ...(activeChurch?.isParentOrganization
         ? [{ name: 'Church Branches', icon: Building2, getComponent: () => require('../screens/admin/AdminOrganization').default }]
@@ -202,9 +203,40 @@ export default function AdminNavigator({ navigation, route }: any) {
       ...(isSuperAdminUser
         ? [{ name: 'App Admin', icon: Shield, getComponent: () => require('../screens/admin/SuperAdminDashboard').default }]
         : []),
-    ],
-    [activeChurch?.isParentOrganization, isSuperAdminUser, hasCareCellAccess, hasWhatsAppTabRole]
-  );
+    ];
+
+    return rawTabs.filter((tab) => {
+      const moduleKey = getModuleKeyForAdminTab(tab.name);
+      return canAccessAdminModule(moduleKey, hasCareCellAccess);
+    });
+  }, [activeChurch?.isParentOrganization, isSuperAdminUser, hasCareCellAccess, hasWhatsAppTabRole, canAccessAdminModule]);
+
+  const activeTabNameRef = useRef<string>('Dashboard');
+  useEffect(() => {
+    const currentName = activeTabNameRef.current;
+    if (!currentName) return;
+    const newIndex = tabs.findIndex((t) => t.name === currentName);
+    if (newIndex === -1) {
+      activeTabNameRef.current = 'Dashboard';
+      setActiveTab(0);
+      setTabHistory([]);
+      setEditingData(null);
+      if (currentName !== 'Dashboard') {
+        setAlertConfig({
+          visible: true,
+          title: 'Access Updated',
+          message: `Access to "${currentName}" is no longer enabled for your account.`,
+          type: 'info',
+        });
+      }
+    } else if (newIndex !== activeTabRef.current) {
+      setActiveTab(newIndex);
+    }
+  }, [tabs]);
+
+  useEffect(() => {
+    activeTabNameRef.current = tabs[activeTab]?.name || 'Dashboard';
+  }, [activeTab, tabs]);
 
   useEffect(() => {
     if (route?.params?.targetTab) {
@@ -226,9 +258,17 @@ export default function AdminNavigator({ navigation, route }: any) {
           setTabHistory(prev => [...prev, prevTab]);
           setActiveTab(idx);
         }, 0);
+      } else if (idx === -1 && lower !== 'dashboard') {
+        setAlertConfig({
+          visible: true,
+          title: 'Access Restricted',
+          message: `You do not have permission to open "${target}". Contact your Super Admin for access.`,
+          type: 'warning',
+        });
+        navigation?.setParams?.({ targetTab: undefined });
       }
     }
-  }, [route?.params?.targetTab, route?.params?.timestamp, route?.params?.requestId, route?.params?.prayerId, route?.params?.testimonyId, route?.params?.serviceId, route?.params?.applicationId, tabs]);
+  }, [route?.params?.targetTab, route?.params?.timestamp, route?.params?.requestId, route?.params?.prayerId, route?.params?.testimonyId, route?.params?.serviceId, route?.params?.applicationId, tabs, navigation]);
 
   const handleSetTab = useCallback((index: number) => {
     if (index !== activeTabRef.current) {

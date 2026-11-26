@@ -29,6 +29,28 @@ import FirestoreService from '../services/FirestoreService';
 import InviteLinkService from '../services/InviteLinkService';
 import { phonesMatch } from '../utils/phoneUtils';
 import { isSuperAdminMember } from '../utils/roleUtils';
+import { isTabRouteLoaded, markTabRouteLoaded } from '../utils/tabLoadingHelper';
+import { withAdminModuleGuard } from '../components/AdminModuleGuard';
+import {
+  AdminModuleKey,
+  getModuleKeyForAdminNotificationType,
+  getModuleKeyForAdminTab,
+} from '../constants/AdminModules';
+import AdminPermissionService from '../services/AdminPermissionService';
+
+const GUARDED_ADMIN_SCREEN_CACHE = new Map<string, React.ComponentType<any>>();
+
+function getGuardedAdminScreen(
+  routeName: string,
+  moduleKey: AdminModuleKey,
+  loader: () => React.ComponentType<any>
+): React.ComponentType<any> {
+  const cached = GUARDED_ADMIN_SCREEN_CACHE.get(routeName);
+  if (cached) return cached;
+  const wrapped = withAdminModuleGuard(loader(), moduleKey);
+  GUARDED_ADMIN_SCREEN_CACHE.set(routeName, wrapped);
+  return wrapped;
+}
 
 // Auth & Onboarding
 import AuthNavigator from './AuthNavigator';
@@ -185,7 +207,36 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
 
   const [publicPrayerCount, setPublicPrayerCount] = useState(0);
   const [lastSeenPrayerCount, setLastSeenPrayerCount] = useState(0);
+  const [loadingTabKey, setLoadingTabKey] = useState<string | null>(null);
+  const loadingTabTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const navigatingTabRef = React.useRef<string | null>(null);
   const pulseAnim = React.useRef(new Animated.Value(1)).current;
+
+  const clearTabLoader = React.useCallback(() => {
+    if (loadingTabTimeoutRef.current) {
+      clearTimeout(loadingTabTimeoutRef.current);
+      loadingTabTimeoutRef.current = null;
+    }
+    navigatingTabRef.current = null;
+    setLoadingTabKey(null);
+  }, []);
+
+  // Mark currently active route as loaded and clear any pending tab indicator on focus change
+  useEffect(() => {
+    const activeRoute = state.routes[state.index];
+    if (activeRoute?.name) {
+      markTabRouteLoaded(activeRoute.name);
+    }
+    clearTabLoader();
+  }, [state.index, state.routes, clearTabLoader]);
+
+  useEffect(() => {
+    const unsubState = navigation.addListener?.('state', clearTabLoader);
+    return () => {
+      if (typeof unsubState === 'function') unsubState();
+      clearTabLoader();
+    };
+  }, [navigation, clearTabLoader]);
 
   useEffect(() => {
     AsyncStorage.getItem('@LastSeenPrayerCount').then((val) => {
@@ -219,6 +270,59 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
   const unseenPrayers = Math.max(0, publicPrayerCount - lastSeenPrayerCount);
   const showPrayerBadge = unseenPrayers > 0;
 
+  const handleTabPress = React.useCallback(
+    (route: any, isFocused: boolean, config: ReturnType<typeof getTabConfig>) => {
+      if (navigatingTabRef.current === config.key) {
+        return;
+      }
+      if (isFocused && !(config.key === 'Prayer' && showPrayerBadge)) {
+        return;
+      }
+
+      if (config.key === 'Prayer' && showPrayerBadge) {
+        setLastSeenPrayerCount(publicPrayerCount);
+        AsyncStorage.setItem('@LastSeenPrayerCount', publicPrayerCount.toString());
+      }
+
+      const event = navigation.emit({
+        type: 'tabPress',
+        target: route.key,
+        canPreventDefault: true,
+      });
+      if (event.defaultPrevented) {
+        return;
+      }
+
+      const performNavigate = () => {
+        markTabRouteLoaded(config.key);
+        if (config.key === 'Prayer' && showPrayerBadge) {
+          navigation.navigate(route.name, { tab: 'public_requests' });
+        } else if (!isFocused) {
+          navigation.navigate(route.name);
+        }
+      };
+
+      // Avoid any unnecessary spinner or frame wait when the tab bundle has already been loaded
+      if (isTabRouteLoaded(config.key)) {
+        performNavigate();
+        return;
+      }
+
+      navigatingTabRef.current = config.key;
+      setLoadingTabKey(config.key);
+      if (loadingTabTimeoutRef.current) {
+        clearTimeout(loadingTabTimeoutRef.current);
+      }
+      loadingTabTimeoutRef.current = setTimeout(clearTabLoader, 900);
+
+      requestAnimationFrame(() => {
+        performNavigate();
+        requestAnimationFrame(clearTabLoader);
+      });
+    },
+    [navigation, showPrayerBadge, publicPrayerCount, clearTabLoader]
+  );
+
   useEffect(() => {
     if (showPrayerBadge) {
       Animated.loop(
@@ -251,27 +355,8 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
             const isFocused = state.index === index;
             const config = getTabConfig(route.name, t);
             const IconComponent = config.Icon;
-
-            const onPress = () => {
-              if (config.key === 'Prayer' && showPrayerBadge) {
-                setLastSeenPrayerCount(publicPrayerCount);
-                AsyncStorage.setItem('@LastSeenPrayerCount', publicPrayerCount.toString());
-              }
-
-              const event = navigation.emit({
-                type: 'tabPress',
-                target: route.key,
-                canPreventDefault: true,
-              });
-
-              if (!event.defaultPrevented) {
-                if (config.key === 'Prayer' && showPrayerBadge) {
-                  navigation.navigate(route.name, { tab: 'public_requests' });
-                } else if (!isFocused) {
-                  navigation.navigate(route.name);
-                }
-              }
-            };
+            const isTabLoading = loadingTabKey === config.key;
+            const onPress = () => handleTabPress(route, isFocused, config);
 
             const activeBg = isDark ? '#1F242D' : (colors.tabBarActiveBg || '#0F766E');
             const activeFg = isDark ? '#FFFFFF' : (colors.tabBarActiveFg || '#FFFFFF');
@@ -292,7 +377,11 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                   <View style={styles.capsuleMatrimonyCard}>
                     <MatrimonySlantedCardBg />
                     <View style={styles.matrimonyCornerIconWrap}>
-                      <MatrimonyCoupleHeartIcon size={17} color="#FFFFFF" />
+                      {isTabLoading ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <MatrimonyCoupleHeartIcon size={17} color="#FFFFFF" />
+                      )}
                     </View>
                     <Text
                       style={styles.matrimonyCardLabel}
@@ -321,11 +410,15 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                 {isFocused ? (
                   <View style={[styles.activeCapsulePill, { backgroundColor: activeBg }]}>
                     <View style={{ position: 'relative' }}>
-                      <IconComponent
-                        color={activeFg}
-                        size={19}
-                        strokeWidth={2.4}
-                      />
+                      {isTabLoading ? (
+                        <ActivityIndicator size="small" color={activeFg} />
+                      ) : (
+                        <IconComponent
+                          color={activeFg}
+                          size={19}
+                          strokeWidth={2.4}
+                        />
+                      )}
                       {config.key === 'Prayer' && showPrayerBadge && (
                         <View style={[styles.capsuleRedDot, { borderColor: activeBg }]} />
                       )}
@@ -341,11 +434,15 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                 ) : (
                   <View style={styles.inactiveCapsuleWrapper}>
                     <View style={{ position: 'relative' }}>
-                      <IconComponent
-                        color={inactiveFg}
-                        size={20}
-                        strokeWidth={2.0}
-                      />
+                      {isTabLoading ? (
+                        <ActivityIndicator size="small" color={inactiveFg} />
+                      ) : (
+                        <IconComponent
+                          color={inactiveFg}
+                          size={20}
+                          strokeWidth={2.0}
+                        />
+                      )}
                       {config.key === 'Prayer' && showPrayerBadge && (
                         <View style={[styles.capsuleRedDot, { borderColor: isDark ? '#09090B' : '#FFFFFF' }]} />
                       )}
@@ -389,27 +486,8 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
         const isFocused = state.index === index;
         const config = getTabConfig(route.name, t);
         const IconComponent = config.Icon;
-
-        const onPress = () => {
-          if (config.key === 'Prayer' && showPrayerBadge) {
-            setLastSeenPrayerCount(publicPrayerCount);
-            AsyncStorage.setItem('@LastSeenPrayerCount', publicPrayerCount.toString());
-          }
-
-          const event = navigation.emit({
-            type: 'tabPress',
-            target: route.key,
-            canPreventDefault: true,
-          });
-
-          if (!event.defaultPrevented) {
-            if (config.key === 'Prayer' && showPrayerBadge) {
-              navigation.navigate(route.name, { tab: 'public_requests' });
-            } else if (!isFocused) {
-              navigation.navigate(route.name);
-            }
-          }
-        };
+        const isTabLoading = loadingTabKey === config.key;
+        const onPress = () => handleTabPress(route, isFocused, config);
 
         if (config.key === 'Matrimony') {
           return (
@@ -426,7 +504,11 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
               <View style={styles.pillMatrimonyCard}>
                 <MatrimonySlantedCardBg />
                 <View style={styles.matrimonyCornerIconWrap}>
-                  <MatrimonyCoupleHeartIcon size={17} color="#FFFFFF" />
+                  {isTabLoading ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <MatrimonyCoupleHeartIcon size={17} color="#FFFFFF" />
+                  )}
                 </View>
                 <Text
                   style={styles.matrimonyCardLabel}
@@ -455,7 +537,11 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
             {isFocused ? (
               <View style={[styles.activeCircle, { backgroundColor: colors.tabBarActiveBg }]}>
                 <View>
-                  <IconComponent color={colors.tabBarActiveFg} size={20} strokeWidth={2.5} />
+                  {isTabLoading ? (
+                    <ActivityIndicator size="small" color={colors.tabBarActiveFg} />
+                  ) : (
+                    <IconComponent color={colors.tabBarActiveFg} size={20} strokeWidth={2.5} />
+                  )}
                   {config.key === 'Prayer' && showPrayerBadge && (
                     <View style={styles.badgeActive}>
                       <Text style={styles.badgeText}>{unseenPrayers}</Text>
@@ -479,7 +565,11 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                       { transform: [{ scale: pulseAnim }], opacity: pulseAnim.interpolate({ inputRange: [1, 1.5], outputRange: [0.8, 0] }) }
                     ]} />
                   )}
-                  <IconComponent color={colors.tabBarInactiveFg} size={22} strokeWidth={2} />
+                  {isTabLoading ? (
+                    <ActivityIndicator size="small" color={colors.tabBarInactiveFg} />
+                  ) : (
+                    <IconComponent color={colors.tabBarInactiveFg} size={22} strokeWidth={2} />
+                  )}
                   {config.key === 'Prayer' && showPrayerBadge && (
                     <View style={styles.badgeInactive}>
                       <Text style={styles.badgeText}>{unseenPrayers}</Text>
@@ -505,7 +595,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
 const LockedFeatureScreen = ({ navigation }: any) => {
   const { member, viewMode, isPlatformSuperAdmin } = useAuth();
   const isSuperAdmin = isSuperAdminMember(member, isPlatformSuperAdmin);
-  const isAdmin = isSuperAdmin || String(member?.userType || '').toUpperCase().includes('ADMIN');
+  const isAdmin = isSuperAdmin || Boolean((member as any)?.isAdmin) || String(member?.userType || '').toUpperCase().includes('ADMIN');
   const showAdminView = isAdmin && viewMode === 'admin';
   const [pulseAnim] = React.useState(new Animated.Value(1));
 
@@ -782,7 +872,7 @@ function Navigation() {
   const handlingInviteRef = React.useRef(false);
 
   const isSuperAdmin = isSuperAdminMember(member, isPlatformSuperAdmin);
-  const isAdmin = isSuperAdmin || String(member?.userType || '').toUpperCase().includes('ADMIN');
+  const isAdmin = isSuperAdmin || Boolean((member as any)?.isAdmin) || String(member?.userType || '').toUpperCase().includes('ADMIN');
   const showAdminView = isAdmin && viewMode === 'admin';
 
   const [pendingNotification, setPendingNotification] = useState<any>(null);
@@ -881,6 +971,13 @@ function Navigation() {
         ) {
           const type = data.type || (data.screen === 'BibleQuizDetail' ? 'quiz' : undefined);
           const quizTargetId = data.quizId || data.relatedId || data.id;
+          const requiredAdminMod =
+            getModuleKeyForAdminNotificationType(type) ||
+            (data.targetTab ? getModuleKeyForAdminTab(String(data.targetTab)) : null);
+          if (requiredAdminMod && !AdminPermissionService.canCurrentUserAccessModuleKey(requiredAdminMod)) {
+            Alert.alert('Access Restricted', 'You do not have permission to open this admin module.');
+            return;
+          }
 
           if (type === 'daily_verse') {
             const rawPeriod = data.period || '';
@@ -1115,6 +1212,13 @@ function Navigation() {
           type === 'job_application_admin' ||
           type === 'admin_roster_alert';
 
+        const requiredAdminMod =
+          getModuleKeyForAdminNotificationType(typeof type === 'string' ? type : '') ||
+          (remoteMessage?.data?.targetTab ? getModuleKeyForAdminTab(String(remoteMessage.data.targetTab)) : null);
+        if (requiredAdminMod && !AdminPermissionService.canCurrentUserAccessModuleKey(requiredAdminMod)) {
+          Alert.alert('Access Restricted', 'You do not have permission to open this admin module.');
+          return;
+        }
         if (isAdminNotification && isAdmin && viewMode !== 'admin') {
           setViewMode('admin');
         }
@@ -1164,6 +1268,13 @@ function Navigation() {
             type === 'job_application_admin' ||
             type === 'admin_roster_alert';
 
+          const initialAdminMod =
+            getModuleKeyForAdminNotificationType(typeof type === 'string' ? type : '') ||
+            (remoteMessage?.data?.targetTab ? getModuleKeyForAdminTab(String(remoteMessage.data.targetTab)) : null);
+          if (initialAdminMod && !AdminPermissionService.canCurrentUserAccessModuleKey(initialAdminMod)) {
+            Alert.alert('Access Restricted', 'You do not have permission to open this admin module.');
+            return;
+          }
           if (isAdminNotification && isAdmin && viewMode !== 'admin') {
             setViewMode('admin');
           }
@@ -1585,9 +1696,9 @@ function Navigation() {
             <Stack.Screen name="JobCircle" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/job_circle/JobCircleScreen').default)} />
             <Stack.Screen name="JobCircleScreen" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/job_circle/JobCircleScreen').default)} />
             <Stack.Screen name="OpportunityDetailScreen" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/job_circle/OpportunityDetailScreen').default)} />
-            <Stack.Screen name="AdminJobCircleDashboard" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/admin/job_circle/AdminJobCircleDashboard').default)} />
-            <Stack.Screen name="AdminOpportunityEditor" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/admin/job_circle/AdminOpportunityEditor').default)} />
-            <Stack.Screen name="AdminMinistryTeamsScreen" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/admin/job_circle/AdminMinistryTeamsScreen').default)} />
+            <Stack.Screen name="AdminJobCircleDashboard" getComponent={() => (isChurchExpired ? LockedFeatureScreen : getGuardedAdminScreen('AdminJobCircleDashboard', 'job_circle', () => require('../screens/admin/job_circle/AdminJobCircleDashboard').default))} />
+            <Stack.Screen name="AdminOpportunityEditor" getComponent={() => (isChurchExpired ? LockedFeatureScreen : getGuardedAdminScreen('AdminOpportunityEditor', 'job_circle', () => require('../screens/admin/job_circle/AdminOpportunityEditor').default))} />
+            <Stack.Screen name="AdminMinistryTeamsScreen" getComponent={() => (isChurchExpired ? LockedFeatureScreen : getGuardedAdminScreen('AdminMinistryTeamsScreen', 'job_circle', () => require('../screens/admin/job_circle/AdminMinistryTeamsScreen').default))} />
             <Stack.Screen name="Sermons" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/SermonsScreen').default)} />
             <Stack.Screen name="Songs" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/SongsScreen').default)} />
             <Stack.Screen name="EventDetails" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/EventDetailsScreen').default)} />
@@ -1627,14 +1738,14 @@ function Navigation() {
             <Stack.Screen name="BibleQuizReview" getComponent={() => require('../screens/quiz/BibleQuizReviewScreen').default} />
             <Stack.Screen name="BibleQuizLeaderboard" getComponent={() => require('../screens/quiz/BibleQuizLeaderboardScreen').default} />
             {/* Pastor / Admin Specific Screens */}
-            <Stack.Screen name="EventDetail" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/admin/pastor_events/PastorEventDetail').default)} />
-            <Stack.Screen name="CreateEvent" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/admin/pastor_events/CreatePastorEvent').default)} />
-            <Stack.Screen name="RoutePlanner" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/admin/pastor_events/PastorEventRoutePlanner').default)} />
-            <Stack.Screen name="EventMap" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/admin/pastor_events/PastorEventMap').default)} />
-            <Stack.Screen name="AIAssistant" getComponent={() => (isChurchExpired ? LockedFeatureScreen : require('../screens/admin/pastor_events/AIAssistantModal').default)} options={{ presentation: 'modal' }} />
-            <Stack.Screen name="EventAttendees" getComponent={() => require('../screens/admin/EventAttendeesScreen').default} />
-            <Stack.Screen name="AdminRegistrationApprovals" getComponent={() => require('../screens/admin/AdminRegistrationApprovals').default} />
-            <Stack.Screen name="AdminMatrimonyProfileDetail" getComponent={() => require('../screens/admin/AdminMatrimonyProfileDetailScreen').default} />
+            <Stack.Screen name="EventDetail" getComponent={() => (isChurchExpired ? LockedFeatureScreen : getGuardedAdminScreen('EventDetail', 'pastor_events', () => require('../screens/admin/pastor_events/PastorEventDetail').default))} />
+            <Stack.Screen name="CreateEvent" getComponent={() => (isChurchExpired ? LockedFeatureScreen : getGuardedAdminScreen('CreateEvent', 'pastor_events', () => require('../screens/admin/pastor_events/CreatePastorEvent').default))} />
+            <Stack.Screen name="RoutePlanner" getComponent={() => (isChurchExpired ? LockedFeatureScreen : getGuardedAdminScreen('RoutePlanner', 'pastor_events', () => require('../screens/admin/pastor_events/PastorEventRoutePlanner').default))} />
+            <Stack.Screen name="EventMap" getComponent={() => (isChurchExpired ? LockedFeatureScreen : getGuardedAdminScreen('EventMap', 'pastor_events', () => require('../screens/admin/pastor_events/PastorEventMap').default))} />
+            <Stack.Screen name="AIAssistant" getComponent={() => (isChurchExpired ? LockedFeatureScreen : getGuardedAdminScreen('AIAssistant', 'pastor_events', () => require('../screens/admin/pastor_events/AIAssistantModal').default))} options={{ presentation: 'modal' }} />
+            <Stack.Screen name="EventAttendees" getComponent={() => getGuardedAdminScreen('EventAttendees', 'events', () => require('../screens/admin/EventAttendeesScreen').default)} />
+            <Stack.Screen name="AdminRegistrationApprovals" getComponent={() => getGuardedAdminScreen('AdminRegistrationApprovals', 'approvals', () => require('../screens/admin/AdminRegistrationApprovals').default)} />
+            <Stack.Screen name="AdminMatrimonyProfileDetail" getComponent={() => getGuardedAdminScreen('AdminMatrimonyProfileDetail', 'matrimony', () => require('../screens/admin/AdminMatrimonyProfileDetailScreen').default)} />
           </>
         ) : (
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />

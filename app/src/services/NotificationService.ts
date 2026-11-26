@@ -2,6 +2,11 @@ import { Platform, PermissionsAndroid, Linking, Alert } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { messaging, firestore, auth } from './firebaseConfig';
+import {
+  getModuleKeyForAdminNotificationType,
+  getModuleKeyForAdminTab,
+} from '../constants/AdminModules';
+import AdminPermissionService from './AdminPermissionService';
 
 const LAST_LIVE_NOTIF_STORAGE_KEY = '@last_yt_live_notif';
 const LIVE_NOTIF_SAME_VIDEO_COOLDOWN_MS = 4 * 60 * 60 * 1000;
@@ -11,6 +16,7 @@ class NotificationService {
   private notificationHandlerConfigured = false;
   private lastLiveNotifKey = '';
   private lastLiveNotifAt = 0;
+  private pendingLiveDedupKeys = new Set<string>();
   private recentSystemNotifs = new Map<string, number>();
 
   messaging() {
@@ -183,7 +189,7 @@ class NotificationService {
       await Notifications.setNotificationCategoryAsync('youtube_live', [
         {
           identifier: 'join_live_now',
-          buttonTitle: '📺 Join Live Now',
+          buttonTitle: '📺 Join Live',
           options: {
             opensAppToForeground: true,
           },
@@ -193,36 +199,42 @@ class NotificationService {
       await Notifications.setNotificationCategoryAsync('youtube_live_category', [
         {
           identifier: 'join_live_now',
-          buttonTitle: '📺 Join Live Now',
+          buttonTitle: '📺 Join Live',
           options: {
             opensAppToForeground: true,
           },
         },
       ]);
-      console.log('✅ [NotificationService] Registered YouTube Live category with "📺 Join Live Now" action button');
+      console.log('✅ [NotificationService] Registered YouTube Live category with "📺 Join Live" action button');
     } catch (e) {
       console.warn('⚠️ [NotificationService] setupCategoriesAndChannels notice:', e);
     }
   }
 
   async displayLiveNotification(data: any, title?: string, body?: string): Promise<boolean> {
+    const liveUrl = (data && data.url) || '';
+    const videoId = (data && data.videoId) || '';
+    const churchId = (data && data.churchId) || 'rhema';
+    const dedupKey = videoId || liveUrl || 'active';
+
+    // Guard synchronously before any `await` so concurrent multicast + topic pushes never race
+    if (this.pendingLiveDedupKeys.has(dedupKey)) {
+      console.log('ℹ️ [NotificationService] Suppressed concurrent YouTube Live notification:', dedupKey);
+      return false;
+    }
+
+    const cooldownMs = videoId ? LIVE_NOTIF_SAME_VIDEO_COOLDOWN_MS : LIVE_NOTIF_FALLBACK_COOLDOWN_MS;
+    const now = Date.now();
+    if (this.lastLiveNotifKey === dedupKey && now - this.lastLiveNotifAt < cooldownMs) {
+      console.log('ℹ️ [NotificationService] Suppressed duplicate YouTube Live notification (in-memory):', dedupKey);
+      return false;
+    }
+
+    this.pendingLiveDedupKeys.add(dedupKey);
     try {
       await this.setupCategoriesAndChannels();
       const pushTitle = title || data?.pushTitle || data?.title || '🔴 We Are LIVE Now!';
       const pushBody = body || data?.pushBody || data?.body || "Join us for a time of worship, prayer and God's Word. Our live service is now streaming on YouTube. Be blessed!";
-
-      const liveUrl = (data && data.url) || '';
-      const videoId = (data && data.videoId) || '';
-      const churchId = (data && data.churchId) || 'rhema';
-
-      const dedupKey = videoId || liveUrl || 'active';
-      const cooldownMs = videoId ? LIVE_NOTIF_SAME_VIDEO_COOLDOWN_MS : LIVE_NOTIF_FALLBACK_COOLDOWN_MS;
-      const now = Date.now();
-
-      if (this.lastLiveNotifKey === dedupKey && now - this.lastLiveNotifAt < cooldownMs) {
-        console.log('ℹ️ [NotificationService] Suppressed duplicate YouTube Live notification (in-memory):', dedupKey);
-        return false;
-      }
 
       try {
         const storedRaw = await AsyncStorage.getItem(LAST_LIVE_NOTIF_STORAGE_KEY);
@@ -267,11 +279,13 @@ class NotificationService {
         },
         trigger: Platform.OS === 'android' ? { channelId: 'church_alerts' } : null,
       });
-      console.log('✅ [NotificationService] Posted YouTube Live notification with "Join Live Now" button to device notification panel');
+      console.log('✅ [NotificationService] Posted YouTube Live notification with "Join Live" button to device notification panel');
       return true;
     } catch (err) {
       console.error('❌ [NotificationService] Failed to post live notification to panel:', err);
       return false;
+    } finally {
+      this.pendingLiveDedupKeys.delete(dedupKey);
     }
   }
 
@@ -367,6 +381,17 @@ class NotificationService {
     console.log('🚀 Navigating for notification type:', type);
 
     try {
+      const requiredAdminModule =
+        getModuleKeyForAdminNotificationType(type) ||
+        (rawData.targetTab ? getModuleKeyForAdminTab(String(rawData.targetTab)) : null);
+      if (requiredAdminModule && !AdminPermissionService.canCurrentUserAccessModuleKey(requiredAdminModule)) {
+        Alert.alert(
+          'Access Restricted',
+          'You do not have permission to open this admin module.'
+        );
+        return;
+      }
+
       const moduleName = String(rawData.module || '').toLowerCase();
       if (moduleName === 'matrimony' || type.startsWith('matrimony_')) {
         console.log('💍 [NotificationService] Routing to Rhema Matrimony:', { type });

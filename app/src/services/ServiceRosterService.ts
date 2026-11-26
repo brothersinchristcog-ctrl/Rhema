@@ -495,12 +495,14 @@ class ServiceRosterService {
    * Fetch single service plan by ID
    */
   async getServicePlanById(churchId: string, planId: string): Promise<ServicePlan | null> {
+    if (!churchId || !planId) return null;
     try {
       const doc = await this.getServicePlansCol(churchId).doc(planId).get();
-      if (!doc.exists) return null;
+      const exists = typeof (doc as any).exists === 'function' ? (doc as any).exists() : Boolean(doc.exists);
+      if (!exists) return null;
       return { id: doc.id, ...doc.data() } as ServicePlan;
     } catch (err) {
-      console.error('[ServiceRosterService] getServicePlanById error:', err);
+      console.warn('[ServiceRosterService] getServicePlanById warning:', err);
       return null;
     }
   }
@@ -1334,14 +1336,19 @@ class ServiceRosterService {
    * Get availability for a member
    */
   async getMemberAvailability(churchId: string, memberId: string, monthYear?: string): Promise<MemberAvailabilityRecord | null> {
+    if (!churchId || !memberId) return null;
     try {
       const targetMonth = monthYear || new Date().toISOString().slice(0, 7);
       const docId = `${memberId}_${targetMonth}`;
       const doc = await this.getMemberAvailabilityCol(churchId).doc(docId).get();
-      if (!doc.exists) return null;
+      const exists = typeof (doc as any).exists === 'function' ? (doc as any).exists() : Boolean(doc.exists);
+      if (!exists) return null;
       return { id: doc.id, ...doc.data() } as MemberAvailabilityRecord;
-    } catch (err) {
-      console.error('[ServiceRosterService] getMemberAvailability error:', err);
+    } catch (err: any) {
+      // Optional availability lookup returns null gracefully; warn instead of triggering red LogBox toast
+      if (__DEV__) {
+        console.warn('[ServiceRosterService] getMemberAvailability fallback:', err?.code || err?.message || err);
+      }
       return null;
     }
   }
@@ -1372,11 +1379,13 @@ class ServiceRosterService {
    * Check if member is available on a specific service date
    */
   async checkMemberAvailability(churchId: string, memberId: string, date: string): Promise<{ isAvailable: boolean; reason?: string }> {
+    if (!churchId || !memberId || !date) return { isAvailable: true };
     try {
       const monthYear = date.slice(0, 7);
       const docId = `${memberId}_${monthYear}`;
       const doc = await this.getMemberAvailabilityCol(churchId).doc(docId).get();
-      if (!doc.exists) return { isAvailable: true };
+      const exists = typeof (doc as any).exists === 'function' ? (doc as any).exists() : Boolean(doc.exists);
+      if (!exists) return { isAvailable: true };
 
       const data = doc.data() as MemberAvailabilityRecord;
       if (data?.unavailableDates?.includes(date)) {
@@ -1387,8 +1396,10 @@ class ServiceRosterService {
       }
 
       return { isAvailable: true };
-    } catch (err) {
-      console.error('[ServiceRosterService] checkMemberAvailability error:', err);
+    } catch (err: any) {
+      if (__DEV__) {
+        console.warn('[ServiceRosterService] checkMemberAvailability fallback:', err?.code || err?.message || err);
+      }
       return { isAvailable: true };
     }
   }

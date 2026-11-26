@@ -2,6 +2,7 @@ import * as functionsV1 from 'firebase-functions/v1';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import axios from 'axios';
 import { onRequest, onCall, HttpsError } from 'firebase-functions/v2/https';
+import { assertAdminModulePermission } from './adminPermissions.js';
 /**
  * Internal helper to send a WhatsApp Template (used by Cron Jobs)
  */
@@ -105,13 +106,15 @@ export const sendWAGreetingLatest = onCall({ invoker: 'public' }, async (request
         if (!churchId) {
             throw new HttpsError('invalid-argument', 'churchId is required for Multi-Tenant WhatsApp integration');
         }
+        // 1. Verify Admin has 'whatsapp' module access before reading credentials
+        const db = getFirestore();
+        await assertAdminModulePermission(db, request.auth, churchId, 'whatsapp');
         // Format phone number to international format without + sign
         let formattedPhone = phoneNumber.replace(/\D/g, '');
         if (formattedPhone.length === 10) {
             formattedPhone = `91${formattedPhone}`; // Default to India if only 10 digits
         }
-        // 1. Fetch Church's BYOC WhatsApp Credentials
-        const db = getFirestore();
+        // 2. Fetch Church's BYOC WhatsApp Credentials
         const secretsDoc = await db.collection('churches').doc(churchId).collection('secrets').doc('payment').get();
         const secrets = secretsDoc.data();
         let WA_ACCESS_TOKEN = "";

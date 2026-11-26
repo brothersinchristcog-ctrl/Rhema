@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  Platform,
 } from 'react-native';
 import {
   Calendar,
@@ -25,6 +26,12 @@ import {
 import CareCellService from '../../../../services/CareCellService';
 import { formatDateDisplay } from '../../../../utils/DateUtils';
 import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
+import { RHEMA_CHURCH_ID } from '../../../../constants/ChurchConfig';
+import {
+  makeScopedCacheKey,
+  getInstantMemory,
+  loadWithInstantCache,
+} from '../../../../utils/instantCache';
 import { CareCell, CareCellMeeting } from '../../../../types/CareCellTypes';
 
 const MONTH_NAMES = [
@@ -33,6 +40,7 @@ const MONTH_NAMES = [
 ];
 
 interface CareCellMeetingsTabProps {
+  churchId?: string;
   cells: CareCell[];
   selectedCellId?: string;
   onSelectCellId: (id: string) => void;
@@ -42,6 +50,7 @@ interface CareCellMeetingsTabProps {
 }
 
 export default function CareCellMeetingsTab({
+  churchId,
   cells,
   selectedCellId,
   onSelectCellId,
@@ -65,28 +74,66 @@ export default function CareCellMeetingsTab({
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [statusFilter, setStatusFilter] = useState<'All' | 'Upcoming' | 'Completed' | 'Cancelled'>('All');
 
-  const [loading, setLoading] = useState(true);
-  const [meetings, setMeetings] = useState<CareCellMeeting[]>([]);
+  const resolvedChurchScope = churchId || RHEMA_CHURCH_ID;
+  const meetingsCacheKey = useMemo(
+    () =>
+      makeScopedCacheKey(
+        'admin_care_cell_meetings_v1',
+        resolvedChurchScope,
+        `${activeCellId}_${selectedYear}_${selectedMonth}_${statusFilter}`
+      ),
+    [resolvedChurchScope, activeCellId, selectedYear, selectedMonth, statusFilter]
+  );
+  const initialMeetingsCache = useMemo(
+    () => getInstantMemory<CareCellMeeting[]>(meetingsCacheKey),
+    [meetingsCacheKey]
+  );
 
-  const loadMeetings = useCallback(async () => {
-    setLoading(true);
-    try {
-      const churchId = await CareCellService.getChurchId();
-      const list = await CareCellService.getMeetings(churchId, activeCellId, {
-        month: selectedMonth,
-        year: selectedYear,
-        status: statusFilter,
-      });
-      setMeetings(list);
-    } catch (e) {
-      console.error('Error loading Care Cell meetings:', e);
-    } finally {
-      setLoading(false);
-    }
-  }, [activeCellId, selectedMonth, selectedYear, statusFilter]);
+  const [loading, setLoading] = useState(!initialMeetingsCache);
+  const [meetings, setMeetings] = useState<CareCellMeeting[]>(initialMeetingsCache || []);
+
+  const loadMeetings = useCallback(
+    async (forceRefresh = false) => {
+      const mem = forceRefresh ? null : getInstantMemory<CareCellMeeting[]>(meetingsCacheKey);
+      if (mem) {
+        setMeetings(mem);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+      try {
+        const activeChurchId = churchId || (await CareCellService.getChurchId());
+        await loadWithInstantCache<CareCellMeeting[]>({
+          key: meetingsCacheKey,
+          freshSkipMs: 30_000,
+          forceRefresh,
+          screenName: 'CareCellMeetingsTab',
+          fetcher: () =>
+            CareCellService.getMeetings(activeChurchId, activeCellId, {
+              month: selectedMonth,
+              year: selectedYear,
+              status: statusFilter,
+            }),
+          onCached: (cached) => {
+            setMeetings(cached);
+            setLoading(false);
+          },
+          onFresh: (fresh) => {
+            setMeetings(fresh);
+            setLoading(false);
+          },
+        });
+      } catch (e) {
+        console.error('Error loading Care Cell meetings:', e);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [churchId, activeCellId, selectedMonth, selectedYear, statusFilter, meetingsCacheKey]
+  );
 
   useEffect(() => {
-    loadMeetings();
+    loadMeetings(false);
   }, [loadMeetings]);
 
   const handleCancelMeeting = (meeting: CareCellMeeting) => {
@@ -102,7 +149,7 @@ export default function CareCellMeetingsTab({
             try {
               const churchId = await CareCellService.getChurchId();
               await CareCellService.cancelMeeting(churchId, meeting.id);
-              loadMeetings();
+              loadMeetings(true);
             } catch (err: any) {
               Alert.alert('Error', err.message || 'Failed to cancel meeting.');
             }
@@ -370,6 +417,10 @@ export default function CareCellMeetingsTab({
           renderItem={renderMeetingCard}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Calendar size={44} color="#CBD5E1" />
