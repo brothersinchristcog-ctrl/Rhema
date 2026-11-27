@@ -66,12 +66,12 @@ const DEFAULT_CENTER = {
   longitudeDelta: 0.12,
 };
 
-const TAB_PIN_IMG_SIZE = 40;
+const TAB_PIN_IMG_SIZE = 42;
 const TAB_PIN_BORDER_W = 3;
 const TAB_PIN_HEAD_SIZE = TAB_PIN_IMG_SIZE + TAB_PIN_BORDER_W * 2;
 const TAB_PIN_WRAP_TOP = 6;
 const TAB_PIN_POINTER_H = 8;
-const TAB_PIN_WRAP_W = 64;
+const TAB_PIN_WRAP_W = 68;
 const TAB_PIN_WRAP_H = TAB_PIN_WRAP_TOP + TAB_PIN_HEAD_SIZE + TAB_PIN_POINTER_H - 1;
 
 interface CareCellMemberLocationsTabProps {
@@ -650,8 +650,8 @@ export default function CareCellMemberLocationsTab({
             provider={PROVIDER_GOOGLE}
             style={styles.map}
             initialRegion={DEFAULT_CENTER}
-            showsUserLocation
-            showsMyLocationButton
+            showsUserLocation={Boolean(activeInAppRoute)}
+            showsMyLocationButton={Boolean(activeInAppRoute)}
             showsCompass
           >
             {/* Proximity Radius Circle when Nearby Mode is active */}
@@ -700,6 +700,7 @@ export default function CareCellMemberLocationsTab({
                   coordinate={{ latitude: first.latitude, longitude: first.longitude }}
                   onPress={() => handleMarkerPress(group)}
                   anchor={{ x: 0.5, y: 1.0 }}
+                  zIndex={isSelected ? 50 : 25}
                   tracksViewChanges={Boolean(
                     (hasPhoto && !loadedMarkerPhotos[first.memberId]) ||
                     isSelected ||
@@ -707,43 +708,48 @@ export default function CareCellMemberLocationsTab({
                   )}
                 >
                   <View collapsable={false} style={styles.tabLollipopWrap}>
-                    {/* Lollipop Head: Circular Avatar Container */}
+                    {/* Lollipop Head: Solid Ring + Full Circle Clip */}
                     <View
                       collapsable={false}
                       style={[
                         styles.tabLollipopHead,
-                        {
-                          borderColor: ringColor,
-                          backgroundColor: hasPhoto ? '#FFFFFF' : ringColor,
-                        },
+                        { backgroundColor: ringColor },
                       ]}
                     >
-                      {hasPhoto ? (
-                        <Image
-                          source={{ uri: photoCandidate }}
-                          style={styles.tabLollipopAvatarImg}
-                          resizeMode="cover"
-                          fadeDuration={0}
-                          onLoad={() => {
-                            setTimeout(() => {
+                      <View
+                        collapsable={false}
+                        style={[
+                          styles.tabLollipopClip,
+                          { backgroundColor: ringColor },
+                        ]}
+                      >
+                        {hasPhoto ? (
+                          <Image
+                            source={{ uri: photoCandidate }}
+                            style={styles.tabLollipopAvatarImg}
+                            resizeMode="cover"
+                            fadeDuration={0}
+                            onLoad={() => {
+                              setTimeout(() => {
+                                setLoadedMarkerPhotos((prev) =>
+                                  prev[first.memberId] ? prev : { ...prev, [first.memberId]: true }
+                                );
+                              }, 400);
+                            }}
+                            onError={() => {
                               setLoadedMarkerPhotos((prev) =>
                                 prev[first.memberId] ? prev : { ...prev, [first.memberId]: true }
                               );
-                            }, 400);
-                          }}
-                          onError={() => {
-                            setLoadedMarkerPhotos((prev) =>
-                              prev[first.memberId] ? prev : { ...prev, [first.memberId]: true }
-                            );
-                          }}
-                        />
-                      ) : (
-                        <View collapsable={false} style={[styles.tabLollipopAvatarFallback, { backgroundColor: ringColor }]}>
-                          <Text style={styles.tabLollipopInitials}>
-                            {(first.memberName || 'M').slice(0, 2).toUpperCase()}
-                          </Text>
-                        </View>
-                      )}
+                            }}
+                          />
+                        ) : (
+                          <View collapsable={false} style={[styles.tabLollipopAvatarFallback, { backgroundColor: ringColor }]}>
+                            <Text style={styles.tabLollipopInitials}>
+                              {(first.memberName || 'M').slice(0, 2).toUpperCase()}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
                     </View>
 
                     {/* Multi-member cluster count pill */}
@@ -1331,8 +1337,14 @@ const styles = createAdminThemedStyles(
       width: TAB_PIN_HEAD_SIZE,
       height: TAB_PIN_HEAD_SIZE,
       borderRadius: TAB_PIN_HEAD_SIZE / 2,
-      borderWidth: TAB_PIN_BORDER_W,
-      backgroundColor: '#FFFFFF',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    tabLollipopClip: {
+      width: TAB_PIN_IMG_SIZE,
+      height: TAB_PIN_IMG_SIZE,
+      borderRadius: TAB_PIN_IMG_SIZE / 2,
+      overflow: 'hidden',
       alignItems: 'center',
       justifyContent: 'center',
     },

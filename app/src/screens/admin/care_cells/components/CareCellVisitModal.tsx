@@ -306,7 +306,7 @@ export default function CareCellVisitModal({
                     >
                       <Building2 size={13} color={isSel ? primaryBtnText : secondaryText} style={{ marginRight: 6 }} />
                       <Text style={[styles.cellChipTxt, isSel && { color: primaryBtnText }]}>
-                        {c.cellCode} ({c.name})
+                        {c.name || c.cellCode}
                       </Text>
                     </TouchableOpacity>
                   );

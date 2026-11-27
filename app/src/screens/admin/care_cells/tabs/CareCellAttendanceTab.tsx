@@ -430,7 +430,7 @@ export default function CareCellAttendanceTab({
                     isSelected && { color: primaryBtnText, fontWeight: '800' },
                   ]}
                 >
-                  {c.cellCode}
+                  {c.name || c.cellCode}
                 </Text>
               </TouchableOpacity>
             );

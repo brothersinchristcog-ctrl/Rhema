@@ -266,7 +266,7 @@ export default function CareCellFollowupsTab({
                     isSelected && { color: primaryBtnText, fontWeight: '800' },
                   ]}
                 >
-                  {item.cellCode || item.name}
+                  {item.id === 'ALL' ? 'All Cells' : (item.name || item.cellCode)}
                 </Text>
               </TouchableOpacity>
             );

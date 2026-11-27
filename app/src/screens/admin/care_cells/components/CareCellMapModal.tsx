@@ -67,12 +67,12 @@ import CareCellService, { KNOWN_REGION_COORDS } from '../../../../services/CareC
 const { width, height } = Dimensions.get('window');
 
 // Lollipop Marker Pin Dimensions (explicit integer px prevent Android MapMarker snapshot clipping)
-const PIN_IMAGE_SIZE = 40;
+const PIN_IMAGE_SIZE = 42;
 const PIN_BORDER_WIDTH = 3;
 const PIN_HEAD_SIZE = PIN_IMAGE_SIZE + PIN_BORDER_WIDTH * 2;
 const PIN_POINTER_W = 14;
 const PIN_POINTER_H = 8;
-const PIN_WRAPPER_W = 64;
+const PIN_WRAPPER_W = 68;
 const PIN_WRAPPER_TOP_PAD = 6;
 const PIN_WRAPPER_H = PIN_WRAPPER_TOP_PAD + PIN_HEAD_SIZE + PIN_POINTER_H - 1;
 const CHURCH_MARKER_SIZE = 34;
@@ -956,8 +956,8 @@ export default function CareCellMapModal({
               provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
               style={StyleSheet.absoluteFillObject}
               initialRegion={centerCoord}
-              showsUserLocation={true}
-              showsMyLocationButton={true}
+              showsUserLocation={navActive}
+              showsMyLocationButton={navActive}
               showsCompass={true}
             >
               {/* Care Cell Meeting Marker: Amber Church Bubble */}
@@ -1006,6 +1006,7 @@ export default function CareCellMapModal({
                       longitude: m.longitude!,
                     }}
                     anchor={{ x: 0.5, y: 1.0 }}
+                    zIndex={isSelected ? 50 : 25}
                     tracksViewChanges={Boolean(
                       (hasPhoto && !loadedMarkerPhotos[markerKey]) ||
                         isSelected ||
@@ -1018,38 +1019,43 @@ export default function CareCellMapModal({
                         collapsable={false}
                         style={[
                           styles.photoPinHead,
-                          {
-                            borderColor: accentColor,
-                            backgroundColor: hasPhoto ? '#FFFFFF' : accentColor,
-                          },
+                          { backgroundColor: accentColor },
                         ]}
                       >
-                        {hasPhoto ? (
-                          <Image
-                            source={{ uri: photoUri }}
-                            style={styles.photoPinImage}
-                            resizeMode="cover"
-                            fadeDuration={0}
-                            onLoad={() => {
-                              setTimeout(() => {
+                        <View
+                          collapsable={false}
+                          style={[
+                            styles.photoPinClip,
+                            { backgroundColor: accentColor },
+                          ]}
+                        >
+                          {hasPhoto ? (
+                            <Image
+                              source={{ uri: photoUri }}
+                              style={styles.photoPinImage}
+                              resizeMode="cover"
+                              fadeDuration={0}
+                              onLoad={() => {
+                                setTimeout(() => {
+                                  setLoadedMarkerPhotos((prev) =>
+                                    prev[markerKey] ? prev : { ...prev, [markerKey]: true }
+                                  );
+                                }, 400);
+                              }}
+                              onError={() => {
                                 setLoadedMarkerPhotos((prev) =>
                                   prev[markerKey] ? prev : { ...prev, [markerKey]: true }
                                 );
-                              }, 400);
-                            }}
-                            onError={() => {
-                              setLoadedMarkerPhotos((prev) =>
-                                prev[markerKey] ? prev : { ...prev, [markerKey]: true }
-                              );
-                            }}
-                          />
-                        ) : (
-                          <View style={[styles.photoPinFallbackInner, { backgroundColor: accentColor }]}>
-                            <Text style={styles.markerInitialsTxt}>
-                              {(m.memberName || 'M').slice(0, 2).toUpperCase()}
-                            </Text>
-                          </View>
-                        )}
+                              }}
+                            />
+                          ) : (
+                            <View style={[styles.photoPinFallbackInner, { backgroundColor: accentColor }]}>
+                              <Text style={styles.markerInitialsTxt}>
+                                {(m.memberName || 'M').slice(0, 2).toUpperCase()}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
                       </View>
 
                       {/* Route Order Badge */}
@@ -1720,8 +1726,14 @@ const styles = createAdminThemedStyles({
     width: PIN_HEAD_SIZE,
     height: PIN_HEAD_SIZE,
     borderRadius: PIN_HEAD_SIZE / 2,
-    borderWidth: PIN_BORDER_WIDTH,
-    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoPinClip: {
+    width: PIN_IMAGE_SIZE,
+    height: PIN_IMAGE_SIZE,
+    borderRadius: PIN_IMAGE_SIZE / 2,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
   },
