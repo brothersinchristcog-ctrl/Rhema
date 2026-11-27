@@ -13,6 +13,7 @@ import {
   Modal,
   Alert,
   FlatList,
+  PixelRatio,
 } from 'react-native';
 import MapView, { Marker, Circle, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import Svg, { Path } from 'react-native-svg';
@@ -66,13 +67,14 @@ const DEFAULT_CENTER = {
   longitudeDelta: 0.12,
 };
 
-const TAB_PIN_IMG_SIZE = 42;
-const TAB_PIN_BORDER_W = 3;
-const TAB_PIN_HEAD_SIZE = TAB_PIN_IMG_SIZE + TAB_PIN_BORDER_W * 2;
-const TAB_PIN_WRAP_TOP = 6;
-const TAB_PIN_POINTER_H = 8;
-const TAB_PIN_WRAP_W = 68;
-const TAB_PIN_WRAP_H = TAB_PIN_WRAP_TOP + TAB_PIN_HEAD_SIZE + TAB_PIN_POINTER_H - 1;
+// Android Fabric react-native-maps MapMarker defaults createDrawable() to 100x100 physical px.
+// Keep the entire marker box strictly <= 96px on Android so full-circle photos never clip in half.
+const TAB_PIN_HEAD_SIZE =
+  Platform.OS === 'android'
+    ? Math.min(42, Math.max(26, Math.floor(96 / Math.max(1, PixelRatio.get()))))
+    : 42;
+const TAB_PIN_BORDER_W = 2;
+const TAB_PIN_IMG_SIZE = TAB_PIN_HEAD_SIZE - TAB_PIN_BORDER_W * 2;
 
 interface CareCellMemberLocationsTabProps {
   cells: CareCell[];
@@ -699,7 +701,7 @@ export default function CareCellMemberLocationsTab({
                   key={`group_${idx}_${first.memberId}`}
                   coordinate={{ latitude: first.latitude, longitude: first.longitude }}
                   onPress={() => handleMarkerPress(group)}
-                  anchor={{ x: 0.5, y: 1.0 }}
+                  anchor={{ x: 0.5, y: 0.5 }}
                   zIndex={isSelected ? 50 : 25}
                   tracksViewChanges={Boolean(
                     (hasPhoto && !loadedMarkerPhotos[first.memberId]) ||
@@ -708,7 +710,7 @@ export default function CareCellMemberLocationsTab({
                   )}
                 >
                   <View collapsable={false} style={styles.tabLollipopWrap}>
-                    {/* Lollipop Head: Solid Ring + Full Circle Clip */}
+                    {/* Full-Circle Avatar Pin */}
                     <View
                       collapsable={false}
                       style={[
@@ -755,7 +757,7 @@ export default function CareCellMemberLocationsTab({
                     {/* Multi-member cluster count pill */}
                     {isMulti && (
                       <View collapsable={false} style={[styles.tabLollipopCountBadge, { backgroundColor: dominantColor }]}>
-                        <Users size={9} color="#FFFFFF" style={{ marginRight: 2 }} />
+                        <Users size={8} color="#FFFFFF" style={{ marginRight: 1 }} />
                         <Text style={styles.tabLollipopCountTxt}>{group.length}</Text>
                       </View>
                     )}
@@ -763,22 +765,9 @@ export default function CareCellMemberLocationsTab({
                     {/* Verified home pin badge */}
                     {hasVerified && !isMulti && (
                       <View collapsable={false} style={styles.tabLollipopVerifiedBadge}>
-                        <Home size={8} color="#FFFFFF" />
+                        <Home size={7} color="#FFFFFF" />
                       </View>
                     )}
-
-                    {/* Lollipop Needle Pointer SVG */}
-                    <Svg
-                      width={14}
-                      height={8}
-                      viewBox="0 0 14 8"
-                      style={{ marginTop: -1 }}
-                    >
-                      <Path
-                        d="M0 0 L7 8 L14 0 Z"
-                        fill={ringColor}
-                      />
-                    </Svg>
                   </View>
                 </Marker>
               );
@@ -1327,11 +1316,10 @@ const styles = createAdminThemedStyles(
 
     // Markers
     tabLollipopWrap: {
-      width: TAB_PIN_WRAP_W,
-      height: TAB_PIN_WRAP_H,
-      paddingTop: TAB_PIN_WRAP_TOP,
+      width: TAB_PIN_HEAD_SIZE,
+      height: TAB_PIN_HEAD_SIZE,
       alignItems: 'center',
-      justifyContent: 'flex-start',
+      justifyContent: 'center',
     },
     tabLollipopHead: {
       width: TAB_PIN_HEAD_SIZE,
@@ -1363,38 +1351,38 @@ const styles = createAdminThemedStyles(
     },
     tabLollipopInitials: {
       color: '#FFFFFF',
-      fontSize: 13,
+      fontSize: 11,
       fontWeight: '800',
       letterSpacing: -0.2,
     },
     tabLollipopCountBadge: {
       position: 'absolute',
-      top: 2,
-      right: 3,
+      top: 0,
+      right: 0,
       flexDirection: 'row',
       alignItems: 'center',
-      minWidth: 20,
-      height: 18,
-      borderRadius: 9,
-      borderWidth: 1.5,
+      minWidth: 16,
+      height: 14,
+      borderRadius: 7,
+      borderWidth: 1,
       borderColor: '#FFFFFF',
-      paddingHorizontal: 4,
+      paddingHorizontal: 3,
       justifyContent: 'center',
     },
     tabLollipopCountTxt: {
       color: '#FFFFFF',
-      fontSize: 10,
+      fontSize: 8.5,
       fontWeight: '800',
     },
     tabLollipopVerifiedBadge: {
       position: 'absolute',
-      top: 2,
-      right: 4,
-      width: 17,
-      height: 17,
-      borderRadius: 8.5,
+      top: 0,
+      right: 0,
+      width: 14,
+      height: 14,
+      borderRadius: 7,
       backgroundColor: '#10B981',
-      borderWidth: 1.5,
+      borderWidth: 1,
       borderColor: '#FFFFFF',
       alignItems: 'center',
       justifyContent: 'center',

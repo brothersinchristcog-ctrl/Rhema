@@ -66,16 +66,15 @@ import CareCellService, { KNOWN_REGION_COORDS } from '../../../../services/CareC
 
 const { width, height } = Dimensions.get('window');
 
-// Lollipop Marker Pin Dimensions (explicit integer px prevent Android MapMarker snapshot clipping)
-const PIN_IMAGE_SIZE = 42;
-const PIN_BORDER_WIDTH = 3;
-const PIN_HEAD_SIZE = PIN_IMAGE_SIZE + PIN_BORDER_WIDTH * 2;
-const PIN_POINTER_W = 14;
-const PIN_POINTER_H = 8;
-const PIN_WRAPPER_W = 68;
-const PIN_WRAPPER_TOP_PAD = 6;
-const PIN_WRAPPER_H = PIN_WRAPPER_TOP_PAD + PIN_HEAD_SIZE + PIN_POINTER_H - 1;
-const CHURCH_MARKER_SIZE = 34;
+// Android Fabric react-native-maps MapMarker defaults createDrawable() to 100x100 physical px.
+// Keep the entire marker box strictly <= 96px on Android so full-circle photos never clip in half.
+const PIN_HEAD_SIZE =
+  Platform.OS === 'android'
+    ? Math.min(42, Math.max(26, Math.floor(96 / Math.max(1, PixelRatio.get()))))
+    : 42;
+const PIN_BORDER_WIDTH = 2;
+const PIN_IMAGE_SIZE = PIN_HEAD_SIZE - PIN_BORDER_WIDTH * 2;
+const CHURCH_MARKER_SIZE = Math.min(34, PIN_HEAD_SIZE);
 
 // Default fallback coordinates if no cell & no member coordinates exist
 const DEFAULT_KURNOOL_LAT = 15.8281;
@@ -1005,7 +1004,7 @@ export default function CareCellMapModal({
                       latitude: m.latitude!,
                       longitude: m.longitude!,
                     }}
-                    anchor={{ x: 0.5, y: 1.0 }}
+                    anchor={{ x: 0.5, y: 0.5 }}
                     zIndex={isSelected ? 50 : 25}
                     tracksViewChanges={Boolean(
                       (hasPhoto && !loadedMarkerPhotos[markerKey]) ||
@@ -1064,19 +1063,6 @@ export default function CareCellMapModal({
                           <Text style={styles.routeOrderCornerTxt}>{inRouteIndex + 1}</Text>
                         </View>
                       ) : null}
-
-                      {/* Lollipop Needle Pointer SVG */}
-                      <Svg
-                        width={PIN_POINTER_W}
-                        height={PIN_POINTER_H}
-                        viewBox={`0 0 ${PIN_POINTER_W} ${PIN_POINTER_H}`}
-                        style={styles.photoPinPointerSvg}
-                      >
-                        <Path
-                          d={`M0 0 L${PIN_POINTER_W / 2} ${PIN_POINTER_H} L${PIN_POINTER_W} 0 Z`}
-                          fill={accentColor}
-                        />
-                      </Svg>
                     </View>
                   </Marker>
                 );
@@ -1714,13 +1700,12 @@ const styles = createAdminThemedStyles({
     elevation: 4,
   },
 
-  /* Lollipop Marker Styles */
+  /* Full-Circle Profile Marker Styles */
   photoPinWrapper: {
-    width: PIN_WRAPPER_W,
-    height: PIN_WRAPPER_H,
-    paddingTop: PIN_WRAPPER_TOP_PAD,
+    width: PIN_HEAD_SIZE,
+    height: PIN_HEAD_SIZE,
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
   },
   photoPinHead: {
     width: PIN_HEAD_SIZE,
@@ -1751,30 +1736,27 @@ const styles = createAdminThemedStyles({
     justifyContent: 'center',
   },
   markerInitialsTxt: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '800',
     color: '#FFFFFF',
   },
   routeOrderCornerBadge: {
     position: 'absolute',
-    top: 2,
-    right: 4,
+    top: 0,
+    right: 0,
     backgroundColor: '#059669',
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: '#FFFFFF',
   },
   routeOrderCornerTxt: {
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '900',
     color: '#FFFFFF',
-  },
-  photoPinPointerSvg: {
-    marginTop: -1,
   },
 
   /* Top Route Planning Floating Bar */
