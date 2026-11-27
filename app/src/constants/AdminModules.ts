@@ -391,11 +391,177 @@ export function getModuleKeyForAdminNotificationType(typeRaw?: string | null): A
   if (type === 'baptism_request_admin' || type === 'baptism_request' || type === 'baptism') return 'baptism';
   if (type === 'testimony_admin') return 'testimonies';
   if (type === 'admin_roster_alert') return 'service_roster';
+  if (type === 'matrimony_profile_admin' || type === 'matrimony_report_admin') return 'matrimony';
+  if (type === 'kids_safety_admin') return 'kids_ministry';
   if (type === 'expense_approval' || type === 'expense_approved' || type === 'expense_rejected' || type === 'invoice') {
     return 'expense';
   }
   if (type === 'new_church') return 'app_admin';
   return null;
+}
+
+const ALWAYS_SUPER_ADMIN_TYPES = new Set<string>([
+  'expense_approval',
+  'expense_approved',
+  'expense_rejected',
+  'invoice',
+  'new_church',
+]);
+
+const EXPLICIT_ADMIN_ONLY_TYPES = new Set<string>([
+  'registration_request_admin',
+  'job_application_admin',
+  'volunteer_application_admin',
+  'prayer_request_admin',
+  'baptism_request_admin',
+  'testimony_admin',
+  'admin_roster_alert',
+  'matrimony_profile_admin',
+  'matrimony_report_admin',
+]);
+
+export function isSuperAdminOnlyNotification(data: any): boolean {
+  if (!data || typeof data !== 'object') return false;
+  const type = String(data.type || '').trim().toLowerCase();
+  return data.targetRole === 'super_admin' || ALWAYS_SUPER_ADMIN_TYPES.has(type);
+}
+
+export function isAdminOnlyNotification(data: any): boolean {
+  if (!data || typeof data !== 'object') return false;
+  if (isSuperAdminOnlyNotification(data)) return true;
+  if (data.targetRole === 'admin' || data.recipientRole === 'admin') return true;
+  const type = String(data.type || '').trim().toLowerCase();
+  return EXPLICIT_ADMIN_ONLY_TYPES.has(type);
+}
+
+/**
+ * Resolves the AdminModuleKey required to open/view an admin notification document.
+ * Bare legacy types ('prayer_request', 'prayer', 'baptism_request', 'baptism') are only
+ * treated as admin-module gated when the payload targets an admin/AdminRoot screen.
+ */
+export function getRequiredAdminModuleForNotification(data: any): AdminModuleKey | null {
+  if (!data || typeof data !== 'object') return null;
+  const type = String(data.type || '').trim().toLowerCase();
+  if (data.targetRole === 'member' || data.recipientRole === 'member') {
+    return null;
+  }
+
+  const explicitMod = String(data.requiredAdminModule || '').trim() as AdminModuleKey;
+  if (explicitMod && MODULE_BY_KEY.has(explicitMod)) {
+    return explicitMod;
+  }
+
+  if (
+    type === 'prayer_request' ||
+    type === 'prayer' ||
+    type === 'baptism_request' ||
+    type === 'baptism'
+  ) {
+    const isAdminTargeted =
+      data.targetRole === 'admin' ||
+      data.recipientRole === 'admin' ||
+      data.screen === 'AdminRoot' ||
+      String(data.targetTab || '').trim().length > 0;
+    if (!isAdminTargeted) return null;
+  }
+
+  const fromType = getModuleKeyForAdminNotificationType(type);
+  if (fromType) return fromType;
+
+  if (data.targetTab) {
+    return getModuleKeyForAdminTab(String(data.targetTab));
+  }
+  return null;
+}
+
+function normalizePhoneTail(raw: unknown): string {
+  const digits = String(raw || '').replace(/\D/g, '');
+  return digits.length >= 6 ? digits.slice(-10) : '';
+}
+
+function matchesNotificationRecipientTarget(
+  data: any,
+  userIds: string[],
+  userPhones: string[]
+): boolean {
+  const cleanUserIds = new Set(userIds.map((v) => String(v || '').trim()).filter(Boolean));
+  const cleanUserPhones = userPhones.map(normalizePhoneTail).filter(Boolean);
+
+  const singleIds = [
+    data.targetMemberId,
+    data.targetUid,
+    data.recipientId,
+    data.targetAccountId,
+  ]
+    .map((v) => String(v || '').trim())
+    .filter(Boolean);
+  const multiIds = Array.isArray(data.targetUids)
+    ? data.targetUids.map((v: any) => String(v || '').trim()).filter(Boolean)
+    : [];
+  const allTargetIds = [...singleIds, ...multiIds];
+
+  const singlePhone = normalizePhoneTail(data.targetPhone);
+  const multiPhones = Array.isArray(data.targetPhones)
+    ? data.targetPhones.map(normalizePhoneTail).filter(Boolean)
+    : [];
+  const allTargetPhones = [...(singlePhone ? [singlePhone] : []), ...multiPhones];
+
+  if (allTargetIds.length === 0 && allTargetPhones.length === 0) {
+    return true;
+  }
+
+  const idMatched = allTargetIds.some((id) => cleanUserIds.has(id));
+  const phoneMatched = allTargetPhones.some((tPhone) =>
+    cleanUserPhones.some((uPhone) => uPhone === tPhone || uPhone.endsWith(tPhone) || tPhone.endsWith(uPhone))
+  );
+  return idMatched || phoneMatched;
+}
+
+/**
+ * Shared client-side visibility check across UpdatesScreen, JobCircleScreen,
+ * and foreground notification listeners.
+ */
+export function canViewNotificationRecord(params: {
+  data: any;
+  userIds: Array<string | null | undefined>;
+  userPhones: Array<string | null | undefined>;
+  isAdmin: boolean;
+  isSuperAdmin: boolean;
+  canAccessAdminModule: (key: AdminModuleKey | null | undefined, hasCareCellAccess?: boolean) => boolean;
+}): boolean {
+  const { data, userIds, userPhones, isAdmin, isSuperAdmin, canAccessAdminModule } = params;
+  if (!data || typeof data !== 'object') return false;
+
+  const type = String(data.type || '').trim().toLowerCase();
+  const cleanUserIds = userIds.map((v) => String(v || '').trim()).filter(Boolean);
+  const cleanUserPhones = userPhones.map((v) => String(v || '').trim()).filter(Boolean);
+
+  if (isSuperAdminOnlyNotification(data) && !isSuperAdmin) {
+    return false;
+  }
+
+  // Hybrid Admin/Teacher Kids Ministry alerts: visible to authorized Kids Ministry Admins
+  // OR explicitly targeted active Kids Ministry Teachers.
+  if (type === 'kids_safety_admin' || data.targetRole === 'kids_ministry_staff') {
+    if (isSuperAdmin || (isAdmin && canAccessAdminModule('kids_ministry'))) {
+      return true;
+    }
+    const targetUids = Array.isArray(data.targetUids) ? data.targetUids : [];
+    const targetPhones = Array.isArray(data.targetPhones) ? data.targetPhones : [];
+    const hasExplicitTarget = targetUids.length > 0 || targetPhones.length > 0 || Boolean(data.targetMemberId || data.targetUid || data.recipientId || data.targetPhone);
+    if (!hasExplicitTarget) return false;
+    return matchesNotificationRecipientTarget(data, cleanUserIds, cleanUserPhones);
+  }
+
+  if (isAdminOnlyNotification(data)) {
+    if (!isAdmin) return false;
+    const requiredMod = getRequiredAdminModuleForNotification(data);
+    if (requiredMod && !canAccessAdminModule(requiredMod)) {
+      return false;
+    }
+  }
+
+  return matchesNotificationRecipientTarget(data, cleanUserIds, cleanUserPhones);
 }
 
 /**

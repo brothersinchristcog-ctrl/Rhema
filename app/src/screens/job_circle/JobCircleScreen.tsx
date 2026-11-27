@@ -52,6 +52,8 @@ import {
 } from 'lucide-react-native';
 import { RHEMA_LOGO_PATH, RHEMA_LOGO_VIEWBOX, RHEMA_LOGO_ASPECT } from '../auth/rhemaLogoPath';
 import { useAuth } from '../../context/AuthContext';
+import { canViewNotificationRecord } from '../../constants/AdminModules';
+import { isSuperAdminMember } from '../../utils/roleUtils';
 import { useChurch } from '../../context/ChurchContext';
 import { useTheme } from '../../context/ThemeContext';
 import { Colors } from '../../theme/Theme';
@@ -85,7 +87,7 @@ interface JobCircleScreenProps {
 
 export default function JobCircleScreen({ navigation, route }: JobCircleScreenProps) {
   const insets = useSafeAreaInsets();
-  const { user, member } = useAuth();
+  const { user, member, isPlatformSuperAdmin, canAccessAdminModule } = useAuth();
   const { activeChurch } = useChurch();
   const { colors, isDark } = useTheme();
 
@@ -242,10 +244,8 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
   useEffect(() => {
     if (!churchId) return;
     const adminRoleStr = `${member?.userType || ''} ${(member as any)?.role || ''}`.toUpperCase();
-    const isAdminUser = adminRoleStr.includes('ADMIN') || adminRoleStr.includes('SUPER') || adminRoleStr.includes('PASTOR');
-    const uId = user?.uid || '';
-    const mId = member?.id || '';
-    const uPhone = (user?.phoneNumber || member?.phone || '').replace(/\D/g, '');
+    const isSuperAdminUser = isSuperAdminMember(member, isPlatformSuperAdmin);
+    const isAdminUser = isSuperAdminUser || adminRoleStr.includes('ADMIN') || adminRoleStr.includes('PASTOR');
     const readSet = new Set(readJobNotifIds);
 
     try {
@@ -269,22 +269,14 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
                 d.referenceType === 'job_circle_application';
               if (!isJobType) return false;
 
-              if ((d.targetRole === 'admin' || d.type === 'job_application_admin') && !isAdminUser) {
-                return false;
-              }
-
-              const targetIdVal = d.targetMemberId || d.targetUid || d.recipientId;
-              const targetPhoneVal = (d.targetPhone || '').replace(/\D/g, '');
-              if (targetIdVal || targetPhoneVal) {
-                const idMatch = Boolean(targetIdVal && ((uId && targetIdVal === uId) || (mId && targetIdVal === mId)));
-                const phoneMatch = Boolean(
-                  targetPhoneVal.length > 5 &&
-                  uPhone.length > 5 &&
-                  (uPhone.endsWith(targetPhoneVal) || targetPhoneVal.endsWith(uPhone))
-                );
-                if (!idMatch && !phoneMatch) return false;
-              }
-              return true;
+              return canViewNotificationRecord({
+                data: d,
+                userIds: [user?.uid, member?.id, (member as any)?.accountId],
+                userPhones: [user?.phoneNumber, member?.phone, (member as any)?.mobileNumber],
+                isAdmin: isAdminUser,
+                isSuperAdmin: isSuperAdminUser,
+                canAccessAdminModule,
+              });
             }).length;
             setUnreadNotifCount(count);
           }
@@ -296,7 +288,7 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
     } catch (e) {
       console.warn('[JobCircleScreen] notifications listener caught error:', e);
     }
-  }, [churchId, user?.uid, user?.phoneNumber, member?.id, member?.phone, member?.userType, readJobNotifIds]);
+  }, [churchId, user?.uid, user?.phoneNumber, member?.id, member?.phone, (member as any)?.mobileNumber, (member as any)?.accountId, member?.userType, isPlatformSuperAdmin, canAccessAdminModule, readJobNotifIds]);
 
   const loadAppliedStatus = async () => {
     if (!user?.uid) return;

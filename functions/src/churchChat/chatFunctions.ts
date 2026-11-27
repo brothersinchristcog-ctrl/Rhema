@@ -27,7 +27,7 @@ function formatMessagePreview(
   encrypted = false
 ): string {
   const clean = text.trim();
-  const isCipher = encrypted || clean.startsWith('e2ee:v1:');
+  const isCipher = encrypted || /^e2ee:v\d+:/i.test(clean);
   switch (type) {
     case 'image':
       return !isCipher && clean ? `📷 ${clean}` : '📷 Photo';

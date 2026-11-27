@@ -47,6 +47,7 @@ import {
 import { FlatList, Keyboard } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import PrayerVerseService, { BibleBookItem } from '../../services/PrayerVerseService';
+import { BibleService } from '../../services/BibleService';
 import FirestoreService from '../../services/FirestoreService';
 import Theme from '../../theme/Theme';
 import { useAuth } from '../../context/AuthContext';
@@ -1288,12 +1289,12 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
           </View>
           {item.verseText ? (
             <Text style={{ fontSize: 13, fontStyle: 'italic', color: isDark ? '#FFFFFF' : '#713F12', lineHeight: 18 }}>
-              "{item.verseText}"
+              "{BibleService.cleanVerseText(item.verseText)}"
             </Text>
           ) : null}
-          {item.verseTextTe && item.verseTextTe.trim() !== (item.verseText || '').trim() ? (
+          {item.verseTextTe && BibleService.cleanVerseText(item.verseTextTe) !== BibleService.cleanVerseText(item.verseText || '') ? (
             <Text style={{ fontSize: 12, fontStyle: 'italic', color: isDark ? '#D4D4D8' : '#854D0E', marginTop: 3 }}>
-              "{item.verseTextTe}"
+              "{BibleService.cleanVerseText(item.verseTextTe)}"
             </Text>
           ) : null}
         </View>
@@ -1699,12 +1700,12 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
                   </View>
                   {detailPrayer.verseText ? (
                     <Text style={{ fontSize: 14, fontStyle: 'italic', color: isDark ? '#FFFFFF' : '#713F12', lineHeight: 20 }}>
-                      "{detailPrayer.verseText}"
+                      "{BibleService.cleanVerseText(detailPrayer.verseText)}"
                     </Text>
                   ) : null}
-                  {detailPrayer.verseTextTe && detailPrayer.verseTextTe.trim() !== (detailPrayer.verseText || '').trim() ? (
+                  {detailPrayer.verseTextTe && BibleService.cleanVerseText(detailPrayer.verseTextTe) !== BibleService.cleanVerseText(detailPrayer.verseText || '') ? (
                     <Text style={{ fontSize: 13, fontStyle: 'italic', color: isDark ? '#D4D4D8' : '#854D0E', marginTop: 4 }}>
-                      "{detailPrayer.verseTextTe}"
+                      "{BibleService.cleanVerseText(detailPrayer.verseTextTe)}"
                     </Text>
                   ) : null}
                 </View>

@@ -371,10 +371,21 @@ export const BibleService = {
    */
   cleanVerseText(text: string): string {
     if (!text) return '';
-    return text
-      .replace(/<S>\d*<\/S>/gi, '')
-      .replace(/<sup[^>]*>.*?<\/sup>/gi, '')
+    let cleaned = String(text)
+      .replace(/<S[^>]*>[\s\S]*?<\/S>/gi, '')
+      .replace(/<sup[^>]*>[\s\S]*?<\/sup>/gi, '')
       .replace(/<[^>]+>/g, '')
+      .replace(/\{[HG]\d{1,5}\}|\[[HG]\d{1,5}\]/gi, '');
+
+    // Strip inline Strong's Concordance numbers appended to words (e.g. "careful3309 ... minds5216 3540 through1722")
+    if (/[A-Za-z\u00C0-\u024F]\d{1,5}(?=\s|[.,;:!?)'"”’]|$)/.test(cleaned)) {
+      cleaned = cleaned
+        .replace(/(^|\s)\d{1,5}(?=\s|[.,;:!?)'"”’]|$)/g, '$1')
+        .replace(/([A-Za-z\u00C0-\u024F])\d{1,5}/g, '$1');
+    }
+
+    return cleaned
+      .replace(/\s+([,.;:!?])/g, '$1')
       .replace(/\s{2,}/g, ' ')
       .trim();
   },
@@ -409,8 +420,12 @@ export const BibleService = {
           if (cachedRaw) {
             const parsed = JSON.parse(cachedRaw);
             if (Array.isArray(parsed) && parsed.length > 0) {
-              CHAPTER_MEMORY_CACHE.set(cacheKey, parsed);
-              return parsed;
+              const cleanedCached = parsed.map((v: any) => ({
+                ...v,
+                text: BibleService.cleanVerseText(v.text),
+              }));
+              CHAPTER_MEMORY_CACHE.set(cacheKey, cleanedCached);
+              return cleanedCached;
             }
           }
         } catch {}

@@ -5,6 +5,8 @@ import { messaging, firestore, auth } from './firebaseConfig';
 import {
   getModuleKeyForAdminNotificationType,
   getModuleKeyForAdminTab,
+  getRequiredAdminModuleForNotification,
+  isAdminOnlyNotification,
 } from '../constants/AdminModules';
 import AdminPermissionService from './AdminPermissionService';
 
@@ -100,7 +102,7 @@ class NotificationService {
       try {
         const authUidSnap = await membersCol.where('authUid', '==', user.uid).get();
         authUidSnap.forEach((d: any) => matchedMemberRefs.set(d.ref.path, d.ref));
-      } catch (_) {}
+      } catch (_) { }
 
       const rawPhone = String(user.phoneNumber || globalUser?.phone || '').trim();
       const digits10 = rawPhone.replace(/\D/g, '').slice(-10);
@@ -118,11 +120,11 @@ class NotificationService {
             if (pDocExists) {
               matchedMemberRefs.set(pDocRef.path, pDocRef);
             }
-          } catch (_) {}
+          } catch (_) { }
           try {
             const pQuerySnap = await membersCol.where('phone', '==', pVal).get();
             pQuerySnap.forEach((d: any) => matchedMemberRefs.set(d.ref.path, d.ref));
-          } catch (_) {}
+          } catch (_) { }
         }
       }
 
@@ -256,7 +258,7 @@ class NotificationService {
       AsyncStorage.setItem(
         LAST_LIVE_NOTIF_STORAGE_KEY,
         JSON.stringify({ key: dedupKey, timestamp: now })
-      ).catch(() => {});
+      ).catch(() => { });
 
       const identifier = videoId ? `youtube_live_${videoId}` : 'youtube_live_active';
 
@@ -300,21 +302,24 @@ class NotificationService {
   ): Promise<boolean> {
     try {
       const cleanTitle = (title || 'Rhema Church Update').trim();
-      const cleanBody = (body || '').trim();
+      const rawBody = (body || '').trim();
+      const cleanBody = /^e2ee:v\d+:/i.test(rawBody)
+        ? '🔒 New encrypted message'
+        : rawBody;
       if (!cleanTitle && !cleanBody) return false;
 
       const rawId = String(
         data?.meetingId ||
-          data?.postId ||
-          data?.opportunityId ||
-          data?.applicationId ||
-          data?.requestId ||
-          data?.eventId ||
-          data?.sermonId ||
-          data?.quizId ||
-          data?.referenceId ||
-          data?.id ||
-          ''
+        data?.postId ||
+        data?.opportunityId ||
+        data?.applicationId ||
+        data?.requestId ||
+        data?.eventId ||
+        data?.sermonId ||
+        data?.quizId ||
+        data?.referenceId ||
+        data?.id ||
+        ''
       )
         .replace(/^(?:meeting_sched_|meeting_live_|vol_post_|sermon_)/, '')
         .trim();
@@ -361,7 +366,7 @@ class NotificationService {
 
     // We can import the global ref to check if the navigator is fully ready
     const { navigationRef } = require('../../App');
-    
+
     // Determine which navigation object to use
     let nav = null;
     if (navigationRef.isReady()) {
@@ -381,14 +386,22 @@ class NotificationService {
     console.log('🚀 Navigating for notification type:', type);
 
     try {
-      const requiredAdminModule =
-        getModuleKeyForAdminNotificationType(type) ||
-        (rawData.targetTab ? getModuleKeyForAdminTab(String(rawData.targetTab)) : null);
+      const requiredAdminModule = isAdminOnlyNotification({ ...rawData, type })
+        ? getRequiredAdminModuleForNotification({ ...rawData, type })
+        : null;
       if (requiredAdminModule && !AdminPermissionService.canCurrentUserAccessModuleKey(requiredAdminModule)) {
         Alert.alert(
           'Access Restricted',
           'You do not have permission to open this admin module.'
         );
+        return;
+      }
+
+      if (type === 'matrimony_profile_admin' || type === 'matrimony_report_admin') {
+        nav.navigate('AdminRoot', {
+          targetTab: 'Rhema Matrimony',
+          timestamp: Date.now(),
+        });
         return;
       }
 
@@ -471,8 +484,8 @@ class NotificationService {
               type === 'expense_approved'
                 ? 'approved'
                 : type === 'expense_rejected'
-                ? 'rejected'
-                : 'pending',
+                  ? 'rejected'
+                  : 'pending',
             expenseId: rawData.expenseId || id,
             timestamp: Date.now(),
           });
@@ -621,8 +634,8 @@ class NotificationService {
         case 'roster_assignment': {
           const initialTab =
             type === 'service_assignment' ||
-            type === 'service_responsibility_broadcast' ||
-            type === 'service_reminder'
+              type === 'service_responsibility_broadcast' ||
+              type === 'service_reminder'
               ? 'responsibilities'
               : 'roster';
           nav.navigate('MyService', {
@@ -769,6 +782,22 @@ class NotificationService {
           }
           break;
         }
+        case 'kids_safety_admin': {
+          if (AdminPermissionService.canCurrentUserAccessModuleKey('kids_ministry')) {
+            nav.navigate('AdminRoot', {
+              targetTab: 'Kids Ministry',
+              childDocId: rawData.childDocId,
+              timestamp: Date.now(),
+            });
+          } else {
+            nav.navigate('KidsMinistry', {
+              initialCategory: 'consent',
+              childDocId: rawData.childDocId,
+              timestamp: Date.now(),
+            });
+          }
+          break;
+        }
         case 'kids_check_in':
         case 'kids_check_out':
         case 'kids_absent':
@@ -836,7 +865,7 @@ class NotificationService {
         const enabled =
           authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
           authStatus === messaging.AuthorizationStatus.PROVISIONAL;
-          
+
         if (!enabled) {
           const granted = await this.requestUserPermission();
           if (!granted) {
@@ -849,10 +878,10 @@ class NotificationService {
         PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS)
           .then(granted => {
             if (!granted) {
-              this.requestUserPermission().catch(() => {});
+              this.requestUserPermission().catch(() => { });
             }
           })
-          .catch(() => {});
+          .catch(() => { });
       }
 
       const topicName = `church_${churchId}`;

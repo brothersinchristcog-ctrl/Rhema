@@ -6,6 +6,7 @@ import { COLLECTIONS, DEFAULT_CHURCH_ID, MATRIMONY_BUCKET } from './constants.js
 import { seedMutualMatchChatOnAccept } from './chat.js';
 import {
   getObjectPronoun,
+  notifyAuthorizedMatrimonyAdmins,
   resolveNotificationPhotoUrl,
   sendMatrimonyNotification,
 } from './notifications.js';
@@ -3970,6 +3971,22 @@ export const reportMatrimonyProfile = onCall(
   });
 
   await batch.commit();
+
+  const reportedName = String(target.displayName || 'a Matrimony profile').trim();
+  const reporterDisplayName = String(reporter.displayName || 'A member').trim();
+  await notifyAuthorizedMatrimonyAdmins({
+    db,
+    docId: `matrimony_report_${reportRef.id}`,
+    type: 'matrimony_report_admin',
+    title: '🚨 Matrimony Profile Reported',
+    body: `${reporterDisplayName} reported ${reportedName} (${category}). Tap to review in Rhema Matrimony.`,
+    data: {
+      reportId: reportRef.id,
+      targetUid,
+      reporterUid: uid,
+      category,
+    },
+  }).catch(() => {});
 
   return {
     success: true,

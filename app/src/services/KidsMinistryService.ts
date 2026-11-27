@@ -1502,6 +1502,10 @@ class KidsMinistryService {
   }): Promise<void> {
     try {
       const cId = params.churchId || RHEMA_CHURCH_ID;
+      if (!params.targetMemberId && !params.targetAccountId && !params.targetPhone) {
+        console.warn('[KidsMinistryService] Skipping parent notification with empty recipient targets:', params.docId);
+        return;
+      }
       await firestore()
         .collection(RHEMA_ROOT_COLLECTION)
         .doc(cId)

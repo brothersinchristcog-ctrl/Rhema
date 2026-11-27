@@ -198,11 +198,14 @@ export default function App() {
         rawData.pushTitle ||
         rawData.title ||
         (rawData.type ? `New ${rawData.type.replace(/_/g, ' ')}` : 'New Notification');
-      const body =
+      const rawBody =
         remoteMessage?.notification?.body ||
         rawData.pushBody ||
         rawData.body ||
         'You have a new message.';
+      const body = /^e2ee:v\d+:/i.test(String(rawBody).trim())
+        ? '🔒 New encrypted message'
+        : rawBody;
       const password = rawData.password || (body.match(/Passcode:\s*([A-Za-z0-9]+)/i)?.[1]) || '';
       
       const isLive = rawData.type === 'youtube_live';
