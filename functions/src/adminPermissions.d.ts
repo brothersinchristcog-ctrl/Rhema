@@ -56,6 +56,16 @@ export declare function filterAuthorizedAdminRecipientsForModule(db: FirebaseFir
     adminUids: string[];
     tokens: string[];
 }>;
+export declare function isChurchAdminPermissionConfigured(db: FirebaseFirestore.Firestore, churchId: string): Promise<boolean>;
+/**
+ * Resolves all authorized Admin UIDs and deduplicated FCM device tokens for a moduleKey
+ * across members, church owner metadata, users, and platform_admins.
+ */
+export declare function resolveAuthorizedModuleAdminRecipients(db: FirebaseFirestore.Firestore, churchId: string, moduleKey: string): Promise<{
+    adminUids: string[];
+    tokens: string[];
+    isPermissionConfigured: boolean;
+}>;
 export declare const listChurchAdminsWithPermissions: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
     success: boolean;
     churchId: string;

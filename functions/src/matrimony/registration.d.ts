@@ -145,7 +145,7 @@ export declare const saveMatrimonyDraft: import("firebase-functions/v2/https").C
     saved: boolean;
 } | {
     success: boolean;
-    section: "notifications" | "location" | "preferences" | "basic" | "personal" | "religious" | "professional" | "additional" | "interests" | "consent" | "details" | "photos" | "privacy";
+    section: "notifications" | "location" | "consent" | "preferences" | "basic" | "personal" | "religious" | "professional" | "additional" | "interests" | "details" | "photos" | "privacy";
     saved: boolean;
 }>, unknown>;
 /**

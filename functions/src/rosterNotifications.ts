@@ -4,6 +4,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { onRequest } from 'firebase-functions/v2/https';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { filterAuthorizedAdminRecipientsForModule } from './adminPermissions.js';
 
 const RHEMA_ROOT_COLLECTION = 'Rhema Church';
 
@@ -37,7 +38,7 @@ function formatDateMonthYear(dateStr: any): string {
         return `${String(d).padStart(2, '0')} ${MONTH_NAMES[m]} ${y}`;
       }
     }
-  } catch {}
+  } catch { }
   return String(dateStr);
 }
 
@@ -61,7 +62,7 @@ function formatTimeTo12Hour(timeStr: any): string {
       const displayH = h % 12 === 0 ? 12 : h % 12;
       return `${String(displayH).padStart(2, '0')}:${String(m).padStart(2, '0')} ${period}`;
     }
-  } catch {}
+  } catch { }
   return String(timeStr);
 }
 
@@ -132,7 +133,7 @@ export async function resolveCandidateFcmTokens(
           addToken(d.data()?.fcmToken);
           addTokensFromArray(d.data()?.fcmTokens);
         });
-      } catch (_) {}
+      } catch (_) { }
     }
   }
 
@@ -152,7 +153,7 @@ export async function resolveCandidateFcmTokens(
           addToken(d.data()?.fcmToken);
           addTokensFromArray(d.data()?.fcmTokens);
         });
-      } catch (_) {}
+      } catch (_) { }
     }
   }
 
@@ -578,7 +579,7 @@ export const checkServiceAssignmentTimeoutsCron = onSchedule(
           // Clean up orphaned subcollection queue left behind after plan deletion
           try {
             await doc.ref.delete();
-          } catch (_) {}
+          } catch (_) { }
           continue;
         }
 
@@ -591,7 +592,7 @@ export const checkServiceAssignmentTimeoutsCron = onSchedule(
               status: 'exhausted',
               updatedAt: FieldValue.serverTimestamp(),
             });
-          } catch (_) {}
+          } catch (_) { }
           continue;
         }
 
@@ -1110,7 +1111,7 @@ export async function findEligibleMembersForResponsibility(
             continue;
           }
         }
-      } catch (_) {}
+      } catch (_) { }
     }
 
     const fullName = m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Church Member';
@@ -1163,6 +1164,8 @@ export async function notifyChurchAdmins(
     const adminTokens = new Set<string>();
     const adminMemberIdSet = new Set<string>();
 
+    const candidateMap = new Map<string, Set<string>>();
+
     // Query members
     const memSnap = await db
       .collection(RHEMA_ROOT_COLLECTION)
@@ -1173,21 +1176,41 @@ export async function notifyChurchAdmins(
     for (const doc of memSnap.docs) {
       const data = doc.data() || {};
       const roleStr = String(data.role || '').toLowerCase();
+      const userTypeStr = String(data.userType || '').toLowerCase();
       const posStr = String(data.position || '').toLowerCase();
-      const isAdmin = data.isAdmin === true || roleStr.includes('admin') || roleStr.includes('pastor') || posStr.includes('pastor');
+      const isAdmin =
+        data.isAdmin === true ||
+        data.isSuperAdmin === true ||
+        data.superadmin === true ||
+        roleStr.includes('admin') ||
+        roleStr.includes('pastor') ||
+        roleStr.includes('super') ||
+        userTypeStr.includes('admin') ||
+        userTypeStr.includes('pastor') ||
+        userTypeStr.includes('super') ||
+        posStr.includes('pastor');
       if (isAdmin) {
-        adminMemberIdSet.add(doc.id);
         const tokens = await resolveCandidateFcmTokens(db, targetChurch, doc.id, data.phone, data.name);
-        tokens.forEach(t => adminTokens.add(t));
+        if (!candidateMap.has(doc.id)) candidateMap.set(doc.id, new Set<string>());
+        tokens.forEach(t => candidateMap.get(doc.id)!.add(t));
       }
     }
 
-    const adminMemberIds = Array.from(adminMemberIdSet);
+    const { adminUids: authorizedAdminIds, tokens: authorizedTokens } =
+      await filterAuthorizedAdminRecipientsForModule(
+        db,
+        targetChurch,
+        'service_roster',
+        Array.from(candidateMap.entries()).map(([uid, tSet]) => ({ uid, tokens: Array.from(tSet) }))
+      );
 
-    // Send in-app notification to all admin members
+    // Send in-app notification strictly to authorized Service Roster admins
     const notifPayload = {
       type: 'admin_roster_alert',
       targetRole: 'admin',
+      requiredAdminModule: 'service_roster',
+      targetTab: 'Service Roster',
+      screen: 'AdminRoot',
       title,
       body,
       churchId: targetChurch,
@@ -1201,7 +1224,7 @@ export async function notifyChurchAdmins(
       updatedAt: FieldValue.serverTimestamp(),
     };
 
-    for (const aId of adminMemberIds) {
+    for (const aId of authorizedAdminIds) {
       try {
         const colRef = db.collection(RHEMA_ROOT_COLLECTION).doc(targetChurch).collection('members').doc(aId).collection('notifications');
         if (notifId) {
@@ -1209,11 +1232,11 @@ export async function notifyChurchAdmins(
         } else {
           await colRef.add(notifPayload);
         }
-      } catch (_) {}
+      } catch (_) { }
     }
 
-    // Dispatch FCM pushes to all admin tokens
-    for (const token of adminTokens) {
+    // Dispatch FCM pushes strictly to authorized admin tokens
+    for (const token of authorizedTokens) {
       try {
         await getMessaging().send({
           token,
@@ -1225,6 +1248,8 @@ export async function notifyChurchAdmins(
             roleId: roleId || '',
             serviceTitle: serviceTitle || '',
             serviceDate: serviceDate || '',
+            requiredAdminModule: 'service_roster',
+            targetTab: 'Service Roster',
             click_action: 'OPEN_ADMIN_SERVICE_PLANNER'
           },
           android: {
@@ -1237,7 +1262,7 @@ export async function notifyChurchAdmins(
       }
     }
 
-    console.log(`[RosterNotification] Admin alert dispatched to ${adminMemberIds.length} admins (${adminTokens.size} devices).`);
+    console.log(`[RosterNotification] Admin alert dispatched to ${authorizedAdminIds.length} authorized admins (${authorizedTokens.length} devices).`);
   } catch (err) {
     console.error('[RosterNotification] notifyChurchAdmins error:', err);
   }
@@ -1444,7 +1469,7 @@ export async function autoDispatchPublishedServiceResponsibilities(params: {
           targetPhone: em.memberPhone || null,
           updatedAt: FieldValue.serverTimestamp()
         }, { merge: true });
-      } catch (_) {}
+      } catch (_) { }
 
       for (const token of em.fcmTokens) {
         try {

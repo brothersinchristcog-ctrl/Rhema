@@ -12,6 +12,7 @@ import {
 } from '../utils/phoneUtils';
 import MemberIdService from './MemberIdService';
 import { isSuperAdminMember } from '../utils/roleUtils';
+import { BibleService } from './BibleService';
 import { omitUndefinedFields } from '../utils/firestoreSanitizer';
 import {
   isEmptyGhostRegistrationRequest,
@@ -3532,8 +3533,8 @@ class FirestoreService {
         updateData.bibleVerse = verseInfo.reference.trim();
         updateData.verseReference = verseInfo.reference.trim();
         if (verseInfo.referenceTe) updateData.verseReferenceTe = verseInfo.referenceTe.trim();
-        if (verseInfo.text) updateData.verseText = verseInfo.text.trim();
-        if (verseInfo.textTe) updateData.verseTextTe = verseInfo.textTe.trim();
+        if (verseInfo.text) updateData.verseText = BibleService.cleanVerseText(verseInfo.text);
+        if (verseInfo.textTe) updateData.verseTextTe = BibleService.cleanVerseText(verseInfo.textTe);
       }
       await docRef.update(updateData);
 
@@ -3572,7 +3573,7 @@ class FirestoreService {
             requestId: id,
             isPublic: finalIsPublic,
             bibleVerse: verseRef || null,
-            verseText: verseInfo?.text || existing.verseText || null,
+            verseText: BibleService.cleanVerseText(verseInfo?.text || existing.verseText || '') || null,
             read: false,
             createdAt: FieldValue.serverTimestamp()
           }, { merge: true });

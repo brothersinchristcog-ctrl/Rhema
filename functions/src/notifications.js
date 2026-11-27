@@ -6,7 +6,7 @@ import { getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { buildOnlineMeetingTopicMessage } from './meetings.js';
-import { filterAuthorizedAdminRecipientsForModule } from './adminPermissions.js';
+import { filterAuthorizedAdminRecipientsForModule, isChurchAdminPermissionConfigured, resolveAuthorizedModuleAdminRecipients, } from './adminPermissions.js';
 /**
  * 🙏 HELPER: DISPATCH PRAYER REQUEST PUSH TO ADMINS ONLY
  * Guarantees that only users with role admin, pastor, or super receive prayer alerts.
@@ -158,9 +158,10 @@ async function handlePrayerRequestAdminPush(prayer, churchId, prayerId, snapRef)
             console.error('Error sending multicast prayer admin notification:', pushErr);
         }
     }
-    // 6. Topic fallback ONLY if no authorized admin records/tokens were found
+    // 6. Topic fallback ONLY if no authorized admin records/tokens were found and permissions aren't configured
     // (Sending to both multicast tokens and church_{churchId}_admin topic delivers 2 identical pushes to admins and bypasses module permissions.)
-    if (uniqueTokens.length === 0 && adminUids.length === 0) {
+    const permissionConfigured = await isChurchAdminPermissionConfigured(db, churchId);
+    if (uniqueTokens.length === 0 && adminUids.length === 0 && !permissionConfigured) {
         try {
             await messaging.send({
                 notification: { title, body },
@@ -193,6 +194,7 @@ async function handlePrayerRequestAdminPush(prayer, churchId, prayerId, snapRef)
         const notifPayload = {
             type: 'prayer_request_admin',
             targetRole: 'admin',
+            requiredAdminModule: 'prayer_wall',
             title,
             body,
             memberName,
@@ -3956,7 +3958,11 @@ async function resolveVolunteerAdminTokens(db, churchId, moduleKey = 'volunteers
         uid,
         tokens: Array.from(uidToTokens.get(uid) || []),
     }));
-    return filterAuthorizedAdminRecipientsForModule(db, cid, moduleKey, candidates);
+    const [filtered, isPermissionConfigured] = await Promise.all([
+        filterAuthorizedAdminRecipientsForModule(db, cid, moduleKey, candidates),
+        isChurchAdminPermissionConfigured(db, cid),
+    ]);
+    return { ...filtered, isPermissionConfigured };
 }
 /**
  * 📲 HIGH PRIORITY FCM MULTICAST DISPATCHER
@@ -4190,7 +4196,7 @@ async function handleVolunteerApplicationAdminCreatedPush(appData, churchId, app
         ? `${memberName} has applied to volunteer for ${eventName}. Please review the application.`
         : `${memberName} has submitted a new General Volunteer application. Please review the application.`;
     // 3. Query authorized Admins for this church
-    const { tokens: adminTokens, adminUids } = await resolveVolunteerAdminTokens(db, cid);
+    const { tokens: adminTokens, adminUids, isPermissionConfigured } = await resolveVolunteerAdminTokens(db, cid);
     const notificationData = {
         type: 'volunteer_application_admin',
         churchId: cid,
@@ -4212,15 +4218,18 @@ async function handleVolunteerApplicationAdminCreatedPush(appData, churchId, app
     else {
         console.warn(`⚠️ No direct admin FCM tokens resolved for church ${cid}`);
     }
-    // 5. Topic Broadcast to church admin topics
-    await sendHighPriorityTopicPush(messaging, `church_${cid}_admin`, title, body, notificationData, 'church_alerts');
-    if (cid !== 'rhema') {
-        await sendHighPriorityTopicPush(messaging, 'church_rhema_admin', title, body, notificationData, 'church_alerts');
+    // 5. Topic Broadcast ONLY before permission rollout is configured (prevents bypassing module permissions)
+    if (!isPermissionConfigured && adminTokens.length === 0 && adminUids.length === 0) {
+        await sendHighPriorityTopicPush(messaging, `church_${cid}_admin`, title, body, notificationData, 'church_alerts');
+        if (cid !== 'rhema') {
+            await sendHighPriorityTopicPush(messaging, 'church_rhema_admin', title, body, notificationData, 'church_alerts');
+        }
     }
     // 6. Write in-app notification doc for admins (notifications, silent broadcast, and admin member feeds)
     await writeVolunteerInAppNotifications(db, cid, `vol_admin_${applicationId}`, {
         type: 'volunteer_application_admin',
         targetRole: 'admin',
+        requiredAdminModule: 'volunteers',
         title,
         body,
         content: body,
@@ -4939,7 +4948,7 @@ export const onJobApplicationCreated = onDocumentCreated({ document: 'Rhema Chur
         const roleTitle = data.opportunityTitle || 'Ministry Position';
         const title = '💼 New Ministry Application!';
         const body = `${applicantName} has applied for "${roleTitle}". Please review their calling and attached CV.`;
-        const { tokens: adminTokens, adminUids } = await resolveVolunteerAdminTokens(db, churchId, 'job_circle');
+        const { tokens: adminTokens, adminUids, isPermissionConfigured } = await resolveVolunteerAdminTokens(db, churchId, 'job_circle');
         const pushData = {
             type: 'job_application_admin',
             churchId,
@@ -4954,14 +4963,21 @@ export const onJobApplicationCreated = onDocumentCreated({ document: 'Rhema Chur
             const pushRes = await sendHighPriorityPush(messaging, adminTokens, title, body, pushData, 'church_alerts');
             pushDelivered = pushRes.successCount > 0;
         }
-        else {
+        else if (!isPermissionConfigured && adminUids.length === 0) {
             pushDelivered = await sendHighPriorityTopicPush(messaging, `church_${churchId}_admin`, title, body, pushData, 'church_alerts');
+        }
+        else {
+            // Authorized job_circle admins exist (or permissions configured) with no FCM token stored yet
+            pushDelivered = true;
         }
         // Persist deterministic in-app notification for admins (targetRole: 'admin' restricts from non-admins)
         const inAppDelivered = await writeVolunteerInAppNotifications(db, churchId, `job_admin_${applicationId}`, {
             type: 'job_application_admin',
             targetRole: 'admin',
             recipientRole: 'admin',
+            requiredAdminModule: 'job_circle',
+            targetTab: 'Job Circle',
+            screen: 'AdminRoot',
             title,
             body,
             content: body,
@@ -5341,8 +5357,7 @@ async function handleRegistrationAdminPendingPush(data, churchId, requestId, sna
         const locationSuffix = city ? ` from ${city}` : '';
         const title = '🆕 New Member Registration Request';
         const body = `${applicantName}${locationSuffix} has registered and is requesting admin approval.`;
-        const { tokens: adminTokens, adminUids: rawAdminUids } = await resolveChurchRegistrationAdminTokens(db, cid);
-        const { adminUids } = await filterAuthorizedAdminRecipientsForModule(db, cid, 'approvals', rawAdminUids.map((uid) => ({ uid })));
+        const { tokens: adminTokens, adminUids, isPermissionConfigured } = await resolveVolunteerAdminTokens(db, cid, 'approvals');
         const pushData = {
             type: 'registration_request_admin',
             churchId: cid,
@@ -5354,11 +5369,16 @@ async function handleRegistrationAdminPendingPush(data, churchId, requestId, sna
         };
         const pushDelivered = adminTokens.length > 0
             ? (await sendHighPriorityPush(messaging, adminTokens, title, body, pushData, 'church_alerts')).successCount > 0
-            : await sendHighPriorityTopicPush(messaging, `church_${cid}_admin`, title, body, pushData, 'church_alerts');
+            : !isPermissionConfigured && adminUids.length === 0
+                ? await sendHighPriorityTopicPush(messaging, `church_${cid}_admin`, title, body, pushData, 'church_alerts')
+                : true;
         const inAppDelivered = await writeVolunteerInAppNotifications(db, cid, `reg_admin_${requestId}`, {
             type: 'registration_request_admin',
             targetRole: 'admin',
             recipientRole: 'admin',
+            requiredAdminModule: 'approvals',
+            targetTab: 'Approvals',
+            screen: 'AdminRoot',
             title,
             body,
             content: body,
@@ -5784,7 +5804,11 @@ async function dispatchKidsAttendanceParentPush(params) {
     const messaging = getMessaging();
     const { churchId, docId, type, title, body, record } = params;
     const targetInfo = await resolveKidsParentTargetsAndTokens(db, churchId, record);
-    // Persist idempotent in-app notification using deterministic docId
+    if (!targetInfo.targetMemberId && !targetInfo.targetAccountId && !targetInfo.targetPhone) {
+        console.warn(`🛑 [KidsMinistry] Skipping ${type} (${docId}): child record has no linked parent identifiers.`);
+        return;
+    }
+    // Persist idempotent in-app notification strictly to the child's linked parent/household
     await db
         .collection('Rhema Church')
         .doc(churchId)
@@ -5932,6 +5956,157 @@ export const onKidsAttendanceAbsentCreated = onDocumentCreated({ document: 'Rhem
     }
     catch (err) {
         console.error(`[KidsMinistry] Error sending absent push for ${attendanceId}:`, err);
+    }
+});
+function buildKidsSafetySignature(record) {
+    if (!record)
+        return '';
+    return JSON.stringify({
+        consentPermissions: record.consentPermissions || null,
+        parentConsentStatus: record.parentConsentStatus || '',
+        parentConsentConfirmed: Boolean(record.parentConsentConfirmed),
+        guardians: Array.isArray(record.guardians) ? record.guardians : [],
+        medical: record.medical || null,
+        notes: String(record.notes || '').trim(),
+    });
+}
+/**
+ * Trigger: Parent updates child's safety instructions, guardians, medical info, or consent details.
+ * Dispatches alert ONLY to Admins with `kids_ministry` permission (+ Super Admins) and active Kids Teachers.
+ */
+export const onKidsChildSafetyUpdated = onDocumentUpdated({ document: 'Rhema Church/{churchId}/kids_children/{childDocId}', region: 'asia-south1' }, async (event) => {
+    const change = event.data;
+    if (!change)
+        return;
+    const before = change.before.data() || {};
+    const after = change.after.data() || {};
+    if (buildKidsSafetySignature(before) === buildKidsSafetySignature(after)) {
+        return;
+    }
+    const churchId = event.params.churchId || 'rhema';
+    const childDocId = event.params.childDocId;
+    const childName = String(after.fullName || after.firstName || 'Child').trim();
+    const updaterName = String(after.consentPermissions?.updatedByName ||
+        after.parentName ||
+        'Parent').trim();
+    const db = getFirestore();
+    const messaging = getMessaging();
+    try {
+        // 1. Authorized Kids Ministry Admins (+ Super Admins)
+        const { adminUids, tokens: adminTokens } = await resolveAuthorizedModuleAdminRecipients(db, churchId, 'kids_ministry');
+        const targetUidSet = new Set(adminUids);
+        const targetPhoneSet = new Set();
+        const tokenSet = new Set(adminTokens);
+        const addDocTokens = (d) => {
+            if (!d)
+                return;
+            if (typeof d.fcmToken === 'string' && d.fcmToken.trim().length > 10) {
+                tokenSet.add(d.fcmToken.trim());
+            }
+            if (Array.isArray(d.fcmTokens)) {
+                d.fcmTokens.forEach((t) => {
+                    if (typeof t === 'string' && t.trim().length > 10)
+                        tokenSet.add(t.trim());
+                });
+            }
+        };
+        // 2. Active Kids Ministry Teachers from kids_teachers collection
+        const [teachersSnap, membersSnap] = await Promise.all([
+            db.collection('Rhema Church').doc(churchId).collection('kids_teachers').get().catch(() => null),
+            db.collection('Rhema Church').doc(churchId).collection('members').get().catch(() => null),
+        ]);
+        const activeTeachers = [];
+        teachersSnap?.docs?.forEach((tDoc) => {
+            const t = tDoc.data() || {};
+            if (t.status === 'on_leave' || t.isActive === false)
+                return;
+            const phone10 = normalizeLast10(t.phone);
+            if (phone10)
+                targetPhoneSet.add(phone10);
+            if (t.memberId)
+                targetUidSet.add(String(t.memberId).trim());
+            activeTeachers.push({
+                memberId: String(t.memberId || '').trim(),
+                phone10,
+                email: String(t.email || '').trim().toLowerCase(),
+            });
+        });
+        if (activeTeachers.length > 0 && membersSnap) {
+            const teacherMemberUids = [];
+            membersSnap.docs.forEach((mDoc) => {
+                const m = mDoc.data() || {};
+                const mPhone10 = normalizeLast10(m.phone || m.mobile);
+                const mEmail = String(m.email || '').trim().toLowerCase();
+                const matched = activeTeachers.some((t) => (t.memberId && (mDoc.id === t.memberId || m.id === t.memberId || m.uid === t.memberId)) ||
+                    (t.phone10 && mPhone10 && t.phone10 === mPhone10) ||
+                    (t.email && mEmail && t.email === mEmail));
+                if (matched) {
+                    targetUidSet.add(mDoc.id);
+                    if (m.uid)
+                        targetUidSet.add(String(m.uid));
+                    teacherMemberUids.push(mDoc.id);
+                    addDocTokens(m);
+                }
+            });
+            await Promise.all(Array.from(new Set(teacherMemberUids)).map(async (uid) => {
+                const uSnap = await db.collection('users').doc(uid).get().catch(() => null);
+                if (uSnap?.exists)
+                    addDocTokens(uSnap.data());
+            }));
+        }
+        const targetUids = Array.from(targetUidSet);
+        const targetPhones = Array.from(targetPhoneSet);
+        const tokens = Array.from(tokenSet);
+        if (targetUids.length === 0 && targetPhones.length === 0) {
+            return;
+        }
+        const title = `🛡️ Safety & Consent Updated: ${childName}`;
+        const body = `${updaterName} updated safety instructions, emergency contacts, or consent permissions for ${childName}.`;
+        const docId = `kids_safety_${childDocId}_${Date.now()}`;
+        const payload = {
+            type: 'kids_safety_admin',
+            churchId,
+            targetRole: 'kids_ministry_staff',
+            requiredAdminModule: 'kids_ministry',
+            targetTab: 'Kids Ministry',
+            targetUids,
+            targetPhones,
+            childDocId,
+            childId: String(after.childId || ''),
+            childName,
+            parentName: updaterName,
+            screen: 'KidsMinistry',
+            initialCategory: 'consent',
+            title,
+            body,
+            content: body,
+            read: false,
+            createdAt: FieldValue.serverTimestamp(),
+        };
+        const writes = [
+            db.collection('Rhema Church').doc(churchId).collection('notifications').doc(docId).set(payload, { merge: true }),
+        ];
+        for (const uid of targetUids) {
+            writes.push(db.collection('Rhema Church').doc(churchId).collection('members').doc(uid).collection('notifications').doc(docId).set(payload, { merge: true }));
+        }
+        const tasks = [Promise.allSettled(writes)];
+        if (tokens.length > 0) {
+            tasks.push(sendHighPriorityPush(messaging, tokens, title, body, {
+                type: 'kids_safety_admin',
+                churchId,
+                childDocId,
+                requiredAdminModule: 'kids_ministry',
+                targetTab: 'Kids Ministry',
+                initialCategory: 'consent',
+                screen: 'KidsMinistry',
+                click_action: 'FLUTTER_NOTIFICATION_CLICK',
+            }, 'church_alerts'));
+        }
+        await Promise.allSettled(tasks);
+        console.log(`✅ [KidsMinistry] Dispatched safety update alert for ${childName} to ${targetUids.length} staff (${tokens.length} devices).`);
+    }
+    catch (err) {
+        console.error(`[KidsMinistry] Error dispatching safety update alert for ${childDocId}:`, err);
     }
 });
 function normalizeLast10(raw) {

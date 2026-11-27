@@ -403,6 +403,14 @@ export declare const onKidsAttendanceAbsentCreated: import("firebase-functions")
     attendanceId: string;
 }>>;
 /**
+ * Trigger: Parent updates child's safety instructions, guardians, medical info, or consent details.
+ * Dispatches alert ONLY to Admins with `kids_ministry` permission (+ Super Admins) and active Kids Teachers.
+ */
+export declare const onKidsChildSafetyUpdated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+    churchId: string;
+    childDocId: string;
+}>>;
+/**
  * 💼 EXPENSE APPROVAL NOTIFICATION TRIGGER (SUPER ADMIN ONLY)
  * Dispatches FCM push + deterministic in-app notification strictly to verified Super Admins
  * whenever a ledger expense transitions to 'Pending Approval', 'Approved', or 'Rejected'.

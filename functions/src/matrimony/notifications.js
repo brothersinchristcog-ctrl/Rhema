@@ -4,6 +4,7 @@ import { getMessaging } from 'firebase-admin/messaging';
 import { getStorage } from 'firebase-admin/storage';
 import { COLLECTIONS, DEFAULT_CHURCH_ID, MATRIMONY_BUCKET } from './constants.js';
 import { getBlocksCol, getProfileRef, isMatrimonyBanned } from './store.js';
+import { resolveAuthorizedModuleAdminRecipients } from '../adminPermissions.js';
 const INVALID_TOKEN_CODES = new Set([
     'messaging/registration-token-not-registered',
     'messaging/invalid-registration-token',
@@ -219,6 +220,95 @@ export async function sendMatrimonyNotification(params) {
     catch (err) {
         console.warn(`sendMatrimonyNotification warning [${type} -> ${recipientUid}]:`, err);
         return { sent: false, reason: 'error' };
+    }
+}
+/**
+ * Dispatches Matrimony admin alerts (push + Updates screen doc) strictly to Super Admins
+ * and Admins who have the `matrimony` tab permission enabled. Never falls back to global admin topics.
+ */
+export async function notifyAuthorizedMatrimonyAdmins(params) {
+    const db = params.db || getFirestore();
+    const { docId, type, title, body, data } = params;
+    try {
+        const { adminUids, tokens } = await resolveAuthorizedModuleAdminRecipients(db, DEFAULT_CHURCH_ID, 'matrimony');
+        const payload = {
+            type,
+            churchId: DEFAULT_CHURCH_ID,
+            targetRole: 'admin',
+            recipientRole: 'admin',
+            requiredAdminModule: 'matrimony',
+            targetTab: 'Rhema Matrimony',
+            screen: 'AdminRoot',
+            module: 'matrimony',
+            title,
+            body,
+            content: body,
+            read: false,
+            createdAt: FieldValue.serverTimestamp(),
+            ...(data || {}),
+        };
+        const writes = [
+            db
+                .collection('Rhema Church')
+                .doc(DEFAULT_CHURCH_ID)
+                .collection('notifications')
+                .doc(docId)
+                .set(payload, { merge: true }),
+        ];
+        for (const adminUid of adminUids) {
+            writes.push(db
+                .collection('Rhema Church')
+                .doc(DEFAULT_CHURCH_ID)
+                .collection('members')
+                .doc(adminUid)
+                .collection('notifications')
+                .doc(docId)
+                .set(payload, { merge: true }));
+        }
+        const pushData = {
+            type,
+            churchId: DEFAULT_CHURCH_ID,
+            requiredAdminModule: 'matrimony',
+            targetTab: 'Rhema Matrimony',
+            screen: 'AdminRoot',
+            click_action: 'FLUTTER_NOTIFICATION_CLICK',
+        };
+        if (data) {
+            for (const [k, v] of Object.entries(data)) {
+                if (v !== undefined && v !== null) {
+                    pushData[k] = String(v);
+                }
+            }
+        }
+        let successCount = 0;
+        if (tokens.length > 0) {
+            const fcmRes = await getMessaging().sendEachForMulticast({
+                tokens,
+                notification: { title, body },
+                android: {
+                    priority: 'high',
+                    notification: {
+                        channelId: 'church_alerts',
+                        sound: 'default',
+                        color: '#E04B5A',
+                        tag: docId,
+                    },
+                },
+                apns: {
+                    payload: {
+                        aps: { sound: 'default', badge: 1 },
+                    },
+                },
+                data: pushData,
+            });
+            successCount = fcmRes.successCount;
+        }
+        await Promise.allSettled(writes);
+        return { adminUids, successCount };
+    }
+    catch (err) {
+        console.warn(`notifyAuthorizedMatrimonyAdmins warning [${type}]:`, err);
+        return { adminUids: [], successCount: 0 };
     }
 }
 //# sourceMappingURL=notifications.js.map

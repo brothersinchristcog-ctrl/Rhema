@@ -421,6 +421,111 @@ export async function filterAuthorizedAdminRecipientsForModule(
   };
 }
 
+export async function isChurchAdminPermissionConfigured(
+  db: FirebaseFirestore.Firestore,
+  churchId: string
+): Promise<boolean> {
+  const cleanChurchId = normalizeChurchId(churchId);
+  const churchRef = db.collection('Rhema Church').doc(cleanChurchId);
+  const [templateSnap, permsSnap] = await Promise.all([
+    churchRef.collection('admin_permission_settings').doc('default_template').get(),
+    churchRef.collection('admin_permissions').limit(1).get(),
+  ]);
+  return templateSnap.exists || !permsSnap.empty;
+}
+
+/**
+ * Resolves all authorized Admin UIDs and deduplicated FCM device tokens for a moduleKey
+ * across members, church owner metadata, users, and platform_admins.
+ */
+export async function resolveAuthorizedModuleAdminRecipients(
+  db: FirebaseFirestore.Firestore,
+  churchId: string,
+  moduleKey: string
+): Promise<{
+  adminUids: string[];
+  tokens: string[];
+  isPermissionConfigured: boolean;
+}> {
+  const cleanChurchId = normalizeChurchId(churchId);
+  const uidToTokens = new Map<string, Set<string>>();
+  const adminUidSet = new Set<string>();
+
+  const addTokenForUid = (uid: string, t: unknown) => {
+    if (!uid) return;
+    if (!uidToTokens.has(uid)) uidToTokens.set(uid, new Set<string>());
+    if (typeof t === 'string' && t.trim().length > 10) {
+      uidToTokens.get(uid)!.add(t.trim());
+    }
+  };
+  const addTokenArray = (uid: string, arr: unknown) => {
+    if (Array.isArray(arr)) {
+      arr.forEach((t) => addTokenForUid(uid, t));
+    }
+  };
+
+  const admins = await collectChurchAdmins(db, cleanChurchId);
+  for (const a of admins) {
+    if (a.uid) {
+      adminUidSet.add(a.uid);
+      if (!uidToTokens.has(a.uid)) uidToTokens.set(a.uid, new Set<string>());
+    }
+  }
+
+  // Also include church metadata owners
+  for (const colName of ['Rhema Church', 'churches']) {
+    try {
+      const cSnap = await db.collection(colName).doc(cleanChurchId).get();
+      if (cSnap.exists) {
+        const cData = cSnap.data() || {};
+        [
+          cData.adminUid,
+          cData.createdBy,
+          cData.pastorUid,
+          cData.ownerUid,
+          ...(Array.isArray(cData.adminUids) ? cData.adminUids : []),
+        ]
+          .filter(Boolean)
+          .forEach((uid: string) => {
+            adminUidSet.add(uid);
+            if (!uidToTokens.has(uid)) uidToTokens.set(uid, new Set<string>());
+          });
+      }
+    } catch (_) {}
+  }
+
+  await Promise.all(
+    Array.from(adminUidSet).map(async (uid) => {
+      const [mSnap, uSnap] = await Promise.all([
+        db.collection('Rhema Church').doc(cleanChurchId).collection('members').doc(uid).get().catch(() => null),
+        db.collection('users').doc(uid).get().catch(() => null),
+      ]);
+      if (mSnap?.exists) {
+        const d = mSnap.data() || {};
+        addTokenForUid(uid, d.fcmToken);
+        addTokenArray(uid, d.fcmTokens);
+      }
+      if (uSnap?.exists) {
+        const d = uSnap.data() || {};
+        addTokenForUid(uid, d.fcmToken);
+        addTokenArray(uid, d.fcmTokens);
+      }
+    })
+  );
+
+  const candidates = Array.from(adminUidSet).map((uid) => ({
+    uid,
+    tokens: Array.from(uidToTokens.get(uid) || []),
+  }));
+
+  const [{ adminUids, tokens }, isPermissionConfigured] = await Promise.all([
+    filterAuthorizedAdminRecipientsForModule(db, cleanChurchId, moduleKey, candidates),
+    isChurchAdminPermissionConfigured(db, cleanChurchId),
+  ]);
+
+  return { adminUids, tokens, isPermissionConfigured };
+}
+
 /**
  * Queries all registered Church Administrators & Platform Super Admins for `churchId`.
  */

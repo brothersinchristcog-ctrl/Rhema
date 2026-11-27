@@ -16,6 +16,7 @@ import firestore, {
 } from '@react-native-firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { isSuperAdminMember } from '../utils/roleUtils';
+import { canViewNotificationRecord, isSuperAdminOnlyNotification } from '../constants/AdminModules';
 import { formatDateDisplay } from '../utils/DateUtils';
 import { useChurch } from '../context/ChurchContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -76,7 +77,15 @@ const resolveUpdateIcon = (type?: string) => {
     case 'volunteer_assignment':
     case 'volunteer_event_change':
     case 'volunteer_post_new':
+    case 'matrimony_profile_admin':
+    case 'matrimony_report_admin':
       return HeartHandshake;
+    case 'kids_safety_admin':
+    case 'kids_teacher_enrollment':
+    case 'kids_check_in':
+    case 'kids_check_out':
+    case 'kids_absent':
+      return UserCheck;
     case 'donation':
     case 'expense_approval':
     case 'expense_approved':
@@ -214,7 +223,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
   const { colors, isDark } = useTheme();
   const { highlightId, highlightType, filterCategory, filterTitle } = route?.params || {};
   const { t } = useLanguage();
-  const { user, member, isPlatformSuperAdmin } = useAuth();
+  const { user, member, isPlatformSuperAdmin, canAccessAdminModule } = useAuth();
   const { activeChurch } = useChurch();
   const scopedChurchId = activeChurch?.id || member?.churchId || 'rhema';
   const scopedUid = user?.uid || member?.id || 'guest';
@@ -263,6 +272,9 @@ export default function UpdatesScreen({ navigation, route }: any) {
     if (type === 'kids_check_out') return 'KIDS CHECK-OUT';
     if (type === 'kids_absent') return 'KIDS ATTENDANCE';
     if (type === 'kids_teacher_enrollment') return 'RHEMA KIDS ENROLLMENT';
+    if (type === 'kids_safety_admin') return 'KIDS SAFETY UPDATE';
+    if (type === 'matrimony_profile_admin') return 'MATRIMONY APPROVAL';
+    if (type === 'matrimony_report_admin') return 'MATRIMONY REPORT';
     if (!type) return (t('updates.types.announcement') || 'ANNOUNCEMENT').toUpperCase();
     const trans = t(`updates.types.${type}`);
     return trans && trans !== `updates.types.${type}` ? trans.toUpperCase() : type.toUpperCase();
@@ -674,46 +686,17 @@ export default function UpdatesScreen({ navigation, route }: any) {
       return null;
     }
 
-    // SECURITY: If broadcast is targeted to admin role, skip if current user is not admin
-    if ((data.targetRole === 'admin' || data.type === 'baptism_request_admin' || data.type === 'prayer_request_admin' || data.type === 'testimony_admin' || data.type === 'volunteer_application_admin' || data.type === 'job_application_admin' || data.type === 'registration_request_admin') && !isAdmin) {
+    // SECURITY: Enforce role, module tab permission, and recipient targeting uniformly
+    const canView = canViewNotificationRecord({
+      data,
+      userIds: [user?.uid, member?.id, (member as any)?.accountId],
+      userPhones: [user?.phoneNumber, member?.phone, (member as any)?.mobileNumber],
+      isAdmin,
+      isSuperAdmin,
+      canAccessAdminModule,
+    });
+    if (!canView) {
       return null;
-    }
-
-    // SECURITY: Expense approvals, decisions & platform super-admin notices are strictly Super Admin only
-    if ((data.targetRole === 'super_admin' || data.type === 'expense_approval' || data.type === 'expense_approved' || data.type === 'expense_rejected' || data.type === 'invoice' || data.type === 'new_church') && !isSuperAdmin) {
-      return null;
-    }
-
-    // SECURITY: If broadcast/notification is targeted to a specific user, skip it if not for this user
-    const targetIdVal = data.targetMemberId || data.targetUid || data.recipientId;
-    const isPhoneTargeted = data.targetPhone && typeof data.targetPhone === 'string' && data.targetPhone.trim().length > 0;
-    const isIdTargeted = targetIdVal && typeof targetIdVal === 'string' && targetIdVal.trim().length > 0;
-
-    if (isPhoneTargeted || isIdTargeted) {
-      const uPhone = user?.phoneNumber || '';
-      const mPhone = member?.phone || '';
-      const uId = user?.uid || '';
-      const mId = member?.id || '';
-
-      const idMatch = isIdTargeted && (
-        (uId && (data.targetMemberId === uId || data.targetUid === uId || data.recipientId === uId)) ||
-        (mId && (data.targetMemberId === mId || data.targetUid === mId || data.recipientId === mId))
-      );
-
-      let phoneMatch = false;
-      if (isPhoneTargeted) {
-        const target = data.targetPhone.replace(/\D/g, '');
-        phoneMatch = Boolean(
-          (uPhone && uPhone.replace(/\D/g, '').endsWith(target)) ||
-          (mPhone && mPhone.replace(/\D/g, '').endsWith(target)) ||
-          (target.endsWith(uPhone.replace(/\D/g, '')) && uPhone.length > 5) ||
-          (target.endsWith(mPhone.replace(/\D/g, '')) && mPhone.length > 5)
-        );
-      }
-
-      if (!idMatch && !phoneMatch) {
-        return null; // Skip if not targeted to current user
-      }
     }
 
     // Determine icon, color and type classification
@@ -989,6 +972,14 @@ export default function UpdatesScreen({ navigation, route }: any) {
       icon = Sparkles;
       color = '#7C3AED';
       resolvedType = 'kids_teacher_enrollment';
+    } else if (data.type === 'kids_safety_admin') {
+      icon = UserCheck;
+      color = '#D97706';
+      resolvedType = 'kids_safety_admin';
+    } else if (data.type === 'matrimony_profile_admin' || data.type === 'matrimony_report_admin') {
+      icon = HeartHandshake;
+      color = data.type === 'matrimony_report_admin' ? '#DC2626' : '#E04B5A';
+      resolvedType = data.type;
     }
 
     let dateStr = '';
@@ -1306,7 +1297,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
       unsubscribeMeetings();
       memberUnsubs.forEach((fn) => fn());
     };
-  }, [activeChurch?.id, member?.churchId, user?.phoneNumber, member?.phone, member?.id, user?.uid, isAdmin]);
+  }, [activeChurch?.id, member?.churchId, user?.phoneNumber, member?.phone, (member as any)?.mobileNumber, member?.id, (member as any)?.accountId, user?.uid, isAdmin, isSuperAdmin, canAccessAdminModule]);
   const allUpdates = dynamicUpdates;
   const deletedSet = React.useMemo(() => new Set(deletedIds.map(String)), [deletedIds]);
   const visibleUpdates = React.useMemo(() => {
@@ -1643,6 +1634,24 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     innerTab: update.type === 'invoice' ? 'invoice' : 'approvals',
                     approvalSubTab,
                     expenseId: update.expenseId || update.relatedId || update.id,
+                    timestamp: Date.now(),
+                  });
+                } else if (update.type === 'kids_safety_admin') {
+                  if (isAdmin && canAccessAdminModule('kids_ministry')) {
+                    navigation.navigate('AdminRoot', {
+                      targetTab: 'Kids Ministry',
+                      childDocId: update.childDocId || undefined,
+                      timestamp: Date.now(),
+                    });
+                  } else {
+                    navigation.navigate('KidsMinistry', {
+                      initialCategory: 'consent',
+                      childDocId: update.childDocId || undefined,
+                    });
+                  }
+                } else if (update.type === 'matrimony_profile_admin' || update.type === 'matrimony_report_admin') {
+                  navigation.navigate('AdminRoot', {
+                    targetTab: 'Rhema Matrimony',
                     timestamp: Date.now(),
                   });
                 } else if (

@@ -10,6 +10,7 @@ import {
 } from './constants.js';
 import { verifyRhemaMemberEligibility } from './eligibility.js';
 import { resolveMemberEntitlements } from './entitlements.js';
+import { notifyAuthorizedMatrimonyAdmins } from './notifications.js';
 import {
   assertMatrimonyNotBanned,
   ensureUniqueMatrimonyId,
@@ -1452,6 +1453,20 @@ export const submitMatrimonyProfile = onCall(
 
   await batch.commit();
   await syncConsolidatedAdminProfile(uid);
+
+  const submitterName = String(profile.displayName || 'A church member').trim();
+  await notifyAuthorizedMatrimonyAdmins({
+    db,
+    docId: `matrimony_profile_${uid}`,
+    type: 'matrimony_profile_admin',
+    title: '💍 New Matrimony Profile Pending Approval',
+    body: `${submitterName} (${matrimonyId}) submitted a Matrimony profile for admin review.`,
+    data: {
+      targetUid: uid,
+      matrimonyId,
+      memberName: submitterName,
+    },
+  }).catch(() => {});
 
   return {
     success: true,

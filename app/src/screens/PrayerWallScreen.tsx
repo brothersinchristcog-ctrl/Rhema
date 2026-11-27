@@ -32,6 +32,7 @@ import { useChurch } from '../context/ChurchContext';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import FirestoreService, { AppMember } from '../services/FirestoreService';
+import { BibleService } from '../services/BibleService';
 import { PrayerRequest } from '../types/schema';
 import { getInstantMemory, loadWithInstantCache, makeScopedCacheKey } from '../utils/instantCache';
 import {
@@ -497,12 +498,12 @@ export default function PrayerWallScreen({ navigation, route }: any) {
               </View>
               {item.verseText ? (
                 <Text style={{ fontSize: 12, fontStyle: 'italic', color: '#78350f', lineHeight: 17 }}>
-                  "{item.verseText}"
+                  "{BibleService.cleanVerseText(item.verseText)}"
                 </Text>
               ) : null}
-              {item.verseTextTe && item.verseTextTe.trim() !== (item.verseText || '').trim() ? (
+              {item.verseTextTe && BibleService.cleanVerseText(item.verseTextTe) !== BibleService.cleanVerseText(item.verseText || '') ? (
                 <Text style={{ fontSize: 11, fontStyle: 'italic', color: '#92400e', marginTop: 3, lineHeight: 16 }}>
-                  "{item.verseTextTe}"
+                  "{BibleService.cleanVerseText(item.verseTextTe)}"
                 </Text>
               ) : null}
             </View>
@@ -611,12 +612,12 @@ export default function PrayerWallScreen({ navigation, route }: any) {
             </View>
             {item.verseText ? (
               <Text style={{ fontSize: 13, fontStyle: 'italic', color: isDark ? '#FDE68A' : '#78350f', lineHeight: 18 }}>
-                "{item.verseText}"
+                "{BibleService.cleanVerseText(item.verseText)}"
               </Text>
             ) : null}
-            {item.verseTextTe && item.verseTextTe.trim() !== (item.verseText || '').trim() ? (
+            {item.verseTextTe && BibleService.cleanVerseText(item.verseTextTe) !== BibleService.cleanVerseText(item.verseText || '') ? (
               <Text style={{ fontSize: 12, fontStyle: 'italic', color: isDark ? '#FCD34D' : '#92400e', marginTop: 4, lineHeight: 17 }}>
-                "{item.verseTextTe}"
+                "{BibleService.cleanVerseText(item.verseTextTe)}"
               </Text>
             ) : null}
           </View>

@@ -4,7 +4,7 @@ import { getFirestore, FieldValue, Firestore, DocumentReference, DocumentSnapsho
 import { getStorage } from 'firebase-admin/storage';
 import { COLLECTIONS, DEFAULT_CHURCH_ID, MATRIMONY_BUCKET } from './constants.js';
 import { seedMutualMatchChatOnAccept } from './chat.js';
-import { getObjectPronoun, resolveNotificationPhotoUrl, sendMatrimonyNotification, } from './notifications.js';
+import { getObjectPronoun, notifyAuthorizedMatrimonyAdmins, resolveNotificationPhotoUrl, sendMatrimonyNotification, } from './notifications.js';
 import { DEFAULT_PAID_PLANS, FREE_LIMITS, getCurrentMonthKey, resolveActiveTierFromProfile, resolveMemberEntitlements, } from './entitlements.js';
 import { assertMatrimonyProfileActive, getAdminProfileRef, getBlocksCol, getPhotoRequestsCol, getPrefsRef, getPrivateRef, getProfileRef, getSentPhotoRequestsCol, getShortlistedByCol, getShortlistsCol, getUnlockedContactsCol, getUsageRef, getViewedByCol, getViewsCol, readBlockDocs, readPrefsSnap, readPrivateSnap, readShortlistedByDocs, readShortlistDocs, readViewedByDocs, readViewDocs, } from './store.js';
 import { assertNonEmptyString, optionalBoolean, optionalNumber, optionalString } from './validation.js';
@@ -3287,6 +3287,21 @@ export const reportMatrimonyProfile = onCall({ invoker: 'public', cpu: 'gcf_gen1
         createdAt: now,
     });
     await batch.commit();
+    const reportedName = String(target.displayName || 'a Matrimony profile').trim();
+    const reporterDisplayName = String(reporter.displayName || 'A member').trim();
+    await notifyAuthorizedMatrimonyAdmins({
+        db,
+        docId: `matrimony_report_${reportRef.id}`,
+        type: 'matrimony_report_admin',
+        title: '🚨 Matrimony Profile Reported',
+        body: `${reporterDisplayName} reported ${reportedName} (${category}). Tap to review in Rhema Matrimony.`,
+        data: {
+            reportId: reportRef.id,
+            targetUid,
+            reporterUid: uid,
+            category,
+        },
+    }).catch(() => { });
     return {
         success: true,
         reportId: reportRef.id,

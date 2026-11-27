@@ -166,7 +166,7 @@ class PrayerVerseService {
       if (res.ok) {
         const data = await res.json();
         if (data?.text) {
-          textEn = data.text.replace(/\s+/g, ' ').trim();
+          textEn = BibleService.cleanVerseText(data.text.replace(/\s+/g, ' ').trim());
         }
       }
     } catch (enErr) {
@@ -180,7 +180,7 @@ class PrayerVerseService {
         if (Array.isArray(chVerses) && chVerses.length > 0) {
           const matched = chVerses.filter(v => v.verse >= start && v.verse <= end);
           if (matched.length > 0) {
-            textEn = matched.map(v => v.text).join(' ');
+            textEn = BibleService.cleanVerseText(matched.map(v => v.text).join(' '));
           }
         }
       } catch (fallbackErr) {
@@ -191,8 +191,8 @@ class PrayerVerseService {
     return {
       reference,
       referenceTe,
-      textEn: textEn || '',
-      textTe: textTe || '',
+      textEn: BibleService.cleanVerseText(textEn || ''),
+      textTe: BibleService.cleanVerseText(textTe || ''),
     };
   }
 
@@ -221,12 +221,14 @@ class PrayerVerseService {
     msg += `.\n\n`;
 
     if (verse && verse.reference) {
+      const cleanEn = BibleService.cleanVerseText(verse.text || '');
+      const cleanTe = BibleService.cleanVerseText(verse.textTe || '');
       msg += `📖 *Holy Scripture:*\n`;
-      if (verse.text && verse.text.trim()) {
-        msg += `_"${verse.text.trim()}"_\n`;
+      if (cleanEn) {
+        msg += `_"${cleanEn}"_\n`;
       }
-      if (verse.textTe && verse.textTe.trim() && verse.textTe.trim() !== (verse.text || '').trim()) {
-        msg += `_"${verse.textTe.trim()}"_\n`;
+      if (cleanTe && cleanTe !== cleanEn) {
+        msg += `_"${cleanTe}"_\n`;
       }
       msg += `— *${verse.reference}*`;
       if (verse.referenceTe && verse.referenceTe !== verse.reference) {

@@ -249,6 +249,8 @@ export default function AdminNavigator({ navigation, route }: any) {
         (lower.includes('testimon') && t.name === 'Testimonies') ||
         (lower.includes('volunteer') && t.name === 'Volunteer Management') ||
         (lower.includes('job') && t.name === 'Job Circle') ||
+        (lower.includes('matrimony') && t.name === 'Rhema Matrimony') ||
+        (lower.includes('kids') && t.name === 'Kids Ministry') ||
         ((lower.includes('approv') || lower.includes('registrat')) && t.name === 'Approvals') ||
         ((lower.includes('roster') || lower.includes('service')) && t.name === 'Service Roster')
       );

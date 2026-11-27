@@ -1873,6 +1873,7 @@ export {
   onKidsSessionCreated,
   onKidsSessionUpdated,
   onKidsAttendanceAbsentCreated,
+  onKidsChildSafetyUpdated,
   onLedgerExpenseApproval,
 } from './notifications.js';
 

@@ -33,8 +33,11 @@ import { isTabRouteLoaded, markTabRouteLoaded } from '../utils/tabLoadingHelper'
 import { withAdminModuleGuard } from '../components/AdminModuleGuard';
 import {
   AdminModuleKey,
+  canViewNotificationRecord,
   getModuleKeyForAdminNotificationType,
   getModuleKeyForAdminTab,
+  getRequiredAdminModuleForNotification,
+  isAdminOnlyNotification,
 } from '../constants/AdminModules';
 import AdminPermissionService from '../services/AdminPermissionService';
 
@@ -964,8 +967,9 @@ function Navigation() {
           const type = data.type || (data.screen === 'BibleQuizDetail' ? 'quiz' : undefined);
           const quizTargetId = data.quizId || data.relatedId || data.id;
           const requiredAdminMod =
-            getModuleKeyForAdminNotificationType(type) ||
-            (data.targetTab ? getModuleKeyForAdminTab(String(data.targetTab)) : null);
+            isAdminOnlyNotification(data)
+              ? getRequiredAdminModuleForNotification({ ...data, type })
+              : null;
           if (requiredAdminMod && !AdminPermissionService.canCurrentUserAccessModuleKey(requiredAdminMod)) {
             Alert.alert('Access Restricted', 'You do not have permission to open this admin module.');
             return;
@@ -1099,6 +1103,16 @@ function Navigation() {
               setViewMode('admin');
             }
             NotificationService.handleNotificationNavigation({ data }, navigationRef);
+          } else if (type === 'matrimony_profile_admin' || type === 'matrimony_report_admin') {
+            if (isAdmin && viewMode !== 'admin') {
+              setViewMode('admin');
+            }
+            NotificationService.handleNotificationNavigation({ data }, navigationRef);
+          } else if (type === 'kids_safety_admin') {
+            if (isAdmin && AdminPermissionService.canCurrentUserAccessModuleKey('kids_ministry') && viewMode !== 'admin') {
+              setViewMode('admin');
+            }
+            NotificationService.handleNotificationNavigation({ data }, navigationRef);
           } else if (type === 'expense_approval' || type === 'expense_approved' || type === 'expense_rejected' || type === 'invoice') {
             if (isSuperAdmin) {
               if (viewMode !== 'admin') {
@@ -1191,22 +1205,14 @@ function Navigation() {
         navigationRef.getRootState()?.routeNames?.includes('Tabs')
       ) {
         const type = remoteMessage?.data?.type;
+        const payloadObj = { ...(remoteMessage?.data || {}), type };
         const isAdminNotification =
-          type === 'invoice' ||
-          type === 'baptism_request_admin' ||
-          type === 'baptism_request' ||
-          type === 'baptism' ||
-          type === 'prayer_request_admin' ||
-          type === 'prayer_request' ||
-          type === 'prayer' ||
-          type === 'testimony_admin' ||
-          type === 'volunteer_application_admin' ||
-          type === 'job_application_admin' ||
-          type === 'admin_roster_alert';
+          isAdminOnlyNotification(payloadObj) ||
+          (type === 'kids_safety_admin' && isAdmin && AdminPermissionService.canCurrentUserAccessModuleKey('kids_ministry'));
 
-        const requiredAdminMod =
-          getModuleKeyForAdminNotificationType(typeof type === 'string' ? type : '') ||
-          (remoteMessage?.data?.targetTab ? getModuleKeyForAdminTab(String(remoteMessage.data.targetTab)) : null);
+        const requiredAdminMod = isAdminOnlyNotification(payloadObj)
+          ? getRequiredAdminModuleForNotification(payloadObj)
+          : null;
         if (requiredAdminMod && !AdminPermissionService.canCurrentUserAccessModuleKey(requiredAdminMod)) {
           Alert.alert('Access Restricted', 'You do not have permission to open this admin module.');
           return;
@@ -1247,22 +1253,14 @@ function Navigation() {
           navigationRef.getRootState()?.routeNames?.includes('Tabs')
         ) {
           const type = remoteMessage?.data?.type;
+          const payloadObj = { ...(remoteMessage?.data || {}), type };
           const isAdminNotification =
-            type === 'invoice' ||
-            type === 'baptism_request_admin' ||
-            type === 'baptism_request' ||
-            type === 'baptism' ||
-            type === 'prayer_request_admin' ||
-            type === 'prayer_request' ||
-            type === 'prayer' ||
-            type === 'testimony_admin' ||
-            type === 'volunteer_application_admin' ||
-            type === 'job_application_admin' ||
-            type === 'admin_roster_alert';
+            isAdminOnlyNotification(payloadObj) ||
+            (type === 'kids_safety_admin' && isAdmin && AdminPermissionService.canCurrentUserAccessModuleKey('kids_ministry'));
 
-          const initialAdminMod =
-            getModuleKeyForAdminNotificationType(typeof type === 'string' ? type : '') ||
-            (remoteMessage?.data?.targetTab ? getModuleKeyForAdminTab(String(remoteMessage.data.targetTab)) : null);
+          const initialAdminMod = isAdminOnlyNotification(payloadObj)
+            ? getRequiredAdminModuleForNotification(payloadObj)
+            : null;
           if (initialAdminMod && !AdminPermissionService.canCurrentUserAccessModuleKey(initialAdminMod)) {
             Alert.alert('Access Restricted', 'You do not have permission to open this admin module.');
             return;
@@ -1433,19 +1431,10 @@ function Navigation() {
           navigationRef.getRootState()?.routeNames?.includes('Tabs')
         ) {
           const type = pendingNotification?.data?.type;
-
+          const payloadObj = { ...(pendingNotification?.data || {}), type };
           const isAdminNotification =
-            type === 'invoice' ||
-            type === 'baptism_request_admin' ||
-            type === 'baptism_request' ||
-            type === 'baptism' ||
-            type === 'prayer_request_admin' ||
-            type === 'prayer_request' ||
-            type === 'prayer' ||
-            type === 'testimony_admin' ||
-            type === 'volunteer_application_admin' ||
-            type === 'job_application_admin' ||
-            type === 'admin_roster_alert';
+            isAdminOnlyNotification(payloadObj) ||
+            (type === 'kids_safety_admin' && isAdmin && AdminPermissionService.canCurrentUserAccessModuleKey('kids_ministry'));
 
           if (isAdminNotification && isAdmin && viewMode !== 'admin') {
             console.log(`Switching to admin view to handle ${type} notification`);
@@ -1518,22 +1507,18 @@ function Navigation() {
                   // Only trigger for brand-new notifications created after listener started
                   if (createdMs < listenerStartMs - 10000) return;
 
-                  // Filter out admin-only alerts for regular members
-                  if ((d.targetRole === 'admin' || d.recipientRole === 'admin') && !isAdmin) {
+                  // Enforce role, Admin Dashboard module permissions, and recipient targeting
+                  const canShowLiveBanner = canViewNotificationRecord({
+                    data: d,
+                    userIds: [user.uid, member?.id, (member as any)?.accountId],
+                    userPhones: [user.phoneNumber, member?.phone, (member as any)?.mobileNumber],
+                    isAdmin,
+                    isSuperAdmin,
+                    canAccessAdminModule: (modKey) =>
+                      AdminPermissionService.canCurrentUserAccessModuleKey(modKey),
+                  });
+                  if (!canShowLiveBanner) {
                     return;
-                  }
-                  // Filter out member-targeted alerts meant for a different member
-                  const targetMember = String(d.targetMemberId || d.recipientId || '').trim();
-                  if (targetMember && targetMember !== user.uid) {
-                    const userPhone10 = String(user.phoneNumber || member?.phone || '')
-                      .replace(/\D/g, '')
-                      .slice(-10);
-                    const targetPhone10 = String(d.targetPhone || '')
-                      .replace(/\D/g, '')
-                      .slice(-10);
-                    if (!userPhone10 || userPhone10 !== targetPhone10) {
-                      return;
-                    }
                   }
 
                   const nTitle = d.title || 'Church Update';
