@@ -67,14 +67,18 @@ import CareCellService, { KNOWN_REGION_COORDS } from '../../../../services/CareC
 const { width, height } = Dimensions.get('window');
 
 // Android Fabric react-native-maps MapMarker defaults createDrawable() to 100x100 physical px.
-// Keep the entire marker box strictly <= 96px on Android so full-circle photos never clip in half.
-const PIN_HEAD_SIZE =
+// Keep total pin box (full circle + bottom needle) strictly <= 96px on Android so neither clips.
+const PIN_TOTAL_SIZE =
   Platform.OS === 'android'
-    ? Math.min(42, Math.max(26, Math.floor(96 / Math.max(1, PixelRatio.get()))))
-    : 42;
+    ? Math.min(46, Math.max(27, Math.floor(96 / Math.max(1, PixelRatio.get()))))
+    : 46;
+const PIN_POINTER_W = 12;
+const PIN_POINTER_H = 6;
+const PIN_POINTER_OVERLAP = 2;
+const PIN_HEAD_SIZE = PIN_TOTAL_SIZE - (PIN_POINTER_H - PIN_POINTER_OVERLAP);
 const PIN_BORDER_WIDTH = 2;
 const PIN_IMAGE_SIZE = PIN_HEAD_SIZE - PIN_BORDER_WIDTH * 2;
-const CHURCH_MARKER_SIZE = Math.min(34, PIN_HEAD_SIZE);
+const CHURCH_MARKER_SIZE = Math.min(34, PIN_TOTAL_SIZE);
 
 // Default fallback coordinates if no cell & no member coordinates exist
 const DEFAULT_KURNOOL_LAT = 15.8281;
@@ -1004,7 +1008,7 @@ export default function CareCellMapModal({
                       latitude: m.latitude!,
                       longitude: m.longitude!,
                     }}
-                    anchor={{ x: 0.5, y: 0.5 }}
+                    anchor={{ x: 0.5, y: 1.0 }}
                     zIndex={isSelected ? 50 : 25}
                     tracksViewChanges={Boolean(
                       (hasPhoto && !loadedMarkerPhotos[markerKey]) ||
@@ -1056,6 +1060,19 @@ export default function CareCellMapModal({
                           )}
                         </View>
                       </View>
+
+                      {/* Lollipop Needle Pointer SVG */}
+                      <Svg
+                        width={PIN_POINTER_W}
+                        height={PIN_POINTER_H}
+                        viewBox={`0 0 ${PIN_POINTER_W} ${PIN_POINTER_H}`}
+                        style={{ marginTop: -PIN_POINTER_OVERLAP }}
+                      >
+                        <Path
+                          d={`M0 0 L${PIN_POINTER_W / 2} ${PIN_POINTER_H} L${PIN_POINTER_W} 0 Z`}
+                          fill={accentColor}
+                        />
+                      </Svg>
 
                       {/* Route Order Badge */}
                       {inRouteIndex >= 0 ? (
@@ -1700,12 +1717,12 @@ const styles = createAdminThemedStyles({
     elevation: 4,
   },
 
-  /* Full-Circle Profile Marker Styles */
+  /* Full-Circle Profile Pin Marker Styles */
   photoPinWrapper: {
     width: PIN_HEAD_SIZE,
-    height: PIN_HEAD_SIZE,
+    height: PIN_TOTAL_SIZE,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
   },
   photoPinHead: {
     width: PIN_HEAD_SIZE,

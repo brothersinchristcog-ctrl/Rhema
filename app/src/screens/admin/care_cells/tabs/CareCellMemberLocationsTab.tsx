@@ -68,11 +68,15 @@ const DEFAULT_CENTER = {
 };
 
 // Android Fabric react-native-maps MapMarker defaults createDrawable() to 100x100 physical px.
-// Keep the entire marker box strictly <= 96px on Android so full-circle photos never clip in half.
-const TAB_PIN_HEAD_SIZE =
+// Keep total pin box (full circle + bottom needle) strictly <= 96px on Android so neither clips.
+const TAB_PIN_TOTAL_SIZE =
   Platform.OS === 'android'
-    ? Math.min(42, Math.max(26, Math.floor(96 / Math.max(1, PixelRatio.get()))))
-    : 42;
+    ? Math.min(46, Math.max(27, Math.floor(96 / Math.max(1, PixelRatio.get()))))
+    : 46;
+const TAB_PIN_POINTER_W = 12;
+const TAB_PIN_POINTER_H = 6;
+const TAB_PIN_POINTER_OVERLAP = 2;
+const TAB_PIN_HEAD_SIZE = TAB_PIN_TOTAL_SIZE - (TAB_PIN_POINTER_H - TAB_PIN_POINTER_OVERLAP);
 const TAB_PIN_BORDER_W = 2;
 const TAB_PIN_IMG_SIZE = TAB_PIN_HEAD_SIZE - TAB_PIN_BORDER_W * 2;
 
@@ -701,7 +705,7 @@ export default function CareCellMemberLocationsTab({
                   key={`group_${idx}_${first.memberId}`}
                   coordinate={{ latitude: first.latitude, longitude: first.longitude }}
                   onPress={() => handleMarkerPress(group)}
-                  anchor={{ x: 0.5, y: 0.5 }}
+                  anchor={{ x: 0.5, y: 1.0 }}
                   zIndex={isSelected ? 50 : 25}
                   tracksViewChanges={Boolean(
                     (hasPhoto && !loadedMarkerPhotos[first.memberId]) ||
@@ -753,6 +757,19 @@ export default function CareCellMemberLocationsTab({
                         )}
                       </View>
                     </View>
+
+                    {/* Lollipop Needle Pointer SVG */}
+                    <Svg
+                      width={TAB_PIN_POINTER_W}
+                      height={TAB_PIN_POINTER_H}
+                      viewBox={`0 0 ${TAB_PIN_POINTER_W} ${TAB_PIN_POINTER_H}`}
+                      style={{ marginTop: -TAB_PIN_POINTER_OVERLAP }}
+                    >
+                      <Path
+                        d={`M0 0 L${TAB_PIN_POINTER_W / 2} ${TAB_PIN_POINTER_H} L${TAB_PIN_POINTER_W} 0 Z`}
+                        fill={ringColor}
+                      />
+                    </Svg>
 
                     {/* Multi-member cluster count pill */}
                     {isMulti && (
@@ -1317,9 +1334,9 @@ const styles = createAdminThemedStyles(
     // Markers
     tabLollipopWrap: {
       width: TAB_PIN_HEAD_SIZE,
-      height: TAB_PIN_HEAD_SIZE,
+      height: TAB_PIN_TOTAL_SIZE,
       alignItems: 'center',
-      justifyContent: 'center',
+      justifyContent: 'flex-start',
     },
     tabLollipopHead: {
       width: TAB_PIN_HEAD_SIZE,
