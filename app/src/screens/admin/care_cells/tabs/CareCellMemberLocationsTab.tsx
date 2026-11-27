@@ -66,6 +66,14 @@ const DEFAULT_CENTER = {
   longitudeDelta: 0.12,
 };
 
+const TAB_PIN_IMG_SIZE = 40;
+const TAB_PIN_BORDER_W = 3;
+const TAB_PIN_HEAD_SIZE = TAB_PIN_IMG_SIZE + TAB_PIN_BORDER_W * 2;
+const TAB_PIN_WRAP_TOP = 6;
+const TAB_PIN_POINTER_H = 8;
+const TAB_PIN_WRAP_W = 64;
+const TAB_PIN_WRAP_H = TAB_PIN_WRAP_TOP + TAB_PIN_HEAD_SIZE + TAB_PIN_POINTER_H - 1;
+
 interface CareCellMemberLocationsTabProps {
   cells: CareCell[];
   selectedCellId?: string;
@@ -680,6 +688,11 @@ export default function CareCellMemberLocationsTab({
                 : '#10B981';
 
               const isSelected = selectedGroup === group || (selectedMember && group.includes(selectedMember));
+              const photoCandidate =
+                (typeof first.profilePhoto === 'string' && first.profilePhoto.trim()) ||
+                (group.find((r) => typeof r.profilePhoto === 'string' && r.profilePhoto.trim())?.profilePhoto || '').trim();
+              const hasPhoto = photoCandidate.length > 0;
+              const ringColor = isSelected ? '#F59E0B' : dominantColor;
 
               return (
                 <Marker
@@ -688,7 +701,7 @@ export default function CareCellMemberLocationsTab({
                   onPress={() => handleMarkerPress(group)}
                   anchor={{ x: 0.5, y: 1.0 }}
                   tracksViewChanges={Boolean(
-                    (!loadedMarkerPhotos[first.memberId] && !!first.profilePhoto) ||
+                    (hasPhoto && !loadedMarkerPhotos[first.memberId]) ||
                     isSelected ||
                     refreshMarkersCount < 2
                   )}
@@ -700,24 +713,32 @@ export default function CareCellMemberLocationsTab({
                       style={[
                         styles.tabLollipopHead,
                         {
-                          borderColor: isSelected ? '#F59E0B' : dominantColor,
-                          borderWidth: isSelected ? 3.5 : 2.5,
-                          transform: [{ scale: isSelected ? 1.15 : 1 }],
+                          borderColor: ringColor,
+                          backgroundColor: hasPhoto ? '#FFFFFF' : ringColor,
                         },
                       ]}
                     >
-                      {first.profilePhoto ? (
+                      {hasPhoto ? (
                         <Image
-                          source={{ uri: first.profilePhoto }}
+                          source={{ uri: photoCandidate }}
                           style={styles.tabLollipopAvatarImg}
                           resizeMode="cover"
                           fadeDuration={0}
                           onLoad={() => {
-                            setLoadedMarkerPhotos((prev) => ({ ...prev, [first.memberId]: true }));
+                            setTimeout(() => {
+                              setLoadedMarkerPhotos((prev) =>
+                                prev[first.memberId] ? prev : { ...prev, [first.memberId]: true }
+                              );
+                            }, 400);
+                          }}
+                          onError={() => {
+                            setLoadedMarkerPhotos((prev) =>
+                              prev[first.memberId] ? prev : { ...prev, [first.memberId]: true }
+                            );
                           }}
                         />
                       ) : (
-                        <View collapsable={false} style={[styles.tabLollipopAvatarFallback, { backgroundColor: dominantColor }]}>
+                        <View collapsable={false} style={[styles.tabLollipopAvatarFallback, { backgroundColor: ringColor }]}>
                           <Text style={styles.tabLollipopInitials}>
                             {(first.memberName || 'M').slice(0, 2).toUpperCase()}
                           </Text>
@@ -749,7 +770,7 @@ export default function CareCellMemberLocationsTab({
                     >
                       <Path
                         d="M0 0 L7 8 L14 0 Z"
-                        fill={isSelected ? '#F59E0B' : dominantColor}
+                        fill={ringColor}
                       />
                     </Svg>
                   </View>
@@ -1300,35 +1321,31 @@ const styles = createAdminThemedStyles(
 
     // Markers
     tabLollipopWrap: {
-      width: 48,
-      height: 54,
+      width: TAB_PIN_WRAP_W,
+      height: TAB_PIN_WRAP_H,
+      paddingTop: TAB_PIN_WRAP_TOP,
       alignItems: 'center',
       justifyContent: 'flex-start',
     },
     tabLollipopHead: {
-      width: 44,
-      height: 44,
-      borderRadius: 22,
+      width: TAB_PIN_HEAD_SIZE,
+      height: TAB_PIN_HEAD_SIZE,
+      borderRadius: TAB_PIN_HEAD_SIZE / 2,
+      borderWidth: TAB_PIN_BORDER_W,
       backgroundColor: '#FFFFFF',
       alignItems: 'center',
       justifyContent: 'center',
-      overflow: 'hidden',
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 3 },
-      shadowOpacity: 0.3,
-      shadowRadius: 4,
-      elevation: 6,
     },
     tabLollipopAvatarImg: {
-      width: '100%',
-      height: '100%',
-      borderRadius: 22,
+      width: TAB_PIN_IMG_SIZE,
+      height: TAB_PIN_IMG_SIZE,
+      borderRadius: TAB_PIN_IMG_SIZE / 2,
       resizeMode: 'cover',
     },
     tabLollipopAvatarFallback: {
-      width: '100%',
-      height: '100%',
-      borderRadius: 22,
+      width: TAB_PIN_IMG_SIZE,
+      height: TAB_PIN_IMG_SIZE,
+      borderRadius: TAB_PIN_IMG_SIZE / 2,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -1340,8 +1357,8 @@ const styles = createAdminThemedStyles(
     },
     tabLollipopCountBadge: {
       position: 'absolute',
-      top: -4,
-      right: -4,
+      top: 2,
+      right: 3,
       flexDirection: 'row',
       alignItems: 'center',
       minWidth: 20,
@@ -1359,11 +1376,11 @@ const styles = createAdminThemedStyles(
     },
     tabLollipopVerifiedBadge: {
       position: 'absolute',
-      top: -4,
-      right: -4,
-      width: 16,
-      height: 16,
-      borderRadius: 8,
+      top: 2,
+      right: 4,
+      width: 17,
+      height: 17,
+      borderRadius: 8.5,
       backgroundColor: '#10B981',
       borderWidth: 1.5,
       borderColor: '#FFFFFF',

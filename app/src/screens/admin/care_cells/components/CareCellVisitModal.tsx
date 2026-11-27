@@ -28,7 +28,9 @@ import {
   UserCheck,
 } from 'lucide-react-native';
 import CareCellService from '../../../../services/CareCellService';
-import { CareCell, CareCellMembership } from '../../../../types/CareCellTypes';
+import DateTimePickerModal from 'react-native-modal-datetime-picker';
+import { formatDateDisplay } from '../../../../utils/DateUtils';
+import { CareCell, CareCellMembership, formatTime12h } from '../../../../types/CareCellTypes';
 import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 
 interface CareCellVisitModalProps {
@@ -74,6 +76,8 @@ export default function CareCellVisitModal({
   const [purpose, setPurpose] = useState('');
   const [visitDate, setVisitDate] = useState('');
   const [visitTime, setVisitTime] = useState('17:00');
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [visitors, setVisitors] = useState('Pastor & Cell Leader');
   const [memberCount, setMemberCount] = useState<number | null>(null);
   const [loadingMembers, setLoadingMembers] = useState(false);
@@ -83,6 +87,46 @@ export default function CareCellVisitModal({
   const [cellMembers, setCellMembers] = useState<CareCellMembership[]>([]);
   const [visitScope, setVisitScope] = useState<'ALL' | 'SPECIFIC'>('ALL');
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+
+  const formatLocalYmd = (d: Date) => {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const parseLocalYmd = (ymd: string): Date => {
+    const match = String(ymd || '').trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (match) {
+      const parsed = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+      if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow;
+  };
+
+  const parseTimeToDate = (timeStr: string): Date => {
+    const d = new Date();
+    const clean = String(timeStr || '').trim();
+    const ampmMatch = clean.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (ampmMatch) {
+      let hours = parseInt(ampmMatch[1], 10);
+      const mins = parseInt(ampmMatch[2], 10);
+      const mod = ampmMatch[3].toUpperCase();
+      if (mod === 'PM' && hours < 12) hours += 12;
+      if (mod === 'AM' && hours === 12) hours = 0;
+      d.setHours(hours, mins, 0, 0);
+      return d;
+    }
+    const h24Match = clean.match(/^(\d{1,2}):(\d{2})$/);
+    if (h24Match) {
+      d.setHours(parseInt(h24Match[1], 10), parseInt(h24Match[2], 10), 0, 0);
+      return d;
+    }
+    d.setHours(17, 0, 0, 0);
+    return d;
+  };
 
   // Set default cell and date when opened
   useEffect(() => {
@@ -95,11 +139,10 @@ export default function CareCellVisitModal({
       // Default date to tomorrow in YYYY-MM-DD
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
-      const yyyy = tomorrow.getFullYear();
-      const mm = String(tomorrow.getMonth() + 1).padStart(2, '0');
-      const dd = String(tomorrow.getDate()).padStart(2, '0');
-      setVisitDate(`${yyyy}-${mm}-${dd}`);
+      setVisitDate(formatLocalYmd(tomorrow));
       setVisitTime('17:00');
+      setShowDatePicker(false);
+      setShowTimePicker(false);
       setVisitors('Pastor & Cell Leader');
       setTitle('Pastoral Home Visit');
       setPurpose('');
@@ -207,13 +250,14 @@ export default function CareCellVisitModal({
   const handleDateShortcut = (daysFromToday: number) => {
     const target = new Date();
     target.setDate(target.getDate() + daysFromToday);
-    const yyyy = target.getFullYear();
-    const mm = String(target.getMonth() + 1).padStart(2, '0');
-    const dd = String(target.getDate()).padStart(2, '0');
-    setVisitDate(`${yyyy}-${mm}-${dd}`);
+    setVisitDate(formatLocalYmd(target));
   };
 
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
   return (
+    <>
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={styles.overlay}
@@ -385,30 +429,32 @@ export default function CareCellVisitModal({
             <View style={styles.row}>
               <View style={{ flex: 1, marginRight: 8 }}>
                 <Text style={styles.fieldLabel}>VISIT DATE *</Text>
-                <View style={styles.iconInputWrap}>
-                  <Calendar size={16} color={secondaryText} style={styles.inputIcon} />
-                  <TextInput
-                    style={[styles.input, styles.inputWithIcon]}
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor="#94A3B8"
-                    value={visitDate}
-                    onChangeText={setVisitDate}
-                  />
-                </View>
+                <TouchableOpacity
+                  style={[styles.input, styles.pickerField]}
+                  onPress={() => setShowDatePicker(true)}
+                  activeOpacity={0.8}
+                >
+                  <Calendar size={16} color={secondaryText} />
+                  <Text style={[styles.pickerFieldText, { color: primaryText }]} numberOfLines={1}>
+                    {visitDate ? formatDateDisplay(visitDate) : 'Select Date'}
+                  </Text>
+                  <ChevronDown size={15} color={secondaryText} />
+                </TouchableOpacity>
               </View>
 
               <View style={{ flex: 1, marginLeft: 8 }}>
                 <Text style={styles.fieldLabel}>VISIT TIME *</Text>
-                <View style={styles.iconInputWrap}>
-                  <Clock size={16} color={secondaryText} style={styles.inputIcon} />
-                  <TextInput
-                    style={[styles.input, styles.inputWithIcon]}
-                    placeholder="e.g. 17:00 / 5 PM"
-                    placeholderTextColor="#94A3B8"
-                    value={visitTime}
-                    onChangeText={setVisitTime}
-                  />
-                </View>
+                <TouchableOpacity
+                  style={[styles.input, styles.pickerField]}
+                  onPress={() => setShowTimePicker(true)}
+                  activeOpacity={0.8}
+                >
+                  <Clock size={16} color={secondaryText} />
+                  <Text style={[styles.pickerFieldText, { color: primaryText }]} numberOfLines={1}>
+                    {visitTime ? formatTime12h(visitTime) : 'Select Time'}
+                  </Text>
+                  <ChevronDown size={15} color={secondaryText} />
+                </TouchableOpacity>
               </View>
             </View>
 
@@ -508,6 +554,32 @@ export default function CareCellVisitModal({
         </View>
       </KeyboardAvoidingView>
     </Modal>
+
+    <DateTimePickerModal
+      isVisible={showDatePicker}
+      mode="date"
+      date={parseLocalYmd(visitDate)}
+      minimumDate={todayStart}
+      onConfirm={(selectedDate) => {
+        setShowDatePicker(false);
+        setVisitDate(formatLocalYmd(selectedDate));
+      }}
+      onCancel={() => setShowDatePicker(false)}
+    />
+
+    <DateTimePickerModal
+      isVisible={showTimePicker}
+      mode="time"
+      date={parseTimeToDate(visitTime)}
+      onConfirm={(selectedTime) => {
+        setShowTimePicker(false);
+        const hh = String(selectedTime.getHours()).padStart(2, '0');
+        const mm = String(selectedTime.getMinutes()).padStart(2, '0');
+        setVisitTime(`${hh}:${mm}`);
+      }}
+      onCancel={() => setShowTimePicker(false)}
+    />
+    </>
   );
 }
 
@@ -637,6 +709,18 @@ const styles = createAdminThemedStyles({
   },
   inputWithIcon: {
     paddingLeft: 38,
+  },
+  pickerField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    minHeight: 44,
+  },
+  pickerFieldText: {
+    flex: 1,
+    fontSize: 13.5,
+    fontWeight: '700',
   },
   textArea: {
     minHeight: 70,
