@@ -302,7 +302,10 @@ class NotificationService {
   ): Promise<boolean> {
     try {
       const cleanTitle = (title || 'Rhema Church Update').trim();
-      const cleanBody = (body || '').trim();
+      const rawBody = (body || '').trim();
+      const cleanBody = /^e2ee:v\d+:/i.test(rawBody)
+        ? '🔒 New encrypted message'
+        : rawBody;
       if (!cleanTitle && !cleanBody) return false;
 
       const rawId = String(

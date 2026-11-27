@@ -3614,6 +3614,8 @@ async function handleTestimonyAdminCreatedPush(testimony: any, churchId: string,
   const memberName = (testimony.memberName || 'Church Member').trim();
 
   let adminTokens: string[] = [];
+  let adminUids: string[] = [];
+  let permissionConfigured = false;
 
   try {
     const candidateMap = new Map<string, string[]>();
@@ -3644,13 +3646,18 @@ async function handleTestimonyAdminCreatedPush(testimony: any, churchId: string,
         candidateMap.set(doc.id, tokens);
       }
     });
-    const filtered = await filterAuthorizedAdminRecipientsForModule(
-      db,
-      churchId,
-      'testimonies',
-      Array.from(candidateMap.entries()).map(([uid, tokens]) => ({ uid, tokens }))
-    );
+    const [filtered, isConfigured] = await Promise.all([
+      filterAuthorizedAdminRecipientsForModule(
+        db,
+        churchId,
+        'testimonies',
+        Array.from(candidateMap.entries()).map(([uid, tokens]) => ({ uid, tokens }))
+      ),
+      isChurchAdminPermissionConfigured(db, churchId),
+    ]);
     adminTokens = filtered.tokens;
+    adminUids = filtered.adminUids;
+    permissionConfigured = isConfigured;
   } catch (lookupErr) {
     console.error('Error fetching admin tokens for testimony notification:', lookupErr);
   }
@@ -3661,6 +3668,7 @@ async function handleTestimonyAdminCreatedPush(testimony: any, churchId: string,
     testimonyId,
     screen: 'AdminRoot',
     targetTab: 'Testimonies',
+    requiredAdminModule: 'testimonies',
     click_action: 'FLUTTER_NOTIFICATION_CLICK',
     channelId: 'church_alerts',
   };
@@ -3698,42 +3706,47 @@ async function handleTestimonyAdminCreatedPush(testimony: any, churchId: string,
     }
   }
 
-  // Broadcast to corresponding church admin topic ONLY: church_{churchId}_admin
-  try {
-    await messaging.send({
-      notification: { title, body },
-      data: notificationData,
-      topic: `church_${churchId}_admin`,
-      android: {
-        priority: 'high',
-        notification: {
-          sound: 'default',
-          priority: 'max',
-          channelId: 'church_alerts',
-          defaultSound: true,
-          defaultVibrateTimings: true,
-        },
-      },
-      apns: {
-        payload: {
-          aps: {
+  // Fallback to topic ONLY before permissions/tokens exist (prevents duplicate pushes and permission bypass)
+  if (uniqueAdminTokens.length === 0 && adminUids.length === 0 && !permissionConfigured) {
+    try {
+      await messaging.send({
+        notification: { title, body },
+        data: notificationData,
+        topic: `church_${churchId}_admin`,
+        android: {
+          priority: 'high',
+          notification: {
             sound: 'default',
-            badge: 1,
-            contentAvailable: true,
+            priority: 'max',
+            channelId: 'church_alerts',
+            defaultSound: true,
+            defaultVibrateTimings: true,
           },
         },
-      },
-    });
-    console.log(`✅ Broadcasted testimony notification to topic: church_${churchId}_admin`);
-  } catch (topicErr) {
-    console.error('Error sending testimony notification to church admin topic:', topicErr);
+        apns: {
+          payload: {
+            aps: {
+              sound: 'default',
+              badge: 1,
+              contentAvailable: true,
+            },
+          },
+        },
+      });
+      console.log(`✅ Fallback-broadcasted testimony notification to topic: church_${churchId}_admin`);
+    } catch (topicErr) {
+      console.error('Error sending testimony notification to church admin topic:', topicErr);
+    }
   }
 
-  // Write in-app notification doc for church admins into both broadcasts and notifications
+  // Write ONE deterministic in-app notification doc for authorized church admins (no broadcasts duplicate)
   try {
     const notifPayload = {
       type: 'testimony_admin',
       targetRole: 'admin',
+      requiredAdminModule: 'testimonies',
+      targetTab: 'Testimonies',
+      screen: 'AdminRoot',
       title,
       body,
       content: `${memberName} submitted a new testimony: "${testimony.title || 'Untitled'}". Please review it.`,
@@ -3745,10 +3758,14 @@ async function handleTestimonyAdminCreatedPush(testimony: any, churchId: string,
       read: false,
       createdAt: FieldValue.serverTimestamp(),
     };
-    await db.collection('Rhema Church').doc(churchId).collection('broadcasts').add(notifPayload);
-    await db.collection('Rhema Church').doc(churchId).collection('notifications').add(notifPayload);
+    await db
+      .collection('Rhema Church')
+      .doc(churchId)
+      .collection('notifications')
+      .doc(`testimony_admin_${testimonyId}`)
+      .set(notifPayload, { merge: true });
   } catch (dbErr) {
-    console.error('Error writing testimony in-app broadcast/notification document:', dbErr);
+    console.error('Error writing testimony in-app notification document:', dbErr);
   }
 }
 
@@ -3849,7 +3866,7 @@ async function handleTestimonyWorkflowUpdatedPush(before: any, after: any, churc
       }
     }
 
-    // In-app broadcast for the submitting member
+    // Deterministic in-app notification for the submitting member (single doc, no duplicate)
     try {
       const memberBroadcast = {
         type: 'testimony_member_status',
@@ -3861,10 +3878,15 @@ async function handleTestimonyWorkflowUpdatedPush(before: any, after: any, churc
         relatedId: testimonyId,
         churchId,
         status: after.status,
+        read: false,
         createdAt: FieldValue.serverTimestamp(),
       };
-      await db.collection('Rhema Church').doc(churchId).collection('broadcasts').add(memberBroadcast);
-      await db.collection('Rhema Church').doc(churchId).collection('notifications').add(memberBroadcast);
+      await db
+        .collection('Rhema Church')
+        .doc(churchId)
+        .collection('notifications')
+        .doc(`testimony_member_${testimonyId}_${after.status}`)
+        .set(memberBroadcast, { merge: true });
     } catch (_) {}
   }
 
@@ -3952,7 +3974,7 @@ async function handleTestimonyWorkflowUpdatedPush(before: any, after: any, churc
       console.error('Error sending multicast published testimony notifications:', multicastErr);
     }
 
-    // 3. In-app notification and broadcast for church members
+    // 3. Deterministic in-app notification for church members (single doc, no duplicate)
     try {
       const pubPayload = {
         type: 'testimony_published',
@@ -3963,10 +3985,15 @@ async function handleTestimonyWorkflowUpdatedPush(before: any, after: any, churc
         relatedId: testimonyId,
         memberName,
         churchId,
+        read: false,
         createdAt: FieldValue.serverTimestamp(),
       };
-      await db.collection('Rhema Church').doc(churchId).collection('broadcasts').add(pubPayload);
-      await db.collection('Rhema Church').doc(churchId).collection('notifications').add(pubPayload);
+      await db
+        .collection('Rhema Church')
+        .doc(churchId)
+        .collection('notifications')
+        .doc(`testimony_pub_${testimonyId}`)
+        .set(pubPayload, { merge: true });
     } catch (_) {}
   }
 }

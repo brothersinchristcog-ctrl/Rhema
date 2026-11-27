@@ -316,6 +316,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
     const seenRosterAlertKeys = new Set<string>();
     const seenLiveStreams = new Set<string>();
     const seenQuizKeys = new Set<string>();
+    const seenTestimonyKeys = new Set<string>();
     const deduplicated = combined.filter(item => {
       if (!item || !item.id) return false;
       if (seenIds.has(item.id)) {
@@ -392,6 +393,20 @@ export default function UpdatesScreen({ navigation, route }: any) {
           return false;
         }
         seenRosterAlertKeys.add(rosterKey);
+      }
+
+      // Deduplicate duplicate testimony alerts across broadcasts and notifications
+      if (
+        item.type === 'testimony_admin' ||
+        item.type === 'testimony_published' ||
+        item.type === 'testimony_member_status'
+      ) {
+        const tRef = String(item.testimonyId || item.relatedId || '').trim();
+        const tKey = `${item.type}|${tRef || `${item.title || ''}|${item.content || ''}`}|${Math.floor(Number(item.rawDate || 0) / 120_000)}`;
+        if (seenTestimonyKeys.has(tKey)) {
+          return false;
+        }
+        seenTestimonyKeys.add(tKey);
       }
 
       // Deduplicate live stream broadcasts so members only see the single latest active live alert

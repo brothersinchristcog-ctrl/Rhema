@@ -1142,34 +1142,62 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
                       { borderTopColor: adminBorderColor },
                     ]}
                   >
-                    <View style={styles.metaCol}>
-                      <Text style={[styles.metaLabel, { color: isDark ? '#94A3B8' : secondaryText }]}>
-                        Privacy
-                      </Text>
-                      <Text
-                        style={[
-                          styles.metaValue,
-                          {
-                            color:
-                              selectedTestimony.privacy === 'Private'
-                                ? '#A78BFA'
-                                : '#34D399',
-                            fontWeight: '800',
-                          },
-                        ]}
-                      >
-                        {selectedTestimony.privacy}
-                      </Text>
+                    <View style={styles.metaRowTop}>
+                      <View style={styles.metaCol}>
+                        <Text style={[styles.metaLabel, { color: isDark ? '#94A3B8' : secondaryText }]}>
+                          Privacy
+                        </Text>
+                        <View
+                          style={[
+                            styles.metaPill,
+                            {
+                              backgroundColor:
+                                selectedTestimony.privacy === 'Private'
+                                  ? 'rgba(167, 139, 250, 0.14)'
+                                  : 'rgba(52, 211, 153, 0.14)',
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.metaValue,
+                              {
+                                color:
+                                  selectedTestimony.privacy === 'Private'
+                                    ? '#A78BFA'
+                                    : '#34D399',
+                                fontWeight: '800',
+                              },
+                            ]}
+                          >
+                            {selectedTestimony.privacy}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.metaCol}>
+                        <Text style={[styles.metaLabel, { color: isDark ? '#94A3B8' : secondaryText }]}>
+                          Current Status
+                        </Text>
+                        <View
+                          style={[
+                            styles.metaPill,
+                            {
+                              backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9',
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.metaValue,
+                              { color: isDark ? '#FFFFFF' : primaryText, fontWeight: '800' },
+                            ]}
+                          >
+                            {selectedTestimony.status}
+                          </Text>
+                        </View>
+                      </View>
                     </View>
-                    <View style={styles.metaCol}>
-                      <Text style={[styles.metaLabel, { color: isDark ? '#94A3B8' : secondaryText }]}>
-                        Current Status
-                      </Text>
-                      <Text style={[styles.metaValue, { color: isDark ? '#FFFFFF' : primaryText, fontWeight: '800' }]}>
-                        {selectedTestimony.status}
-                      </Text>
-                    </View>
-                    <View style={styles.metaCol}>
+                    <View style={[styles.metaSubmittedBlock, { borderTopColor: adminBorderColor }]}>
                       <Text style={[styles.metaLabel, { color: isDark ? '#94A3B8' : secondaryText }]}>
                         Submitted
                       </Text>
@@ -1311,55 +1339,72 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
                     </View>
 
                     {videoUrl && !videoError && (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, gap: 8, flexWrap: 'wrap' }}>
+                      <View style={styles.videoControlsWrapper}>
                         <TouchableOpacity
                           style={[
                             styles.playPauseBtn,
                             { backgroundColor: accentColor, marginTop: 0 },
                           ]}
+                          activeOpacity={0.85}
                           onPress={handleTogglePlayPause}
                         >
                           {isPlaying ? (
                             <>
-                              <Pause size={15} color="#FFFFFF" />
-                              <Text style={styles.playPauseBtnText}>Pause</Text>
+                              <Pause size={16} color="#FFFFFF" />
+                              <Text style={styles.playPauseBtnText}>Pause Video</Text>
                             </>
                           ) : (
                             <>
-                              <Play size={15} color="#FFFFFF" />
+                              <Play size={16} color="#FFFFFF" />
                               <Text style={styles.playPauseBtnText}>Play Video</Text>
                             </>
                           )}
                         </TouchableOpacity>
 
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <View style={styles.videoSecondaryRow}>
                           <TouchableOpacity
                             style={[
-                              styles.playPauseBtn,
-                              { backgroundColor: isDark ? '#1E293B' : '#F1F5F9', marginTop: 0 },
+                              styles.videoSecondaryBtn,
+                              {
+                                backgroundColor: isDark ? '#1E293B' : '#F1F5F9',
+                                borderColor: isDark ? 'rgba(255,255,255,0.12)' : '#CBD5E1',
+                              },
                             ]}
+                            activeOpacity={0.85}
                             onPress={toggleAdminVideoOrientation}
                           >
                             {isAdminVideoLandscape ? (
-                              <Minimize2 size={14} color={isDark ? '#F8FAFC' : '#0F172A'} />
+                              <Minimize2 size={15} color={isDark ? '#F8FAFC' : '#0F172A'} />
                             ) : (
-                              <Maximize2 size={14} color={isDark ? '#F8FAFC' : '#0F172A'} />
+                              <Maximize2 size={15} color={isDark ? '#F8FAFC' : '#0F172A'} />
                             )}
-                            <Text style={[styles.playPauseBtnText, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>
+                            <Text
+                              numberOfLines={1}
+                              style={[styles.videoSecondaryBtnText, { color: isDark ? '#F8FAFC' : '#0F172A' }]}
+                            >
                               {isAdminVideoLandscape ? 'Portrait' : 'Landscape'}
                             </Text>
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={[
-                              styles.playPauseBtn,
-                              { backgroundColor: isDark ? '#1E293B' : '#F1F5F9', marginTop: 0 },
+                              styles.videoSecondaryBtn,
+                              {
+                                backgroundColor: isDark ? '#1E293B' : '#F1F5F9',
+                                borderColor: isDark ? 'rgba(255,255,255,0.12)' : '#CBD5E1',
+                              },
                             ]}
+                            activeOpacity={0.85}
                             onPress={() => {
                               videoRef.current?.presentFullscreenPlayer?.().catch(() => {});
                             }}
                           >
-                            <Maximize2 size={14} color={accentColor} />
-                            <Text style={[styles.playPauseBtnText, { color: accentColor }]}>Full Screen</Text>
+                            <Maximize2 size={15} color={accentColor} />
+                            <Text
+                              numberOfLines={1}
+                              style={[styles.videoSecondaryBtnText, { color: accentColor }]}
+                            >
+                              Full Screen
+                            </Text>
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -1996,15 +2041,33 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   metadataGrid: {
-    flexDirection: 'row',
+    flexDirection: 'column',
+    gap: 10,
     paddingTop: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
+  metaRowTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 14,
+  },
   metaCol: {
     flex: 1,
+    alignItems: 'flex-start',
+  },
+  metaPill: {
+    marginTop: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  metaSubmittedBlock: {
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   metaLabel: {
     fontSize: 11,
+    fontWeight: '600',
     marginBottom: 2,
   },
   metaValue: {
@@ -2111,17 +2174,44 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
+  videoControlsWrapper: {
+    marginTop: 12,
+    gap: 10,
+  },
   playPauseBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
+    minHeight: 42,
+    paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 10,
+    borderRadius: 11,
     marginTop: 12,
   },
   playPauseBtnText: {
     color: '#FFFFFF',
+    fontSize: 13.5,
+    fontWeight: '700',
+  },
+  videoSecondaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  videoSecondaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    minHeight: 40,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  videoSecondaryBtnText: {
     fontSize: 13,
     fontWeight: '700',
   },
