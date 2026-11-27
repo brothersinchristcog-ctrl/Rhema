@@ -344,7 +344,7 @@ export default function CareCellVisitsTab({
                       isSel && { color: primaryBtnText, fontWeight: '800' },
                     ]}
                   >
-                    {c.cellCode}
+                    {c.name || c.cellCode}
                   </Text>
                 </TouchableOpacity>
               );

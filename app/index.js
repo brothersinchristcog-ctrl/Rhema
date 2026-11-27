@@ -22,6 +22,11 @@ messaging().setBackgroundMessageHandler(async remoteMessage => {
       const title = data.pushTitle || data.title || '🔴 We Are LIVE Now!';
       const body = data.pushBody || data.body || "Join us for a time of worship, prayer and God's Word. Our live service is now streaming on YouTube. Be blessed!";
       await NotificationService.displayLiveNotification(data, title, body);
+    } else if (data.type === 'CHURCH_CHAT' && !remoteMessage?.notification) {
+      const { roomKeyManager } = require('./src/services/roomKeyManager');
+      const title = data.notifTitle || data.roomTitle || data.senderName || 'Rhema Chat';
+      const body = await roomKeyManager.decryptChatNotificationPreview(data);
+      await NotificationService.displayChatNotification(title, body, data);
     }
   } catch (err) {
     console.warn('Background notification error:', err);

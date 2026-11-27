@@ -367,7 +367,7 @@ export default function CareCellsOverviewTab({
                   selectedCellId === c.id && { color: primaryBtnText, fontWeight: '800' },
                 ]}
               >
-                {c.cellCode || c.name}
+                {c.name || c.cellCode}
               </Text>
             </TouchableOpacity>
           ))}

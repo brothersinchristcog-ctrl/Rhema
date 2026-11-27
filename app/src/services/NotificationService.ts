@@ -360,6 +360,54 @@ class NotificationService {
     }
   }
 
+  /**
+   * Displays a local high-priority notification on the 'church_chat' channel (used for E2EE
+   * chat messages decrypted on-device) with deduplication across foreground/background handlers.
+   */
+  async displayChatNotification(
+    title: string,
+    body: string,
+    data?: Record<string, any>
+  ): Promise<boolean> {
+    try {
+      const cleanTitle = (title || data?.roomTitle || data?.senderName || 'Rhema Chat').trim();
+      const rawBody = (body || 'New message').trim();
+      const cleanBody = /^e2ee:v\d+:/i.test(rawBody)
+        ? '🔒 New encrypted message'
+        : rawBody;
+      const roomId = String(data?.roomId || '').trim();
+      const msgId = String(data?.msgId || data?.id || '').trim();
+      const dedupKey = `chat|${roomId}|${msgId || cleanBody}`;
+      const now = Date.now();
+      const prevAt = this.recentSystemNotifs.get(dedupKey) || 0;
+      if (now - prevAt < 15000) {
+        return false;
+      }
+      this.recentSystemNotifs.set(dedupKey, now);
+
+      await this.setupCategoriesAndChannels();
+      const identifier =
+        roomId && msgId ? `rhema_chat_${roomId}_${msgId}` : `rhema_chat_${now}`;
+
+      await Notifications.scheduleNotificationAsync({
+        identifier,
+        content: {
+          title: cleanTitle,
+          body: cleanBody,
+          data: data || {},
+          sound: 'default',
+          color: '#22C55E',
+          autoDismiss: true,
+        },
+        trigger: Platform.OS === 'android' ? { channelId: 'church_chat' } : null,
+      });
+      return true;
+    } catch (err) {
+      console.warn('⚠️ [NotificationService] displayChatNotification notice:', err);
+      return false;
+    }
+  }
+
   // Handle navigation when a notification is clicked
   handleNotificationNavigation(remoteMessage: any, navigation: any) {
     if (!remoteMessage) return;
@@ -813,14 +861,31 @@ class NotificationService {
           });
           break;
         }
-        case 'CHURCH_CHAT': {
-          nav.navigate('ChurchChat', {
-            roomId: rawData.roomId,
-            roomType: rawData.roomType || 'direct',
-            title: rawData.roomTitle || rawData.senderName || 'Chat',
+        case 'church_chat': {
+          const roomId = String(rawData.roomId || '').trim();
+          const roomType = rawData.roomType === 'group' ? 'group' : 'direct';
+          const resolvedTitle =
+            roomType === 'group'
+              ? rawData.roomTitle || rawData.senderName || 'Group Chat'
+              : rawData.senderName ||
+                (rawData.roomTitle && rawData.roomTitle !== 'Rhema Chat' ? rawData.roomTitle : '') ||
+                'Chat';
+          const chatParams = {
+            roomId,
+            roomType,
+            title: resolvedTitle,
             avatarUrl: rawData.avatarUrl || null,
             peerUid: rawData.peerUid || undefined,
-          });
+          };
+          if (roomId) {
+            nav.navigate('ChurchChat', {
+              ...chatParams,
+              screen: 'RhemaChatRoom',
+              params: chatParams,
+            });
+          } else {
+            nav.navigate('ChurchChat');
+          }
           break;
         }
         case 'pledge_reminder':

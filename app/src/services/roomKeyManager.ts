@@ -1,7 +1,9 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import nativeAuth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 import { get, ref, set, update, type Database } from 'firebase/database';
 import { RHEMA_ROOT_COLLECTION } from '../constants/ChurchConfig';
-import { e2eeService } from './e2eeService';
+import { ACTIVE_E2EE_UID_STORAGE_KEY, e2eeService } from './e2eeService';
 
 export type RoomScope = 'church' | 'matrimony' | 'celebrations';
 
@@ -38,20 +40,41 @@ function getRtdbE2eeBasePath(ctx: RtdbRoomContext): string {
   return `matrimony_chats/${ctx.roomId}/e2ee`;
 }
 
+const ROOM_AES_STORAGE_PREFIX = '@rhema_room_aes_v1_';
+const ACTIVE_KEY_TTL_MS = 5 * 60 * 1000;
+const BACKFILL_COOLDOWN_MS = 2 * 60 * 1000;
+const MAX_DECRYPTED_CACHE_ENTRIES = 2500;
+
+function toStorageSafeKey(raw: string): string {
+  return raw.replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
 class RoomKeyManager {
   // key format: `${myUid}:${aadScope}:${keyId}` -> 32-byte binary AES key
   private aesKeyCache = new Map<string, string>();
   private inflightKeyLoads = new Map<string, Promise<string | null>>();
   private activeKeyIdCache = new Map<string, { keyId: string; cachedAt: number }>();
+  private decryptedCache = new Map<string, { text: string; encrypted: boolean }>();
+  private lastBackfillAt = new Map<string, number>();
 
   public clearCache(): void {
     this.aesKeyCache.clear();
     this.inflightKeyLoads.clear();
     this.activeKeyIdCache.clear();
+    this.decryptedCache.clear();
+    this.lastBackfillAt.clear();
   }
 
   private aesCacheKey(myUid: string, ctx: AnyRoomContext, keyId: string): string {
     return `${myUid}:${buildAadScope(ctx)}:${keyId}`;
+  }
+
+  private aesStorageKey(myUid: string, ctx: AnyRoomContext, keyId: string): string {
+    return `${ROOM_AES_STORAGE_PREFIX}${toStorageSafeKey(myUid)}_${toStorageSafeKey(buildAadScope(ctx))}_${toStorageSafeKey(keyId)}`;
+  }
+
+  private decryptedCacheKey(myUid: string, ctx: AnyRoomContext, cipherText: string): string {
+    return `${myUid}:${buildAadScope(ctx)}:${cipherText}`;
   }
 
   public getAadScope(ctx: AnyRoomContext): string {
@@ -71,8 +94,16 @@ class RoomKeyManager {
     const existingPromise = this.inflightKeyLoads.get(cKey);
     if (existingPromise) return existingPromise;
 
+    const storageKey = this.aesStorageKey(myUid, ctx, keyId);
+
     const promise = (async () => {
       try {
+        const persistedKey = await AsyncStorage.getItem(storageKey).catch(() => null);
+        if (persistedKey && persistedKey.length >= 16) {
+          this.aesKeyCache.set(cKey, persistedKey);
+          return persistedKey;
+        }
+
         await e2eeService.initializeForUser(myUid);
         if (e2eeService.getState().status !== 'ready') return null;
 
@@ -98,6 +129,7 @@ class RoomKeyManager {
         if (!aesBytes) return null;
 
         this.aesKeyCache.set(cKey, aesBytes);
+        AsyncStorage.setItem(storageKey, aesBytes).catch(() => {});
         return aesBytes;
       } catch {
         return null;
@@ -156,6 +188,21 @@ class RoomKeyManager {
       return this.getOrCreateCelebrationsKey(ctx, myUid, allParticipants);
     }
 
+    const aadKey = `${myUid}:${buildAadScope(ctx)}`;
+    const cachedActive = this.activeKeyIdCache.get(aadKey);
+    if (cachedActive && Date.now() - cachedActive.cachedAt < ACTIVE_KEY_TTL_MS) {
+      const memBytes = this.aesKeyCache.get(this.aesCacheKey(myUid, ctx, cachedActive.keyId));
+      if (memBytes) {
+        const backfillKey = `${buildAadScope(ctx)}:${cachedActive.keyId}`;
+        const lastBackfill = this.lastBackfillAt.get(backfillKey) || 0;
+        if (Date.now() - lastBackfill > BACKFILL_COOLDOWN_MS) {
+          this.lastBackfillAt.set(backfillKey, Date.now());
+          this.backfillRtdbMissingKeys(ctx, cachedActive.keyId, memBytes, allParticipants).catch(() => {});
+        }
+        return { keyId: cachedActive.keyId, keyBytes: memBytes };
+      }
+    }
+
     const base = getRtdbE2eeBasePath(ctx);
     const metaSnap = await get(ref(ctx.rtdb, `${base}/meta/currentKeyId`)).catch(() => null);
     const existingKeyId = metaSnap && metaSnap.exists() ? String(metaSnap.val() || '') : '';
@@ -163,10 +210,12 @@ class RoomKeyManager {
     if (existingKeyId) {
       const existingBytes = await this.fetchKeyBytes(ctx, myUid, existingKeyId);
       if (existingBytes) {
-        this.activeKeyIdCache.set(`${myUid}:${buildAadScope(ctx)}`, {
+        this.activeKeyIdCache.set(aadKey, {
           keyId: existingKeyId,
           cachedAt: Date.now(),
         });
+        const backfillKey = `${buildAadScope(ctx)}:${existingKeyId}`;
+        this.lastBackfillAt.set(backfillKey, Date.now());
         // Opportunistically wrap for any participants missing from this key epoch
         this.backfillRtdbMissingKeys(ctx, existingKeyId, existingBytes, allParticipants).catch(
           () => {}
@@ -185,7 +234,8 @@ class RoomKeyManager {
     await this.writeWrappedEnvelopesRtdb(ctx, newKeyId, wrapped, missingUids, true);
 
     this.aesKeyCache.set(this.aesCacheKey(myUid, ctx, newKeyId), newKeyBytes);
-    this.activeKeyIdCache.set(`${myUid}:${buildAadScope(ctx)}`, {
+    AsyncStorage.setItem(this.aesStorageKey(myUid, ctx, newKeyId), newKeyBytes).catch(() => {});
+    this.activeKeyIdCache.set(aadKey, {
       keyId: newKeyId,
       cachedAt: Date.now(),
     });
@@ -492,29 +542,47 @@ class RoomKeyManager {
       return { text: raw, encrypted: false };
     }
 
+    const dCacheKey = this.decryptedCacheKey(myUid, ctx, raw);
+    const cachedPlain = this.decryptedCache.get(dCacheKey);
+    if (cachedPlain) {
+      return cachedPlain;
+    }
+
     const parsed = e2eeService.parseEncryptedPayload(raw);
     if (!parsed) {
       return { text: '🔒 Encrypted message', encrypted: true, lockedReason: 'pending_key' };
     }
 
-    await e2eeService.initializeForUser(myUid);
-    const e2eeState = e2eeService.getState();
-    if (e2eeState.status === 'needs_pin_unlock') {
-      return {
-        text: '🔒 Encrypted message (Enter Backup PIN to unlock)',
-        encrypted: true,
-        lockedReason: 'pin',
-      };
+    // Try fast cached AES key lookup before triggering full E2EE initialization
+    const cKey = this.aesCacheKey(myUid, ctx, parsed.keyId);
+    let aesBytes = this.aesKeyCache.get(cKey) || null;
+    if (!aesBytes) {
+      aesBytes = await AsyncStorage.getItem(this.aesStorageKey(myUid, ctx, parsed.keyId)).catch(() => null);
+      if (aesBytes) {
+        this.aesKeyCache.set(cKey, aesBytes);
+      }
     }
 
-    const aesBytes = await this.fetchKeyBytes(ctx, myUid, parsed.keyId);
     if (!aesBytes) {
-      this.requestMissingRoomKey(ctx, myUid, parsed.keyId).catch(() => {});
-      return {
-        text: '🔒 Encrypted message (Syncing key...)',
-        encrypted: true,
-        lockedReason: 'pending_key',
-      };
+      await e2eeService.initializeForUser(myUid);
+      const e2eeState = e2eeService.getState();
+      if (e2eeState.status === 'needs_pin_unlock') {
+        return {
+          text: '🔒 Encrypted message (Enter Backup PIN to unlock)',
+          encrypted: true,
+          lockedReason: 'pin',
+        };
+      }
+
+      aesBytes = await this.fetchKeyBytes(ctx, myUid, parsed.keyId);
+      if (!aesBytes) {
+        this.requestMissingRoomKey(ctx, myUid, parsed.keyId).catch(() => {});
+        return {
+          text: '🔒 Encrypted message (Syncing key...)',
+          encrypted: true,
+          lockedReason: 'pending_key',
+        };
+      }
     }
 
     const plain = e2eeService.decryptTextWithKey(raw, aesBytes, buildAadScope(ctx));
@@ -525,7 +593,87 @@ class RoomKeyManager {
         lockedReason: 'pending_key',
       };
     }
-    return { text: plain, encrypted: true };
+
+    if (this.decryptedCache.size >= MAX_DECRYPTED_CACHE_ENTRIES) {
+      const oldest = this.decryptedCache.keys().next().value;
+      if (oldest) this.decryptedCache.delete(oldest);
+    }
+    const resolved = { text: plain, encrypted: true };
+    this.decryptedCache.set(dCacheKey, resolved);
+    return resolved;
+  }
+
+  /**
+   * Decrypts a church chat push notification payload offline/background using cached or RTDB keys,
+   * falling back to the friendly encrypted placeholder only if locked/timed out.
+   */
+  public async decryptChatNotificationPreview(
+    rawData: Record<string, any> | undefined | null
+  ): Promise<string> {
+    const data = rawData || {};
+    const fallback = String(data.notifBody || data.body || '🔒 New encrypted message').trim();
+    const cipherText = typeof data.cipherText === 'string' ? data.cipherText.trim() : '';
+    const roomId = typeof data.roomId === 'string' ? data.roomId.trim() : '';
+    const churchId = String(data.churchId || 'rhema').trim() || 'rhema';
+
+    if (!cipherText || !roomId || !e2eeService.isEncryptedPayload(cipherText)) {
+      return /^e2ee:v\d+:/i.test(fallback) ? '🔒 New encrypted message' : fallback;
+    }
+
+    try {
+      const uid =
+        nativeAuth().currentUser?.uid ||
+        (await AsyncStorage.getItem(ACTIVE_E2EE_UID_STORAGE_KEY).catch(() => null)) ||
+        '';
+      if (!uid) return fallback;
+
+      const parsed = e2eeService.parseEncryptedPayload(cipherText);
+      if (!parsed) return fallback;
+
+      const aadScope = `church:${churchId}:${roomId}`;
+      const cKey = `${uid}:${aadScope}:${parsed.keyId}`;
+      const sKey = `${ROOM_AES_STORAGE_PREFIX}${toStorageSafeKey(uid)}_${toStorageSafeKey(aadScope)}_${toStorageSafeKey(parsed.keyId)}`;
+      let aesBytes =
+        this.aesKeyCache.get(cKey) ||
+        (await AsyncStorage.getItem(sKey).catch(() => null)) ||
+        null;
+
+      if (!aesBytes) {
+        const { getChatRtdb } = require('../modules/church_chat/services/rtdbClient');
+        const rtdb = getChatRtdb();
+        const ctx: RtdbRoomContext = { scope: 'church', rtdb, churchId, roomId };
+        const decryptPromise = this.decryptString(ctx, uid, cipherText);
+        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500));
+        const res = await Promise.race([decryptPromise, timeoutPromise]);
+        if (!res || res.lockedReason || /^e2ee:v\d+:/i.test(res.text)) {
+          return fallback;
+        }
+        return this.formatDecryptedPushBody(res.text, data);
+      }
+
+      const plain = e2eeService.decryptTextWithKey(cipherText, aesBytes, aadScope);
+      if (plain === null) return fallback;
+      return this.formatDecryptedPushBody(plain, data);
+    } catch {
+      return fallback;
+    }
+  }
+
+  private formatDecryptedPushBody(plainText: string, data: Record<string, any>): string {
+    const clean = plainText.trim();
+    const msgType = String(data.msgType || 'text');
+    let formatted = clean;
+    if (msgType === 'image') formatted = clean ? `📷 ${clean}` : '📷 Photo';
+    else if (msgType === 'image_group') formatted = clean ? `📷 ${clean}` : `📷 ${data.mediaLen || 2} Photos`;
+    else if (msgType === 'video') formatted = clean ? `🎥 ${clean}` : '🎥 Video';
+    else if (msgType === 'audio') formatted = '🎤 Voice message';
+    else if (msgType === 'document') formatted = clean ? `📄 ${clean}` : '📄 Document';
+    else if (!formatted) formatted = 'New message';
+
+    if (data.roomType === 'group' && data.senderName) {
+      return `${data.senderName}: ${formatted}`;
+    }
+    return formatted;
   }
 }
 

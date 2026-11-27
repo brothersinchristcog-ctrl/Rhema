@@ -29,6 +29,7 @@ import { getChatRtdb, setRtdb as set, updateRtdb as update } from './rtdbClient'
 let _presenceCleanup: (() => void) | null = null;
 let _presenceKey: string | null = null;
 const _inFlightDeliveryKeys = new Set<string>();
+const _ensuredParticipantsCache = new Set<string>();
 
 function ackChurchInboxDeliveries(
   cid: string,
@@ -128,12 +129,16 @@ async function ensureDirectParticipants(
   roomId: string,
   participantUids: string[]
 ): Promise<void> {
+  const sorted = [...participantUids].filter(Boolean).sort();
+  const cacheKey = `${cid}:${roomId}:${sorted.join(',')}`;
+  if (_ensuredParticipantsCache.has(cacheKey)) return;
+
   const partSnap = await get(
     ref(db, `rhema_chat/${cid}/rooms/${roomId}/participants`)
   ).catch(() => null);
   const partVal = (partSnap?.val() || {}) as Record<string, any>;
   const missingParts: Record<string, any> = {};
-  participantUids.forEach((u) => {
+  sorted.forEach((u) => {
     if (u && partVal[u] !== true) missingParts[u] = true;
   });
   if (Object.keys(missingParts).length > 0) {
@@ -141,6 +146,7 @@ async function ensureDirectParticipants(
       () => {}
     );
   }
+  _ensuredParticipantsCache.add(cacheKey);
 }
 
 export const rhemaChatService = {

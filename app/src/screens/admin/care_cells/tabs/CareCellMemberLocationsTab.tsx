@@ -13,6 +13,7 @@ import {
   Modal,
   Alert,
   FlatList,
+  PixelRatio,
 } from 'react-native';
 import MapView, { Marker, Circle, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import Svg, { Path } from 'react-native-svg';
@@ -65,6 +66,19 @@ const DEFAULT_CENTER = {
   latitudeDelta: 0.12,
   longitudeDelta: 0.12,
 };
+
+// Android Fabric react-native-maps MapMarker defaults createDrawable() to 100x100 physical px.
+// Keep total pin box (full circle + bottom needle) strictly <= 96px on Android so neither clips.
+const TAB_PIN_TOTAL_SIZE =
+  Platform.OS === 'android'
+    ? Math.min(46, Math.max(27, Math.floor(96 / Math.max(1, PixelRatio.get()))))
+    : 46;
+const TAB_PIN_POINTER_W = 12;
+const TAB_PIN_POINTER_H = 6;
+const TAB_PIN_POINTER_OVERLAP = 2;
+const TAB_PIN_HEAD_SIZE = TAB_PIN_TOTAL_SIZE - (TAB_PIN_POINTER_H - TAB_PIN_POINTER_OVERLAP);
+const TAB_PIN_BORDER_W = 2;
+const TAB_PIN_IMG_SIZE = TAB_PIN_HEAD_SIZE - TAB_PIN_BORDER_W * 2;
 
 interface CareCellMemberLocationsTabProps {
   cells: CareCell[];
@@ -642,8 +656,8 @@ export default function CareCellMemberLocationsTab({
             provider={PROVIDER_GOOGLE}
             style={styles.map}
             initialRegion={DEFAULT_CENTER}
-            showsUserLocation
-            showsMyLocationButton
+            showsUserLocation={Boolean(activeInAppRoute)}
+            showsMyLocationButton={Boolean(activeInAppRoute)}
             showsCompass
           >
             {/* Proximity Radius Circle when Nearby Mode is active */}
@@ -680,6 +694,11 @@ export default function CareCellMemberLocationsTab({
                 : '#10B981';
 
               const isSelected = selectedGroup === group || (selectedMember && group.includes(selectedMember));
+              const photoCandidate =
+                (typeof first.profilePhoto === 'string' && first.profilePhoto.trim()) ||
+                (group.find((r) => typeof r.profilePhoto === 'string' && r.profilePhoto.trim())?.profilePhoto || '').trim();
+              const hasPhoto = photoCandidate.length > 0;
+              const ringColor = isSelected ? '#F59E0B' : dominantColor;
 
               return (
                 <Marker
@@ -687,48 +706,75 @@ export default function CareCellMemberLocationsTab({
                   coordinate={{ latitude: first.latitude, longitude: first.longitude }}
                   onPress={() => handleMarkerPress(group)}
                   anchor={{ x: 0.5, y: 1.0 }}
+                  zIndex={isSelected ? 50 : 25}
                   tracksViewChanges={Boolean(
-                    (!loadedMarkerPhotos[first.memberId] && !!first.profilePhoto) ||
+                    (hasPhoto && !loadedMarkerPhotos[first.memberId]) ||
                     isSelected ||
                     refreshMarkersCount < 2
                   )}
                 >
                   <View collapsable={false} style={styles.tabLollipopWrap}>
-                    {/* Lollipop Head: Circular Avatar Container */}
+                    {/* Full-Circle Avatar Pin */}
                     <View
                       collapsable={false}
                       style={[
                         styles.tabLollipopHead,
-                        {
-                          borderColor: isSelected ? '#F59E0B' : dominantColor,
-                          borderWidth: isSelected ? 3.5 : 2.5,
-                          transform: [{ scale: isSelected ? 1.15 : 1 }],
-                        },
+                        { backgroundColor: ringColor },
                       ]}
                     >
-                      {first.profilePhoto ? (
-                        <Image
-                          source={{ uri: first.profilePhoto }}
-                          style={styles.tabLollipopAvatarImg}
-                          resizeMode="cover"
-                          fadeDuration={0}
-                          onLoad={() => {
-                            setLoadedMarkerPhotos((prev) => ({ ...prev, [first.memberId]: true }));
-                          }}
-                        />
-                      ) : (
-                        <View collapsable={false} style={[styles.tabLollipopAvatarFallback, { backgroundColor: dominantColor }]}>
-                          <Text style={styles.tabLollipopInitials}>
-                            {(first.memberName || 'M').slice(0, 2).toUpperCase()}
-                          </Text>
-                        </View>
-                      )}
+                      <View
+                        collapsable={false}
+                        style={[
+                          styles.tabLollipopClip,
+                          { backgroundColor: ringColor },
+                        ]}
+                      >
+                        {hasPhoto ? (
+                          <Image
+                            source={{ uri: photoCandidate }}
+                            style={styles.tabLollipopAvatarImg}
+                            resizeMode="cover"
+                            fadeDuration={0}
+                            onLoad={() => {
+                              setTimeout(() => {
+                                setLoadedMarkerPhotos((prev) =>
+                                  prev[first.memberId] ? prev : { ...prev, [first.memberId]: true }
+                                );
+                              }, 400);
+                            }}
+                            onError={() => {
+                              setLoadedMarkerPhotos((prev) =>
+                                prev[first.memberId] ? prev : { ...prev, [first.memberId]: true }
+                              );
+                            }}
+                          />
+                        ) : (
+                          <View collapsable={false} style={[styles.tabLollipopAvatarFallback, { backgroundColor: ringColor }]}>
+                            <Text style={styles.tabLollipopInitials}>
+                              {(first.memberName || 'M').slice(0, 2).toUpperCase()}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
                     </View>
+
+                    {/* Lollipop Needle Pointer SVG */}
+                    <Svg
+                      width={TAB_PIN_POINTER_W}
+                      height={TAB_PIN_POINTER_H}
+                      viewBox={`0 0 ${TAB_PIN_POINTER_W} ${TAB_PIN_POINTER_H}`}
+                      style={{ marginTop: -TAB_PIN_POINTER_OVERLAP }}
+                    >
+                      <Path
+                        d={`M0 0 L${TAB_PIN_POINTER_W / 2} ${TAB_PIN_POINTER_H} L${TAB_PIN_POINTER_W} 0 Z`}
+                        fill={ringColor}
+                      />
+                    </Svg>
 
                     {/* Multi-member cluster count pill */}
                     {isMulti && (
                       <View collapsable={false} style={[styles.tabLollipopCountBadge, { backgroundColor: dominantColor }]}>
-                        <Users size={9} color="#FFFFFF" style={{ marginRight: 2 }} />
+                        <Users size={8} color="#FFFFFF" style={{ marginRight: 1 }} />
                         <Text style={styles.tabLollipopCountTxt}>{group.length}</Text>
                       </View>
                     )}
@@ -736,22 +782,9 @@ export default function CareCellMemberLocationsTab({
                     {/* Verified home pin badge */}
                     {hasVerified && !isMulti && (
                       <View collapsable={false} style={styles.tabLollipopVerifiedBadge}>
-                        <Home size={8} color="#FFFFFF" />
+                        <Home size={7} color="#FFFFFF" />
                       </View>
                     )}
-
-                    {/* Lollipop Needle Pointer SVG */}
-                    <Svg
-                      width={14}
-                      height={8}
-                      viewBox="0 0 14 8"
-                      style={{ marginTop: -1 }}
-                    >
-                      <Path
-                        d="M0 0 L7 8 L14 0 Z"
-                        fill={isSelected ? '#F59E0B' : dominantColor}
-                      />
-                    </Svg>
                   </View>
                 </Marker>
               );
@@ -1300,72 +1333,73 @@ const styles = createAdminThemedStyles(
 
     // Markers
     tabLollipopWrap: {
-      width: 48,
-      height: 54,
+      width: TAB_PIN_HEAD_SIZE,
+      height: TAB_PIN_TOTAL_SIZE,
       alignItems: 'center',
       justifyContent: 'flex-start',
     },
     tabLollipopHead: {
-      width: 44,
-      height: 44,
-      borderRadius: 22,
-      backgroundColor: '#FFFFFF',
+      width: TAB_PIN_HEAD_SIZE,
+      height: TAB_PIN_HEAD_SIZE,
+      borderRadius: TAB_PIN_HEAD_SIZE / 2,
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    tabLollipopClip: {
+      width: TAB_PIN_IMG_SIZE,
+      height: TAB_PIN_IMG_SIZE,
+      borderRadius: TAB_PIN_IMG_SIZE / 2,
       overflow: 'hidden',
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 3 },
-      shadowOpacity: 0.3,
-      shadowRadius: 4,
-      elevation: 6,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     tabLollipopAvatarImg: {
-      width: '100%',
-      height: '100%',
-      borderRadius: 22,
+      width: TAB_PIN_IMG_SIZE,
+      height: TAB_PIN_IMG_SIZE,
+      borderRadius: TAB_PIN_IMG_SIZE / 2,
       resizeMode: 'cover',
     },
     tabLollipopAvatarFallback: {
-      width: '100%',
-      height: '100%',
-      borderRadius: 22,
+      width: TAB_PIN_IMG_SIZE,
+      height: TAB_PIN_IMG_SIZE,
+      borderRadius: TAB_PIN_IMG_SIZE / 2,
       alignItems: 'center',
       justifyContent: 'center',
     },
     tabLollipopInitials: {
       color: '#FFFFFF',
-      fontSize: 13,
+      fontSize: 11,
       fontWeight: '800',
       letterSpacing: -0.2,
     },
     tabLollipopCountBadge: {
       position: 'absolute',
-      top: -4,
-      right: -4,
+      top: 0,
+      right: 0,
       flexDirection: 'row',
       alignItems: 'center',
-      minWidth: 20,
-      height: 18,
-      borderRadius: 9,
-      borderWidth: 1.5,
+      minWidth: 16,
+      height: 14,
+      borderRadius: 7,
+      borderWidth: 1,
       borderColor: '#FFFFFF',
-      paddingHorizontal: 4,
+      paddingHorizontal: 3,
       justifyContent: 'center',
     },
     tabLollipopCountTxt: {
       color: '#FFFFFF',
-      fontSize: 10,
+      fontSize: 8.5,
       fontWeight: '800',
     },
     tabLollipopVerifiedBadge: {
       position: 'absolute',
-      top: -4,
-      right: -4,
-      width: 16,
-      height: 16,
-      borderRadius: 8,
+      top: 0,
+      right: 0,
+      width: 14,
+      height: 14,
+      borderRadius: 7,
       backgroundColor: '#10B981',
-      borderWidth: 1.5,
+      borderWidth: 1,
       borderColor: '#FFFFFF',
       alignItems: 'center',
       justifyContent: 'center',

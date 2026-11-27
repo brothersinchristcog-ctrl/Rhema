@@ -248,9 +248,12 @@ export const onRhemaChatMessageCreated = onValueCreated(
     const roomType = meta.type === 'group' ? 'group' : 'direct';
     const roomTitle = String(meta.name || senderName);
     const roomAvatar = typeof meta.avatarUrl === 'string' ? meta.avatarUrl : '';
-    const preview = formatMessagePreview(type, text, media.length, Boolean(msg.encrypted));
+    const isCipher = Boolean(msg.encrypted) || /^e2ee:v\d+:/i.test(text.trim());
+    const preview = formatMessagePreview(type, text, media.length, isCipher);
     const notifTitle = roomType === 'group' ? `${roomTitle}` : senderName;
     const notifBody = roomType === 'group' ? `${senderName}: ${preview}` : preview;
+    const cleanCipher = text.trim();
+    const canDecryptOnDevice = isCipher && cleanCipher.length > 0 && cleanCipher.length <= 1800;
 
     const db = getFirestore();
     const now = Date.now();
@@ -325,40 +328,59 @@ export const onRhemaChatMessageCreated = onValueCreated(
       senderUid,
       senderName,
       avatarUrl: roomAvatar,
+      msgId: String(event.params.msgId || ''),
+      msgType: type,
+      mediaLen: String(media.length || 0),
+      notifTitle,
+      notifBody,
+      ...(canDecryptOnDevice ? { cipherText: cleanCipher } : {}),
       ...(roomType === 'direct' ? { peerUid: senderUid } : {}),
     };
 
     const chunkSize = 500;
     for (let i = 0; i < tokenList.length; i += chunkSize) {
       const chunk = tokenList.slice(i, i + chunkSize);
-      await getMessaging()
-        .sendEachForMulticast({
-          tokens: chunk,
-          notification: {
-            title: notifTitle,
-            body: notifBody,
-          },
-          data: payloadData,
-          android: {
-            priority: 'high',
-            collapseKey: roomId,
-            notification: {
-              channelId: 'church_chat',
-              sound: 'default',
-            },
-          },
-          apns: {
-            headers: {
-              'apns-collapse-id': roomId,
-            },
-            payload: {
-              aps: {
+      const multicastPayload: Record<string, any> = {
+        tokens: chunk,
+        data: payloadData,
+        android: canDecryptOnDevice
+          ? {
+              priority: 'high',
+              collapseKey: roomId,
+            }
+          : {
+              priority: 'high',
+              collapseKey: roomId,
+              notification: {
+                channelId: 'church_chat',
                 sound: 'default',
-                'thread-id': roomId,
               },
             },
+        apns: {
+          headers: {
+            'apns-collapse-id': roomId,
           },
-        })
+          payload: {
+            aps: {
+              alert: {
+                title: notifTitle,
+                body: notifBody,
+              },
+              sound: 'default',
+              'thread-id': roomId,
+              ...(canDecryptOnDevice ? { 'mutable-content': 1 } : {}),
+            },
+          },
+        },
+      };
+      if (!canDecryptOnDevice) {
+        multicastPayload.notification = {
+          title: notifTitle,
+          body: notifBody,
+        };
+      }
+      await getMessaging()
+        .sendEachForMulticast(multicastPayload as any)
         .catch(() => {});
     }
   }

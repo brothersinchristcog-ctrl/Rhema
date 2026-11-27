@@ -66,13 +66,19 @@ import CareCellService, { KNOWN_REGION_COORDS } from '../../../../services/CareC
 
 const { width, height } = Dimensions.get('window');
 
-// Lollipop Marker Pin Dimensions
-const PIN_HEAD_SIZE = 42;
-const PIN_BORDER_WIDTH = 2.5;
+// Android Fabric react-native-maps MapMarker defaults createDrawable() to 100x100 physical px.
+// Keep total pin box (full circle + bottom needle) strictly <= 96px on Android so neither clips.
+const PIN_TOTAL_SIZE =
+  Platform.OS === 'android'
+    ? Math.min(46, Math.max(27, Math.floor(96 / Math.max(1, PixelRatio.get()))))
+    : 46;
+const PIN_POINTER_W = 12;
+const PIN_POINTER_H = 6;
+const PIN_POINTER_OVERLAP = 2;
+const PIN_HEAD_SIZE = PIN_TOTAL_SIZE - (PIN_POINTER_H - PIN_POINTER_OVERLAP);
+const PIN_BORDER_WIDTH = 2;
 const PIN_IMAGE_SIZE = PIN_HEAD_SIZE - PIN_BORDER_WIDTH * 2;
-const PIN_POINTER_W = 14;
-const PIN_POINTER_H = 8;
-const CHURCH_MARKER_SIZE = 34;
+const CHURCH_MARKER_SIZE = Math.min(34, PIN_TOTAL_SIZE);
 
 // Default fallback coordinates if no cell & no member coordinates exist
 const DEFAULT_KURNOOL_LAT = 15.8281;
@@ -953,8 +959,8 @@ export default function CareCellMapModal({
               provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
               style={StyleSheet.absoluteFillObject}
               initialRegion={centerCoord}
-              showsUserLocation={true}
-              showsMyLocationButton={true}
+              showsUserLocation={navActive}
+              showsMyLocationButton={navActive}
               showsCompass={true}
             >
               {/* Care Cell Meeting Marker: Amber Church Bubble */}
@@ -980,7 +986,12 @@ export default function CareCellMapModal({
                 const isSelected = selectedMember?.memberId === m.memberId;
                 const inRouteIndex = plannedRouteMemberIds.indexOf(m.memberId);
                 const markerKey = m.id || m.memberId;
-                const photoUri = typeof m.memberPhoto === 'string' ? m.memberPhoto.trim() : '';
+                const photoUri =
+                  typeof m.memberPhoto === 'string' && m.memberPhoto.trim()
+                    ? m.memberPhoto.trim()
+                    : typeof m.profilePhoto === 'string'
+                      ? m.profilePhoto.trim()
+                      : '';
                 const hasPhoto = photoUri.length > 0;
                 const accentColor = isSelected
                   ? '#D97706'
@@ -998,6 +1009,7 @@ export default function CareCellMapModal({
                       longitude: m.longitude!,
                     }}
                     anchor={{ x: 0.5, y: 1.0 }}
+                    zIndex={isSelected ? 50 : 25}
                     tracksViewChanges={Boolean(
                       (hasPhoto && !loadedMarkerPhotos[markerKey]) ||
                         isSelected ||
@@ -1005,45 +1017,62 @@ export default function CareCellMapModal({
                     )}
                     onPress={() => setSelectedMember(m)}
                   >
-                    <View
-                      collapsable={false}
-                      style={[styles.photoPinWrapper, isSelected && styles.photoPinWrapperSelected]}
-                    >
+                    <View collapsable={false} style={styles.photoPinWrapper}>
                       <View
                         collapsable={false}
                         style={[
                           styles.photoPinHead,
-                          {
-                            borderColor: accentColor,
-                            backgroundColor: hasPhoto ? '#FFFFFF' : accentColor,
-                          },
+                          { backgroundColor: accentColor },
                         ]}
                       >
-                        {hasPhoto ? (
-                          <Image
-                            source={{ uri: photoUri }}
-                            style={styles.photoPinImage}
-                            resizeMode="cover"
-                            fadeDuration={0}
-                            onLoad={() => {
-                              setTimeout(() => {
+                        <View
+                          collapsable={false}
+                          style={[
+                            styles.photoPinClip,
+                            { backgroundColor: accentColor },
+                          ]}
+                        >
+                          {hasPhoto ? (
+                            <Image
+                              source={{ uri: photoUri }}
+                              style={styles.photoPinImage}
+                              resizeMode="cover"
+                              fadeDuration={0}
+                              onLoad={() => {
+                                setTimeout(() => {
+                                  setLoadedMarkerPhotos((prev) =>
+                                    prev[markerKey] ? prev : { ...prev, [markerKey]: true }
+                                  );
+                                }, 400);
+                              }}
+                              onError={() => {
                                 setLoadedMarkerPhotos((prev) =>
                                   prev[markerKey] ? prev : { ...prev, [markerKey]: true }
                                 );
-                              }, 300);
-                            }}
-                            onError={() => {
-                              setLoadedMarkerPhotos((prev) =>
-                                prev[markerKey] ? prev : { ...prev, [markerKey]: true }
-                              );
-                            }}
-                          />
-                        ) : (
-                          <Text style={styles.markerInitialsTxt}>
-                            {(m.memberName || 'M').slice(0, 2).toUpperCase()}
-                          </Text>
-                        )}
+                              }}
+                            />
+                          ) : (
+                            <View style={[styles.photoPinFallbackInner, { backgroundColor: accentColor }]}>
+                              <Text style={styles.markerInitialsTxt}>
+                                {(m.memberName || 'M').slice(0, 2).toUpperCase()}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
                       </View>
+
+                      {/* Lollipop Needle Pointer SVG */}
+                      <Svg
+                        width={PIN_POINTER_W}
+                        height={PIN_POINTER_H}
+                        viewBox={`0 0 ${PIN_POINTER_W} ${PIN_POINTER_H}`}
+                        style={{ marginTop: -PIN_POINTER_OVERLAP }}
+                      >
+                        <Path
+                          d={`M0 0 L${PIN_POINTER_W / 2} ${PIN_POINTER_H} L${PIN_POINTER_W} 0 Z`}
+                          fill={accentColor}
+                        />
+                      </Svg>
 
                       {/* Route Order Badge */}
                       {inRouteIndex >= 0 ? (
@@ -1051,19 +1080,6 @@ export default function CareCellMapModal({
                           <Text style={styles.routeOrderCornerTxt}>{inRouteIndex + 1}</Text>
                         </View>
                       ) : null}
-
-                      {/* Lollipop Needle Pointer SVG */}
-                      <Svg
-                        width={PIN_POINTER_W}
-                        height={PIN_POINTER_H}
-                        viewBox={`0 0 ${PIN_POINTER_W} ${PIN_POINTER_H}`}
-                        style={styles.photoPinPointerSvg}
-                      >
-                        <Path
-                          d={`M0 0 L${PIN_POINTER_W / 2} ${PIN_POINTER_H} L${PIN_POINTER_W} 0 Z`}
-                          fill={accentColor}
-                        />
-                      </Svg>
                     </View>
                   </Marker>
                 );
@@ -1701,62 +1717,63 @@ const styles = createAdminThemedStyles({
     elevation: 4,
   },
 
-  /* Lollipop Marker Styles */
+  /* Full-Circle Profile Pin Marker Styles */
   photoPinWrapper: {
-    width: PIN_HEAD_SIZE + 10,
-    height: PIN_HEAD_SIZE + PIN_POINTER_H + 6,
+    width: PIN_HEAD_SIZE,
+    height: PIN_TOTAL_SIZE,
     alignItems: 'center',
     justifyContent: 'flex-start',
-  },
-  photoPinWrapperSelected: {
-    transform: [{ scale: 1.15 }],
   },
   photoPinHead: {
     width: PIN_HEAD_SIZE,
     height: PIN_HEAD_SIZE,
     borderRadius: PIN_HEAD_SIZE / 2,
-    borderWidth: PIN_BORDER_WIDTH,
-    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  photoPinClip: {
+    width: PIN_IMAGE_SIZE,
+    height: PIN_IMAGE_SIZE,
+    borderRadius: PIN_IMAGE_SIZE / 2,
     overflow: 'hidden',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.5,
-    elevation: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   photoPinImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: PIN_HEAD_SIZE / 2,
+    width: PIN_IMAGE_SIZE,
+    height: PIN_IMAGE_SIZE,
+    borderRadius: PIN_IMAGE_SIZE / 2,
     resizeMode: 'cover',
   },
+  photoPinFallbackInner: {
+    width: PIN_IMAGE_SIZE,
+    height: PIN_IMAGE_SIZE,
+    borderRadius: PIN_IMAGE_SIZE / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   markerInitialsTxt: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '800',
     color: '#FFFFFF',
   },
   routeOrderCornerBadge: {
     position: 'absolute',
-    top: -5,
-    right: -5,
+    top: 0,
+    right: 0,
     backgroundColor: '#059669',
-    width: 17,
-    height: 17,
-    borderRadius: 8.5,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: '#FFFFFF',
   },
   routeOrderCornerTxt: {
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '900',
     color: '#FFFFFF',
-  },
-  photoPinPointerSvg: {
-    marginTop: -1,
   },
 
   /* Top Route Planning Floating Bar */
