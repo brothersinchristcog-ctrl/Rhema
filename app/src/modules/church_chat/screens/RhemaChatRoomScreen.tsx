@@ -42,6 +42,8 @@ import { useAuth } from '../../../context/AuthContext';
 import { useChurch } from '../../../context/ChurchContext';
 import { RHEMA_CHURCH_ID } from '../../../constants/ChurchConfig';
 import { e2eeService, E2EEStateSnapshot } from '../../../services/e2eeService';
+import { roomKeyManager } from '../../../services/roomKeyManager';
+import { getChatRtdb } from '../services/rtdbClient';
 import ChatEncryptionModal, { ChatEncryptionModalMode } from '../../../components/ChatEncryptionModal';
 import InAppDocumentViewerModal, {
   InAppDocumentViewerDoc,
@@ -110,7 +112,8 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
 
   const [roomDetails, setRoomDetails] = useState<ChatRoomDetails | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [msgLimit, setMsgLimit] = useState(120);
+  const [pendingMessages, setPendingMessages] = useState<ChatMessage[]>([]);
+  const [msgLimit, setMsgLimit] = useState(40);
   const [presence, setPresence] = useState<ChatPresenceState | null>(null);
   const [typingUsers, setTypingUsers] = useState<ChatTypingUser[]>([]);
   const [blockedMap, setBlockedMap] = useState<Record<string, ChatBlockRecord>>({});
@@ -269,6 +272,8 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
       myUid,
       msgLimit,
       (list) => {
+        const persistedIds = new Set(list.map((m) => m.id));
+        setPendingMessages((prev) => prev.filter((p) => !persistedIds.has(p.id)));
         const nextAnchorId = resolveRtdbUnreadAnchor({
           currentAnchorId: unreadDividerMsgIdRef.current,
           messages: list,
@@ -342,11 +347,31 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
     }
   }, [typingUsers.length, inChatSearch]);
 
+  // Pre-warm room encryption key in background when room opens so first Send is instant
+  useEffect(() => {
+    if (!myUid || !roomId || e2eeState.status !== 'ready' || participantUids.length === 0) return;
+    const db = getChatRtdb();
+    roomKeyManager
+      .getOrCreateRoomSendKey(
+        { scope: 'church', rtdb: db, churchId, roomId },
+        myUid,
+        participantUids
+      )
+      .catch(() => {});
+  }, [churchId, roomId, myUid, e2eeState.status, participantUids]);
+
+  const mergedMessages = useMemo(() => {
+    if (pendingMessages.length === 0) return messages;
+    const existingIds = new Set(messages.map((m) => m.id));
+    const unresolvedPending = pendingMessages.filter((p) => !existingIds.has(p.id));
+    return unresolvedPending.length > 0 ? [...messages, ...unresolvedPending] : messages;
+  }, [messages, pendingMessages]);
+
   const displayedMessages = useMemo(() => {
     const q = inChatSearch.trim().toLowerCase();
-    if (!q) return messages;
-    return messages.filter((m) => m.text.toLowerCase().includes(q));
-  }, [messages, inChatSearch]);
+    if (!q) return mergedMessages;
+    return mergedMessages.filter((m) => m.text.toLowerCase().includes(q));
+  }, [mergedMessages, inChatSearch]);
 
   const scrollToMessageIndex = (index: number, animated = false) => {
     if (index < 0 || !listRef.current) return;
@@ -435,10 +460,34 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
   const handleSendText = async () => {
     const clean = inputText.trim();
     if (!clean || !guardCanSend()) return;
-    setInputText('');
+    const optimisticId = `m_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const nowMs = Date.now();
     const currentReply = replyTo;
+
+    setInputText('');
     setReplyTo(null);
     clearTypingState();
+    unreadDividerMsgIdRef.current = null;
+    setUnreadDividerMsgId(null);
+    isNearBottomRef.current = true;
+    pendingScrollToEndRef.current = true;
+
+    const optimisticMsg: ChatMessage = {
+      id: optimisticId,
+      senderUid: myUid,
+      senderName: myName,
+      senderAvatar: myPhoto,
+      type: 'text',
+      text: clean,
+      encrypted: true,
+      replyTo: currentReply,
+      reactions: {},
+      deliveredTo: {},
+      readBy: {},
+      createdAt: nowMs,
+    };
+    setPendingMessages((prev) => [...prev, optimisticMsg]);
+    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 40);
 
     try {
       await rhemaChatService.sendMessage({
@@ -456,12 +505,10 @@ export default function RhemaChatRoomScreen({ navigation, route }: any) {
         type: 'text',
         text: clean,
         replyTo: currentReply,
+        msgId: optimisticId,
       });
-      unreadDividerMsgIdRef.current = null;
-      setUnreadDividerMsgId(null);
-      isNearBottomRef.current = true;
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
     } catch (err: any) {
+      setPendingMessages((prev) => prev.filter((p) => p.id !== optimisticId));
       setInputText(clean);
       setReplyTo(currentReply);
       if (err?.message === 'PIN_UNLOCK_REQUIRED') {

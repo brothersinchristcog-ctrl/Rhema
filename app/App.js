@@ -195,15 +195,17 @@ export default function App() {
       const rawData = remoteMessage?.data || {};
       const title =
         remoteMessage?.notification?.title ||
+        rawData.notifTitle ||
         rawData.pushTitle ||
         rawData.title ||
         (rawData.type ? `New ${rawData.type.replace(/_/g, ' ')}` : 'New Notification');
       const rawBody =
         remoteMessage?.notification?.body ||
+        rawData.notifBody ||
         rawData.pushBody ||
         rawData.body ||
         'You have a new message.';
-      const body = /^e2ee:v\d+:/i.test(String(rawBody).trim())
+      let body = /^e2ee:v\d+:/i.test(String(rawBody).trim())
         ? '🔒 New encrypted message'
         : rawBody;
       const password = rawData.password || (body.match(/Passcode:\s*([A-Za-z0-9]+)/i)?.[1]) || '';
@@ -211,8 +213,8 @@ export default function App() {
       const isLive = rawData.type === 'youtube_live';
       if (isLive) {
         NotificationService.displayLiveNotification(rawData, title, body).catch(e => console.warn(e));
-      } else {
-        if (rawData.type === 'CHURCH_CHAT' && navigationRef.isReady()) {
+      } else if (rawData.type === 'CHURCH_CHAT') {
+        if (navigationRef.isReady()) {
           const currentRoute = navigationRef.getCurrentRoute();
           if (
             currentRoute?.name === 'RhemaChatRoom' &&
@@ -222,7 +224,14 @@ export default function App() {
             return;
           }
         }
-
+        try {
+          const { roomKeyManager } = require('./src/services/roomKeyManager');
+          body = await roomKeyManager.decryptChatNotificationPreview(rawData);
+        } catch {
+          // Keep clean fallback body
+        }
+        NotificationService.displayChatNotification(title, body, rawData).catch(() => {});
+      } else {
         // Also post to Android/iOS system notification bar (with deduplication) so it appears in the device notification drawer
         NotificationService.displaySystemPushNotification(title, body, rawData).catch(() => {});
       }

@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useIsFocused } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import {
@@ -61,6 +62,7 @@ type FilterChip = 'all' | 'favorites' | 'teams' | 'groups';
 
 export default function RhemaChatsScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
+  const isFocused = useIsFocused();
   const { user, member } = useAuth();
   const { activeChurch } = useChurch();
   const { palette, fontFamily, scaleFont } = useChatTheme();
@@ -187,7 +189,7 @@ export default function RhemaChatsScreen({ navigation }: any) {
   }, [inbox, members]);
 
   useEffect(() => {
-    if (!peerUidsSignature) return;
+    if (!isFocused || !peerUidsSignature) return;
     const uids = peerUidsSignature.split(',').filter(Boolean);
     const unsubs = uids.map((uid) =>
       rhemaChatService.subscribePresence(churchId, uid, (st) => {
@@ -195,7 +197,7 @@ export default function RhemaChatsScreen({ navigation }: any) {
       })
     );
     return () => unsubs.forEach((u) => u());
-  }, [churchId, peerUidsSignature]);
+  }, [isFocused, churchId, peerUidsSignature]);
 
   const inboxRoomSignature = useMemo(
     () =>
@@ -209,7 +211,7 @@ export default function RhemaChatsScreen({ navigation }: any) {
   );
 
   useEffect(() => {
-    if (!myUid || !inboxRoomSignature) {
+    if (!isFocused || !myUid || !inboxRoomSignature) {
       setTypingMap({});
       return;
     }
@@ -224,7 +226,7 @@ export default function RhemaChatsScreen({ navigation }: any) {
       })
     );
     return () => unsubs.forEach((u) => u());
-  }, [churchId, myUid, inboxRoomSignature]);
+  }, [isFocused, churchId, myUid, inboxRoomSignature]);
 
   const activeRows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();

@@ -360,6 +360,54 @@ class NotificationService {
     }
   }
 
+  /**
+   * Displays a local high-priority notification on the 'church_chat' channel (used for E2EE
+   * chat messages decrypted on-device) with deduplication across foreground/background handlers.
+   */
+  async displayChatNotification(
+    title: string,
+    body: string,
+    data?: Record<string, any>
+  ): Promise<boolean> {
+    try {
+      const cleanTitle = (title || data?.roomTitle || data?.senderName || 'Rhema Chat').trim();
+      const rawBody = (body || 'New message').trim();
+      const cleanBody = /^e2ee:v\d+:/i.test(rawBody)
+        ? '🔒 New encrypted message'
+        : rawBody;
+      const roomId = String(data?.roomId || '').trim();
+      const msgId = String(data?.msgId || data?.id || '').trim();
+      const dedupKey = `chat|${roomId}|${msgId || cleanBody}`;
+      const now = Date.now();
+      const prevAt = this.recentSystemNotifs.get(dedupKey) || 0;
+      if (now - prevAt < 15000) {
+        return false;
+      }
+      this.recentSystemNotifs.set(dedupKey, now);
+
+      await this.setupCategoriesAndChannels();
+      const identifier =
+        roomId && msgId ? `rhema_chat_${roomId}_${msgId}` : `rhema_chat_${now}`;
+
+      await Notifications.scheduleNotificationAsync({
+        identifier,
+        content: {
+          title: cleanTitle,
+          body: cleanBody,
+          data: data || {},
+          sound: 'default',
+          color: '#22C55E',
+          autoDismiss: true,
+        },
+        trigger: Platform.OS === 'android' ? { channelId: 'church_chat' } : null,
+      });
+      return true;
+    } catch (err) {
+      console.warn('⚠️ [NotificationService] displayChatNotification notice:', err);
+      return false;
+    }
+  }
+
   // Handle navigation when a notification is clicked
   handleNotificationNavigation(remoteMessage: any, navigation: any) {
     if (!remoteMessage) return;

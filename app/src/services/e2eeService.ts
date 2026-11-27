@@ -85,6 +85,7 @@ const PRIV_KEY_STORAGE_PREFIX = '@rhema_e2ee_priv_';
 const PUB_KEY_STORAGE_PREFIX = '@rhema_e2ee_pub_';
 const BACKUP_FLAG_PREFIX = '@rhema_e2ee_backup_flag_';
 const BACKUP_DISMISSED_PREFIX = '@rhema_e2ee_backup_dismissed_';
+export const ACTIVE_E2EE_UID_STORAGE_KEY = '@rhema_active_e2ee_uid';
 
 export type E2EEStatus =
   | 'uninitialized'
@@ -231,7 +232,7 @@ class E2EEService {
     this.emitState();
   }
 
-  public clearSessionMemory(): void {
+  public clearSessionMemory(clearPersistedActiveUid = false): void {
     this.currentUid = null;
     this.status = 'uninitialized';
     this.privateKeyPem = null;
@@ -243,6 +244,9 @@ class E2EEService {
     this.fingerprint = '';
     this.initPromise = null;
     this.publicKeyCache.clear();
+    if (clearPersistedActiveUid) {
+      AsyncStorage.removeItem(ACTIVE_E2EE_UID_STORAGE_KEY).catch(() => {});
+    }
     this.emitState();
   }
 
@@ -262,9 +266,10 @@ class E2EEService {
     }
 
     if (this.currentUid !== uid) {
-      this.clearSessionMemory();
+      this.clearSessionMemory(false);
       this.currentUid = uid;
     }
+    AsyncStorage.setItem(ACTIVE_E2EE_UID_STORAGE_KEY, uid).catch(() => {});
 
     this.status = 'initializing';
     this.emitState();

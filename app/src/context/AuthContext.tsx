@@ -604,7 +604,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             console.warn('⚠️ [Auth] E2EE init warning:', err);
           });
         });
-      }, 3500);
+      }, 800);
       return () => {
         cancelled = true;
         clearTimeout(timer);
@@ -614,7 +614,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { roomKeyManager } = require('../services/roomKeyManager');
     const { e2eeService } = require('../services/e2eeService');
     roomKeyManager.clearCache();
-    e2eeService.clearSessionMemory();
+    e2eeService.clearSessionMemory(true);
   }, [loading, user?.uid, user?.isAnonymous]);
 
   const signInAnonymously = async () => {
