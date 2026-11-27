@@ -3,9 +3,19 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 const Stack = createNativeStackNavigator();
 
-export default function ChurchChatNavigator({ route }: any) {
-  const initialRoomId = route?.params?.roomId;
+export default function ChurchChatNavigator({ route, navigation }: any) {
+  const initialRoomId = route?.params?.params?.roomId || route?.params?.roomId;
   const initialScreen = initialRoomId ? 'RhemaChatRoom' : 'RhemaChats';
+  const initialRoomParams = initialRoomId
+    ? route?.params?.params || route?.params
+    : undefined;
+
+  React.useEffect(() => {
+    const incomingRoomId = route?.params?.params?.roomId || route?.params?.roomId;
+    if (incomingRoomId && route?.params?.screen !== 'RhemaChatRoom') {
+      navigation.navigate('RhemaChatRoom', route?.params?.params || route?.params);
+    }
+  }, [navigation, route?.params]);
 
   return (
     <Stack.Navigator
@@ -20,7 +30,7 @@ export default function ChurchChatNavigator({ route }: any) {
       <Stack.Screen
         name="RhemaChatRoom"
         getComponent={() => require('../screens/RhemaChatRoomScreen').default}
-        initialParams={initialRoomId ? route?.params : undefined}
+        initialParams={initialRoomParams}
       />
       <Stack.Screen
         name="NewChatDirectory"

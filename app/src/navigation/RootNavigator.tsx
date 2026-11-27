@@ -1141,14 +1141,14 @@ function Navigation() {
       const notifDate = String(response?.notification?.date || '');
       const actionId = response?.actionIdentifier || '';
       const d = (response?.notification?.request?.content?.data || {}) as any;
-      return `${notifId}::${notifDate}::${actionId}::${d.type || ''}::${d.videoId || d.id || ''}`;
+      return `${notifId}::${notifDate}::${actionId}::${d.type || ''}::${d.msgId || d.roomId || d.videoId || d.id || ''}`;
     };
 
     const buildFcmMessageKey = (remoteMessage: any) => {
       if (!remoteMessage) return '';
       if (remoteMessage.messageId) return String(remoteMessage.messageId);
       const d = remoteMessage.data || {};
-      return `${remoteMessage.sentTime || ''}::${d.type || ''}::${d.videoId || d.id || ''}`;
+      return `${remoteMessage.sentTime || ''}::${d.type || ''}::${d.msgId || d.roomId || d.videoId || d.id || ''}`;
     };
 
     const subscription = Notifications.addNotificationResponseReceivedListener(response => {
@@ -1473,7 +1473,7 @@ function Navigation() {
         const hasPermission = await NotificationService.requestUserPermission();
         if (cancelled) return;
         if (hasPermission) {
-          NotificationService.getFcmToken().catch(() => {});
+          NotificationService.getFcmToken().catch(() => { });
         }
 
         // Schedule local notification syncs in background after 1st-launch UI settles
@@ -1482,7 +1482,7 @@ function Navigation() {
 
         const targetChurchId = (await FirestoreService.getChurchId()) || 'rhema';
         if (cancelled) return;
-        NotificationService.subscribeToChurchTopic(targetChurchId).catch(() => {});
+        NotificationService.subscribeToChurchTopic(targetChurchId).catch(() => { });
 
         try {
           const firestoreMod = require('@react-native-firebase/firestore').default;

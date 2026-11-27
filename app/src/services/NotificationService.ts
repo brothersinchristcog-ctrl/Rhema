@@ -861,14 +861,31 @@ class NotificationService {
           });
           break;
         }
-        case 'CHURCH_CHAT': {
-          nav.navigate('ChurchChat', {
-            roomId: rawData.roomId,
-            roomType: rawData.roomType || 'direct',
-            title: rawData.roomTitle || rawData.senderName || 'Chat',
+        case 'church_chat': {
+          const roomId = String(rawData.roomId || '').trim();
+          const roomType = rawData.roomType === 'group' ? 'group' : 'direct';
+          const resolvedTitle =
+            roomType === 'group'
+              ? rawData.roomTitle || rawData.senderName || 'Group Chat'
+              : rawData.senderName ||
+                (rawData.roomTitle && rawData.roomTitle !== 'Rhema Chat' ? rawData.roomTitle : '') ||
+                'Chat';
+          const chatParams = {
+            roomId,
+            roomType,
+            title: resolvedTitle,
             avatarUrl: rawData.avatarUrl || null,
             peerUid: rawData.peerUid || undefined,
-          });
+          };
+          if (roomId) {
+            nav.navigate('ChurchChat', {
+              ...chatParams,
+              screen: 'RhemaChatRoom',
+              params: chatParams,
+            });
+          } else {
+            nav.navigate('ChurchChat');
+          }
           break;
         }
         case 'pledge_reminder':
